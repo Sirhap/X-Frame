@@ -15,7 +15,8 @@ function runGit(root, args, options = {}) {
     timeout: options.timeout ?? 20000,
   });
   if (result.error) {
-    if (options.allowFailure) return { ok: false, status: result.status, output: "", error: result.error.message };
+    if (options.allowFailure)
+      return { ok: false, status: result.status, output: "", error: result.error.message };
     throw result.error;
   }
   const output = String(result.stdout || "").trim();
@@ -26,9 +27,47 @@ function runGit(root, args, options = {}) {
   return { ok: result.status === 0, status: result.status, output, error };
 }
 
+/**
+ * Runs Git without blocking the HTTP event loop.
+ * @param {string} root Repository root.
+ * @param {string[]} args Git arguments.
+ * @param {{timeout?:number,allowFailure?:boolean}} [options] Execution options.
+ * @returns {Promise<{ok:boolean,status:number,output:string,error:string}>} Command result.
+ */
+function runGitAsync(root, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "git",
+      args,
+      {
+        cwd: root,
+        encoding: "utf8",
+        timeout: options.timeout ?? 20000,
+        windowsHide: true,
+      },
+      (error, stdout, stderr) => {
+        const output = String(stdout || "").trim();
+        const errorOutput = String(stderr || "").trim();
+        if (error && !options.allowFailure) {
+          reject(new Error(errorOutput || output || error.message));
+          return;
+        }
+        resolve({
+          ok: !error,
+          status: Number(error?.code || 0),
+          output,
+          error: errorOutput || String(error?.message || ""),
+        });
+      },
+    );
+  });
+}
+
 function trustedRemote(remote) {
   const value = String(remote || "").trim();
-  return /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)sparklecatta-lang\/XSXB-Frame-Tuner(?:\.git)?\/?$/i.test(value);
+  return /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)sparklecatta-lang\/XSXB-Frame-Tuner(?:\.git)?\/?$/i.test(
+    value,
+  );
 }
 
 function candidateSkillTargets(env = process.env, home = os.homedir()) {
@@ -82,6 +121,43 @@ function inspectLocalRepository(root) {
 }
 
 /**
+ * Inspects local repository state asynchronously for update API requests.
+ * @param {string} root Repository root.
+ * @returns {Promise<object>} Repository state.
+ */
+async function inspectLocalRepositoryAsync(root) {
+  const gitDir = path.join(root, ".git");
+  if (!fs.existsSync(gitDir)) {
+    return {
+      supported: false,
+      blockReason: "not_git_clone",
+      currentCommit: "",
+      branch: "",
+      remote: "",
+      remoteTrusted: false,
+      trackedDirty: false,
+      skillTarget: resolveSkillTarget(),
+    };
+  }
+  const [commit, branch, remote, trackedStatus] = await Promise.all([
+    runGitAsync(root, ["rev-parse", "HEAD"]),
+    runGitAsync(root, ["branch", "--show-current"]),
+    runGitAsync(root, ["remote", "get-url", "origin"], { allowFailure: true }),
+    runGitAsync(root, ["status", "--porcelain", "--untracked-files=no"]),
+  ]);
+  return {
+    supported: true,
+    blockReason: "",
+    currentCommit: commit.output,
+    branch: branch.output,
+    remote: remote.output,
+    remoteTrusted: trustedRemote(remote.output),
+    trackedDirty: Boolean(trackedStatus.output),
+    skillTarget: resolveSkillTarget(),
+  };
+}
+
+/**
  * Reads the latest official commit without blocking the local HTTP event loop.
  * @returns {Promise<string>} Official main commit.
  */
@@ -101,7 +177,9 @@ function latestOfficialCommit() {
           reject(new Error(String(stderr || error.message || "GitHub update check failed").trim()));
           return;
         }
-        const commit = String(stdout || "").trim().split(/\s+/)[0];
+        const commit = String(stdout || "")
+          .trim()
+          .split(/\s+/)[0];
         if (!/^[0-9a-f]{40}$/i.test(commit)) {
           reject(new Error("GitHub did not return a valid main-branch commit."));
           return;
@@ -114,6 +192,7 @@ function latestOfficialCommit() {
 
 function updateBlockReason(local, updateAvailable) {
   if (!local.supported) return "not_git_clone";
+  if (!local.remote) return "no_remote";
   if (!local.remoteTrusted) return "untrusted_remote";
   if (local.branch !== OFFICIAL_BRANCH) return "wrong_branch";
   if (local.trackedDirty) return "tracked_changes";
@@ -121,7 +200,7 @@ function updateBlockReason(local, updateAvailable) {
 }
 
 async function checkForUpdates(root) {
-  const local = inspectLocalRepository(root);
+  const local = await inspectLocalRepositoryAsync(root);
   if (!local.supported) {
     return {
       ...local,
@@ -189,20 +268,24 @@ function syncSkillDirectory(source, target) {
   }
 }
 
-function performUpdate(root) {
-  const before = inspectLocalRepository(root);
+async function performUpdate(root) {
+  const before = await inspectLocalRepositoryAsync(root);
   const blockReason = updateBlockReason(before, true);
   if (blockReason) throw new Error(`Update blocked: ${blockReason}`);
 
-  runGit(root, ["fetch", "--prune", "origin", OFFICIAL_BRANCH], { timeout: 120000 });
-  const latestCommit = runGit(root, ["rev-parse", `origin/${OFFICIAL_BRANCH}`]).output;
+  await runGitAsync(root, ["fetch", "--prune", "origin", OFFICIAL_BRANCH], { timeout: 120000 });
+  const latestCommit = (await runGitAsync(root, ["rev-parse", `origin/${OFFICIAL_BRANCH}`])).output;
   if (latestCommit !== before.currentCommit) {
-    const ancestor = runGit(root, ["merge-base", "--is-ancestor", before.currentCommit, `origin/${OFFICIAL_BRANCH}`], { allowFailure: true });
+    const ancestor = await runGitAsync(
+      root,
+      ["merge-base", "--is-ancestor", before.currentCommit, `origin/${OFFICIAL_BRANCH}`],
+      { allowFailure: true },
+    );
     if (!ancestor.ok) throw new Error("Local main is not a fast-forward ancestor of origin/main.");
-    runGit(root, ["merge", "--ff-only", `origin/${OFFICIAL_BRANCH}`], { timeout: 120000 });
+    await runGitAsync(root, ["merge", "--ff-only", `origin/${OFFICIAL_BRANCH}`], { timeout: 120000 });
   }
 
-  const afterCommit = runGit(root, ["rev-parse", "HEAD"]).output;
+  const afterCommit = (await runGitAsync(root, ["rev-parse", "HEAD"])).output;
   const skillSource = path.join(root, "skills", SKILL_NAME);
   const skillResult = syncSkillDirectory(skillSource, before.skillTarget);
   return {
@@ -221,6 +304,7 @@ module.exports = {
   candidateSkillTargets,
   checkForUpdates,
   inspectLocalRepository,
+  inspectLocalRepositoryAsync,
   latestOfficialCommit,
   performUpdate,
   resolveSkillTarget,

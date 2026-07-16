@@ -357,7 +357,7 @@
               </figure>
               <figure class="cutoutEditingCanvas">
                 <figcaption id="cutoutViewCaption" data-cutout-i18n="editorCanvas">编辑画布</figcaption>
-                <canvas id="cutoutResult" width="480" height="360"></canvas>
+                <canvas id="cutoutResult" width="480" height="360" tabindex="0" aria-label="抠图编辑画布。方向键移动键盘修正光标，Enter 应用当前工具，减号和加号缩放。"></canvas>
               </figure>
             </div>
             <section class="cutoutBatchTray" aria-labelledby="cutoutBatchTrayTitle">
@@ -698,8 +698,15 @@
         </div>
       </div>
     </section>
+    <script src="/batch_cutout_product_core.js"></script>
+    <script src="/batch_cutout_protection_core.js"></script>
+    <script src="/batch_cutout_reference_recovery_core.js"></script>
+    <script src="/batch_cutout_reference_replace_core.js"></script>
     <script src="/batch_cutout_core.js"></script>
     <script src="/batch_zip.js"></script>
+    <script src="/batch_cutout_output_core.js"></script>
+    <script src="/batch_cutout_worker_client.js"></script>
+    <script src="/cutout_quality_core.js"></script>
     <script src="/cutout_tracking_core.js"></script>
     <script src="/batch_cutout.js"></script>
     <script src="/frame_organizer_core.js"></script>

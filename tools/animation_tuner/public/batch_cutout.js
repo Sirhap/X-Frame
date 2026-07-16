@@ -1,6 +1,35 @@
 (function attachBatchCutout(root) {
   "use strict";
 
+  /**
+   * Settles async work with bounded concurrency while preserving input order.
+   * @template T,U
+   * @param {T[]} inputs Input values.
+   * @param {(value:T,index:number)=>Promise<U>} mapper Async mapper.
+   * @param {number} [concurrency] Maximum active operations.
+   * @returns {Promise<PromiseSettledResult<U>[]>} Ordered settled results.
+   */
+  async function mapSettledWithConcurrency(inputs, mapper, concurrency = 6) {
+    const values = Array.from(inputs || []);
+    const results = new Array(values.length);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < values.length) {
+        const index = cursor;
+        cursor += 1;
+        try {
+          results[index] = { status: "fulfilled", value: await mapper(values[index], index) };
+        } catch (reason) {
+          results[index] = { status: "rejected", reason };
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(Math.max(1, concurrency), values.length) }, () => worker()),
+    );
+    return results;
+  }
+
   const TEXT = {
     zh: {
       title: "批量抠图",
@@ -128,6 +157,11 @@
       qualityArea: "面积突变",
       qualityPosition: "位置突跳",
       qualitySoftEdge: "软边异常",
+      qualitySplit: "主体分裂",
+      qualityHoles: "主体孔洞",
+      qualityClipped: "画布裁切",
+      qualityTransparentRgb: "透明 RGB 污染",
+      qualityBackgroundResidue: "残余背景色",
       qualityNone: "未发现异常帧",
       qualityFilteredEmpty: "当前没有已检测出的异常帧",
       partialProcessed: "完成 {count} 张，跳过 {excluded} 张，失败 {failed} 张",
@@ -161,6 +195,8 @@
       repairHint: "直接在编辑画布上绘制或框选",
       repaired: "已添加局部修正：{mode}",
       protectedRegion: "已从框选区域提取 {count} 个保护色",
+      protectedRegionCoverage: "已提取 {count} 个保护色，覆盖率 {coverage}%",
+      protectedRegionIncomplete: "已提取 {count} 个保护色，覆盖率仅 {coverage}%，建议扩大框选或补充保护色",
       batchRepaired: "已将局部修正传播到 {count} 帧，跳过 {skipped} 帧",
       batchRepairUnavailable: "请先添加一个局部修正",
       repairSmartMode: "智能清除",
@@ -294,6 +330,11 @@
       qualityArea: "Area jump",
       qualityPosition: "Position jump",
       qualitySoftEdge: "Soft-edge anomaly",
+      qualitySplit: "Split subject",
+      qualityHoles: "Subject holes",
+      qualityClipped: "Canvas clipping",
+      qualityTransparentRgb: "Transparent RGB contamination",
+      qualityBackgroundResidue: "Residual background color",
       qualityNone: "No anomalous frames found",
       qualityFilteredEmpty: "No detected anomalous frames",
       partialProcessed: "Done {count}; excluded {excluded}; failed {failed}",
@@ -327,6 +368,8 @@
       repairHint: "Paint or drag directly on the editing canvas",
       repaired: "Added local repair: {mode}",
       protectedRegion: "Extracted {count} protected colors from the region",
+      protectedRegionCoverage: "Extracted {count} protected colors with {coverage}% coverage",
+      protectedRegionIncomplete: "Extracted {count} protected colors with only {coverage}% coverage; expand the region or add colors",
       batchRepaired: "Propagated the repair to {count} frames; skipped {skipped}",
       batchRepairUnavailable: "Add a local repair first",
       repairSmartMode: "Smart Clear",
@@ -351,8 +394,17 @@
     if (!core) throw new Error("BatchCutoutCore is required.");
     const tracking = root.CutoutTrackingCore;
     if (!tracking) throw new Error("CutoutTrackingCore is required.");
+    const quality = root.CutoutQualityCore;
+    if (!quality) throw new Error("CutoutQualityCore is required.");
     const batchZip = root.BatchZip;
     if (!batchZip) throw new Error("BatchZip is required.");
+    const outputCore = root.BatchCutoutOutputCore;
+    if (!outputCore) throw new Error("BatchCutoutOutputCore is required.");
+    const workerClient = root.BatchCutoutWorkerClient;
+    if (!workerClient) throw new Error("BatchCutoutWorkerClient is required.");
+    const cutoutExecutor = workerClient.createExecutor({
+      syncProcess: core.applyProductCutout,
+    });
     const elements = Object.fromEntries([
       "cutoutOpen", "cutoutModal", "cutoutClose", "cutoutDropzone", "cutoutFileInput",
       "cutoutAddFiles", "cutoutLoadGroup", "cutoutClear", "cutoutAutoColor", "cutoutColor",
@@ -395,6 +447,7 @@
       sourceKind: "",
       repairMode: "smart",
       repairDrag: null,
+      keyboardRepairPoint: null,
       samplingProtectedColor: false,
       samplingBackgroundColor: false,
       previewScale: null,
@@ -411,6 +464,8 @@
       playbackTimer: 0,
       confirmationResolver: null,
       selectedIds: new Set(),
+      queueWindowStart: 0,
+      queueRenderFrame: 0,
       selectionAnchorIndex: 0,
       draggedItemId: "",
       cancelRequested: false,
@@ -725,20 +780,6 @@
     }
 
     /**
-     * Returns a collision-free PNG name for an archive or mixed-source batch.
-     * @param {string} name Requested file name.
-     * @param {Map<string,number>} counts Existing normalized-name counts.
-     * @returns {string}
-     */
-    function uniquePngName(name, counts) {
-      const normalized = String(name || "frame.png").replace(/\.[^.]+$/, "") + ".png";
-      const count = (counts.get(normalized) || 0) + 1;
-      counts.set(normalized, count);
-      if (count === 1) return normalized;
-      return normalized.replace(/\.png$/i, `_${count}.png`);
-    }
-
-    /**
      * Builds a processable queue item.
      * @param {CanvasImageSource} image Source image.
      * @param {string} name Display and export name.
@@ -780,6 +821,8 @@
         sourceThumbnail: createThumbnailUrl(pixels.canvas),
         resultThumbnail: "",
         thumbnailRevision: -1,
+        processingRevision: 0,
+        processingPromise: null,
       };
     }
 
@@ -854,8 +897,10 @@
      * @returns {void}
      */
     function refreshQualityAnalysis() {
-      const analysis = tracking.analyzeCutoutQualitySequence(
+      const currentAnimation = hooks.getCurrentAnimation?.();
+      const analysis = quality.analyzeCutoutQualitySequence(
         state.items.map((item) => item.qualityMetrics),
+        { circular: currentAnimation?.loop === true },
       );
       state.items.forEach((item, index) => {
         item.quality = analysis[index];
@@ -887,6 +932,11 @@
         area: text("qualityArea"),
         position: text("qualityPosition"),
         "soft-edge": text("qualitySoftEdge"),
+        split: text("qualitySplit"),
+        holes: text("qualityHoles"),
+        clipped: text("qualityClipped"),
+        "transparent-rgb": text("qualityTransparentRgb"),
+        "background-residue": text("qualityBackgroundResidue"),
       };
       return (quality?.codes || []).map((code) => labels[code] || code).join(" · ");
     }
@@ -894,26 +944,43 @@
     /**
      * Processes one image and stores its result canvas.
      * @param {object} item Queue item.
-     * @returns {object}
+     * @returns {Promise<object>}
      */
-    function processItem(item) {
+    async function processItem(item) {
       if (
         item.status === "processed"
         && item.thumbnailRevision === state.thumbnailRevision
         && item.resultCanvas
       ) return item;
+      if (item.processingPromise) return item.processingPromise;
       item.status = "processing";
       item.error = "";
-      try {
+      const processingRevision = Number(item.processingRevision || 0);
+      const processingPromise = (async () => {
         const { width, height, data } = item.sourceImageData;
-        const result = core.applyCutout(data, width, height, processingOptions(item));
-        item.automaticImageData = new ImageData(new Uint8ClampedArray(result.data), width, height);
-        item.shapeCandidates = tracking.createShapeCandidates(result.data, width, height);
-        item.shapeDescriptor = item.shapeCandidates[0]
-          || tracking.createShapeDescriptor(result.data, width, height);
-        applyRepairs(item, result.data);
+        const options = processingOptions(item);
+        const result = await cutoutExecutor.process(
+          data,
+          width,
+          height,
+          options,
+          item.repairs || [],
+        );
+        if (processingRevision !== Number(item.processingRevision || 0)) {
+          throw new DOMException("Stale cutout result was discarded.", "AbortError");
+        }
+        item.automaticImageData = new ImageData(result.automaticData, width, height);
+        item.shapeCandidates = result.shapeCandidates
+          || tracking.createShapeCandidates(result.automaticData, width, height);
+        item.shapeDescriptor = result.shapeDescriptor
+          || item.shapeCandidates[0]
+          || tracking.createShapeDescriptor(result.automaticData, width, height);
         item.resultImageData = new ImageData(new Uint8ClampedArray(result.data), width, height);
-        item.qualityMetrics = tracking.createCutoutQualityMetrics(result.data, width, height);
+        item.qualityMetrics = result.qualityMetrics
+          || quality.createCutoutQualityMetrics(result.data, width, height, {
+            backgroundColors: options.backgroundColors,
+            backgroundTolerance: options.tolerance + options.feather,
+          });
         item.diagnosticCanvases = {};
         const canvas = document.createElement("canvas");
         canvas.width = width;
@@ -921,136 +988,38 @@
         const context = canvas.getContext("2d");
         context.putImageData(new ImageData(result.data, width, height), 0, 0);
         item.resultCanvas = canvas;
-        item.statistics = result;
+        item.statistics = {
+          removedPixels: result.removedPixels,
+          partialPixels: result.partialPixels,
+        };
         item.resultThumbnail = createThumbnailUrl(canvas);
         item.thumbnailRevision = state.thumbnailRevision;
         item.status = "processed";
         refreshQualityAnalysis();
         return item;
+      })();
+      item.processingPromise = processingPromise;
+      try {
+        return await processingPromise;
       } catch (error) {
-        item.status = "failed";
-        item.error = error instanceof Error ? error.message : String(error);
-        item.qualityMetrics = null;
-        item.quality = null;
-        throw error;
-      }
-    }
-
-    /**
-     * Applies staged rectangle corrections after automatic background removal.
-     * @param {object} item Queue item.
-     * @param {Uint8ClampedArray} resultData Mutable processed pixels.
-     * @returns {void}
-     */
-    function applyRepairs(item, resultData) {
-      const sourceData = item.sourceImageData.data;
-      const width = item.sourceImageData.width;
-      const height = item.sourceImageData.height;
-      const options = processingOptions(item);
-      for (const repair of item.repairs || []) {
-        if (repair.mode === "brush" || repair.mode === "eraser") {
-          applyBrushStroke(resultData, width, height, repair);
-          continue;
-        }
-        const startX = Math.max(0, Math.floor(Math.min(repair.x1, repair.x2)));
-        const endX = Math.min(width - 1, Math.ceil(Math.max(repair.x1, repair.x2)));
-        const startY = Math.max(0, Math.floor(Math.min(repair.y1, repair.y2)));
-        const endY = Math.min(height - 1, Math.ceil(Math.max(repair.y1, repair.y2)));
-        const background = repair.backgroundColor || selectedBackgroundColor(item);
-        const distanceFromBackground = (offset) => (
-          options.perceptual
-            ? core.perceptualColorDistance(
-              sourceData[offset],
-              sourceData[offset + 1],
-              sourceData[offset + 2],
-              background,
-            )
-            : core.colorDistance(
-              sourceData[offset],
-              sourceData[offset + 1],
-              sourceData[offset + 2],
-              background,
-            )
+        const ownsItemState = (
+          item.processingPromise === processingPromise
+          && processingRevision === Number(item.processingRevision || 0)
         );
-        const maximumDistance = Number(repair.tolerance ?? options.tolerance)
-          + Number(repair.feather ?? options.feather);
-        for (let y = startY; y <= endY; y += 1) {
-          for (let x = startX; x <= endX; x += 1) {
-            const offset = (y * width + x) * 4;
-            const protectedPixel = options.protectedColors.some((color) => (
-              core.colorDistance(
-                sourceData[offset],
-                sourceData[offset + 1],
-                sourceData[offset + 2],
-                color,
-              ) <= options.protectionTolerance
-            ));
-            if (repair.mode === "clear") {
-              resultData[offset + 3] = 0;
-            } else if (repair.mode === "restore") {
-              const distance = distanceFromBackground(offset);
-              if (distance > maximumDistance) {
-                resultData[offset] = sourceData[offset];
-                resultData[offset + 1] = sourceData[offset + 1];
-                resultData[offset + 2] = sourceData[offset + 2];
-                resultData[offset + 3] = sourceData[offset + 3];
-              }
-            } else if (!protectedPixel) {
-              const distance = distanceFromBackground(offset);
-              if (distance <= maximumDistance) resultData[offset + 3] = 0;
-            }
-          }
+        if (error?.name === "AbortError") {
+          if (ownsItemState) item.status = "ready";
+          throw error;
         }
+        if (ownsItemState) {
+          item.status = "failed";
+          item.error = error instanceof Error ? error.message : String(error);
+          item.qualityMetrics = null;
+          item.quality = null;
+        }
+        throw error;
+      } finally {
+        if (item.processingPromise === processingPromise) item.processingPromise = null;
       }
-    }
-
-    /**
-     * Applies one serialized brush stroke to mutable RGBA pixels.
-     * @param {Uint8ClampedArray} pixels Mutable result pixels.
-     * @param {number} width Image width.
-     * @param {number} height Image height.
-     * @param {object} stroke Brush settings and source-space points.
-     * @returns {void}
-     */
-    function applyBrushStroke(pixels, width, height, stroke) {
-      const points = Array.isArray(stroke.points) ? stroke.points : [];
-      if (!points.length) return;
-      const radius = Math.max(0.5, Number(stroke.size || 1) / 2);
-      const hardness = Math.max(0.01, Math.min(0.999, Number(stroke.hardness || 1)));
-      const opacity = Math.max(0.01, Math.min(1, Number(stroke.opacity || 1)));
-      const color = stroke.color || { r: 0, g: 200, b: 0 };
-      const stamp = (centerX, centerY) => {
-        const startX = Math.max(0, Math.floor(centerX - radius));
-        const endX = Math.min(width - 1, Math.ceil(centerX + radius));
-        const startY = Math.max(0, Math.floor(centerY - radius));
-        const endY = Math.min(height - 1, Math.ceil(centerY + radius));
-        for (let y = startY; y <= endY; y += 1) {
-          for (let x = startX; x <= endX; x += 1) {
-            const distance = Math.hypot(x + 0.5 - centerX, y + 0.5 - centerY) / radius;
-            if (distance > 1) continue;
-            const feather = distance <= hardness ? 1 : 1 - ((distance - hardness) / (1 - hardness));
-            const strength = opacity * Math.max(0, Math.min(1, feather));
-            const offset = (y * width + x) * 4;
-            if (stroke.mode === "eraser") {
-              pixels[offset + 3] = Math.round(pixels[offset + 3] * (1 - strength));
-            } else {
-              pixels[offset] = Math.round(pixels[offset] * (1 - strength) + color.r * strength);
-              pixels[offset + 1] = Math.round(pixels[offset + 1] * (1 - strength) + color.g * strength);
-              pixels[offset + 2] = Math.round(pixels[offset + 2] * (1 - strength) + color.b * strength);
-              pixels[offset + 3] = Math.round(pixels[offset + 3] + (255 - pixels[offset + 3]) * strength);
-            }
-          }
-        }
-      };
-      points.forEach((point, index) => {
-        const previous = points[Math.max(0, index - 1)];
-        const distance = Math.hypot(point.x - previous.x, point.y - previous.y);
-        const steps = Math.max(1, Math.ceil(distance / Math.max(1, radius * 0.35)));
-        for (let step = 1; step <= steps; step += 1) {
-          const ratio = step / steps;
-          stamp(previous.x + (point.x - previous.x) * ratio, previous.y + (point.y - previous.y) * ratio);
-        }
-      });
     }
 
     /**
@@ -1298,7 +1267,7 @@
      * Processes and redraws the selected preview.
      * @returns {void}
      */
-    function renderPreview() {
+    async function renderPreview() {
       const item = selectedItem();
       drawPreviewCanvas(elements.cutoutOriginal, item?.sourceCanvas || null);
       if (!item) {
@@ -1311,7 +1280,8 @@
         return;
       }
       try {
-        processItem(item);
+        await processItem(item);
+        if (item !== selectedItem()) return;
         const previewSource = state.previewMode === "original"
           ? item.sourceCanvas
           : state.previewMode === "alpha" || state.previewMode === "difference"
@@ -1319,6 +1289,7 @@
             : item.resultCanvas;
         drawPreviewCanvas(elements.cutoutResult, previewSource);
       } catch (error) {
+        if (error?.name === "AbortError") return;
         drawPreviewCanvas(elements.cutoutResult, null);
         setStatus(text("frameFailed", {
           index: state.selectedIndex + 1,
@@ -1389,10 +1360,13 @@
      * @returns {void}
      */
     function schedulePreview() {
+      cutoutExecutor.cancelAll();
       state.previewRevision += 1;
       state.thumbnailRevision += 1;
       state.thumbnailJob += 1;
       for (const item of state.items) {
+        item.processingRevision = Number(item.processingRevision || 0) + 1;
+        item.processingPromise = null;
         item.status = "ready";
         item.error = "";
         item.resultCanvas = null;
@@ -1421,6 +1395,8 @@
      */
     function invalidateItem(item) {
       if (!item) return;
+      item.processingRevision = Number(item.processingRevision || 0) + 1;
+      item.processingPromise = null;
       item.status = "ready";
       item.error = "";
       item.resultCanvas = null;
@@ -1497,6 +1473,13 @@
       state.selectedIndex = nextIndex;
       state.samplingProtectedColor = false;
       state.samplingBackgroundColor = false;
+      const visibleIndex = state.qualityOnly
+        ? state.items
+          .slice(0, nextIndex)
+          .filter(hasQualityIssue)
+          .length
+        : nextIndex;
+      elements.cutoutQueue.scrollLeft = Math.max(0, visibleIndex * 140 - elements.cutoutQueue.clientWidth / 2);
       renderQueue();
       renderPreview();
       elements.cutoutQueue.querySelector(`[data-index="${nextIndex}"]`)?.scrollIntoView({
@@ -1562,14 +1545,16 @@
         && index !== state.selectedIndex
         && item.thumbnailRevision !== state.thumbnailRevision
       ));
-      const processNext = () => {
+      const processNext = async () => {
         if (job !== state.thumbnailJob || elements.cutoutModal.hidden || !candidates.length) return;
         const item = candidates.shift();
         try {
-          processItem(item);
-        } catch (_error) {
+          await processItem(item);
+        } catch (error) {
+          if (error?.name === "AbortError") return;
           // Per-frame status is rendered below; one bad image must not stop the batch.
         }
+        if (job !== state.thumbnailJob) return;
         updateQueueCard(item);
         if (item !== selectedItem()) {
           item.resultCanvas = null;
@@ -1622,8 +1607,30 @@
     function renderQueue() {
       const previousScroll = elements.cutoutQueue.scrollLeft;
       elements.cutoutQueue.innerHTML = "";
-      state.items.forEach((item, index) => {
-        if (state.qualityOnly && !hasQualityIssue(item)) return;
+      const filteredItems = state.items
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => !state.qualityOnly || hasQualityIssue(item));
+      const itemStride = 140;
+      const visibleCount = Math.max(
+        20,
+        Math.ceil((elements.cutoutQueue.clientWidth || 840) / itemStride) + 20,
+      );
+      const start = Math.max(0, Math.min(
+        filteredItems.length,
+        Math.floor(previousScroll / itemStride) - 10,
+      ));
+      const end = Math.min(filteredItems.length, start + visibleCount);
+      state.queueWindowStart = start;
+      const appendSpacer = (count) => {
+        if (count <= 0) return;
+        const spacer = document.createElement("div");
+        spacer.className = "cutoutQueueSpacer";
+        spacer.style.flexBasis = `${count * itemStride}px`;
+        spacer.setAttribute("aria-hidden", "true");
+        elements.cutoutQueue.appendChild(spacer);
+      };
+      appendSpacer(start);
+      filteredItems.slice(start, end).forEach(({ item, index }) => {
         const card = document.createElement("div");
         card.tabIndex = 0;
         card.setAttribute("role", "option");
@@ -1713,7 +1720,8 @@
         elements.cutoutQueue.appendChild(card);
         updateQueueCard(item);
       });
-      if (state.qualityOnly && !elements.cutoutQueue.children.length) {
+      appendSpacer(filteredItems.length - end);
+      if (state.qualityOnly && !filteredItems.length) {
         const empty = document.createElement("div");
         empty.className = "cutoutQueueEmpty";
         empty.textContent = text("qualityFilteredEmpty");
@@ -1747,7 +1755,7 @@
       state.busy = true;
       renderStatus();
       try {
-        const settled = await Promise.allSettled(files.map(loadFileImage));
+        const settled = await mapSettledWithConcurrency(files, loadFileImage);
         const additions = [];
         const failures = [];
         settled.forEach((result, index) => {
@@ -1852,14 +1860,14 @@
           const { item, index } = includedItems[queueIndex];
           setStatus(text("processing", { current: queueIndex + 1, total: includedItems.length }), "busy");
           try {
-            processItem(item);
+            await processItem(item);
             removedPixels += item.statistics.removedPixels;
-            outputs.push({
-              name: uniquePngName(item.name, outputNameCounts),
+            outputs.push(outputCore.createOutput({
+              name: outputCore.uniquePngName(item.name, outputNameCounts),
               frame: item.frame,
               data: item.resultCanvas.toDataURL("image/png"),
               canvas: item.resultCanvas,
-            });
+            }));
           } catch (error) {
             failures.push({ index, name: item.name, message: error.message });
           }
@@ -1940,11 +1948,10 @@
             error: item.error || "",
           })),
         };
-        const archiveEntries = outputs.map((output) => ({
-          name: output.name,
-          data: output.data,
-        }));
-        archiveEntries.push({ name: "cutout-manifest.json", data: JSON.stringify(manifest, null, 2) });
+        const archiveEntries = outputCore.createArchiveEntries(
+          outputs,
+          JSON.stringify(manifest, null, 2),
+        );
         const archive = await batchZip.buildZip(archiveEntries, {
           compress: true,
           onProgress(current, total) {
@@ -2134,20 +2141,38 @@
 
     /**
      * Propagates the latest repair with PCA mapping and sequential motion tracking.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    function propagateLatestRepair() {
+    async function propagateLatestRepair() {
       const sourceItem = selectedItem();
       const repair = sourceItem?.repairs?.at(-1);
       if (!sourceItem || !repair) {
         setStatus(text("batchRepairUnavailable"), "error");
         return;
       }
-      processItem(sourceItem);
-      const repairCenter = {
-        x: (repair.x1 + repair.x2) / 2,
-        y: (repair.y1 + repair.y2) / 2,
-      };
+      try {
+        await processItem(sourceItem);
+      } catch (error) {
+        if (error?.name !== "AbortError") {
+          setStatus(text("failed", { message: error.message }), "error");
+        }
+        return;
+      }
+      const isBrushRepair = repair.mode === "brush" || repair.mode === "eraser";
+      const repairPoints = isBrushRepair && Array.isArray(repair.points) ? repair.points : [];
+      const repairCenter = isBrushRepair
+        ? repairPoints.reduce((center, point) => ({
+          x: center.x + point.x / Math.max(1, repairPoints.length),
+          y: center.y + point.y / Math.max(1, repairPoints.length),
+        }), { x: 0, y: 0 })
+        : {
+          x: (repair.x1 + repair.x2) / 2,
+          y: (repair.y1 + repair.y2) / 2,
+        };
+      if (!Number.isFinite(repairCenter.x) || !Number.isFinite(repairCenter.y)) {
+        setStatus(text("batchRepairUnavailable"), "error");
+        return;
+      }
       const sourceDescriptor = sourceItem.shapeCandidates.reduce((closest, candidate) => {
         if (!closest) return candidate;
         const candidateDistance = Math.hypot(
@@ -2167,11 +2192,17 @@
       let propagated = 0;
       let skipped = 0;
       const repairId = repair.id || (repair.id = root.crypto?.randomUUID?.() || `repair_${Date.now()}`);
-      const propagateDirection = (indices) => {
+      const propagateDirection = async (indices) => {
         const trackingState = tracking.createTrackingState(sourceDescriptor);
         for (const index of indices) {
           const item = state.items[index];
-          processItem(item);
+          try {
+            await processItem(item);
+          } catch (error) {
+            if (error?.name === "AbortError") return;
+            skipped += 1;
+            continue;
+          }
           const match = tracking.selectTrackedCandidate(
             sourceDescriptor,
             item.shapeCandidates,
@@ -2183,23 +2214,34 @@
             continue;
           }
           tracking.advanceTrackingState(trackingState, match.candidate);
-          const rectangle = tracking.mapRectangle(repair, sourceDescriptor, match.candidate);
-          const rectangleCenter = {
-            x: (rectangle.x1 + rectangle.x2) / 2,
-            y: (rectangle.y1 + rectangle.y2) / 2,
-          };
+          const mappedGeometry = isBrushRepair
+            ? tracking.mapBrushStroke(repair, sourceDescriptor, match.candidate)
+            : tracking.mapRectangle(repair, sourceDescriptor, match.candidate);
+          if (isBrushRepair && !mappedGeometry.points.length) {
+            skipped += 1;
+            continue;
+          }
+          const mappedCenter = isBrushRepair
+            ? mappedGeometry.points.reduce((center, point) => ({
+              x: center.x + point.x / mappedGeometry.points.length,
+              y: center.y + point.y / mappedGeometry.points.length,
+            }), { x: 0, y: 0 })
+            : {
+              x: (mappedGeometry.x1 + mappedGeometry.x2) / 2,
+              y: (mappedGeometry.y1 + mappedGeometry.y2) / 2,
+            };
           const backgroundColor = tracking.sampleMatchingColor(
             item.sourceImageData.data,
             item.sourceImageData.width,
             item.sourceImageData.height,
             repair.backgroundColor || selectedBackgroundColor(sourceItem),
-            rectangleCenter,
+            mappedCenter,
             15,
           );
           item.repairs = (item.repairs || []).filter((candidate) => candidate.propagatedFrom !== repairId);
           item.repairs.push({
             ...repair,
-            ...rectangle,
+            ...mappedGeometry,
             id: root.crypto?.randomUUID?.() || `repair_${Date.now()}_${index}`,
             propagatedFrom: repairId,
             backgroundColor,
@@ -2209,18 +2251,27 @@
           propagated += 1;
         }
       };
-      propagateDirection(
-        Array.from(
-          { length: state.items.length - state.selectedIndex - 1 },
-          (_unused, offset) => state.selectedIndex + offset + 1,
-        ),
-      );
-      propagateDirection(
-        Array.from(
-          { length: state.selectedIndex },
-          (_unused, offset) => state.selectedIndex - offset - 1,
-        ),
-      );
+      try {
+        await Promise.all([
+          propagateDirection(
+            Array.from(
+              { length: state.items.length - state.selectedIndex - 1 },
+              (_unused, offset) => state.selectedIndex + offset + 1,
+            ),
+          ),
+          propagateDirection(
+            Array.from(
+              { length: state.selectedIndex },
+              (_unused, offset) => state.selectedIndex - offset - 1,
+            ),
+          ),
+        ]);
+      } catch (error) {
+        if (error?.name !== "AbortError") {
+          setStatus(text("failed", { message: error.message }), "error");
+        }
+        return;
+      }
       renderPreview();
       scheduleBatchThumbnails();
       setStatus(text("batchRepaired", { count: propagated, skipped }), "success");
@@ -2530,8 +2581,17 @@
     });
     elements.cutoutCancelProcess.addEventListener("click", () => {
       state.cancelRequested = true;
+      cutoutExecutor.cancelAll();
       renderStatus();
     });
+    elements.cutoutQueue.addEventListener("scroll", () => {
+      if (state.queueRenderFrame) return;
+      state.queueRenderFrame = requestAnimationFrame(() => {
+        state.queueRenderFrame = 0;
+        const nextStart = Math.max(0, Math.floor(elements.cutoutQueue.scrollLeft / 140) - 10);
+        if (Math.abs(nextStart - state.queueWindowStart) >= 5) renderQueue();
+      });
+    }, { passive: true });
     elements.cutoutConfirmCancel.addEventListener("click", () => resolveConfirmation(false));
     elements.cutoutConfirmApply.addEventListener("click", () => resolveConfirmation(true));
     elements.cutoutOriginal.addEventListener("pointerdown", (event) => {
@@ -2581,7 +2641,7 @@
       }
       renderPreview();
     });
-    elements.cutoutResult.addEventListener("pointerup", (event) => {
+    elements.cutoutResult.addEventListener("pointerup", async (event) => {
       const item = selectedItem();
       const drag = state.repairDrag;
       if (!item || !drag || drag.pointerId !== event.pointerId) return;
@@ -2611,7 +2671,15 @@
         return;
       }
       if (state.repairMode === "protect") {
-        const extracted = core.extractProtectedColors(
+        try {
+          await processItem(item);
+        } catch (error) {
+          if (error?.name !== "AbortError") {
+            setStatus(text("failed", { message: error.message }), "error");
+          }
+          return;
+        }
+        const selection = core.selectProtectedColorsInRectangle(
           item.sourceImageData.data,
           item.sourceImageData.width,
           item.sourceImageData.height,
@@ -2626,11 +2694,11 @@
             maximumColors: 32,
             coverage: 0.95,
             excludeColors: selectedBackgroundColors(item),
-            excludeTolerance: Math.max(4, Number(elements.cutoutTolerance.value) * 0.55),
-            perceptual: elements.cutoutPerceptual.checked,
+            existingColors: item.protectedColors,
+            previewData: item.automaticImageData?.data || item.resultImageData?.data || null,
           },
         );
-        for (const color of extracted) {
+        for (const color of selection.colors) {
           if (item.protectedColors.length >= 32) break;
           const duplicate = item.protectedColors.some((candidate) => (
             core.colorDistance(color.r, color.g, color.b, candidate) < 2
@@ -2638,7 +2706,13 @@
           if (!duplicate) item.protectedColors.push({ r: color.r, g: color.g, b: color.b });
         }
         invalidateItem(item);
-        setStatus(text("protectedRegion", { count: extracted.length }), "success");
+        setStatus(
+          text(
+            selection.status === 0 ? "protectedRegionCoverage" : "protectedRegionIncomplete",
+            { count: selection.count, coverage: selection.coverage },
+          ),
+          selection.status === 0 ? "success" : "idle",
+        );
         renderPreview();
         return;
       }
@@ -2666,6 +2740,96 @@
     elements.cutoutResult.addEventListener("pointercancel", () => {
       state.repairDrag = null;
       renderPreview();
+    });
+    elements.cutoutResult.addEventListener("keydown", async (event) => {
+      const item = selectedItem();
+      if (!item || state.previewMode !== "result") return;
+      const { width, height } = item.sourceImageData;
+      const point = state.keyboardRepairPoint || { x: Math.floor(width / 2), y: Math.floor(height / 2) };
+      const step = event.shiftKey ? 10 : 1;
+      if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        elements.cutoutZoomIn.click();
+        return;
+      }
+      if (event.key === "-") {
+        event.preventDefault();
+        elements.cutoutZoomOut.click();
+        return;
+      }
+      const deltas = {
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+      };
+      if (deltas[event.key]) {
+        event.preventDefault();
+        point.x = Math.max(0, Math.min(width - 1, point.x + deltas[event.key][0]));
+        point.y = Math.max(0, Math.min(height - 1, point.y + deltas[event.key][1]));
+        state.keyboardRepairPoint = point;
+        setStatus(`Keyboard repair cursor: ${point.x + 1}, ${point.y + 1}`, "idle");
+        return;
+      }
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const radius = Math.max(2, Math.round(Number(elements.cutoutBrushSize.value) / 2));
+      if (state.repairMode === "brush" || state.repairMode === "eraser") {
+        const colorHex = elements.cutoutBrushColor.value || "#00c800";
+        item.repairs.push({
+          id: root.crypto?.randomUUID?.() || `repair_${Date.now()}`,
+          mode: state.repairMode,
+          points: [{ x: point.x, y: point.y }],
+          size: radius * 2,
+          hardness: Number(elements.cutoutBrushHardness.value) / 100,
+          opacity: Number(elements.cutoutBrushOpacity.value) / 100,
+          color: {
+            r: Number.parseInt(colorHex.slice(1, 3), 16),
+            g: Number.parseInt(colorHex.slice(3, 5), 16),
+            b: Number.parseInt(colorHex.slice(5, 7), 16),
+          },
+        });
+      } else if (state.repairMode === "protect") {
+        try {
+          await processItem(item);
+        } catch (error) {
+          if (error?.name !== "AbortError") {
+            setStatus(text("failed", { message: error.message }), "error");
+          }
+          return;
+        }
+        const selection = core.selectProtectedColorsInRectangle(
+          item.sourceImageData.data,
+          width,
+          height,
+          { x1: point.x - radius, y1: point.y - radius, x2: point.x + radius, y2: point.y + radius },
+          {
+            maximumSamples: 5000,
+            maximumColors: Math.max(0, 32 - item.protectedColors.length),
+            coverage: 0.95,
+            excludeColors: selectedBackgroundColors(item),
+            existingColors: item.protectedColors,
+            previewData: item.automaticImageData?.data || item.resultImageData?.data || null,
+          },
+        );
+        item.protectedColors.push(...selection.colors.slice(0, 32 - item.protectedColors.length));
+      } else {
+        item.repairs.push({
+          id: root.crypto?.randomUUID?.() || `repair_${Date.now()}`,
+          mode: state.repairMode,
+          x1: point.x - radius,
+          y1: point.y - radius,
+          x2: point.x + radius,
+          y2: point.y + radius,
+          backgroundColor: { ...selectedBackgroundColor(item) },
+          tolerance: Number(elements.cutoutTolerance.value),
+          feather: Number(elements.cutoutFeather.value),
+        });
+      }
+      item.undoneRepairs = [];
+      invalidateItem(item);
+      renderPreview();
+      setStatus(text("repaired", { mode: state.repairMode }), "success");
     });
     [elements.cutoutOriginal, elements.cutoutResult].forEach((canvas) => {
       canvas.addEventListener("wheel", (event) => zoomPreviewAtPointer(event, canvas), { passive: false });

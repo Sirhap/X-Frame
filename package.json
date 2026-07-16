@@ -7,10 +7,25 @@
   "type": "commonjs",
   "scripts": {
     "start": "node tools/animation_tuner/server.js",
-    "check": "node --check tools/animation_tuner/server.js && node --check tools/animation_tuner/public/app.js && node --check tools/animation_tuner/public/batch_cutout_core.js && node --check tools/animation_tuner/public/batch_zip.js && node --check tools/animation_tuner/public/cutout_tracking_core.js && node --check tools/animation_tuner/public/batch_cutout.js && node --check tools/animation_tuner/public/frame_organizer_core.js && node --check tools/animation_tuner/public/frame_organizer.js && node --check tools/framepacker_reference_manifest.js && node --check tools/frame_organizer.js && node --check tools/import_frames.js && node --check tools/import_batch.js && node --check tools/import_spriteframes.js && node --check tools/validate_import.js && node --check tools/godot_sync.js && node --check tools/godot_runtime.js && node --check tools/updater.js && node --check tools/self_test.js",
-    "test": "node tools/self_test.js"
+    "check": "npm run check:syntax && npm run lint && npm run format:check && npm run typecheck",
+    "check:syntax": "node --check tools/animation_tuner/server.js && node --check tools/animation_tuner/server_io_worker.js && node --check tools/animation_tuner/public/app.js && node --check tools/animation_tuner/public/batch_cutout_product_core.js && node --check tools/animation_tuner/public/batch_cutout_protection_core.js && node --check tools/animation_tuner/public/batch_cutout_reference_recovery_core.js && node --check tools/animation_tuner/public/batch_cutout_reference_replace_core.js && node --check tools/animation_tuner/public/batch_cutout_core.js && node --check tools/animation_tuner/public/batch_zip.js && node --check tools/animation_tuner/public/batch_cutout_output_core.js && node --check tools/animation_tuner/public/batch_cutout_worker_client.js && node --check tools/animation_tuner/public/batch_cutout_worker.js && node --check tools/animation_tuner/public/cutout_quality_core.js && node --check tools/animation_tuner/public/cutout_tracking_core.js && node --check tools/animation_tuner/public/batch_cutout.js && node --check tools/animation_tuner/public/frame_organizer_core.js && node --check tools/animation_tuner/public/frame_organizer.js && node --check tools/framepacker_reference_manifest.js && node --check tools/framepacker_perf_baseline.js && node --check tools/frame_organizer.js && node --check tools/import_frames.js && node --check tools/import_batch.js && node --check tools/import_spriteframes.js && node --check tools/validate_import.js && node --check tools/godot_sync.js && node --check tools/godot_runtime.js && node --check tools/updater.js && node --check tools/project_store.js && node --check tools/self_test.js",
+    "lint": "eslint .",
+    "format:check": "prettier --check eslint.config.js playwright.config.js tools/animation_tuner/server_io_worker.js tools/animation_tuner/public/batch_cutout_output_core.js tools/animation_tuner/public/batch_cutout_worker.js tools/animation_tuner/public/batch_cutout_worker_client.js tools/framepacker_perf_baseline.js tools/project_store.js tools/tests/*.test.js tools/tests/e2e/*.js tools/typecheck/framepacker_contracts.ts tools/updater.js",
+    "typecheck": "tsc -p tsconfig.framepacker.json",
+    "test": "node tools/self_test.js && node --test tools/tests/*.test.js",
+    "test:e2e": "playwright test",
+    "test:coverage": "c8 --reporter=text --reporter=html node tools/self_test.js",
+    "perf:framepacker": "node tools/framepacker_perf_baseline.js",
+    "perf:framepacker:check": "node tools/framepacker_perf_baseline.js --check"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.1",
+    "c8": "^10.1.3",
+    "eslint": "^9.31.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.8.3"
   }
 }

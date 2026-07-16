@@ -1,14 +1,15 @@
 const http = require("node:http");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
+const { Worker } = require("node:worker_threads");
 const { EMPTY_MANIFEST, EMPTY_TUNING, createProjectStore, reslash } = require("../project_store");
-const { syncFrameAudio, syncGodotProject } = require("../godot_sync");
 const { importAnimation, reorganizeAnimation } = require("../frame_organizer");
 const { checkForUpdates, performUpdate } = require("../updater");
 
-const ROOT = path.resolve(__dirname, "..", "..");
+const ROOT = path.resolve(process.env.XSXB_ROOT || path.resolve(__dirname, "..", ".."));
 const PUBLIC = path.join(__dirname, "public");
 const PORT = Number(process.env.PORT || 5179);
 const projectStore = createProjectStore(ROOT);
@@ -16,7 +17,8 @@ const UPDATE_TOKEN = crypto.randomBytes(24).toString("hex");
 let restartScheduled = false;
 const DEFAULT_BODY_LIMIT = 2 * 1024 * 1024;
 const SAVE_BODY_LIMIT = 64 * 1024 * 1024;
-const MEDIA_BODY_LIMIT = 256 * 1024 * 1024;
+const MEDIA_BODY_LIMIT = 96 * 1024 * 1024;
+const projectWriteQueues = new Map();
 const MEDIA_ROUTES = new Set([
   "/api/attachment-assets",
   "/api/frame-attachment-image",
@@ -124,29 +126,202 @@ function validateWriteRequest(req) {
  */
 function readBody(req, limit) {
   return new Promise((resolve, reject) => {
-    let body = "";
+    const declaredLength = Number(req.headers["content-length"] || 0);
+    if (Number.isFinite(declaredLength) && declaredLength > limit) {
+      req.resume();
+      reject(new HttpError(413, `Request body exceeds the ${Math.round(limit / 1024 / 1024)} MB limit.`));
+      return;
+    }
+    const chunks = [];
     let received = 0;
     let settled = false;
-    req.setEncoding("utf8");
     req.on("data", (chunk) => {
       if (settled) return;
-      received += Buffer.byteLength(chunk, "utf8");
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      received += buffer.length;
       if (received > limit) {
         settled = true;
-        body = "";
+        chunks.length = 0;
         req.resume();
         reject(new HttpError(413, `Request body exceeds the ${Math.round(limit / 1024 / 1024)} MB limit.`));
         return;
       }
-      body += chunk;
+      chunks.push(buffer);
     });
     req.on("end", () => {
-      if (!settled) resolve(body);
+      if (!settled) resolve(Buffer.concat(chunks, received).toString("utf8"));
     });
     req.on("error", (error) => {
       if (!settled) reject(error);
     });
   });
+}
+
+/**
+ * Serializes filesystem mutations for one project without blocking unrelated projects.
+ * @template T
+ * @param {string} projectId Stable project identifier.
+ * @param {()=>Promise<T>|T} operation Mutation to execute.
+ * @returns {Promise<T>} Operation result.
+ */
+function withProjectWrite(projectId, operation) {
+  const key = String(projectId || "__registry__");
+  const previous = projectWriteQueues.get(key) || Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  projectWriteQueues.set(key, current);
+  return current.finally(() => {
+    if (projectWriteQueues.get(key) === current) projectWriteQueues.delete(key);
+  });
+}
+
+/**
+ * Runs blocking Godot synchronization in a worker thread.
+ * @param {"syncProject"|"syncAudio"} action Worker action.
+ * @param {object} project Project record.
+ * @param {object} [options] Serializable action options.
+ * @returns {Promise<object>} Synchronization result.
+ */
+function runServerIoWorker(action, project, options = {}) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(path.join(__dirname, "server_io_worker.js"), {
+      workerData: { action, root: ROOT, project, options },
+    });
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
+    worker.once("message", (message) => {
+      if (message?.ok) finish(resolve, message.result);
+      else finish(reject, new Error(message?.error || "Background filesystem operation failed."));
+    });
+    worker.once("error", (error) => finish(reject, error));
+    worker.once("exit", (code) => {
+      if (code !== 0) finish(reject, new Error(`Background filesystem worker exited with code ${code}.`));
+    });
+  });
+}
+
+/**
+ * Synchronizes all Godot outputs without blocking unrelated HTTP requests.
+ * @param {object} project Project record.
+ * @param {object} [options] Synchronization inputs.
+ * @returns {Promise<object>} Synchronization summary.
+ */
+function syncGodotProjectAsync(project, options = {}) {
+  return runServerIoWorker("syncProject", project, options);
+}
+
+/**
+ * Synchronizes frame audio without blocking the HTTP event loop.
+ * @param {object} project Project record.
+ * @param {object[]} bindings Audio bindings.
+ * @returns {Promise<object>} Synchronization summary.
+ */
+function syncFrameAudioAsync(project, bindings) {
+  return runServerIoWorker("syncAudio", project, { bindings });
+}
+
+/**
+ * Computes an optimistic concurrency token from all persisted project JSON.
+ * @param {object} project Project record.
+ * @returns {string} SHA-256 revision token.
+ */
+function projectDataRevision(project) {
+  projectStore.ensureProjectFiles(project);
+  const paths = projectStore.projectPaths(project);
+  const files = [
+    paths.manifest,
+    paths.tuning,
+    paths.frameAudio,
+    paths.frameImageAttachments,
+    paths.attachmentAssets,
+  ];
+  const hash = crypto.createHash("sha256");
+  for (const filePath of files) {
+    hash.update(path.basename(filePath));
+    hash.update(fs.readFileSync(filePath));
+  }
+  return hash.digest("hex");
+}
+
+/**
+ * Captures paths in a temporary directory for transactional rollback.
+ * @param {string[]} inputPaths Files or directories to preserve.
+ * @returns {Promise<{restore:()=>Promise<void>,dispose:()=>Promise<void>}>} Snapshot controls.
+ */
+async function createFilesystemSnapshot(inputPaths) {
+  const snapshotRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "xsxb-save-"));
+  const entries = [];
+  const targets = [...new Set(inputPaths.filter(Boolean).map((entry) => path.resolve(entry)))];
+  for (let index = 0; index < targets.length; index += 1) {
+    const targetPath = targets[index];
+    const snapshotPath = path.join(snapshotRoot, String(index));
+    const existed = await fs.promises.access(targetPath).then(() => true).catch(() => false);
+    if (existed) await fs.promises.cp(targetPath, snapshotPath, { recursive: true });
+    entries.push({ existed, snapshotPath, targetPath });
+  }
+  let disposed = false;
+  return {
+    async restore() {
+      for (const entry of entries) {
+        await fs.promises.rm(entry.targetPath, { recursive: true, force: true });
+        if (entry.existed) {
+          await fs.promises.mkdir(path.dirname(entry.targetPath), { recursive: true });
+          await fs.promises.cp(entry.snapshotPath, entry.targetPath, { recursive: true });
+        }
+      }
+    },
+    async dispose() {
+      if (disposed) return;
+      disposed = true;
+      await fs.promises.rm(snapshotRoot, { recursive: true, force: true });
+    },
+  };
+}
+
+/**
+ * Lists files that may be changed while updating the embedded runtime project id.
+ * @param {object} project Project record.
+ * @returns {string[]} Matching GDScript paths.
+ */
+function runtimeProjectIdFiles(project) {
+  const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
+  const matches = [];
+  if (!projectRoot || !fs.existsSync(projectRoot)) return matches;
+  const walk = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (!GDSCRIPT_SKIP_DIRS.has(entry.name)) walk(fullPath);
+      } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === ".gd") {
+        const text = fs.readFileSync(fullPath, "utf8");
+        if (/const\s+XSXB_PROJECT_ID\s*:\s*String\s*=/.test(text)) matches.push(fullPath);
+      }
+    }
+  };
+  walk(projectRoot);
+  return matches;
+}
+
+/**
+ * Returns all paths touched by a full Save synchronization.
+ * @param {object} project Project record.
+ * @returns {string[]} Transaction paths.
+ */
+function saveTransactionPaths(project) {
+  const paths = projectStore.projectPaths(project);
+  const godotOutput = project?.projectRoot
+    ? path.join(path.resolve(project.projectRoot), "xsxb_frame_tuner")
+    : "";
+  return [
+    paths.tuning,
+    paths.frameAudio,
+    paths.frameImageAttachments,
+    godotOutput,
+    ...runtimeProjectIdFiles(project),
+  ];
 }
 
 /**
@@ -999,6 +1174,7 @@ function configResponse(projectId) {
       frameAudioBindings: [],
       frameImageAttachments: [],
       attachmentAssets: [],
+      dataRevision: "",
       tuning: tuningForClient(EMPTY_TUNING),
       tuningDefaults: {},
       bossTuning: {},
@@ -1044,6 +1220,7 @@ function configResponse(projectId) {
     frameAudioBindings: readFrameAudioBindings(project),
     frameImageAttachments: readFrameImageAttachments(project),
     attachmentAssets: readAttachmentAssets(project),
+    dataRevision: projectDataRevision(project),
     tuning: tuningForClient(tuningFile),
     tuningDefaults: {},
     bossTuning: {},
@@ -1180,6 +1357,99 @@ function replaceFrameImage(payload, project) {
   return { path: relPath, ...getPngSize(fullPath) };
 }
 
+/**
+ * Atomically replaces an ordered animation frame batch.
+ * Every target and PNG payload is validated before temporary files are staged.
+ * If a commit fails, already replaced files are restored from their original bytes.
+ * @param {Array<{path:string}>} frames Ordered target frame descriptors.
+ * @param {Array<{data:string}>} files Ordered PNG payloads.
+ * @param {object} project Active project descriptor.
+ * @returns {{
+ *   frames:Array<{path:string,width:number,height:number}>,
+ *   rollback:()=>void
+ * }}
+ */
+function replaceAnimationImages(frames, files, project) {
+  if (!frames.length || frames.length !== files.length) {
+    throw new HttpError(400, `Expected exactly ${frames.length} PNG files`);
+  }
+  const workspaceDir = projectStore.projectWorkspaceDir(project);
+  const seenTargets = new Set();
+  const replacements = frames.map((frame, index) => {
+    const relPath = reslash(frame?.path || "");
+    const fullPath = safeResolve(ROOT, relPath);
+    if (
+      !fullPath
+      || !isInside(fullPath, workspaceDir)
+      || path.extname(fullPath).toLowerCase() !== ".png"
+    ) {
+      throw new Error("Frame replacement path must be a PNG under the active project workspace.");
+    }
+    const targetKey = process.platform === "darwin" || process.platform === "win32"
+      ? fullPath.toLowerCase()
+      : fullPath;
+    if (seenTargets.has(targetKey)) throw new Error(`Duplicate frame replacement path: ${relPath}`);
+    seenTargets.add(targetKey);
+    const match = /^data:image\/png;base64,(.+)$/i.exec(String(files[index]?.data || ""));
+    if (!match) throw new Error(`Expected a PNG data URL for frame ${index + 1}.`);
+    const bytes = Buffer.from(match[1], "base64");
+    if (bytes.length < 24 || bytes.toString("ascii", 1, 4) !== "PNG") {
+      throw new Error(`Invalid PNG data for frame ${index + 1}.`);
+    }
+    return {
+      relPath,
+      fullPath,
+      bytes,
+      original: fs.existsSync(fullPath) ? fs.readFileSync(fullPath) : null,
+      tempPath: `${fullPath}.cutout-${process.pid}-${Date.now()}-${index}`,
+    };
+  });
+  try {
+    for (const replacement of replacements) {
+      fs.mkdirSync(path.dirname(replacement.fullPath), { recursive: true });
+      fs.writeFileSync(replacement.tempPath, replacement.bytes);
+    }
+    const committed = [];
+    try {
+      for (const replacement of replacements) {
+        fs.renameSync(replacement.tempPath, replacement.fullPath);
+        committed.push(replacement);
+      }
+    } catch (error) {
+      for (const replacement of committed.reverse()) {
+        if (replacement.original !== null) {
+          fs.writeFileSync(replacement.fullPath, replacement.original);
+        } else {
+          fs.rmSync(replacement.fullPath, { force: true });
+        }
+      }
+      throw error;
+    }
+  } finally {
+    for (const replacement of replacements) {
+      fs.rmSync(replacement.tempPath, { force: true });
+    }
+  }
+  let rolledBack = false;
+  return {
+    frames: replacements.map((replacement) => ({
+      path: replacement.relPath,
+      ...getPngSize(replacement.fullPath),
+    })),
+    rollback() {
+      if (rolledBack) return;
+      for (const replacement of [...replacements].reverse()) {
+        if (replacement.original !== null) {
+          fs.writeFileSync(replacement.fullPath, replacement.original);
+        } else {
+          fs.rmSync(replacement.fullPath, { force: true });
+        }
+      }
+      rolledBack = true;
+    },
+  };
+}
+
 function projectsResponse() {
   const registry = projectStore.readRegistry();
   return {
@@ -1237,7 +1507,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 403, { error: "Invalid update token." });
       }
       if (restartScheduled) return send(res, 409, { error: "A tuner restart is already scheduled." });
-      const update = performUpdate(ROOT);
+      const update = await performUpdate(ROOT);
       res.setHeader("connection", "close");
       send(res, 200, { ok: true, update });
       scheduleServerRestart();
@@ -1248,20 +1518,24 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && parsed.pathname === "/api/projects") {
       const payload = await readJsonBody(req, parsed.pathname);
-      const registry = projectStore.addProject(payload);
-      return send(res, 200, {
-        ok: true,
-        activeProjectId: registry.activeProjectId,
-        projects: registry.projects.map(projectStore.projectForClient),
+      return await withProjectWrite("__registry__", () => {
+        const registry = projectStore.addProject(payload);
+        return send(res, 200, {
+          ok: true,
+          activeProjectId: registry.activeProjectId,
+          projects: registry.projects.map(projectStore.projectForClient),
+        });
       });
     }
     if (req.method === "POST" && parsed.pathname === "/api/projects/active") {
       const payload = await readJsonBody(req, parsed.pathname);
-      const registry = projectStore.setActiveProject(payload.projectId);
-      return send(res, 200, {
-        ok: true,
-        activeProjectId: registry.activeProjectId,
-        projects: registry.projects.map(projectStore.projectForClient),
+      return await withProjectWrite("__registry__", () => {
+        const registry = projectStore.setActiveProject(payload.projectId);
+        return send(res, 200, {
+          ok: true,
+          activeProjectId: registry.activeProjectId,
+          projects: registry.projects.map(projectStore.projectForClient),
+        });
       });
     }
     if (req.method === "GET" && parsed.pathname === "/api/config") {
@@ -1270,77 +1544,145 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && parsed.pathname === "/api/save") {
       const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      saveTuningPayload(payload, project);
-      let frameAudioBindings = null;
-      if (Array.isArray(payload.frame_audio_bindings) || Array.isArray(payload.frameAudioBindings) || payload.frameAudioBindings) {
-        frameAudioBindings = saveFrameAudioBindings(payload.frame_audio_bindings || payload.frameAudioBindings, project);
-      }
-      let frameImageAttachments = null;
-      if (Array.isArray(payload.frame_image_attachments) || Array.isArray(payload.frameImageAttachments)) {
-        frameImageAttachments = saveFrameImageAttachments(payload.frame_image_attachments || payload.frameImageAttachments, project);
-      }
-      let godotSync;
-      let runtimeProjectIdFiles;
-      try {
-        godotSync = syncGodotProject(ROOT, projectStore, project, {
-          ...(frameAudioBindings ? { frameAudioBindings } : {}),
-          ...(frameImageAttachments ? { frameImageAttachments } : {}),
-        });
-        runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
-      } catch (error) {
-        return send(res, 502, {
-          error: String(error.message || error),
-          localSaved: true,
-          warnings: validateProject(project, readManifest(project)),
-        });
-      }
-      return send(res, 200, {
-        ok: true,
-        tuning: tuningForClient(readTuningFile(project)),
-        godotSync,
-        runtimeProjectIdFiles,
-        warnings: validateProject(project, readManifest(project)),
+      return await withProjectWrite(project.id, async () => {
+        const currentRevision = projectDataRevision(project);
+        const baseRevision = String(payload.baseRevision || "");
+        if (baseRevision && baseRevision !== currentRevision) {
+          return send(res, 409, {
+            error: "Project data changed in another window. Reload before saving to avoid overwriting newer work.",
+            code: "revision_conflict",
+            dataRevision: currentRevision,
+          });
+        }
+        const transaction = await createFilesystemSnapshot(saveTransactionPaths(project));
+        try {
+          saveTuningPayload(payload, project);
+          let frameAudioBindings = null;
+          if (Array.isArray(payload.frame_audio_bindings) || Array.isArray(payload.frameAudioBindings) || payload.frameAudioBindings) {
+            frameAudioBindings = saveFrameAudioBindings(payload.frame_audio_bindings || payload.frameAudioBindings, project);
+          }
+          let frameImageAttachments = null;
+          if (Array.isArray(payload.frame_image_attachments) || Array.isArray(payload.frameImageAttachments)) {
+            frameImageAttachments = saveFrameImageAttachments(payload.frame_image_attachments || payload.frameImageAttachments, project);
+          }
+          const godotSync = await syncGodotProjectAsync(project, {
+            ...(frameAudioBindings ? { frameAudioBindings } : {}),
+            ...(frameImageAttachments ? { frameImageAttachments } : {}),
+          });
+          const changedRuntimeProjectIdFiles = syncGodotRuntimeProjectId(project);
+          const dataRevision = projectDataRevision(project);
+          await transaction.dispose();
+          return send(res, 200, {
+            ok: true,
+            tuning: tuningForClient(readTuningFile(project)),
+            godotSync,
+            runtimeProjectIdFiles: changedRuntimeProjectIdFiles,
+            dataRevision,
+            warnings: validateProject(project, readManifest(project)),
+          });
+        } catch (error) {
+          try {
+            await transaction.restore();
+          } catch (rollbackError) {
+            await transaction.dispose();
+            throw new AggregateError(
+              [error, rollbackError],
+              "Save failed and filesystem rollback was incomplete.",
+            );
+          }
+          await transaction.dispose();
+          throw error;
+        }
       });
     }
     if (req.method === "POST" && parsed.pathname === "/api/frame-audio") {
       const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      const bindings = Array.isArray(payload.frameAudioBindings)
-        ? payload.frameAudioBindings
-        : Object.entries(payload.frameAudioBindings || {}).map(([key, value]) => ({
-          key,
-          ...(value && typeof value === "object" ? value : {}),
-        }));
-      saveFrameAudioBindings(bindings, project);
-      const godotAudioSync = syncFrameAudio(projectStore, project, bindings);
-      return send(res, 200, { ok: true, frameAudioCount: bindings.length, godotAudioSync });
+      return await withProjectWrite(project.id, async () => {
+        const bindings = Array.isArray(payload.frameAudioBindings)
+          ? payload.frameAudioBindings
+          : Object.entries(payload.frameAudioBindings || {}).map(([key, value]) => ({
+            key,
+            ...(value && typeof value === "object" ? value : {}),
+          }));
+        const paths = projectStore.projectPaths(project);
+        const transaction = await createFilesystemSnapshot([
+          paths.frameAudio,
+          project?.projectRoot ? path.join(path.resolve(project.projectRoot), "xsxb_frame_tuner") : "",
+        ]);
+        try {
+          saveFrameAudioBindings(bindings, project);
+          const godotAudioSync = await syncFrameAudioAsync(project, bindings);
+          await transaction.dispose();
+          return send(res, 200, {
+            ok: true,
+            frameAudioCount: bindings.length,
+            godotAudioSync,
+            dataRevision: projectDataRevision(project),
+          });
+        } catch (error) {
+          await transaction.restore();
+          await transaction.dispose();
+          throw error;
+        }
+      });
     }
     if (req.method === "POST" && parsed.pathname === "/api/frame-attachment-image") {
       const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      return send(res, 200, { ok: true, image: saveFrameAttachmentImage(payload, project) });
+      return await withProjectWrite(project.id, () => send(res, 200, {
+        ok: true,
+        image: saveFrameAttachmentImage(payload, project),
+        dataRevision: projectDataRevision(project),
+      }));
     }
     if (req.method === "POST" && parsed.pathname === "/api/attachment-assets") {
       const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      return send(res, 200, { ok: true, assets: saveAttachmentAssets(payload.assets, project) });
+      return await withProjectWrite(project.id, () => send(res, 200, {
+        ok: true,
+        assets: saveAttachmentAssets(payload.assets, project),
+        dataRevision: projectDataRevision(project),
+      }));
     }
     if (req.method === "POST" && parsed.pathname === "/api/replace-frame") {
       const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      return send(res, 200, { ok: true, frame: replaceFrameImage(payload, project) });
+      return await withProjectWrite(project.id, () => send(res, 200, {
+        ok: true,
+        frame: replaceFrameImage(payload, project),
+      }));
     }
     if (req.method === "POST" && parsed.pathname === "/api/replace-animation") {
       const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       const frames = Array.isArray(payload.frames) ? payload.frames : [];
       const files = Array.isArray(payload.files) ? payload.files : [];
-      if (!frames.length || frames.length !== files.length) {
-        return send(res, 400, { error: `Expected exactly ${frames.length} PNG files` });
-      }
-      const result = frames.map((frame, index) => replaceFrameImage({ path: frame.path, data: files[index].data }, project));
-      const godotSync = syncGodotProject(ROOT, projectStore, project);
-      return send(res, 200, { ok: true, frames: result, godotSync });
+      return await withProjectWrite(project.id, async () => {
+        const godotOutput = project?.projectRoot
+          ? path.join(path.resolve(project.projectRoot), "xsxb_frame_tuner")
+          : "";
+        const transaction = await createFilesystemSnapshot([godotOutput]);
+        const replacement = replaceAnimationImages(frames, files, project);
+        try {
+          const godotSync = await syncGodotProjectAsync(project);
+          await transaction.dispose();
+          return send(res, 200, { ok: true, frames: replacement.frames, godotSync });
+        } catch (error) {
+          try {
+            replacement.rollback();
+            await transaction.restore();
+          } catch (rollbackError) {
+            await transaction.dispose();
+            throw new AggregateError(
+              [error, rollbackError],
+              "Godot synchronization failed and animation rollback was incomplete.",
+            );
+          }
+          await transaction.dispose();
+          throw error;
+        }
+      });
     }
     if (req.method === "POST" && parsed.pathname === "/api/import-animation") {
       const payload = await readJsonBody(req, parsed.pathname);
@@ -1362,75 +1704,79 @@ const server = http.createServer(async (req, res) => {
       if (hasInvalidPng) {
         throw new Error("Every imported frame must contain PNG image data.");
       }
-      let registry = projectStore.readRegistry();
       const requestedProjectId = payload.projectId ? projectStore.slug(payload.projectId) : "";
-      let project = requestedProjectId
-        ? registry.projects.find((entry) => entry.id === requestedProjectId)
-        : null;
-      if (requestedProjectId && !project) throw new Error(`Project not found: ${payload.projectId}`);
-      if (!project) {
-        registry = projectStore.addProject({
-          label: projectLabel,
+      return await withProjectWrite(requestedProjectId || "__registry__", async () => {
+        let registry = projectStore.readRegistry();
+        let project = requestedProjectId
+          ? registry.projects.find((entry) => entry.id === requestedProjectId)
+          : null;
+        if (requestedProjectId && !project) throw new Error(`Project not found: ${payload.projectId}`);
+        if (!project) {
+          registry = projectStore.addProject({
+            label: projectLabel,
+          });
+          project = projectStore.resolveProject(registry, registry.activeProjectId);
+        } else if (registry.activeProjectId !== project.id) {
+          registry = projectStore.setActiveProject(project.id);
+          project = projectStore.resolveProject(registry, project.id);
+        }
+        const imported = importAnimation({
+          root: ROOT,
+          projectStore,
+          project,
+          profileId: projectStore.slug(payload.profileId || profileLabel, "character"),
+          profileLabel,
+          profileKind: String(payload.profileKind || "actor"),
+          animationId: projectStore.slug(payload.animationId || animationName, "animation"),
+          animationName,
+          animationType: String(payload.animationType || "actor"),
+          anchorMode: String(payload.anchorMode || "canvas_bottom_center"),
+          fps: Number(payload.fps || 12),
+          items,
         });
-        project = projectStore.resolveProject(registry, registry.activeProjectId);
-      } else if (registry.activeProjectId !== project.id) {
-        registry = projectStore.setActiveProject(project.id);
-        project = projectStore.resolveProject(registry, project.id);
-      }
-      const imported = importAnimation({
-        root: ROOT,
-        projectStore,
-        project,
-        profileId: projectStore.slug(payload.profileId || profileLabel, "character"),
-        profileLabel,
-        profileKind: String(payload.profileKind || "actor"),
-        animationId: projectStore.slug(payload.animationId || animationName, "animation"),
-        animationName,
-        animationType: String(payload.animationType || "actor"),
-        anchorMode: String(payload.anchorMode || "canvas_bottom_center"),
-        fps: Number(payload.fps || 12),
-        items,
-      });
-      const godotSync = syncGodotProject(ROOT, projectStore, project, {
-        manifest: imported.manifest,
-        tuning: imported.tuning,
-      });
-      const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
-      return send(res, 200, {
-        ok: true,
-        activeProjectId: project.id,
-        profileId: imported.profileId,
-        animationId: imported.animationId,
-        frameCount: imported.frameCount,
-        godotSync,
-        runtimeProjectIdFiles,
-        warnings: validateProject(project, imported.manifest),
+        const godotSync = await syncGodotProjectAsync(project, {
+          manifest: imported.manifest,
+          tuning: imported.tuning,
+        });
+        const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
+        return send(res, 200, {
+          ok: true,
+          activeProjectId: project.id,
+          profileId: imported.profileId,
+          animationId: imported.animationId,
+          frameCount: imported.frameCount,
+          godotSync,
+          runtimeProjectIdFiles,
+          warnings: validateProject(project, imported.manifest),
+        });
       });
     }
     if (req.method === "POST" && parsed.pathname === "/api/reorganize-animation") {
       const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      const organized = reorganizeAnimation({
-        root: ROOT,
-        projectStore,
-        project,
-        profileId: String(payload.profileId || ""),
-        animationId: String(payload.animationId || ""),
-        items: payload.items,
-      });
-      const godotSync = syncGodotProject(ROOT, projectStore, project, {
-        manifest: organized.manifest,
-        tuning: organized.tuning,
-        frameAudioBindings: organized.frameAudioBindings,
-        frameImageAttachments: organized.frameImageAttachments,
-      });
-      const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
-      return send(res, 200, {
-        ok: true,
-        frameCount: organized.frameCount,
-        godotSync,
-        runtimeProjectIdFiles,
-        warnings: validateProject(project, organized.manifest),
+      return await withProjectWrite(project.id, async () => {
+        const organized = reorganizeAnimation({
+          root: ROOT,
+          projectStore,
+          project,
+          profileId: String(payload.profileId || ""),
+          animationId: String(payload.animationId || ""),
+          items: payload.items,
+        });
+        const godotSync = await syncGodotProjectAsync(project, {
+          manifest: organized.manifest,
+          tuning: organized.tuning,
+          frameAudioBindings: organized.frameAudioBindings,
+          frameImageAttachments: organized.frameImageAttachments,
+        });
+        const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
+        return send(res, 200, {
+          ok: true,
+          frameCount: organized.frameCount,
+          godotSync,
+          runtimeProjectIdFiles,
+          warnings: validateProject(project, organized.manifest),
+        });
       });
     }
     if (req.method === "GET" && parsed.pathname === "/asset") {

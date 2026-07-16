@@ -30,6 +30,17 @@
 | 框选保护色 | `fp_kernel_14` | `kernel-rebuilt` | 已重构 5000 点采样、RGB 分桶权重、YCbCr 方向聚类、亮度代表点、已有颜色覆盖、贪心覆盖率及 0/1/2 状态；固定多方向夹具的颜色顺序、覆盖率和状态与公开客户端一致。 |
 | 最近颜色搜索 | `fp_kernel_01` | `kernel-rebuilt` | 已重构圆形半径、可选 Alpha、颜色距离优先、空间距离破同分及中心精确命中快路。 |
 
+## 产品接入状态
+
+- `fp_kernel_07/13` 已通过 `applyCutout()` 的感知色键产品入口接入，覆盖多背景样本、全局/连通选择、种子点、通用容差、边缘增强、三种去溢模式、Alpha 阈值、模糊与连续边缘恢复强度。
+- `fp_kernel_14` 已接入框选保护路径，选择时会使用抠图预览 Alpha、全图原图/预览、已有保护色，并向界面返回 `coverage/status`。
+- 预览、批量处理、ZIP 导出、工作集返回和动画组回写现统一经过 `applyProductCutout()` 与不可变 PNG 输出记录。20 帧合成 Golden Corpus 已锁定最终 RGBA SHA-256，并验证 ZIP 本地文件数据和动画回写载荷逐字节复用同一 PNG data URL。
+- 真实浏览器已验证当前 20 帧动画组在普通模式和感知色键模式下均完成 `20/20` 预览生成且无控制台错误。隔离临时项目也已真实调用 20 帧动画覆盖接口，验证有效批次顺序写入、无效中间帧零修改回滚和重复目标拒绝。
+- “智能清除”修复现通过选区 mask 调用共享 `applyCutout()`/参考 Kernel 流水线，保留连通选择、羽化、边缘恢复和去溢色语义，不再由 UI 层逐像素硬清 Alpha。
+- 批量质量检测现同时覆盖循环首尾接缝、主体分裂、内部孔洞、画布边缘裁切、透明边缘 RGB 污染和可见残余背景色。`fp_kernel_07/13/14` 另有 48 组确定性随机小图，验证输出尺寸、输入不可变性和边界选区。
+- FramePacker 新增代码按职责拆分：`BatchCutoutProductCore` 承载修复和产品编排，`BatchCutoutProtectionCore` 统一 fp07/fp14 的方向保护判定和框选覆盖算法，`BatchCutoutReferenceRecoveryCore` 封装 fp07/fp13 共享恢复流水线，`BatchCutoutReferenceReplaceCore` 封装候选扩散及颜色替换入口，`CutoutQualityCore` 独立承载质量检测，`BatchCutoutWorkerClient` 隐藏 Worker/同步降级和帧内取消。`BatchCutoutCore` 仅负责组合这些 Module 并保留兼容 facade；`npm run perf:framepacker` 提供 512/1024/2048 普通与参考色键产品路径基线。
+- Canvas PNG 编码不具备跨浏览器字节等价性：同一 7×5 RGBA 夹具在 Chrome、Firefox、WebKit 中的 data URL 长度分别为 334、330、406。三者 Alpha 完全一致、完全不透明 RGB 完全一致；Firefox 半透明像素的预乘 RGB 最大舍入差为 2。因此跨浏览器合同限定为 Alpha/不透明像素完全一致、半透明可见颜色允许最多 2 个字节级舍入差，不宣称 PNG 编码字节等价。
+
 ## WASM 内核映射
 
 项目中的 `tools/framepacker_reference_manifest.js` 固化了 14 个导出内核及公开加载器中的参数结构大小。`fp_kernel_00` 和 `fp_kernel_12` 是初始化/性能状态接口，不属于图像算法；其余 12 个为像素、掩码、选择和跟踪内核。

@@ -1,11 +1,14 @@
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { animationLooksAttack, hitboxEnabledByDefault } = require("./box_estimator");
 const {
   applyCutout,
+  applyProductCutout,
   applyReferenceChromaKey,
   applyReferenceColorReplace,
   applyReferenceDespillPixel,
@@ -13,7 +16,9 @@ const {
   applyReferenceFloodFillDespill,
   chamfer345Distance,
   chamferDistanceToTransparent,
+  colorDistance,
   connectedCandidateMask,
+  createReferenceProtectionMask,
   diffuseReferenceCandidateMask,
   diffuseReferenceGlobalCandidateMask,
   estimateBackgroundColor,
@@ -21,25 +26,52 @@ const {
   hexToRgb,
   isWithinConnectivityTolerance,
   perceptualColorDistance,
+  referenceProtectionDescriptor,
+  referenceProtectionMatches,
+  selectProtectedColorsInRectangle,
   selectReferenceProtectedColors,
 } = require("./animation_tuner/public/batch_cutout_core");
-const { buildZip, crc32 } = require("./animation_tuner/public/batch_zip");
+const {
+  createProductPipeline,
+} = require("./animation_tuner/public/batch_cutout_product_core");
+const {
+  createProtectionSelector,
+} = require("./animation_tuner/public/batch_cutout_protection_core");
+const {
+  createReferenceRecoveryPipeline,
+} = require("./animation_tuner/public/batch_cutout_reference_recovery_core");
+const {
+  createReferenceReplacementKernels,
+} = require("./animation_tuner/public/batch_cutout_reference_replace_core");
+const { buildZip, crc32, toBytes } = require("./animation_tuner/public/batch_zip");
+const {
+  createAnimationReplacementPayload,
+  createArchiveEntries,
+  createOutput,
+  uniquePngName,
+} = require("./animation_tuner/public/batch_cutout_output_core");
+const {
+  createExecutor: createCutoutExecutor,
+} = require("./animation_tuner/public/batch_cutout_worker_client");
 const {
   advanceTrackingState,
-  analyzeCutoutQualitySequence,
   checkReferenceShapeMatch,
   compareShapeDescriptors,
   computeReferenceLocalFrame,
-  createCutoutQualityMetrics,
   createShapeCandidates,
   createShapeDescriptor,
   createTrackingState,
   findReferenceNearestColorInRadius,
+  mapBrushStroke,
   mapRectangle,
   predictTrackingCenter,
   sampleMatchingColor,
   selectTrackedCandidate,
 } = require("./animation_tuner/public/cutout_tracking_core");
+const {
+  analyzeCutoutQualitySequence,
+  createCutoutQualityMetrics,
+} = require("./animation_tuner/public/cutout_quality_core");
 const {
   analyzeDuplicateFrames,
   analyzeJumpFrames,
@@ -215,6 +247,323 @@ const despillCutout = applyCutout(new Uint8ClampedArray([0, 220, 0, 255]), 1, 1,
   despillMode: "general",
 });
 assert.ok(despillCutout.data[1] < 220);
+const referenceProductFixture = Uint8ClampedArray.from([
+  0, 255, 0, 255,
+  0, 250, 0, 255,
+  255, 0, 0, 255,
+  0, 0, 255, 255,
+  0, 0, 250, 255,
+]);
+const referenceProductOptions = {
+  referenceChromaKey: true,
+  connected: false,
+  feather: 0,
+  chromaFeather: 0,
+  edgeRecoveryStrength: 0,
+  despillStrength: 0,
+  alphaLow: 0,
+  alphaHigh: 255,
+};
+const singleBackgroundProductCutout = applyCutout(referenceProductFixture, 5, 1, {
+  ...referenceProductOptions,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  tolerance: 2,
+});
+const multiBackgroundProductCutout = applyCutout(referenceProductFixture, 5, 1, {
+  ...referenceProductOptions,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }, { r: 0, g: 0, b: 255 }],
+  tolerance: 2,
+});
+assert.deepEqual(
+  [...singleBackgroundProductCutout.data].filter((_value, index) => index % 4 === 3),
+  [0, 0, 255, 255, 255],
+);
+assert.deepEqual(
+  [...multiBackgroundProductCutout.data].filter((_value, index) => index % 4 === 3),
+  [0, 0, 255, 0, 0],
+);
+const strictReferenceProductCutout = applyCutout(referenceProductFixture, 5, 1, {
+  ...referenceProductOptions,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  tolerance: 0,
+});
+assert.notDeepEqual(
+  [...strictReferenceProductCutout.data],
+  [...singleBackgroundProductCutout.data],
+);
+const connectedReferenceProductFixture = Uint8ClampedArray.from([
+  0, 255, 0, 255,
+  255, 0, 0, 255,
+  0, 255, 0, 255,
+]);
+const connectedReferenceProductCutout = applyCutout(connectedReferenceProductFixture, 3, 1, {
+  ...referenceProductOptions,
+  connected: true,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  seedPoints: [{ x: 0, y: 0 }],
+  tolerance: 0,
+});
+assert.deepEqual(
+  [...connectedReferenceProductCutout.data].filter((_value, index) => index % 4 === 3),
+  [0, 255, 255],
+);
+const edgeBoostFixture = Uint8ClampedArray.from([
+  0, 255, 0, 255,
+  18, 238, 18, 255,
+  255, 0, 0, 255,
+]);
+const edgeBoostGlobalCutout = applyCutout(edgeBoostFixture, 3, 1, {
+  ...referenceProductOptions,
+  connected: false,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  tolerance: 0,
+  edgeBoost: 20,
+});
+const edgeBoostConnectedCutout = applyCutout(edgeBoostFixture, 3, 1, {
+  ...referenceProductOptions,
+  connected: true,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  seedPoints: [{ x: 0, y: 0 }],
+  tolerance: 0,
+  edgeBoost: 20,
+});
+assert.deepEqual(
+  [...edgeBoostConnectedCutout.data].filter((_value, index) => index % 4 === 3),
+  [...edgeBoostGlobalCutout.data].filter((_value, index) => index % 4 === 3),
+);
+const referenceRecoveryFixture = Uint8ClampedArray.from([
+  0, 255, 0, 255,
+  30, 220, 30, 220,
+  200, 40, 40, 255,
+]);
+const weakReferenceRecovery = applyCutout(referenceRecoveryFixture, 3, 1, {
+  ...referenceProductOptions,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  tolerance: 0,
+  edgeDespillRadius: 2,
+  edgeRecoveryStrength: 1,
+});
+const strongReferenceRecovery = applyCutout(referenceRecoveryFixture, 3, 1, {
+  ...referenceProductOptions,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  tolerance: 0,
+  edgeDespillRadius: 2,
+  edgeRecoveryStrength: 100,
+});
+assert.notDeepEqual([...weakReferenceRecovery.data], [...strongReferenceRecovery.data]);
+const chromaReferenceRecovery = applyCutout(referenceRecoveryFixture, 3, 1, {
+  ...referenceProductOptions,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  tolerance: 0,
+  edgeDespillRadius: 2,
+  edgeRecoveryStrength: 50,
+  despillMode: "chroma",
+});
+const blendReferenceRecovery = applyCutout(referenceRecoveryFixture, 3, 1, {
+  ...referenceProductOptions,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  tolerance: 0,
+  edgeDespillRadius: 2,
+  edgeRecoveryStrength: 50,
+  despillMode: "blend",
+});
+assert.notDeepEqual([...chromaReferenceRecovery.data], [...blendReferenceRecovery.data]);
+const protectedEdgeRecoveryFixture = Uint8ClampedArray.from([
+  0, 255, 0, 255,
+  80, 180, 20, 255,
+  160, 90, 20, 255,
+  220, 30, 20, 255,
+]);
+const weakProtectedEdgeRecovery = applyCutout(protectedEdgeRecoveryFixture, 4, 1, {
+  ...referenceProductOptions,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  protectedColors: [{ r: 220, g: 30, b: 20 }],
+  protectionTolerance: 3,
+  tolerance: 0,
+  edgeDespillRadius: 2,
+  backgroundRadius: 30,
+  edgeRecoveryTolerance: 30,
+  edgeRecoveryStrength: 1,
+});
+const strongProtectedEdgeRecovery = applyCutout(protectedEdgeRecoveryFixture, 4, 1, {
+  ...referenceProductOptions,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  protectedColors: [{ r: 220, g: 30, b: 20 }],
+  protectionTolerance: 3,
+  tolerance: 0,
+  edgeDespillRadius: 2,
+  backgroundRadius: 30,
+  edgeRecoveryTolerance: 30,
+  edgeRecoveryStrength: 100,
+});
+assert.notDeepEqual([...weakProtectedEdgeRecovery.data], [...strongProtectedEdgeRecovery.data]);
+const protectedReferenceProductCutout = applyCutout(referenceProductFixture, 5, 1, {
+  ...referenceProductOptions,
+  backgroundColors: [{ r: 0, g: 255, b: 0 }],
+  protectedColors: [{ r: 0, g: 255, b: 0 }],
+  protectionTolerance: 6,
+  tolerance: 2,
+});
+assert.equal(protectedReferenceProductCutout.removedPixels, 0);
+const smartRepairFixture = Uint8ClampedArray.from([
+  0, 255, 0, 255,
+  0, 250, 0, 255,
+  220, 30, 20, 255,
+  220, 30, 20, 255,
+  0, 255, 0, 255,
+]);
+const smartRepairCutout = applyProductCutout(
+  smartRepairFixture,
+  5,
+  1,
+  {
+    ...referenceProductOptions,
+    backgroundColors: [{ r: 0, g: 0, b: 255 }],
+    tolerance: 2,
+  },
+  [{
+    mode: "smart",
+    x1: 0,
+    y1: 0,
+    x2: 1,
+    y2: 0,
+    backgroundColor: { r: 0, g: 255, b: 0 },
+    tolerance: 2,
+    feather: 0,
+  }],
+);
+assert.deepEqual(
+  [...smartRepairCutout.data].filter((_value, index) => index % 4 === 3),
+  [0, 0, 255, 255, 255],
+);
+assert.throws(
+  () => createProductPipeline({}),
+  /requires applyCutout/,
+);
+const directProductPipeline = createProductPipeline({
+  applyCutout,
+  clamp: (value, minimum, maximum) => Math.max(
+    minimum,
+    Math.min(maximum, Number(value || 0)),
+  ),
+  colorDistance,
+  estimateBackgroundColor,
+  perceptualColorDistance,
+});
+assert.deepEqual(
+  directProductPipeline.applyProductCutout(
+    smartRepairFixture,
+    5,
+    1,
+    {
+      ...referenceProductOptions,
+      backgroundColors: [{ r: 0, g: 0, b: 255 }],
+      tolerance: 2,
+    },
+    [{
+      mode: "smart",
+      x1: 0,
+      y1: 0,
+      x2: 1,
+      y2: 0,
+      backgroundColor: { r: 0, g: 255, b: 0 },
+      tolerance: 2,
+      feather: 0,
+    }],
+  ),
+  smartRepairCutout,
+);
+
+/**
+ * Builds one deterministic moving-subject frame for the 20-frame product corpus.
+ * @param {number} frameIndex Zero-based frame index.
+ * @returns {Uint8ClampedArray}
+ */
+function createProductGoldenFrame(frameIndex) {
+  const width = 8;
+  const height = 8;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  const subjectX = 1 + (frameIndex % 5);
+  const subjectY = 2 + (frameIndex % 3);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const secondaryBackground = x === width - 1 && frameIndex % 2 === 1;
+      pixels[offset] = secondaryBackground ? 0 : (x * 2 + frameIndex) % 8;
+      pixels[offset + 1] = secondaryBackground ? 0 : 248 + ((x + y + frameIndex) % 8);
+      pixels[offset + 2] = secondaryBackground ? 248 : (y * 3 + frameIndex) % 8;
+      pixels[offset + 3] = 255;
+      if (Math.abs(x - subjectX) <= 1 && Math.abs(y - subjectY) <= 1) {
+        pixels[offset] = 180 + ((x * 11 + frameIndex) % 50);
+        pixels[offset + 1] = 25 + ((y * 13 + frameIndex) % 45);
+        pixels[offset + 2] = 20 + ((x * 7 + y * 5) % 30);
+      }
+    }
+  }
+  return pixels;
+}
+
+const productGoldenOptions = {
+  backgroundColor: { r: 0, g: 252, b: 0 },
+  backgroundColors: [{ r: 0, g: 252, b: 0 }, { r: 0, g: 0, b: 248 }],
+  tolerance: 4,
+  feather: 5,
+  alphaThreshold: 2,
+  connected: false,
+  perceptual: true,
+  referenceChromaKey: true,
+  chromaCleanup: 44,
+  chromaFeather: 12,
+  edgeBoost: 8,
+  alphaLow: 3,
+  alphaHigh: 250,
+  despillStrength: 35,
+  despillMode: "chroma",
+  edgeDespillRadius: 2,
+  edgeRecoveryStrength: 40,
+  edgeRecoveryTolerance: 30,
+  backgroundRadius: 10,
+  blurRadius: 1,
+  protectedColors: [{ r: 210, g: 45, b: 30 }],
+  protectionTolerance: 4,
+};
+const productGoldenBytes = [];
+for (let frameIndex = 0; frameIndex < 20; frameIndex += 1) {
+  const source = createProductGoldenFrame(frameIndex);
+  const repairs = [
+    {
+      mode: frameIndex % 2 ? "eraser" : "brush",
+      points: [{ x: 2, y: 2 }, { x: 3 + (frameIndex % 3), y: 4 }],
+      size: 2 + (frameIndex % 3),
+      hardness: 0.65,
+      opacity: 0.4,
+      color: { r: 35, g: 120, b: 210 },
+    },
+    {
+      mode: frameIndex % 3 === 0 ? "clear" : (frameIndex % 3 === 1 ? "restore" : "smart"),
+      x1: 0,
+      y1: 0,
+      x2: 2,
+      y2: 2,
+      tolerance: 5,
+      feather: 2,
+      backgroundColor: { r: 0, g: 252, b: 0 },
+    },
+  ];
+  const automatic = applyCutout(source, 8, 8, productGoldenOptions);
+  const product = applyProductCutout(source, 8, 8, productGoldenOptions, repairs);
+  assert.deepEqual([...product.automaticData], [...automatic.data]);
+  assert.equal(product.data.length, 8 * 8 * 4);
+  productGoldenBytes.push(...product.data);
+}
+const productGoldenHash = crypto
+  .createHash("sha256")
+  .update(Uint8Array.from(productGoldenBytes))
+  .digest("hex");
+assert.equal(
+  productGoldenHash,
+  "3003981cf4eabe8bb533883a7a6be09a4f63e93fa5a70224b270ba9e81249901",
+);
 const referenceDespill = Uint8ClampedArray.from([0, 220, 0, 255]);
 applyReferenceDespillPixel(referenceDespill, 0, { r: 0, g: 255, b: 0 }, 0.7);
 assert.deepEqual([...referenceDespill], [145, 198, 140, 255]);
@@ -276,6 +625,73 @@ assert.throws(
   ),
   RangeError,
 );
+let randomState = 0x6d2b79f5;
+/**
+ * Returns one deterministic pseudo-random byte for repeatable small-image fixtures.
+ * @returns {number}
+ */
+const nextRandomByte = () => {
+  randomState ^= randomState << 13;
+  randomState ^= randomState >>> 17;
+  randomState ^= randomState << 5;
+  return randomState & 255;
+};
+for (let fixtureIndex = 0; fixtureIndex < 48; fixtureIndex += 1) {
+  const width = 1 + (nextRandomByte() % 8);
+  const height = 1 + (nextRandomByte() % 8);
+  const source = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < source.length; offset += 4) {
+    source[offset] = nextRandomByte();
+    source[offset + 1] = nextRandomByte();
+    source[offset + 2] = nextRandomByte();
+    source[offset + 3] = nextRandomByte();
+  }
+  const original = new Uint8ClampedArray(source);
+  const referenceColor = {
+    r: source[0],
+    g: source[1],
+    b: source[2],
+    a: source[3],
+  };
+  const replaced = applyReferenceColorReplace(
+    source,
+    width,
+    height,
+    { x: 0, y: 0 },
+    { r: 0, g: 0, b: 0, a: 0 },
+    nextRandomByte() % 30,
+    { referenceColor },
+  );
+  const flooded = applyReferenceFloodFillDespill(
+    source,
+    width,
+    height,
+    { x: 0, y: 0 },
+    { r: 0, g: 0, b: 0, a: 0 },
+    nextRandomByte() % 30,
+    { referenceColor },
+  );
+  const restored = applyReferenceEdgeColorRestore(
+    source,
+    width,
+    height,
+    { r: 0, g: 0, b: 0 },
+    { r: 255, g: 255, b: 255 },
+    { tolerance: nextRandomByte() % 101 },
+  );
+  const selection = selectProtectedColorsInRectangle(
+    source,
+    width,
+    height,
+    { x1: 0, y1: 0, x2: width - 1, y2: height - 1 },
+    { maximumSamples: 64, maximumColors: 8, previewData: replaced },
+  );
+  assert.equal(replaced.length, source.length);
+  assert.equal(flooded.length, source.length);
+  assert.equal(restored.length, source.length);
+  assert.ok(Array.isArray(selection.colors));
+  assert.deepEqual(source, original);
+}
 assert.ok(perceptualColorDistance(210, 100, 70, { r: 200, g: 90, b: 60 }) < 15);
 assert.ok(perceptualColorDistance(30, 180, 40, { r: 200, g: 90, b: 60 }) > 30);
 const seedCandidates = new Uint8Array([
@@ -542,6 +958,192 @@ const protectionFixture = new Uint8ClampedArray([
   200, 20, 20, 255, 202, 22, 20, 255,
   20, 200, 20, 255, 22, 202, 20, 255,
 ]);
+const protectionDependencies = {
+  rgbToReferenceYcbcr(red, green, blue) {
+    return {
+      y: red * 0.299 + green * 0.587 + blue * 0.114,
+      cb: red * -0.168736 + green * -0.331264 + blue * 0.5 + 128,
+      cr: red * 0.5 + green * -0.418688 + blue * -0.081312 + 128,
+    };
+  },
+  srgbToLinear(channel) {
+    const normalized = Math.max(0, Math.min(255, Number(channel || 0))) / 255;
+    return normalized <= 0.04045
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  },
+};
+for (const dependencyName of Object.keys(protectionDependencies)) {
+  const incompleteDependencies = { ...protectionDependencies };
+  delete incompleteDependencies[dependencyName];
+  assert.throws(
+    () => createProtectionSelector(incompleteDependencies),
+    new RegExp(`requires ${dependencyName}\\(\\)`),
+  );
+}
+const directProtectionSelector = createProtectionSelector(protectionDependencies);
+const referenceRecoveryDependencies = {
+  clamp(value, minimum, maximum) {
+    return Math.max(minimum, Math.min(maximum, Number(value || 0)));
+  },
+  referenceSrgbToLinear(channel) {
+    const normalized = Math.max(0, Math.min(255, Number(channel || 0))) / 255;
+    const linear = normalized <= 0.04045
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+    return Math.fround(linear);
+  },
+  referenceLinearToSrgb(channel) {
+    if (channel <= 0) return 0;
+    if (channel >= 1) return 255;
+    const encoded = channel <= 0.003131
+      ? channel * 12.92
+      : channel ** (1 / 2.4) * 1.055 - 0.055;
+    return Math.max(0, Math.min(255, Math.trunc(encoded * 255 + 0.5)));
+  },
+  rgbToReferenceYcbcr: protectionDependencies.rgbToReferenceYcbcr,
+  referenceYcbcrToRgb(y, cb, cr) {
+    const centeredCb = cb - 128;
+    const centeredCr = cr - 128;
+    return {
+      r: Math.max(0, Math.min(255, Math.round(y + centeredCr * 1.402))),
+      g: Math.max(
+        0,
+        Math.min(255, Math.round(y - centeredCb * 0.344136 - centeredCr * 0.714136)),
+      ),
+      b: Math.max(0, Math.min(255, Math.round(y + centeredCb * 1.772))),
+    };
+  },
+  createReferenceProtectionMask: directProtectionSelector.createReferenceProtectionMask,
+};
+for (const dependencyName of Object.keys(referenceRecoveryDependencies)) {
+  const incompleteDependencies = { ...referenceRecoveryDependencies };
+  delete incompleteDependencies[dependencyName];
+  assert.throws(
+    () => createReferenceRecoveryPipeline(incompleteDependencies),
+    new RegExp(`dependency "${dependencyName}" must be a function`),
+  );
+}
+assert.throws(
+  () => createReferenceReplacementKernels(),
+  /dependencies are required/,
+);
+assert.throws(
+  () => createReferenceReplacementKernels({
+    applyReferenceReplacementPipeline() {},
+  }),
+  /connectedCandidateMask dependency must be a function/,
+);
+assert.throws(
+  () => createReferenceReplacementKernels({
+    connectedCandidateMask() {},
+  }),
+  /applyReferenceReplacementPipeline dependency must be a function/,
+);
+const directReferenceRecoveryPipeline = createReferenceRecoveryPipeline(
+  referenceRecoveryDependencies,
+);
+const directReferenceReplacementKernels = createReferenceReplacementKernels({
+  connectedCandidateMask,
+  applyReferenceReplacementPipeline:
+    directReferenceRecoveryPipeline.applyReferenceReplacementPipeline,
+});
+const directReferenceFixture = Uint8ClampedArray.from([
+  20, 40, 60, 255,
+  20, 40, 60, 128,
+  100, 120, 140, 255,
+  30, 220, 30, 220,
+  80, 160, 80, 255,
+  200, 50, 50, 255,
+]);
+const directReferenceOptions = {
+  alphaThresholdHigh: 200,
+  alphaThresholdLow: 20,
+  blendStrength: 50,
+  despillMode: 2,
+  despillRefColor: { r: 0, g: 255, b: 0 },
+  despillStrength: 35,
+  edgeRestoreMode: 2,
+  edgeRestoreRadius: 2,
+};
+assert.deepEqual(
+  directReferenceReplacementKernels.applyReferenceColorReplace(
+    directReferenceFixture,
+    6,
+    1,
+    { x: 0, y: 0 },
+    { r: 200, g: 100, b: 50, a: 128 },
+    0,
+    directReferenceOptions,
+  ),
+  applyReferenceColorReplace(
+    directReferenceFixture,
+    6,
+    1,
+    { x: 0, y: 0 },
+    { r: 200, g: 100, b: 50, a: 128 },
+    0,
+    directReferenceOptions,
+  ),
+);
+assert.deepEqual(
+  directReferenceReplacementKernels.applyReferenceFloodFillDespill(
+    directReferenceFixture,
+    6,
+    1,
+    { x: 0, y: 0 },
+    { r: 0, g: 0, b: 0, a: 0 },
+    0,
+    { edgeRestoreRadius: 2, edgeRestoreMode: 2 },
+  ),
+  applyReferenceFloodFillDespill(
+    directReferenceFixture,
+    6,
+    1,
+    { x: 0, y: 0 },
+    { r: 0, g: 0, b: 0, a: 0 },
+    0,
+    { edgeRestoreRadius: 2, edgeRestoreMode: 2 },
+  ),
+);
+const directBackgroundDescriptor = directProtectionSelector.referenceProtectionDescriptor(0, 255, 0);
+const directCandidateDescriptor = directProtectionSelector.referenceProtectionDescriptor(200, 20, 20);
+assert.deepEqual(
+  directCandidateDescriptor,
+  referenceProtectionDescriptor(200, 20, 20),
+);
+assert.equal(
+  directProtectionSelector.referenceProtectionMatches(
+    directBackgroundDescriptor,
+    directCandidateDescriptor,
+    202,
+    22,
+    20,
+  ),
+  referenceProtectionMatches(
+    referenceProtectionDescriptor(0, 255, 0),
+    referenceProtectionDescriptor(200, 20, 20),
+    202,
+    22,
+    20,
+  ),
+);
+assert.deepEqual(
+  directProtectionSelector.createReferenceProtectionMask(
+    protectionFixture,
+    2,
+    2,
+    { r: 0, g: 255, b: 0 },
+    [{ r: 200, g: 20, b: 20 }],
+  ),
+  createReferenceProtectionMask(
+    protectionFixture,
+    2,
+    2,
+    { r: 0, g: 255, b: 0 },
+    [{ r: 200, g: 20, b: 20 }],
+  ),
+);
 const clusteredProtection = selectReferenceProtectedColors(
   protectionFixture,
   2,
@@ -552,6 +1154,16 @@ const clusteredProtection = selectReferenceProtectedColors(
 assert.deepEqual(clusteredProtection.colors, [{ r: 200, g: 20, b: 20, count: 2 }]);
 assert.equal(clusteredProtection.coverage, 50);
 assert.equal(clusteredProtection.status, 2);
+assert.deepEqual(
+  directProtectionSelector.selectReferenceProtectedColors(
+    protectionFixture,
+    2,
+    2,
+    { r: 0, g: 255, b: 0 },
+    { maximumColors: 4, coverageThreshold: 95 },
+  ),
+  clusteredProtection,
+);
 const existingProtection = selectReferenceProtectedColors(
   protectionFixture,
   2,
@@ -624,6 +1236,65 @@ assert.deepEqual(
   [foregroundOnlyProtection[0].r, foregroundOnlyProtection[0].g, foregroundOnlyProtection[0].b],
   [30, 170, 50],
 );
+const protectedRectanglePreview = new Uint8ClampedArray([
+  200, 100, 70, 0, 200, 100, 70, 255,
+  30, 170, 50, 128, 30, 170, 50, 128,
+]);
+const protectedRectangleSelection = selectProtectedColorsInRectangle(
+  new Uint8ClampedArray([
+    200, 100, 70, 255, 200, 100, 70, 255,
+    30, 170, 50, 255, 30, 170, 50, 255,
+  ]),
+  2,
+  2,
+  { x1: 0, y1: 0, x2: 1, y2: 1 },
+  {
+    maximumColors: 4,
+    coverage: 1,
+    excludeColors: [{ r: 0, g: 255, b: 0 }],
+    previewData: protectedRectanglePreview,
+    existingColors: [{ r: 30, g: 170, b: 50 }],
+  },
+);
+assert.equal(protectedRectangleSelection.sampleCount, 2);
+assert.equal(protectedRectangleSelection.count, 0);
+assert.deepEqual(
+  directProtectionSelector.selectProtectedColorsInRectangle(
+    new Uint8ClampedArray([
+      200, 100, 70, 255, 200, 100, 70, 255,
+      30, 170, 50, 255, 30, 170, 50, 255,
+    ]),
+    2,
+    2,
+    { x1: 0, y1: 0, x2: 1, y2: 1 },
+    {
+      maximumColors: 4,
+      coverage: 1,
+      excludeColors: [{ r: 0, g: 255, b: 0 }],
+      previewData: protectedRectanglePreview,
+      existingColors: [{ r: 30, g: 170, b: 50 }],
+    },
+  ),
+  protectedRectangleSelection,
+);
+assert.deepEqual(
+  directProtectionSelector.extractProtectedColors(
+    new Uint8ClampedArray([
+      200, 100, 70, 255, 200, 100, 70, 255,
+      30, 170, 50, 255, 30, 170, 50, 255,
+    ]),
+    2,
+    2,
+    { x1: 0, y1: 0, x2: 1, y2: 1 },
+    {
+      maximumColors: 4,
+      coverage: 1,
+      excludeColors: [{ r: 200, g: 100, b: 70 }],
+      excludeTolerance: 2,
+    },
+  ),
+  foregroundOnlyProtection,
+);
 
 function alphaShape(width, height, startX, startY, endX, endY) {
   const pixels = new Uint8ClampedArray(width * height * 4);
@@ -637,6 +1308,20 @@ const targetShape = createShapeDescriptor(alphaShape(20, 20, 7, 3, 14, 12), 20, 
 assert.equal(compareShapeDescriptors(sourceShape, targetShape).accepted, true);
 const mappedRectangle = mapRectangle({ x1: 4, y1: 5, x2: 7, y2: 8 }, sourceShape, targetShape);
 assert.ok(mappedRectangle.x1 > 6 && mappedRectangle.y1 < 5);
+const mappedBrushStroke = mapBrushStroke(
+  {
+    points: [{ x: 4, y: 5 }, { x: 7, y: 8 }],
+    size: 6,
+  },
+  sourceShape,
+  targetShape,
+);
+assert.equal(mappedBrushStroke.points.length, 2);
+assert.ok(mappedBrushStroke.points.every((point) => (
+  Number.isFinite(point.x) && Number.isFinite(point.y)
+)));
+assert.ok(mappedBrushStroke.points[0].x > 6 && mappedBrushStroke.points[0].y < 5);
+assert.ok(mappedBrushStroke.size > 0);
 const candidatePixels = new Uint8ClampedArray(30 * 20 * 4);
 for (let y = 4; y <= 13; y += 1) {
   for (let x = 2; x <= 9; x += 1) candidatePixels[(y * 30 + x) * 4 + 3] = 255;
@@ -681,6 +1366,43 @@ assert.equal(qualityMetrics.visiblePixels, 36);
 assert.ok(qualityMetrics.alphaArea > 35 && qualityMetrics.alphaArea < 36);
 assert.ok(qualityMetrics.center.x > 4 && qualityMetrics.center.x < 5);
 assert.equal(qualityMetrics.bounds.width, 6);
+const structuralQualityPixels = alphaShape(12, 12, 2, 2, 9, 9);
+for (let y = 4; y <= 7; y += 1) {
+  for (let x = 4; x <= 7; x += 1) {
+    structuralQualityPixels[(y * 12 + x) * 4 + 3] = 0;
+  }
+}
+for (let y = 3; y <= 7; y += 1) {
+  for (let x = 11; x <= 11; x += 1) {
+    structuralQualityPixels[(y * 12 + x) * 4 + 3] = 255;
+  }
+}
+const transparentRgbOffset = (2 * 12 + 1) * 4;
+structuralQualityPixels[transparentRgbOffset] = 0;
+structuralQualityPixels[transparentRgbOffset + 1] = 255;
+structuralQualityPixels[transparentRgbOffset + 2] = 0;
+const structuralQualityMetrics = createCutoutQualityMetrics(
+  structuralQualityPixels,
+  12,
+  12,
+  {
+    backgroundColors: [{ r: 0, g: 255, b: 0 }],
+    backgroundTolerance: 2,
+  },
+);
+assert.equal(structuralQualityMetrics.componentCount, 2);
+assert.ok(structuralQualityMetrics.secondaryComponentRatio > 0.08);
+assert.ok(structuralQualityMetrics.holePixels >= 16);
+assert.ok(structuralQualityMetrics.clippedEdgeRatio > 0);
+assert.ok(structuralQualityMetrics.transparentRgbRatio > 0);
+const structuralQualityAnalysis = analyzeCutoutQualitySequence([structuralQualityMetrics], {
+  clippedEdgeRatio: 0,
+  transparentRgbRatio: 0,
+});
+assert.deepEqual(
+  structuralQualityAnalysis[0].codes,
+  ["split", "holes", "clipped", "transparent-rgb"],
+);
 const stableQuality = {
   alphaArea: 100,
   center: { x: 20, y: 20 },
@@ -704,6 +1426,13 @@ assert.deepEqual(
   ])[1].codes,
   ["empty"],
 );
+const seamQuality = analyzeCutoutQualitySequence([
+  { ...stableQuality, center: { x: 60, y: 20 } },
+  stableQuality,
+  stableQuality,
+  stableQuality,
+]);
+assert.ok(seamQuality[0].codes.includes("position"));
 
 function signatureFixture(subjectColor) {
   const pixels = new Uint8ClampedArray(8 * 8 * 4);
@@ -909,6 +1638,40 @@ try {
 }
 
 assert.equal(crc32(new TextEncoder().encode("abc")), 0x352441c2);
+const goldenPngDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3j2GJwAAAABJRU5ErkJggg==";
+const goldenOutputNames = new Map();
+const goldenOutputs = Array.from({ length: 20 }, (_unused, index) => createOutput({
+  name: uniquePngName(index < 2 ? "frame.png" : `frame_${index + 1}.png`, goldenOutputNames),
+  frame: { path: `frames/frame_${String(index + 1).padStart(4, "0")}.png` },
+  data: goldenPngDataUrl,
+  canvas: { corpusIndex: index },
+}));
+assert.equal(goldenOutputs[0].name, "frame.png");
+assert.equal(goldenOutputs[1].name, "frame_2.png");
+assert.equal(Object.isFrozen(goldenOutputs[0]), true);
+const collidingOutputNames = new Map();
+assert.equal(uniquePngName("frame.png", collidingOutputNames), "frame.png");
+assert.equal(uniquePngName("frame.png", collidingOutputNames), "frame_2.png");
+assert.equal(uniquePngName("frame_2.png", collidingOutputNames), "frame_2_2.png");
+assert.equal(uniquePngName("frame.png", collidingOutputNames), "frame_3.png");
+const goldenManifestJson = JSON.stringify({ schemaVersion: 1, frames: goldenOutputs.length });
+const goldenArchiveEntries = createArchiveEntries(goldenOutputs, goldenManifestJson);
+const goldenReplacementPayload = createAnimationReplacementPayload(
+  "golden-project",
+  goldenOutputs.map((output) => output.frame),
+  goldenOutputs,
+);
+assert.equal(goldenArchiveEntries.length, 21);
+assert.equal(goldenReplacementPayload.files.length, 20);
+for (let index = 0; index < goldenOutputs.length; index += 1) {
+  assert.equal(goldenArchiveEntries[index].data, goldenOutputs[index].data);
+  assert.equal(goldenReplacementPayload.files[index].data, goldenOutputs[index].data);
+  assert.equal(goldenReplacementPayload.frames[index].path, goldenOutputs[index].frame.path);
+}
+assert.throws(
+  () => createAnimationReplacementPayload("golden-project", [{ path: "one.png" }], []),
+  /Expected 1 processed frames, received 0/,
+);
 
 /**
  * Verifies that the local HTTP server rejects unsafe or oversized writes.
@@ -957,8 +1720,155 @@ async function runServerBoundaryTests() {
       body: JSON.stringify({ padding: "x".repeat((2 * 1024 * 1024) + 1024) }),
     });
     assert.equal(oversized.status, 413);
+    const oversizedMediaStatus = await new Promise((resolve, reject) => {
+      const request = http.request({
+        hostname: "127.0.0.1",
+        port,
+        path: "/api/replace-animation",
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": String((96 * 1024 * 1024) + 1),
+        },
+      }, (response) => {
+        response.resume();
+        response.once("end", () => resolve(response.statusCode));
+      });
+      request.once("error", reject);
+      request.end();
+    });
+    assert.equal(oversizedMediaStatus, 413);
   } finally {
     child.kill("SIGTERM");
+  }
+}
+
+/**
+ * Verifies ordered 20-frame replacement and rollback in an isolated workspace.
+ * @returns {Promise<void>}
+ */
+async function runAnimationReplacementIntegrationTests() {
+  const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-replace-animation-test-"));
+  const port = 40000 + (process.pid % 10000);
+  const store = createProjectStore(isolatedRoot);
+  const godotRoot = path.join(isolatedRoot, "godot-project");
+  fs.mkdirSync(godotRoot, { recursive: true });
+  const registry = store.addProject({
+    id: "golden-replacement",
+    label: "Golden Replacement",
+    projectRoot: godotRoot,
+  });
+  const project = store.resolveProject(registry, registry.activeProjectId);
+  const workspaceDir = store.projectWorkspaceDir(project);
+  const frameDir = path.join(workspaceDir, "frames");
+  fs.mkdirSync(frameDir, { recursive: true });
+  const basePng = Buffer.from(goldenPngDataUrl.split(",")[1], "base64");
+  const frames = [];
+  const originals = [];
+  const replacements = [];
+  for (let index = 0; index < 20; index += 1) {
+    const fileName = `frame_${String(index + 1).padStart(4, "0")}.png`;
+    const fullPath = path.join(frameDir, fileName);
+    const original = Buffer.concat([basePng, Buffer.from(`original-${index}`)]);
+    const replacement = Buffer.concat([basePng, Buffer.from(`replacement-${index}`)]);
+    fs.writeFileSync(fullPath, original);
+    frames.push({ path: path.relative(isolatedRoot, fullPath).replaceAll("\\", "/") });
+    originals.push(original);
+    replacements.push(replacement);
+  }
+  const child = spawn(process.execPath, ["tools/animation_tuner/server.js"], {
+    cwd: path.resolve(__dirname, ".."),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      XSXB_ROOT: isolatedRoot,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Replacement test server startup timed out.")), 5000);
+      child.stdout.on("data", (chunk) => {
+        if (!String(chunk).includes("XSXB Frame Tuner running")) return;
+        clearTimeout(timer);
+        resolve();
+      });
+      child.once("exit", (code) => {
+        clearTimeout(timer);
+        reject(new Error(`Replacement test server exited early with code ${code}.`));
+      });
+    });
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const invalidFiles = replacements.map((bytes) => ({
+      data: `data:image/png;base64,${bytes.toString("base64")}`,
+    }));
+    invalidFiles[10] = { data: "data:image/png;base64,bm90LXBuZw==" };
+    const failedResponse = await fetch(`${baseUrl}/api/replace-animation`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: project.id,
+        frames,
+        files: invalidFiles,
+      }),
+    });
+    assert.equal(failedResponse.status, 500);
+    for (let index = 0; index < frames.length; index += 1) {
+      assert.deepEqual(fs.readFileSync(path.join(isolatedRoot, frames[index].path)), originals[index]);
+    }
+    const godotSyncBlocker = path.join(godotRoot, "xsxb_frame_tuner");
+    fs.writeFileSync(godotSyncBlocker, "block Godot sync directory creation", "utf8");
+    const syncFailureResponse = await fetch(`${baseUrl}/api/replace-animation`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: project.id,
+        frames,
+        files: replacements.map((bytes) => ({
+          data: `data:image/png;base64,${bytes.toString("base64")}`,
+        })),
+      }),
+    });
+    assert.equal(syncFailureResponse.status, 500);
+    for (let index = 0; index < frames.length; index += 1) {
+      assert.deepEqual(fs.readFileSync(path.join(isolatedRoot, frames[index].path)), originals[index]);
+    }
+    fs.rmSync(godotSyncBlocker, { force: true });
+    const validResponse = await fetch(`${baseUrl}/api/replace-animation`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: project.id,
+        frames,
+        files: replacements.map((bytes) => ({
+          data: `data:image/png;base64,${bytes.toString("base64")}`,
+        })),
+      }),
+    });
+    assert.equal(validResponse.status, 200);
+    const responseBody = await validResponse.json();
+    assert.equal(responseBody.frames.length, 20);
+    for (let index = 0; index < frames.length; index += 1) {
+      assert.deepEqual(fs.readFileSync(path.join(isolatedRoot, frames[index].path)), replacements[index]);
+      assert.equal(responseBody.frames[index].path, frames[index].path);
+      assert.equal(responseBody.frames[index].width, 1);
+      assert.equal(responseBody.frames[index].height, 1);
+    }
+    const duplicateResponse = await fetch(`${baseUrl}/api/replace-animation`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: project.id,
+        frames: [frames[0], frames[0]],
+        files: replacements.slice(0, 2).map((bytes) => ({
+          data: `data:image/png;base64,${bytes.toString("base64")}`,
+        })),
+      }),
+    });
+    assert.equal(duplicateResponse.status, 500);
+  } finally {
+    child.kill("SIGTERM");
+    fs.rmSync(isolatedRoot, { recursive: true, force: true });
   }
 }
 
@@ -967,12 +1877,54 @@ buildZip([
   { name: "中文.png", data: new Uint8Array([5, 6, 7]) },
   { name: "cutout-manifest.json", data: "{\"frames\":2}" },
 ], { compress: false }).then(async (archive) => {
+  const fallbackExecutor = createCutoutExecutor({
+    WorkerConstructor: null,
+    syncProcess(source) {
+      return {
+        data: new Uint8ClampedArray(source),
+        automaticData: new Uint8ClampedArray(source),
+        removedPixels: 0,
+        partialPixels: 0,
+      };
+    },
+  });
+  const fallbackSource = Uint8ClampedArray.from([20, 40, 60, 255]);
+  const fallbackResult = await fallbackExecutor.process(fallbackSource, 1, 1, {}, []);
+  assert.deepEqual(fallbackResult.data, fallbackSource);
+  assert.deepEqual(fallbackSource, Uint8ClampedArray.from([20, 40, 60, 255]));
+  const cancellableExecutor = createCutoutExecutor({
+    WorkerConstructor: null,
+    syncProcess: () => new Promise(() => {}),
+  });
+  const cancelledTask = cancellableExecutor.process(fallbackSource, 1, 1, {}, []);
+  cancellableExecutor.cancelAll();
+  await assert.rejects(cancelledTask, (error) => error?.name === "AbortError");
   const bytes = new Uint8Array(await archive.arrayBuffer());
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   assert.equal(view.getUint32(0, true), 0x04034b50);
   assert.equal(view.getUint32(bytes.length - 22, true), 0x06054b50);
   assert.equal(view.getUint16(bytes.length - 12, true), 3);
+  const goldenArchive = await buildZip(goldenArchiveEntries, { compress: false });
+  const goldenArchiveBytes = new Uint8Array(await goldenArchive.arrayBuffer());
+  const goldenArchiveView = new DataView(
+    goldenArchiveBytes.buffer,
+    goldenArchiveBytes.byteOffset,
+    goldenArchiveBytes.byteLength,
+  );
+  let localOffset = 0;
+  for (let index = 0; index < goldenArchiveEntries.length; index += 1) {
+    assert.equal(goldenArchiveView.getUint32(localOffset, true), 0x04034b50);
+    const storedSize = goldenArchiveView.getUint32(localOffset + 18, true);
+    const nameLength = goldenArchiveView.getUint16(localOffset + 26, true);
+    const extraLength = goldenArchiveView.getUint16(localOffset + 28, true);
+    const dataOffset = localOffset + 30 + nameLength + extraLength;
+    const storedBytes = goldenArchiveBytes.slice(dataOffset, dataOffset + storedSize);
+    const expectedBytes = await toBytes(goldenArchiveEntries[index].data);
+    assert.deepEqual([...storedBytes], [...expectedBytes]);
+    localOffset = dataOffset + storedSize;
+  }
   await runServerBoundaryTests();
+  await runAnimationReplacementIntegrationTests();
   console.log("XSXB self-tests passed.");
 }).catch((error) => {
   console.error(error);

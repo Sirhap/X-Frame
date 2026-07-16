@@ -517,9 +517,11 @@ input[type="checkbox"] {
   padding: 0;
 }
 
-select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-visible, #stage:focus-visible {
-  outline: 3px solid rgba(57, 217, 186, .52);
+select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-visible, #stage:focus-visible,
+#cutoutResult:focus-visible {
+  outline: 3px solid #ffffff;
   outline-offset: 2px;
+  box-shadow: 0 0 0 5px #111111;
 }
 
 button {
@@ -1127,7 +1129,9 @@ kbd {
   background: #fff;
   border-color: var(--danger);
   color: var(--danger);
-  outline: 0;
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px #111111;
 }
 
 .frameSfxRemove { display: none; font: 900 15px/1 Arial, sans-serif; }
@@ -1188,7 +1192,9 @@ kbd {
 .attachmentAction:focus-visible {
   background: var(--accent-2);
   color: #05070a;
-  outline: 0;
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px #111111;
 }
 
 .fileInput { display: none; }
@@ -2042,6 +2048,19 @@ kbd {
   color: var(--control-ink);
   box-shadow: 3px 3px 0 var(--line);
   cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: 132px 82px;
+}
+
+.cutoutQueueSpacer {
+  flex: 0 0 auto;
+  height: 1px;
+  pointer-events: none;
+}
+
+.thumb {
+  content-visibility: auto;
+  contain-intrinsic-size: 116px 132px;
 }
 
 .cutoutQueueItem.active {
@@ -4083,6 +4102,7 @@ kbd {
     grid-template-rows: auto minmax(330px, 1fr) auto;
     border-right: 0;
     border-bottom: 4px solid var(--line);
+    order: 2;
   }
   .cutoutToggleGrid {
     grid-template-columns: 1fr;
@@ -4117,7 +4137,8 @@ kbd {
     grid-template-columns: 1fr 1fr;
   }
   .cutoutPreview {
-    min-height: 940px;
+    min-height: 78vh;
+    order: 1;
   }
   .cutoutRepairTools {
     grid-template-columns: 1fr;

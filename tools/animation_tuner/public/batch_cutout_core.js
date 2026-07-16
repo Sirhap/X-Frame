@@ -1,9 +1,44 @@
 (function attachBatchCutoutCore(root, factory) {
-  const api = factory();
+  const productCore = typeof module === "object" && module.exports
+    ? require("./batch_cutout_product_core")
+    : root?.BatchCutoutProductCore;
+  const protectionCore = typeof module === "object" && module.exports
+    ? require("./batch_cutout_protection_core")
+    : root?.BatchCutoutProtectionCore;
+  const referenceRecoveryCore = typeof module === "object" && module.exports
+    ? require("./batch_cutout_reference_recovery_core")
+    : root?.BatchCutoutReferenceRecoveryCore;
+  const referenceReplaceCore = typeof module === "object" && module.exports
+    ? require("./batch_cutout_reference_replace_core")
+    : root?.BatchCutoutReferenceReplaceCore;
+  const api = factory(
+    productCore,
+    protectionCore,
+    referenceRecoveryCore,
+    referenceReplaceCore,
+  );
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.BatchCutoutCore = api;
-}(typeof globalThis !== "undefined" ? globalThis : this, () => {
+}(typeof globalThis !== "undefined" ? globalThis : this, (
+  productCore,
+  protectionCore,
+  referenceRecoveryCore,
+  referenceReplaceCore,
+) => {
   "use strict";
+
+  if (!productCore?.createProductPipeline) {
+    throw new Error("BatchCutoutProductCore is required.");
+  }
+  if (!protectionCore?.createProtectionSelector) {
+    throw new Error("BatchCutoutProtectionCore is required.");
+  }
+  if (!referenceRecoveryCore?.createReferenceRecoveryPipeline) {
+    throw new Error("BatchCutoutReferenceRecoveryCore is required.");
+  }
+  if (!referenceReplaceCore?.createReferenceReplacementKernels) {
+    throw new Error("BatchCutoutReferenceReplaceCore is required.");
+  }
 
   /**
    * Keeps a number inside an inclusive range.
@@ -591,1203 +626,6 @@
   }
 
   /**
-   * Builds the squared RGBA radius used by `fp_kernel_06` and `fp_kernel_10`.
-   * @param {number} tolerance Integer tolerance in the range normally exposed as 0-100.
-   * @returns {number}
-   */
-  function referenceRgbaToleranceSquared(tolerance) {
-    const radius = (Math.trunc(tolerance) / 100) * 2 * 255;
-    return radius * radius;
-  }
-
-  /**
-   * Tests an RGBA pixel against the reference kernel's Euclidean threshold.
-   * @param {Uint8ClampedArray|Uint8Array} source RGBA source pixels.
-   * @param {number} pixel Pixel index.
-   * @param {{r:number,g:number,b:number,a?:number}} referenceColor Reference color.
-   * @param {number} thresholdSquared Squared RGBA threshold.
-   * @returns {boolean}
-   */
-  function referenceRgbaMatches(source, pixel, referenceColor, thresholdSquared) {
-    const offset = pixel * 4;
-    const referenceAlpha = referenceColor.a == null ? 255 : (referenceColor.a & 255);
-    const deltaRed = source[offset] - (referenceColor.r & 255);
-    const deltaGreen = source[offset + 1] - (referenceColor.g & 255);
-    const deltaBlue = source[offset + 2] - (referenceColor.b & 255);
-    const deltaAlpha = source[offset + 3] - referenceAlpha;
-    return (
-      deltaRed * deltaRed
-      + deltaGreen * deltaGreen
-      + deltaBlue * deltaBlue
-      + deltaAlpha * deltaAlpha
-    ) <= thresholdSquared;
-  }
-
-  /**
-   * Rebuilds `fp_kernel_06`: a four-neighbour scanline diffusion from one seed.
-   * A maximum-pixel overflow rejects the whole candidate instead of truncating it.
-   * @param {Uint8ClampedArray|Uint8Array} source RGBA source pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @param {{x:number,y:number}} seed Rounded seed coordinate.
-   * @param {{r:number,g:number,b:number,a?:number}} referenceColor Reference RGBA color.
-   * @param {number} tolerance Integer tolerance.
-   * @param {number} [maximumPixels=0] Zero disables the region-size cap.
-   * @returns {Uint8Array|null}
-   */
-  function diffuseReferenceCandidateMask(
-    source,
-    width,
-    height,
-    seed,
-    referenceColor,
-    tolerance,
-    maximumPixels = 0,
-  ) {
-    const pixelCount = width * height;
-    if (width <= 0 || height <= 0 || !source || source.length !== pixelCount * 4) return null;
-    const seedX = Math.round(seed?.x);
-    const seedY = Math.round(seed?.y);
-    if (seedX < 0 || seedX >= width || seedY < 0 || seedY >= height) return null;
-    const thresholdSquared = referenceRgbaToleranceSquared(tolerance);
-    const seedIndex = seedY * width + seedX;
-    if (!referenceRgbaMatches(source, seedIndex, referenceColor, thresholdSquared)) return null;
-    const selected = new Uint8Array(pixelCount);
-    const visited = new Uint8Array(pixelCount);
-    const stack = [seedIndex];
-    visited[seedIndex] = 1;
-    const limit = Number.isFinite(maximumPixels) && maximumPixels > 0
-      ? Math.min(Math.trunc(maximumPixels), 0x7fffffff)
-      : 0;
-    let selectedPixels = 0;
-    while (stack.length) {
-      const current = stack.pop();
-      const y = Math.floor(current / width);
-      let left = current % width;
-      let right = left;
-      while (
-        left > 0
-        && !visited[y * width + left - 1]
-        && referenceRgbaMatches(source, y * width + left - 1, referenceColor, thresholdSquared)
-      ) {
-        left -= 1;
-      }
-      while (
-        right + 1 < width
-        && !visited[y * width + right + 1]
-        && referenceRgbaMatches(source, y * width + right + 1, referenceColor, thresholdSquared)
-      ) {
-        right += 1;
-      }
-      for (let x = left; x <= right; x += 1) {
-        const index = y * width + x;
-        if (!visited[index]) visited[index] = 1;
-        if (!referenceRgbaMatches(source, index, referenceColor, thresholdSquared)) continue;
-        if (!selected[index]) {
-          selected[index] = 255;
-          selectedPixels += 1;
-          if (limit > 0 && selectedPixels > limit) return null;
-        }
-        if (y > 0) {
-          const above = index - width;
-          if (!visited[above] && referenceRgbaMatches(source, above, referenceColor, thresholdSquared)) {
-            visited[above] = 1;
-            stack.push(above);
-          }
-        }
-        if (y + 1 < height) {
-          const below = index + width;
-          if (!visited[below] && referenceRgbaMatches(source, below, referenceColor, thresholdSquared)) {
-            visited[below] = 1;
-            stack.push(below);
-          }
-        }
-      }
-    }
-    return selectedPixels > 0 ? selected : null;
-  }
-
-  /**
-   * Rebuilds `fp_kernel_10`: selects every RGBA pixel inside the reference radius.
-   * @param {Uint8ClampedArray|Uint8Array} source RGBA source pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @param {{r:number,g:number,b:number,a?:number}} referenceColor Reference RGBA color.
-   * @param {number} tolerance Integer tolerance.
-   * @returns {Uint8Array|null}
-   */
-  function diffuseReferenceGlobalCandidateMask(source, width, height, referenceColor, tolerance) {
-    const pixelCount = width * height;
-    if (width <= 0 || height <= 0 || !source || source.length !== pixelCount * 4) return null;
-    const thresholdSquared = referenceRgbaToleranceSquared(tolerance);
-    const selected = new Uint8Array(pixelCount);
-    let selectedPixels = 0;
-    for (let pixel = 0; pixel < pixelCount; pixel += 1) {
-      if (!referenceRgbaMatches(source, pixel, referenceColor, thresholdSquared)) continue;
-      selected[pixel] = 255;
-      selectedPixels += 1;
-    }
-    return selectedPixels > 0 ? selected : null;
-  }
-
-  /**
-   * Creates the reference directional protection mask. Mask bytes intentionally
-   * use one for internal state while public selection masks continue to require 255.
-   * @param {Uint8ClampedArray|Uint8Array} source RGBA source pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @param {{r:number,g:number,b:number}} backgroundColor Reference/background color.
-   * @param {Array<{r:number,g:number,b:number}|number[]>} protectedColors Protected colors.
-   * @returns {Uint8Array|null}
-   */
-  function createReferenceProtectionMask(source, width, height, backgroundColor, protectedColors) {
-    if (!Array.isArray(protectedColors) || !protectedColors.length) return null;
-    const background = referenceProtectionDescriptor(
-      backgroundColor.r,
-      backgroundColor.g,
-      backgroundColor.b,
-    );
-    const descriptors = protectedColors.slice(0, 32).map((color) => (
-      referenceProtectionDescriptor(
-        Array.isArray(color) ? color[0] : color.r,
-        Array.isArray(color) ? color[1] : color.g,
-        Array.isArray(color) ? color[2] : color.b,
-      )
-    ));
-    const protectedMask = new Uint8Array(width * height);
-    for (let pixel = 0; pixel < protectedMask.length; pixel += 1) {
-      const offset = pixel * 4;
-      if (!source[offset + 3]) continue;
-      if (descriptors.some((descriptor) => referenceProtectionMatches(
-        background,
-        descriptor,
-        source[offset],
-        source[offset + 1],
-        source[offset + 2],
-      ))) protectedMask[pixel] = 1;
-    }
-    return protectedMask;
-  }
-
-  /**
-   * Applies the reference Alpha high/low threshold branch in its original order.
-   * @param {Uint8ClampedArray} data Mutable RGBA pixels.
-   * @param {Uint8Array|null} operationMask Optional public 255 mask.
-   * @param {number} high Alpha values above this value become opaque.
-   * @param {number} low Alpha values below this value become transparent.
-   * @returns {void}
-   */
-  function applyReferenceAlphaThresholds(data, operationMask, high, low) {
-    const highThreshold = Math.trunc(high || 0) & 255;
-    const lowThreshold = Math.trunc(low || 0) & 255;
-    if ((!highThreshold && !lowThreshold) || highThreshold < lowThreshold) return;
-    if (!lowThreshold && highThreshold === 255) return;
-    for (let pixel = 0; pixel < data.length / 4; pixel += 1) {
-      if (operationMask && operationMask[pixel] !== 255) continue;
-      const alphaOffset = pixel * 4 + 3;
-      const alpha = data[alphaOffset];
-      if (highThreshold && alpha > highThreshold) data[alphaOffset] = 255;
-      else if (lowThreshold && alpha < lowThreshold) data[alphaOffset] = 0;
-    }
-  }
-
-  /**
-   * Applies the byte-YCbCr directional despill stage shared by the public color
-   * replacement and flood-fill kernels.
-   * @param {Uint8ClampedArray} data Mutable RGBA pixels.
-   * @param {Uint8Array|null} selectedMask Replaced pixels.
-   * @param {Uint8Array|null} operationMask Optional public 255 mask.
-   * @param {Uint8Array|null} protectedMask Protected pixels.
-   * @param {{r:number,g:number,b:number}} referenceColor Despill direction.
-   * @param {number} strength Strength in the range 0-100.
-   * @returns {void}
-   */
-  function applyReferenceDirectionalDespill(
-    data,
-    selectedMask,
-    operationMask,
-    protectedMask,
-    referenceColor,
-    strength,
-  ) {
-    const normalizedStrength = Math.min(100, Math.max(0, Math.trunc(strength || 0))) / 100;
-    if (!normalizedStrength) return;
-    const reference = rgbToReferenceYcbcr(referenceColor.r, referenceColor.g, referenceColor.b);
-    const referenceCb = reference.cb - 128;
-    const referenceCr = reference.cr - 128;
-    const referenceChroma = Math.hypot(referenceCb, referenceCr);
-    if (referenceChroma < 5) return;
-    const directionCb = referenceCb / referenceChroma;
-    const directionCr = referenceCr / referenceChroma;
-    for (let pixel = 0; pixel < data.length / 4; pixel += 1) {
-      if (
-        (operationMask && operationMask[pixel] !== 255)
-        || protectedMask?.[pixel]
-        || selectedMask?.[pixel]
-      ) continue;
-      const offset = pixel * 4;
-      if (!data[offset + 3]) continue;
-      const converted = rgbToReferenceYcbcr(data[offset], data[offset + 1], data[offset + 2]);
-      const centeredCb = converted.cb - 128;
-      const centeredCr = converted.cr - 128;
-      if (Math.hypot(centeredCb, centeredCr) < 3) continue;
-      const projection = centeredCb * directionCb + centeredCr * directionCr;
-      if (projection <= 0) continue;
-      const removal = projection * normalizedStrength;
-      const convertedRgb = referenceYcbcrToRgb(
-        converted.y,
-        centeredCb - removal * directionCb + 128,
-        centeredCr - removal * directionCr + 128,
-      );
-      data[offset] = convertedRgb.r;
-      data[offset + 1] = convertedRgb.g;
-      data[offset + 2] = convertedRgb.b;
-    }
-  }
-
-  /**
-   * Builds the shared reconstruction configuration used by public kernel 07.
-   * @param {{r:number,g:number,b:number,a:number}} referenceColor Sampled color.
-   * @param {{r:number,g:number,b:number,a:number}} replacementColor Replacement color.
-   * @param {{r:number,g:number,b:number}|null} despillReferenceColor Optional despill axis color.
-   * @param {number} strength Blend strength in the range 0-100.
-   * @returns {object}
-   */
-  function createReferenceBlendConfiguration(
-    referenceColor,
-    replacementColor,
-    despillReferenceColor,
-    strength,
-  ) {
-    const fallbackReference = despillReferenceColor
-      && (despillReferenceColor.r || despillReferenceColor.g || despillReferenceColor.b)
-      ? despillReferenceColor
-      : referenceColor;
-    const replacementLinear = [
-      referenceSrgbToLinear(replacementColor.r),
-      referenceSrgbToLinear(replacementColor.g),
-      referenceSrgbToLinear(replacementColor.b),
-    ];
-    const referenceLinear = [
-      referenceSrgbToLinear(fallbackReference.r),
-      referenceSrgbToLinear(fallbackReference.g),
-      referenceSrgbToLinear(fallbackReference.b),
-    ];
-    const axis = referenceLinear.map((channel, index) => channel - replacementLinear[index]);
-    const axisLengthSquared = axis.reduce((sum, channel) => sum + channel * channel, 0);
-    const replacementYcbcr = rgbToReferenceYcbcr(
-      replacementColor.r,
-      replacementColor.g,
-      replacementColor.b,
-    );
-    const referenceYcbcr = rgbToReferenceYcbcr(
-      fallbackReference.r,
-      fallbackReference.g,
-      fallbackReference.b,
-    );
-    const referenceCb = referenceYcbcr.cb - 128;
-    const referenceCr = referenceYcbcr.cr - 128;
-    const referenceChroma = Math.hypot(referenceCb, referenceCr);
-    return {
-      strength: Math.min(100, Math.max(0, Math.trunc(strength || 0))) / 100,
-      replacementAlpha: replacementColor.a / 255,
-      replacementAlphaByte: replacementColor.a,
-      referenceAlphaByte: referenceColor.a,
-      replacementLinear,
-      referenceLinear,
-      axis,
-      axisLengthSquared,
-      halfAxisLengthSquared: axisLengthSquared * 0.5,
-      hasLinearAxis: axisLengthSquared >= 0.0001,
-      replacementCb: replacementYcbcr.cb,
-      replacementCr: replacementYcbcr.cr,
-      referenceChroma,
-      referenceDirectionCb: referenceChroma >= 5 ? referenceCb / referenceChroma : 0,
-      referenceDirectionCr: referenceChroma >= 5 ? referenceCr / referenceChroma : 0,
-    };
-  }
-
-  /**
-   * Rebuilds the public linear-axis recovery branch (`f_n`).
-   * @param {object} configuration Shared blend configuration.
-   * @param {number} red Source red channel.
-   * @param {number} green Source green channel.
-   * @param {number} blue Source blue channel.
-   * @param {number} alpha Source alpha channel.
-   * @param {boolean} includeAuxiliary Whether hybrid confidence data is required.
-   * @returns {{valid:boolean,linear:number[],alpha:number,confidence:number,magnitude:number}}
-   */
-  function recoverReferenceLinearAxis(
-    configuration,
-    red,
-    green,
-    blue,
-    alpha,
-    includeAuxiliary,
-  ) {
-    if (!alpha) return { valid: false };
-    if (!configuration.hasLinearAxis) {
-      const converted = rgbToReferenceYcbcr(red, green, blue);
-      const centeredCb = converted.cb - 128;
-      const centeredCr = converted.cr - 128;
-      if (Math.hypot(centeredCb, centeredCr) < 3) return { valid: false };
-      const projection = centeredCb * configuration.referenceDirectionCb
-        + centeredCr * configuration.referenceDirectionCr;
-      if (projection <= 0) return { valid: false };
-      const removal = -configuration.strength * projection;
-      const recovered = referenceYcbcrToRgb(
-        converted.y,
-        centeredCb + removal * configuration.referenceDirectionCb + 128,
-        centeredCr + removal * configuration.referenceDirectionCr + 128,
-      );
-      return {
-        valid: true,
-        linear: [
-          referenceSrgbToLinear(recovered.r),
-          referenceSrgbToLinear(recovered.g),
-          referenceSrgbToLinear(recovered.b),
-        ],
-        alpha: alpha / 255,
-        confidence: includeAuxiliary ? 1 : 0,
-        magnitude: 0,
-      };
-    }
-    const pixelLinear = [
-      referenceSrgbToLinear(red),
-      referenceSrgbToLinear(green),
-      referenceSrgbToLinear(blue),
-    ];
-    const relative = pixelLinear.map(
-      (channel, index) => channel - configuration.replacementLinear[index],
-    );
-    const projection = relative.reduce(
-      (sum, channel, index) => sum + channel * configuration.axis[index],
-      0,
-    ) / configuration.axisLengthSquared;
-    if (projection <= 0.01) return { valid: false };
-    const residual = relative.map(
-      (channel, index) => channel - projection * configuration.axis[index],
-    );
-    const residualSquared = residual.reduce((sum, channel) => sum + channel * channel, 0);
-    if (!(residualSquared < configuration.halfAxisLengthSquared)) return { valid: false };
-    const confidence = 1 - residualSquared / configuration.halfAxisLengthSquared;
-    if (confidence <= 0) return { valid: false };
-    const magnitude = Math.min(1, projection) * confidence;
-    const colorStrength = Math.sqrt(configuration.strength * magnitude);
-    const converted = rgbToReferenceYcbcr(red, green, blue);
-    const recovered = referenceYcbcrToRgb(
-      converted.y,
-      colorStrength * (configuration.replacementCb - converted.cb) + converted.cb,
-      colorStrength * (configuration.replacementCr - converted.cr) + converted.cr,
-    );
-    return {
-      valid: true,
-      linear: [
-        referenceSrgbToLinear(recovered.r),
-        referenceSrgbToLinear(recovered.g),
-        referenceSrgbToLinear(recovered.b),
-      ],
-      alpha: (
-        configuration.strength
-          * magnitude
-          * (configuration.replacementAlphaByte - configuration.referenceAlphaByte)
-        + alpha
-      ) / 255,
-      confidence: includeAuxiliary ? confidence : 0,
-      magnitude: includeAuxiliary ? magnitude : 0,
-    };
-  }
-
-  /**
-   * Rebuilds the public compositing recovery branch (`f_o`).
-   * @param {object} configuration Shared blend configuration.
-   * @param {number} red Source red channel.
-   * @param {number} green Source green channel.
-   * @param {number} blue Source blue channel.
-   * @param {number} alpha Source alpha channel.
-   * @param {boolean} includeAuxiliary Whether hybrid confidence data is required.
-   * @returns {{valid:boolean,linear:number[],alpha:number,confidence:number,ratio:number,fallback:number}}
-   */
-  function recoverReferenceComposite(
-    configuration,
-    red,
-    green,
-    blue,
-    alpha,
-    includeAuxiliary,
-  ) {
-    if (!alpha) return { valid: false };
-    const converted = rgbToReferenceYcbcr(red, green, blue);
-    const centeredCb = converted.cb - 128;
-    const centeredCr = converted.cr - 128;
-    const chroma = Math.hypot(centeredCb, centeredCr);
-    const chromaRatio = chroma / configuration.referenceChroma;
-    const chromaConfidence = chromaRatio <= 0.05
-      ? 0
-      : chromaRatio >= 0.2
-        ? 1
-        : (chromaRatio - 0.05) / 0.15;
-    const directionProjection = centeredCb * configuration.referenceDirectionCb
-      + centeredCr * configuration.referenceDirectionCr;
-    if (chroma < 3 || directionProjection <= 0) {
-      if (chroma < 3) return { valid: false };
-      return {
-        valid: true,
-        linear: [
-          referenceSrgbToLinear(red),
-          referenceSrgbToLinear(green),
-          referenceSrgbToLinear(blue),
-        ],
-        alpha: alpha / 255,
-        confidence: includeAuxiliary ? chromaConfidence : 0,
-        ratio: 0,
-        fallback: includeAuxiliary ? 1 : 0,
-      };
-    }
-    const ratio = clamp(directionProjection / configuration.referenceChroma, 0, 0.95);
-    const reconstructionAmount = configuration.strength * ratio;
-    const reconstructedAlpha = 1
-      - ratio * configuration.strength * (1 - configuration.replacementAlpha);
-    const pixelLinear = [
-      referenceSrgbToLinear(red),
-      referenceSrgbToLinear(green),
-      referenceSrgbToLinear(blue),
-    ];
-    const recovered = [0, 0, 0];
-    if (reconstructedAlpha > 0.02) {
-      for (let channel = 0; channel < 3; channel += 1) {
-        recovered[channel] = (
-          reconstructionAmount * (
-            configuration.replacementAlpha * configuration.replacementLinear[channel]
-            - configuration.referenceLinear[channel]
-          )
-          + pixelLinear[channel]
-        ) / reconstructedAlpha;
-      }
-    }
-    const negativeMagnitude = recovered.reduce(
-      (sum, channel) => sum + (channel < 0 ? -channel : 0),
-      0,
-    );
-    const gamutConfidence = negativeMagnitude >= 0.1 ? 0 : 1 - negativeMagnitude / 0.1;
-    const saturationPenalty = ratio > 0.6 ? Math.min(1, (ratio - 0.6) / 0.35) : 0;
-    return {
-      valid: true,
-      linear: recovered,
-      alpha: reconstructedAlpha,
-      confidence: includeAuxiliary
-        ? chromaConfidence * gamutConfidence * (1 - saturationPenalty * 0.5)
-        : 0,
-      ratio: includeAuxiliary ? ratio : 0,
-      fallback: 0,
-    };
-  }
-
-  /**
-   * Applies the reference blend/reconstruction slot before Alpha thresholds.
-   * Modes zero and three use linear-axis recovery, mode one reverses source
-   * compositing, and mode two combines both branches by public confidence data.
-   * @param {Uint8ClampedArray} data Mutable output pixels.
-   * @param {Uint8ClampedArray|Uint8Array} source Original pixels.
-   * @param {Uint8Array} selectedMask Replaced pixels.
-   * @param {Uint8Array|null} operationMask Optional public 255 mask.
-   * @param {Uint8Array|null} protectedMask Protected pixels.
-   * @param {{r:number,g:number,b:number,a:number}} referenceColor Reference color.
-   * @param {{r:number,g:number,b:number,a:number}} replacementColor Replacement color.
-   * @param {number} strength Blend strength in the range 0-100.
-   * @param {number} mode Reconstruction mode.
-   * @param {{r:number,g:number,b:number}|null} despillReferenceColor Optional despill axis color.
-   * @returns {void}
-   */
-  function applyReferenceBlendRecovery(
-    data,
-    source,
-    selectedMask,
-    operationMask,
-    protectedMask,
-    referenceColor,
-    replacementColor,
-    strength,
-    mode,
-    despillReferenceColor,
-  ) {
-    if (!Math.min(100, Math.max(0, Math.trunc(strength || 0)))) return;
-    const configuration = createReferenceBlendConfiguration(
-      referenceColor,
-      replacementColor,
-      despillReferenceColor,
-      strength,
-    );
-    for (let pixel = 0; pixel < selectedMask.length; pixel += 1) {
-      if (
-        selectedMask[pixel]
-        || protectedMask?.[pixel]
-        || (operationMask && operationMask[pixel] !== 255)
-      ) continue;
-      const offset = pixel * 4;
-      let recovered;
-      if ((mode | 0) === 1) {
-        recovered = recoverReferenceComposite(
-          configuration,
-          source[offset],
-          source[offset + 1],
-          source[offset + 2],
-          source[offset + 3],
-          false,
-        );
-      } else if ((mode | 0) === 2) {
-        const linearRecovery = recoverReferenceLinearAxis(
-          configuration,
-          source[offset],
-          source[offset + 1],
-          source[offset + 2],
-          source[offset + 3],
-          true,
-        );
-        const compositeRecovery = recoverReferenceComposite(
-          configuration,
-          source[offset],
-          source[offset + 1],
-          source[offset + 2],
-          source[offset + 3],
-          true,
-        );
-        if (!linearRecovery.valid) recovered = compositeRecovery;
-        else if (!compositeRecovery.valid) recovered = linearRecovery;
-        else if (linearRecovery.confidence < 0.1 && compositeRecovery.confidence < 0.1) {
-          recovered = linearRecovery;
-        } else if (linearRecovery.confidence < 0.1) recovered = compositeRecovery;
-        else if (compositeRecovery.confidence < 0.1) recovered = linearRecovery;
-        else {
-          const inverseRatio = 1 - compositeRecovery.ratio;
-          const ratioWeight = inverseRatio <= 0.15
-            ? 0
-            : inverseRatio >= 0.4
-              ? 1
-              : (inverseRatio - 0.15) * 4;
-          const magnitudeDelta = linearRecovery.magnitude - compositeRecovery.ratio;
-          const deltaWeight = Math.abs(magnitudeDelta) <= 0.25
-            ? 1
-            : Math.abs(magnitudeDelta) >= 0.6
-              ? 0
-              : 1 - (Math.abs(magnitudeDelta) - 0.25) / 0.35;
-          const adjustedLinearConfidence = linearRecovery.confidence
-            + (1 - ratioWeight) * 0.15;
-          const confidenceSum = compositeRecovery.confidence
-            + adjustedLinearConfidence
-            + 0.000001;
-          const linearShare = adjustedLinearConfidence / confidenceSum;
-          let directionGate = 0;
-          if (compositeRecovery.fallback > 0 && magnitudeDelta > 0) directionGate = 1;
-          else if (magnitudeDelta > 0.3) {
-            directionGate = magnitudeDelta >= 0.5 ? 1 : (magnitudeDelta - 0.3) / 0.2;
-          }
-          const preliminaryWeight = (
-            linearShare * (deltaWeight * 0.5 + 0.5)
-            + (compositeRecovery.confidence <= linearRecovery.confidence ? 1 : 0)
-              * (deltaWeight * -0.5 + 0.5)
-          );
-          const suppression = compositeRecovery.confidence * ratioWeight * directionGate;
-          const linearWeight = preliminaryWeight * (1 - suppression);
-          const compositeWeight = 1 - linearWeight;
-          const linear = linearRecovery.linear.map((channel, index) => (
-            linearWeight * channel + compositeWeight * compositeRecovery.linear[index]
-          ));
-          let alpha;
-          if (suppression > 0.5) alpha = compositeRecovery.alpha;
-          else {
-            const alphaWeight = ((1 - ratioWeight) * (1 - linearShare) + linearShare)
-              * (1 - suppression);
-            if (deltaWeight > 0.5) {
-              alpha = alphaWeight * linearRecovery.alpha
-                + (1 - alphaWeight) * compositeRecovery.alpha;
-            } else {
-              const selectedAlpha = alphaWeight >= 0.5
-                ? linearRecovery.alpha
-                : compositeRecovery.alpha;
-              alpha = selectedAlpha * 0.6
-                + Math.min(linearRecovery.alpha, compositeRecovery.alpha) * 0.4;
-            }
-          }
-          recovered = { valid: true, linear, alpha };
-        }
-      } else {
-        recovered = recoverReferenceLinearAxis(
-          configuration,
-          source[offset],
-          source[offset + 1],
-          source[offset + 2],
-          source[offset + 3],
-          false,
-        );
-      }
-      if (!recovered?.valid) continue;
-      data[offset] = referenceLinearToSrgb(recovered.linear[0]);
-      data[offset + 1] = referenceLinearToSrgb(recovered.linear[1]);
-      data[offset + 2] = referenceLinearToSrgb(recovered.linear[2]);
-      data[offset + 3] = clamp(Math.trunc(recovered.alpha * 255 + 0.5), 0, 255);
-    }
-  }
-
-  /**
-   * Restores the non-zero-radius boundary produced by reference replacement.
-   * Mode zero grows replacement RGBA, mode one subtracts the sampled background,
-   * and mode two performs the same recovery in YCbCr before Alpha reconstruction.
-   * @param {Uint8ClampedArray} data Mutable replaced RGBA pixels.
-   * @param {Uint8ClampedArray|Uint8Array} source Original RGBA pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @param {Uint8Array} selectedMask Replaced pixels.
-   * @param {Uint8Array|null} operationMask Optional public 255 mask.
-   * @param {Uint8Array|null} protectedMask Protected pixels.
-   * @param {{r:number,g:number,b:number,a:number}} referenceColor Sampled color.
-   * @param {{r:number,g:number,b:number,a:number}} replacementColor Replacement color.
-   * @param {number} radius Edge radius.
-   * @param {number} mode Reference recovery mode.
-   * @param {number} selectionThresholdSquared Squared RGBA selection tolerance.
-   * @returns {void}
-   */
-  function restoreReferenceReplacementEdges(
-    data,
-    source,
-    width,
-    height,
-    selectedMask,
-    operationMask,
-    protectedMask,
-    referenceColor,
-    replacementColor,
-    radius,
-    mode,
-    selectionThresholdSquared,
-  ) {
-    const safeRadius = Math.max(0, Math.min(600, Math.trunc(radius || 0)));
-    if (!safeRadius) return;
-    const pixelCount = width * height;
-    const edgeSource = new Uint8ClampedArray(data);
-    const visited = new Uint8Array(pixelCount);
-    let frontier = new Uint8Array(pixelCount);
-    for (let pixel = 0; pixel < pixelCount; pixel += 1) {
-      if (selectedMask[pixel] !== 1) continue;
-      const x = pixel % width;
-      const y = Math.floor(pixel / width);
-      if (
-        (x > 0 && !selectedMask[pixel - 1])
-        || (x + 1 < width && !selectedMask[pixel + 1])
-        || (y > 0 && !selectedMask[pixel - width])
-        || (y + 1 < height && !selectedMask[pixel + width])
-      ) frontier[pixel] = 1;
-    }
-    const referenceLinear = [
-      referenceSrgbToLinear(referenceColor.r),
-      referenceSrgbToLinear(referenceColor.g),
-      referenceSrgbToLinear(referenceColor.b),
-    ];
-    const replacementLinear = [
-      referenceSrgbToLinear(replacementColor.r),
-      referenceSrgbToLinear(replacementColor.g),
-      referenceSrgbToLinear(replacementColor.b),
-    ];
-    const linearAxis = referenceLinear.map(
-      (channel, index) => channel - replacementLinear[index],
-    );
-    const linearAxisLengthSquared = linearAxis.reduce(
-      (sum, channel) => sum + channel * channel,
-      0,
-    );
-    const halfLinearAxisLengthSquared = linearAxisLengthSquared * 0.5;
-    const replacementYcbcr = rgbToReferenceYcbcr(
-      replacementColor.r,
-      replacementColor.g,
-      replacementColor.b,
-    );
-    let minimumAlpha = replacementColor.a;
-    let maximumAlpha = replacementColor.a;
-    const alphaDelta = replacementColor.a - referenceColor.a;
-
-    /**
-     * Returns the public eight-neighbor minimum alpha among earlier edge layers.
-     * @param {number} pixel Pixel index.
-     * @returns {number}
-     */
-    const minimumVisitedNeighborAlpha = (pixel) => {
-      const x = pixel % width;
-      const y = Math.floor(pixel / width);
-      let minimum = 0;
-      for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
-        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
-          if (!offsetX && !offsetY) continue;
-          const neighborX = x + offsetX;
-          const neighborY = y + offsetY;
-          if (
-            neighborX < 0
-            || neighborX >= width
-            || neighborY < 0
-            || neighborY >= height
-          ) continue;
-          const neighbor = neighborY * width + neighborX;
-          if (!visited[neighbor]) continue;
-          const alpha = data[neighbor * 4 + 3];
-          if (!minimum || alpha < minimum) minimum = alpha;
-        }
-      }
-      return minimum;
-    };
-
-    /**
-     * Applies the public Alpha bounds and opaque-neighbor recovery.
-     * @param {number} pixel Pixel index.
-     * @param {number} candidate Candidate alpha.
-     * @param {number} layer Current one-based layer.
-     * @returns {number}
-     */
-    const constrainLayerAlpha = (pixel, candidate, layer) => {
-      let alpha = clamp(Math.trunc(candidate + 0.5), 0, 255);
-      if (alphaDelta > 0) alpha = Math.min(alpha, maximumAlpha);
-      else if (alphaDelta < 0) {
-        alpha = Math.max(alpha, minimumAlpha);
-        const neighborAlpha = minimumVisitedNeighborAlpha(pixel);
-        if (neighborAlpha >= 241) {
-          const recovered = Math.trunc(
-            (layer / safeRadius) * (255 - neighborAlpha) + neighborAlpha + 0.5,
-          );
-          alpha = Math.max(alpha, recovered);
-        }
-      }
-      return alpha;
-    };
-
-    const modeNumber = mode | 0;
-    const threshold = Math.max(0, Math.trunc(selectionThresholdSquared || 0));
-    const expandedThreshold = Math.min(260100, threshold * 4);
-    const thresholdRange = expandedThreshold - threshold;
-    if (modeNumber === 0 && thresholdRange <= 0) return;
-    if (
-      modeNumber !== 0
-      && referenceColor.a === replacementColor.a
-      && linearAxisLengthSquared < 0.0001
-    ) return;
-
-    for (let layer = 1; layer <= safeRadius; layer += 1) {
-      const next = new Uint8Array(pixelCount);
-      let nextCount = 0;
-      for (let pixel = 0; pixel < frontier.length; pixel += 1) {
-        if (!frontier[pixel]) continue;
-        const x = pixel % width;
-        const y = Math.floor(pixel / width);
-        const neighbors = [];
-        if (x > 0) neighbors.push(pixel - 1);
-        if (x + 1 < width) neighbors.push(pixel + 1);
-        if (y > 0) neighbors.push(pixel - width);
-        if (y + 1 < height) neighbors.push(pixel + width);
-        for (const neighbor of neighbors) {
-          if (
-            selectedMask[neighbor]
-            || visited[neighbor]
-          ) continue;
-          if (!next[neighbor]) {
-            next[neighbor] = 1;
-            nextCount += 1;
-          }
-        }
-      }
-      if (!nextCount) break;
-      const layerWeight = 1 - (layer - 1) / safeRadius;
-      const layerRatio = layer / safeRadius;
-      let layerChanged = false;
-      let alphaTotal = 0;
-      let alphaCount = 0;
-      for (let pixel = 0; pixel < next.length; pixel += 1) {
-        if (!next[pixel]) continue;
-        visited[pixel] = 1;
-        const offset = pixel * 4;
-        if (modeNumber === 0) {
-          const redDelta = edgeSource[offset] - referenceColor.r;
-          const greenDelta = edgeSource[offset + 1] - referenceColor.g;
-          const blueDelta = edgeSource[offset + 2] - referenceColor.b;
-          const distanceSquared = redDelta * redDelta
-            + greenDelta * greenDelta
-            + blueDelta * blueDelta;
-          if (distanceSquared > expandedThreshold) {
-            if (edgeSource[offset + 3] !== 255) layerChanged = true;
-            continue;
-          }
-          const toleranceWeight = distanceSquared > threshold
-            ? 1 - (distanceSquared - threshold) / thresholdRange
-            : 1;
-          const influence = toleranceWeight
-            * (1 - (layer - 0.5) / safeRadius)
-            * toleranceWeight;
-          data[offset] = clamp(Math.trunc(edgeSource[offset]
-            + (replacementColor.r - referenceColor.r) * influence + 0.5), 0, 255);
-          data[offset + 1] = clamp(Math.trunc(edgeSource[offset + 1]
-            + (replacementColor.g - referenceColor.g) * influence + 0.5), 0, 255);
-          data[offset + 2] = clamp(Math.trunc(edgeSource[offset + 2]
-            + (replacementColor.b - referenceColor.b) * influence + 0.5), 0, 255);
-          data[offset + 3] = clamp(Math.trunc(edgeSource[offset + 3]
-            + alphaDelta * influence + 0.5), 0, 255);
-          layerChanged = true;
-          continue;
-        }
-        if (linearAxisLengthSquared < 0.0001) {
-          data[offset + 3] = constrainLayerAlpha(
-            pixel,
-            edgeSource[offset + 3] + layerWeight * alphaDelta,
-            layer,
-          );
-          layerChanged = true;
-          alphaTotal += data[offset + 3];
-          alphaCount += 1;
-          continue;
-        }
-        let projection = 0;
-        let confidence = 0;
-        const pixelLinear = [
-          referenceSrgbToLinear(edgeSource[offset]),
-          referenceSrgbToLinear(edgeSource[offset + 1]),
-          referenceSrgbToLinear(edgeSource[offset + 2]),
-        ];
-        const relative = pixelLinear.map(
-          (channel, index) => channel - replacementLinear[index],
-        );
-        projection = relative.reduce(
-          (sum, channel, index) => sum + channel * linearAxis[index],
-          0,
-        ) / linearAxisLengthSquared;
-        if (projection > 0.01) {
-          if (modeNumber === 2) confidence = 1;
-          else {
-            const residual = relative.map(
-              (channel, index) => channel - projection * linearAxis[index],
-            );
-            const residualSquared = residual.reduce(
-              (sum, channel) => sum + channel * channel,
-              0,
-            );
-            if (residualSquared < halfLinearAxisLengthSquared) {
-              confidence = 1 - residualSquared / halfLinearAxisLengthSquared;
-            }
-          }
-        }
-        if (projection <= 0.01 || confidence <= 0) {
-          alphaTotal += data[offset + 3];
-          alphaCount += 1;
-          continue;
-        }
-        const magnitude = Math.min(1, projection) * confidence;
-        if (modeNumber === 2) {
-          const colorInfluence = layerWeight * Math.sqrt(Math.min(1, projection));
-          const converted = rgbToReferenceYcbcr(
-            edgeSource[offset],
-            edgeSource[offset + 1],
-            edgeSource[offset + 2],
-          );
-          const recovered = referenceYcbcrToRgb(
-            converted.y,
-            colorInfluence * (replacementYcbcr.cb - converted.cb) + converted.cb,
-            colorInfluence * (replacementYcbcr.cr - converted.cr) + converted.cr,
-          );
-          data[offset] = recovered.r;
-          data[offset + 1] = recovered.g;
-          data[offset + 2] = recovered.b;
-          const alphaCandidate = projection < 0.3
-            ? 255
-            : edgeSource[offset + 3] + colorInfluence * alphaDelta;
-          data[offset + 3] = constrainLayerAlpha(pixel, alphaCandidate, layer);
-        } else {
-          let taper = 1;
-          if (linearAxisLengthSquared >= 0.0001 && safeRadius > 2 && layer > safeRadius * 0.7) {
-            taper = Math.max(0.2, Math.min(1, (safeRadius - layer) / (safeRadius * 0.3)));
-          }
-          const colorScale = magnitude * -taper;
-          for (let channel = 0; channel < 3; channel += 1) {
-            data[offset + channel] = referenceLinearToSrgb(
-              clamp(pixelLinear[channel] + colorScale * linearAxis[channel], 0, 1),
-            );
-          }
-          data[offset + 3] = constrainLayerAlpha(
-            pixel,
-            edgeSource[offset + 3] + layerWeight * magnitude * alphaDelta,
-            layer,
-          );
-        }
-        layerChanged = true;
-        alphaTotal += data[offset + 3];
-        alphaCount += 1;
-      }
-      if (modeNumber !== 0 && alphaCount > 0) {
-        const averageAlpha = Math.trunc(alphaTotal / alphaCount);
-        if (alphaDelta > 0) {
-          const blendedMaximum = Math.trunc((maximumAlpha * 2 + averageAlpha) / 3);
-          maximumAlpha = Math.min(maximumAlpha, blendedMaximum);
-        } else if (alphaDelta < 0) {
-          const blendedMinimum = Math.trunc((replacementColor.a * 2 + averageAlpha) / 3);
-          minimumAlpha = Math.max(minimumAlpha, blendedMinimum);
-        }
-      }
-      frontier = next;
-      if (modeNumber !== 0 && !layerChanged) break;
-    }
-  }
-
-  /**
-   * Runs the shared post-selection replacement pipeline used by kernels 07 and 13.
-   * @param {Uint8ClampedArray|Uint8Array} source Original RGBA pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @param {Uint8Array} selectedMask Selected pixels.
-   * @param {{r:number,g:number,b:number,a:number}} referenceColor Reference color.
-   * @param {{r:number,g:number,b:number,a:number}} replacementColor Replacement color.
-   * @param {object} options Pipeline options.
-   * @param {number} selectionThresholdSquared Squared RGBA selection tolerance.
-   * @returns {Uint8ClampedArray}
-   */
-  function applyReferenceReplacementPipeline(
-    source,
-    width,
-    height,
-    selectedMask,
-    referenceColor,
-    replacementColor,
-    options,
-    selectionThresholdSquared,
-  ) {
-    const operationMask = options.mask || null;
-    const protectedMask = createReferenceProtectionMask(
-      source,
-      width,
-      height,
-      referenceColor,
-      options.protectColors || [],
-    );
-    const output = new Uint8ClampedArray(source);
-    for (let pixel = 0; pixel < width * height; pixel += 1) {
-      if (
-        !selectedMask[pixel]
-        || (operationMask && operationMask[pixel] !== 255)
-        || protectedMask?.[pixel]
-      ) continue;
-      const offset = pixel * 4;
-      output[offset] = replacementColor.r;
-      output[offset + 1] = replacementColor.g;
-      output[offset + 2] = replacementColor.b;
-      output[offset + 3] = replacementColor.a;
-    }
-    applyReferenceBlendRecovery(
-      output,
-      source,
-      selectedMask,
-      operationMask,
-      protectedMask,
-      referenceColor,
-      replacementColor,
-      options.blendStrength,
-      options.despillMode,
-      options.despillRefColor || null,
-    );
-    applyReferenceAlphaThresholds(
-      output,
-      operationMask,
-      options.alphaThresholdHigh,
-      options.alphaThresholdLow,
-    );
-    restoreReferenceReplacementEdges(
-      output,
-      source,
-      width,
-      height,
-      selectedMask,
-      operationMask,
-      protectedMask,
-      referenceColor,
-      replacementColor,
-      options.edgeRestoreRadius,
-      options.edgeRestoreMode,
-      selectionThresholdSquared,
-    );
-    const despillReference = options.despillRefColor || referenceColor;
-    applyReferenceDirectionalDespill(
-      output,
-      selectedMask,
-      operationMask,
-      protectedMask,
-      despillReference,
-      options.despillStrength,
-    );
-    if (protectedMask) {
-      for (let pixel = 0; pixel < protectedMask.length; pixel += 1) {
-        if (!protectedMask[pixel]) continue;
-        const offset = pixel * 4;
-        output.set(source.subarray(offset, offset + 4), offset);
-      }
-    }
-    return output;
-  }
-
-  /**
-   * Rebuilds the public `fp_kernel_07` color-replacement entry point.
-   * @param {Uint8ClampedArray|Uint8Array} source RGBA source pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @param {{x:number,y:number}} seed Rounded reference coordinate.
-   * @param {{r:number,g:number,b:number,a?:number}} fillColor Replacement color.
-   * @param {number} tolerance Integer tolerance.
-   * @param {object} [options] Reference pipeline options.
-   * @returns {Uint8ClampedArray}
-   */
-  function applyReferenceColorReplace(source, width, height, seed, fillColor, tolerance, options = {}) {
-    const pixelCount = width * height;
-    if (width <= 0 || height <= 0 || !source || source.length !== pixelCount * 4) {
-      throw new RangeError("Reference color-replace RGBA length does not match its dimensions.");
-    }
-    const operationMask = options.mask || null;
-    if (operationMask && operationMask.length !== pixelCount) {
-      throw new RangeError("Reference color-replace mask length does not match its dimensions.");
-    }
-    const seedX = Math.round(seed?.x);
-    const seedY = Math.round(seed?.y);
-    const output = new Uint8ClampedArray(source);
-    if (seedX < 0 || seedY < 0 || seedX >= width || seedY >= height) return output;
-    const seedOffset = (seedY * width + seedX) * 4;
-    const referenceColor = options.referenceColor || {
-      r: source[seedOffset],
-      g: source[seedOffset + 1],
-      b: source[seedOffset + 2],
-      a: source[seedOffset + 3],
-    };
-    const reference = {
-      r: referenceColor.r & 255,
-      g: referenceColor.g & 255,
-      b: referenceColor.b & 255,
-      a: referenceColor.a == null ? 255 : (referenceColor.a & 255),
-    };
-    const replacement = {
-      r: fillColor.r & 255,
-      g: fillColor.g & 255,
-      b: fillColor.b & 255,
-      a: fillColor.a == null ? 255 : (fillColor.a & 255),
-    };
-    if (
-      reference.r === replacement.r
-      && reference.g === replacement.g
-      && reference.b === replacement.b
-      && reference.a === replacement.a
-    ) return output;
-    const safeTolerance = Math.trunc(tolerance);
-    const edgeEnhance = Math.trunc(options.edgeEnhance || 0);
-    const effectiveTolerance = safeTolerance < 0
-      ? -1
-      : (Math.max(0, 100 - safeTolerance) * edgeEnhance / 100 + safeTolerance);
-    const thresholdSquared = effectiveTolerance < 0
-      ? -1
-      : Math.trunc((effectiveTolerance * 5.1) ** 2 + 0.5);
-    const selectedMask = new Uint8Array(pixelCount);
-    if (thresholdSquared >= 0) {
-      for (let pixel = 0; pixel < pixelCount; pixel += 1) {
-        if (operationMask && operationMask[pixel] !== 255) continue;
-        if (referenceRgbaMatches(source, pixel, reference, thresholdSquared)) selectedMask[pixel] = 1;
-      }
-    }
-    return applyReferenceReplacementPipeline(
-      source,
-      width,
-      height,
-      selectedMask,
-      reference,
-      replacement,
-      options,
-      thresholdSquared,
-    );
-  }
-
-  /**
-   * Rebuilds `fp_kernel_13` flood-fill replacement and its shared edge pipeline.
-   * @param {Uint8ClampedArray|Uint8Array} source RGBA source pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @param {{x:number,y:number}} seed Rounded seed coordinate.
-   * @param {{r:number,g:number,b:number,a?:number}} fillColor Replacement RGBA color.
-   * @param {number} tolerance Integer tolerance.
-   * @param {{referenceColor?:{r:number,g:number,b:number,a?:number}|null,mask?:Uint8Array|null,edgeRestoreRadius?:number}} [options] Kernel options.
-   * @returns {Uint8ClampedArray}
-   */
-  function applyReferenceFloodFillDespill(
-    source,
-    width,
-    height,
-    seed,
-    fillColor,
-    tolerance,
-    options = {},
-  ) {
-    const pixelCount = width * height;
-    if (width <= 0 || height <= 0 || !source || source.length !== pixelCount * 4) {
-      throw new RangeError("Reference flood-fill RGBA length does not match its dimensions.");
-    }
-    const mask = options.mask || null;
-    if (mask && mask.length !== pixelCount) {
-      throw new RangeError("Reference flood-fill mask length does not match its dimensions.");
-    }
-    const seedX = Math.round(seed?.x);
-    const seedY = Math.round(seed?.y);
-    const output = new Uint8ClampedArray(source);
-    if (seedX < 0 || seedX >= width || seedY < 0 || seedY >= height) return output;
-    const seedOffset = (seedY * width + seedX) * 4;
-    const referenceColor = options.referenceColor || {
-      r: source[seedOffset],
-      g: source[seedOffset + 1],
-      b: source[seedOffset + 2],
-      a: source[seedOffset + 3],
-    };
-    const replacement = {
-      r: fillColor.r & 255,
-      g: fillColor.g & 255,
-      b: fillColor.b & 255,
-      a: fillColor.a == null ? 255 : (fillColor.a & 255),
-    };
-    const reference = {
-      r: referenceColor.r & 255,
-      g: referenceColor.g & 255,
-      b: referenceColor.b & 255,
-      a: referenceColor.a == null ? 255 : (referenceColor.a & 255),
-    };
-    if (
-      replacement.r === reference.r
-      && replacement.g === reference.g
-      && replacement.b === reference.b
-      && replacement.a === reference.a
-    ) {
-      return output;
-    }
-    const thresholdSquared = Math.trunc((Math.trunc(tolerance) * 5.1) ** 2 + 0.5);
-    const candidates = new Uint8Array(pixelCount);
-    for (let pixel = 0; pixel < pixelCount; pixel += 1) {
-      if (mask && mask[pixel] !== 255) continue;
-      if (referenceRgbaMatches(source, pixel, reference, thresholdSquared)) candidates[pixel] = 1;
-    }
-    const selected = connectedCandidateMask(candidates, width, height, {
-      seeds: [{ x: seedX, y: seedY }],
-      maximumPixels: pixelCount,
-    });
-    return applyReferenceReplacementPipeline(
-      source,
-      width,
-      height,
-      selected,
-      reference,
-      replacement,
-      {
-        ...options,
-        protectColors: [],
-        despillStrength: 0,
-        alphaThresholdHigh: 0,
-        alphaThresholdLow: 0,
-      },
-      thresholdSquared,
-    );
-  }
-
-  /**
    * Computes a 3-4 chamfer distance to transparent pixels.
    * @param {Uint8ClampedArray|Uint8Array} data RGBA pixels or an alpha plane.
    * @param {number} width Image width.
@@ -1890,445 +728,41 @@
     return false;
   }
 
-  /**
-   * Builds the byte-scale YCbCr direction descriptor used by the reference
-   * protection selector. Chroma values below three are treated as achromatic.
-   * @param {number} red Red channel.
-   * @param {number} green Green channel.
-   * @param {number} blue Blue channel.
-   * @returns {{r:number,g:number,b:number,y:number,chroma:number,dirCb:number,dirCr:number,achromatic:boolean}}
-   */
-  function referenceProtectionDescriptor(red, green, blue) {
-    const color = rgbToReferenceYcbcr(red, green, blue);
-    const centeredCb = color.cb - 128;
-    const centeredCr = color.cr - 128;
-    const chroma = Math.hypot(centeredCb, centeredCr);
-    return {
-      r: red & 255,
-      g: green & 255,
-      b: blue & 255,
-      y: color.y,
-      chroma,
-      dirCb: chroma < 3 ? 0 : centeredCb / chroma,
-      dirCr: chroma < 3 ? 0 : centeredCr / chroma,
-      achromatic: chroma < 3,
-    };
-  }
-
-  /**
-   * Rebuilds the directional color-membership predicate shared by
-   * `fp_kernel_07` and `fp_kernel_14`.
-   * @param {ReturnType<referenceProtectionDescriptor>} background Background descriptor.
-   * @param {ReturnType<referenceProtectionDescriptor>} candidate Candidate descriptor.
-   * @param {number} red Pixel red channel.
-   * @param {number} green Pixel green channel.
-   * @param {number} blue Pixel blue channel.
-   * @returns {boolean}
-   */
-  function referenceProtectionMatches(background, candidate, red, green, blue) {
-    const directDistanceSquared = (
-      (red - candidate.r) ** 2
-      + (green - candidate.g) ** 2
-      + (blue - candidate.b) ** 2
-    );
-    const pixel = referenceProtectionDescriptor(red, green, blue);
-    if (pixel.achromatic) {
-      if (!candidate.achromatic) return false;
-      return directDistanceSquared < 145;
-    }
-    if (candidate.achromatic) {
-      const candidateLinear = [
-        srgbToLinear(candidate.r),
-        srgbToLinear(candidate.g),
-        srgbToLinear(candidate.b),
-      ];
-      const backgroundLinear = [
-        srgbToLinear(background.r),
-        srgbToLinear(background.g),
-        srgbToLinear(background.b),
-      ];
-      const pixelLinear = [srgbToLinear(red), srgbToLinear(green), srgbToLinear(blue)];
-      const axis = backgroundLinear.map((channel, index) => channel - candidateLinear[index]);
-      const axisLengthSquared = axis.reduce((sum, channel) => sum + channel * channel, 0);
-      if (axisLengthSquared < 0.0001) return false;
-      const projection = pixelLinear.reduce((sum, channel, index) => (
-        sum + (channel - candidateLinear[index]) * axis[index]
-      ), 0) / axisLengthSquared;
-      return projection <= 0.1 && directDistanceSquared < 301;
-    }
-    const directionDot = pixel.dirCb * candidate.dirCb + pixel.dirCr * candidate.dirCr;
-    if (directionDot < 0.9) return false;
-    if (
-      directionDot >= 0.97
-      && Math.abs(pixel.y - candidate.y) <= 5
-      && Math.abs(pixel.chroma - candidate.chroma) <= 8
-    ) {
-      return true;
-    }
-    const crossAxis = background.chroma * (
-      background.dirCb * candidate.dirCr - background.dirCr * candidate.dirCb
-    );
-    if (Math.abs(crossAxis) < 1) return false;
-    const chromaPosition = pixel.chroma * (
-      pixel.dirCb * candidate.dirCr - pixel.dirCr * candidate.dirCb
-    ) / crossAxis;
-    if (pixel.chroma > candidate.chroma * 1.3) return false;
-    const lightnessAxis = background.y - candidate.y;
-    if (
-      Math.abs(lightnessAxis) > 2
-      && chromaPosition + 0.2 < (pixel.y - candidate.y) / lightnessAxis
-    ) {
-      return false;
-    }
-    return chromaPosition <= 0.1;
-  }
-
-  /**
-   * Selects protected colors with the reference direction-cluster and greedy
-   * coverage semantics used by `fp_kernel_14`.
-   * @param {Uint8ClampedArray|Uint8Array} data Source RGBA pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @param {{r:number,g:number,b:number}} backgroundColor Background/reference color.
-   * @param {{
-   *   coverageThreshold?:number,
-   *   maximumColors?:number,
-   *   existingColors?:Array<{r:number,g:number,b:number}|number[]>,
-   *   previewData?:Uint8ClampedArray|Uint8Array|null,
-   *   fullOriginalData?:Uint8ClampedArray|Uint8Array|null,
-   *   fullPreviewData?:Uint8ClampedArray|Uint8Array|null,
-   *   fullWidth?:number,
-   *   fullHeight?:number
-   * }} [options] Reference selection options.
-   * @returns {{colors:Array<{r:number,g:number,b:number,count:number}>,count:number,coverage:number,status:number,sampleCount:number}}
-   */
-  function selectReferenceProtectedColors(data, width, height, backgroundColor, options = {}) {
-    const pixelCount = width * height;
-    if (width <= 0 || height <= 0 || !data || data.length !== pixelCount * 4) {
-      throw new RangeError("Reference protection RGBA length does not match its dimensions.");
-    }
-    const previewData = options.previewData || null;
-    if (previewData && previewData.length !== data.length) {
-      throw new RangeError("Reference protection preview length does not match its source.");
-    }
-    const background = referenceProtectionDescriptor(
-      backgroundColor.r,
-      backgroundColor.g,
-      backgroundColor.b,
-    );
-    const maximumColors = Math.max(1, Math.min(32, Math.trunc(options.maximumColors || 32)));
-    const coverageThreshold = Math.max(0, Math.min(100, Math.trunc(options.coverageThreshold ?? 95)));
-    const step = pixelCount >= 5001
-      ? Math.max(1, Math.ceil(Math.sqrt(pixelCount / 5000)))
-      : 1;
-    const bucketCounts = new Uint32Array(4096);
-    const samples = [];
-    const centerX = width > 1 ? (width - 1) * 0.5 : 0;
-    const centerY = height > 1 ? (height - 1) * 0.5 : 0;
-    for (let y = 0; y < height; y += step) {
-      for (let x = 0; x < width; x += step) {
-        const pixel = y * width + x;
-        const offset = pixel * 4;
-        if (previewData && (previewData[offset + 3] === 0 || previewData[offset + 3] === 255)) continue;
-        const descriptor = referenceProtectionDescriptor(data[offset], data[offset + 1], data[offset + 2]);
-        const bucket = ((descriptor.r >> 4) << 8) | ((descriptor.g >> 4) << 4) | (descriptor.b >> 4);
-        bucketCounts[bucket] += 1;
-        samples.push({
-          ...descriptor,
-          sampleX: x,
-          sampleY: y,
-          radiusSquared: (x - centerX) ** 2 + (y - centerY) ** 2,
-          bucket,
-          weight: 0,
-        });
-      }
-    }
-    if (!samples.length) {
-      return { colors: [], count: 0, coverage: 100, status: 0, sampleCount: 0 };
-    }
-    for (const sample of samples) {
-      sample.weight = bucketCounts[sample.bucket] / samples.length;
-      if (
-        !sample.achromatic
-        && sample.dirCb * background.dirCb + sample.dirCr * background.dirCr >= 0.9
-      ) {
-        sample.weight *= 0.1;
-      }
-    }
-    samples.sort((left, right) => {
-      if (left.achromatic !== right.achromatic) return left.achromatic ? 1 : -1;
-      if (left.achromatic) return left.y - right.y;
-      return Math.atan2(left.dirCr, left.dirCb) - Math.atan2(right.dirCr, right.dirCb);
-    });
-    const groups = [];
-    let groupStart = 0;
-    for (let index = 1; index <= samples.length; index += 1) {
-      const previous = samples[index - 1];
-      const current = samples[index];
-      const sameDirection = current && (
-        (previous.achromatic && current.achromatic)
-        || (!previous.achromatic && !current.achromatic
-          && previous.dirCb * current.dirCb + previous.dirCr * current.dirCr >= 0.9)
-      );
-      if (sameDirection) continue;
-      groups.push(samples.slice(groupStart, index));
-      groupStart = index;
-    }
-    const candidates = [];
-    for (const group of groups) {
-      const selected = [];
-      if (group.length < 5) {
-        const representative = [...group].sort((left, right) => (
-          right.weight - left.weight || left.y - right.y || right.radiusSquared - left.radiusSquared
-        ))[0];
-        selected.push([...group]
-          .filter((sample) => sample.bucket === representative.bucket)
-          .sort((left, right) => left.r - right.r || left.g - right.g || left.b - right.b)[0]);
-      } else {
-        const weights = group.map((sample) => sample.weight);
-        if (Math.max(...weights) < Math.min(...weights) * 3) {
-          const byLightness = [...group].sort((left, right) => (
-            left.y - right.y || right.radiusSquared - left.radiusSquared
-          ));
-          const neighborhood = Math.max(1, Math.trunc(group.length / 6));
-          for (const quantile of [0.25, 0.5, 0.75]) {
-            const center = Math.min(group.length - 1, Math.max(0, Math.trunc((group.length - 1) * quantile)));
-            const start = Math.max(0, center - neighborhood);
-            const end = Math.min(group.length - 1, center + neighborhood);
-            let representative = byLightness[center];
-            for (let index = start; index <= end; index += 1) {
-              if (byLightness[index].weight > representative.weight) representative = byLightness[index];
-            }
-            selected.push(representative);
-          }
-        } else {
-          const byWeight = [...group].sort((left, right) => (
-            right.weight - left.weight || left.y - right.y || right.radiusSquared - left.radiusSquared
-          ));
-          selected.push(byWeight[0]);
-          const separated = byWeight.find((sample) => Math.abs(sample.y - byWeight[0].y) >= 15);
-          if (separated) selected.push(separated);
-        }
-      }
-      const globalCoverage = (candidate) => samples.reduce((count, sample) => (
-        count + (referenceProtectionMatches(
-          background,
-          candidate,
-          sample.r,
-          sample.g,
-          sample.b,
-        ) ? 1 : 0)
-      ), 0);
-      let bestCoverage = selected.reduce((maximum, candidate) => (
-        Math.max(maximum, globalCoverage(candidate))
-      ), 0);
-      let bestRadiusSquared = Number.POSITIVE_INFINITY;
-      let medoid = null;
-      for (const sample of group) {
-        const coverage = globalCoverage(sample);
-        const separatedFromBest = selected
-          .filter((candidate) => globalCoverage(candidate) === bestCoverage)
-          .every((candidate) => Math.abs(candidate.y - sample.y) >= 15);
-        if (
-          coverage > bestCoverage
-          || (coverage === bestCoverage
-            && separatedFromBest
-            && (!medoid || sample.radiusSquared < bestRadiusSquared))
-        ) {
-          medoid = sample;
-          bestCoverage = coverage;
-          bestRadiusSquared = sample.radiusSquared;
-        }
-      }
-      if (medoid) selected.unshift(medoid);
-      for (const sample of selected) {
-        const alignedWithBackground = !sample.achromatic
-          && sample.chroma >= 3
-          && sample.dirCb * background.dirCb + sample.dirCr * background.dirCr >= 0.9;
-        candidates.push({ ...sample, descriptor: sample, excluded: alignedWithBackground, fullCoverage: 0 });
-      }
-    }
-    const fullOriginalData = options.fullOriginalData || null;
-    const fullPreviewData = options.fullPreviewData || null;
-    const fullWidth = Math.trunc(options.fullWidth || 0);
-    const fullHeight = Math.trunc(options.fullHeight || 0);
-    if (
-      fullOriginalData
-      && fullPreviewData
-      && fullWidth > 0
-      && fullHeight > 0
-      && fullOriginalData.length === fullWidth * fullHeight * 4
-      && fullPreviewData.length === fullOriginalData.length
-    ) {
-      let partialPixels = 0;
-      for (let offset = 3; offset < fullPreviewData.length; offset += 4) {
-        if (fullPreviewData[offset] > 0 && fullPreviewData[offset] < 255) partialPixels += 1;
-      }
-      const fullStep = partialPixels > 200000 ? 2 : 1;
-      for (const candidate of candidates) {
-        if (candidate.excluded) continue;
-        let matches = 0;
-        for (let y = 0; y < fullHeight; y += fullStep) {
-          for (let x = 0; x < fullWidth; x += fullStep) {
-            const offset = (y * fullWidth + x) * 4;
-            const alpha = fullPreviewData[offset + 3];
-            if (alpha === 0 || alpha === 255) continue;
-            if (referenceProtectionMatches(
-              background,
-              candidate.descriptor,
-              fullOriginalData[offset],
-              fullOriginalData[offset + 1],
-              fullOriginalData[offset + 2],
-            )) matches += 1;
-          }
-        }
-        candidate.fullCoverage = (matches * fullStep * fullStep) / (fullWidth * fullHeight);
-      }
-      const visibleCandidates = candidates.filter((candidate) => !candidate.excluded);
-      const substantial = visibleCandidates.filter((candidate) => candidate.fullCoverage >= 0.0005);
-      if (substantial.length >= 2) {
-        for (const candidate of visibleCandidates) {
-          if (candidate.fullCoverage < 0.0005) candidate.excluded = true;
-        }
-      } else {
-        const retained = new Set(
-          [...visibleCandidates]
-            .sort((left, right) => right.fullCoverage - left.fullCoverage)
-            .slice(0, 2),
-        );
-        for (const candidate of visibleCandidates) {
-          if (!retained.has(candidate)) candidate.excluded = true;
-        }
-      }
-    }
-    const existingColors = Array.isArray(options.existingColors) ? options.existingColors.slice(0, 32) : [];
-    const existingDescriptors = existingColors.map((color) => {
-      const red = Array.isArray(color) ? color[0] : color.r;
-      const green = Array.isArray(color) ? color[1] : color.g;
-      const blue = Array.isArray(color) ? color[2] : color.b;
-      return referenceProtectionDescriptor(red, green, blue);
-    });
-    const covered = new Uint8Array(samples.length);
-    let coveredCount = 0;
-    for (let index = 0; index < samples.length; index += 1) {
-      const sample = samples[index];
-      if (existingDescriptors.some((descriptor) => referenceProtectionMatches(
-        background,
-        descriptor,
-        sample.r,
-        sample.g,
-        sample.b,
-      ))) {
-        covered[index] = 1;
-        coveredCount += 1;
-      }
-    }
-    const selectedColors = [];
-    while (
-      selectedColors.length < maximumColors
-      && coveredCount * 100 < samples.length * coverageThreshold
-    ) {
-      let bestCandidate = null;
-      let bestCoverage = 0;
-      for (const candidate of candidates) {
-        if (candidate.excluded) continue;
-        let candidateCoverage = 0;
-        for (let index = 0; index < samples.length; index += 1) {
-          if (covered[index]) continue;
-          const sample = samples[index];
-          if (referenceProtectionMatches(
-            background,
-            candidate.descriptor,
-            sample.r,
-            sample.g,
-            sample.b,
-          )) candidateCoverage += 1;
-        }
-        if (candidateCoverage > bestCoverage) {
-          bestCandidate = candidate;
-          bestCoverage = candidateCoverage;
-        }
-      }
-      if (!bestCandidate || bestCoverage === 0) break;
-      selectedColors.push({
-        r: bestCandidate.r,
-        g: bestCandidate.g,
-        b: bestCandidate.b,
-        count: bestCoverage,
-      });
-      for (let index = 0; index < samples.length; index += 1) {
-        if (covered[index]) continue;
-        const sample = samples[index];
-        if (referenceProtectionMatches(
-          background,
-          bestCandidate.descriptor,
-          sample.r,
-          sample.g,
-          sample.b,
-        )) {
-          covered[index] = 1;
-          coveredCount += 1;
-        }
-      }
-      bestCandidate.excluded = true;
-    }
-    const coverage = Math.trunc((coveredCount * 100) / samples.length);
-    const status = coverage >= coverageThreshold
-      ? 0
-      : (selectedColors.length < maximumColors ? 2 : 1);
-    return {
-      colors: selectedColors,
-      count: selectedColors.length,
-      coverage,
-      status,
-      sampleCount: samples.length,
-    };
-  }
-
-  /**
-   * Samples representative protected colors inside a rectangle.
-   * @param {Uint8ClampedArray|Uint8Array} data RGBA pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @param {{x1:number,y1:number,x2:number,y2:number}} rectangle Selection rectangle.
-   * @param {{
-   *   maximumColors?:number,
-   *   coverage?:number,
-   *   excludeColors?:Array<{r:number,g:number,b:number}>,
-   *   existingColors?:Array<{r:number,g:number,b:number}>
-   * }} options Sampling options.
-   * @returns {Array<{r:number,g:number,b:number,count:number}>}
-   */
-  function extractProtectedColors(data, width, height, rectangle, options = {}) {
-    const startX = Math.max(0, Math.floor(Math.min(rectangle.x1, rectangle.x2)));
-    const endX = Math.min(width - 1, Math.ceil(Math.max(rectangle.x1, rectangle.x2)));
-    const startY = Math.max(0, Math.floor(Math.min(rectangle.y1, rectangle.y2)));
-    const endY = Math.min(height - 1, Math.ceil(Math.max(rectangle.y1, rectangle.y2)));
-    const regionWidth = Math.max(0, endX - startX + 1);
-    const regionHeight = Math.max(0, endY - startY + 1);
-    if (!regionWidth || !regionHeight) return [];
-    const regionData = new Uint8ClampedArray(regionWidth * regionHeight * 4);
-    let targetOffset = 0;
-    for (let y = startY; y <= endY; y += 1) {
-      const sourceOffset = (y * width + startX) * 4;
-      const sourceEnd = sourceOffset + regionWidth * 4;
-      regionData.set(data.subarray(sourceOffset, sourceEnd), targetOffset);
-      targetOffset += regionWidth * 4;
-    }
-    const excludeColors = Array.isArray(options.excludeColors) ? options.excludeColors : [];
-    const backgroundColor = excludeColors[0] || options.backgroundColor || { r: 0, g: 255, b: 0 };
-    return selectReferenceProtectedColors(
-      regionData,
-      regionWidth,
-      regionHeight,
-      backgroundColor,
-      {
-        coverageThreshold: Math.round(clamp(options.coverage ?? 0.95, 0, 1) * 100),
-        maximumColors: options.maximumColors,
-        existingColors: options.existingColors,
-      },
-    ).colors;
-  }
+  const protectionSelector = protectionCore.createProtectionSelector({
+    rgbToReferenceYcbcr,
+    srgbToLinear,
+  });
+  const {
+    createReferenceProtectionMask,
+    extractProtectedColors,
+    referenceProtectionDescriptor,
+    referenceProtectionMatches,
+    selectProtectedColorsInRectangle,
+    selectReferenceProtectedColors,
+  } = protectionSelector;
+  const referenceRecoveryPipeline = referenceRecoveryCore.createReferenceRecoveryPipeline({
+    clamp,
+    referenceSrgbToLinear,
+    referenceLinearToSrgb,
+    rgbToReferenceYcbcr,
+    referenceYcbcrToRgb,
+    createReferenceProtectionMask,
+  });
+  const {
+    applyReferenceAlphaThresholds,
+    applyReferenceDirectionalDespill,
+    applyReferenceReplacementPipeline,
+  } = referenceRecoveryPipeline;
+  const referenceReplacementKernels = referenceReplaceCore.createReferenceReplacementKernels({
+    connectedCandidateMask,
+    applyReferenceReplacementPipeline,
+  });
+  const {
+    applyReferenceColorReplace,
+    applyReferenceFloodFillDespill,
+    diffuseReferenceCandidateMask,
+    diffuseReferenceGlobalCandidateMask,
+  } = referenceReplacementKernels;
 
   /**
    * Applies the reference smooth-step curve.
@@ -2399,12 +833,6 @@
     const green = data[offset + 1];
     const blue = data[offset + 2];
     const foregroundAverage = (red + green + blue) / 3;
-    const backgroundAverage = (backgroundColor.r + backgroundColor.g + backgroundColor.b) / 3;
-    const backgroundVector = [
-      backgroundColor.r - backgroundAverage,
-      backgroundColor.g - backgroundAverage,
-      backgroundColor.b - backgroundAverage,
-    ];
     const channels = [red, green, blue];
 
     for (let channelIndex = 0; channelIndex < 3; channelIndex += 1) {
@@ -2702,6 +1130,296 @@
   }
 
   /**
+   * Converts the product selection mask and protected-color tolerance into the
+   * public reference-kernel mask convention where enabled pixels equal 255.
+   * @param {Uint8ClampedArray|Uint8Array} source Source RGBA pixels.
+   * @param {number} width Image width.
+   * @param {number} height Image height.
+   * @param {object} options Product processing options.
+   * @returns {Uint8Array|null}
+   */
+  function createReferenceOperationMask(source, width, height, options) {
+    const selectionMask = options.selectionMask || null;
+    const protectedColors = Array.isArray(options.protectedColors) ? options.protectedColors : [];
+    if (!selectionMask && !protectedColors.length) return null;
+    const operationMask = new Uint8Array(width * height);
+    const protectionTolerance = clamp(options.protectionTolerance ?? 8, 0, 100);
+    for (let pixel = 0; pixel < operationMask.length; pixel += 1) {
+      if (selectionMask && !selectionMask[pixel]) continue;
+      const offset = pixel * 4;
+      const protectedPixel = protectedColors.some((color) => (
+        colorDistance(source[offset], source[offset + 1], source[offset + 2], color)
+          <= protectionTolerance
+      ));
+      if (!protectedPixel) operationMask[pixel] = 255;
+    }
+    return operationMask;
+  }
+
+  /**
+   * Maps product despill names to the complete reference reconstruction modes.
+   * @param {string} mode Product despill mode.
+   * @returns {number}
+   */
+  function referenceDespillMode(mode) {
+    if (mode === "blend") return 1;
+    if (mode === "chroma") return 2;
+    return 0;
+  }
+
+  /**
+   * Finds a border seed nearest to one background sample.
+   * @param {Uint8ClampedArray|Uint8Array} source Source RGBA pixels.
+   * @param {number} width Image width.
+   * @param {number} height Image height.
+   * @param {{r:number,g:number,b:number}} backgroundColor Background sample.
+   * @returns {{x:number,y:number}}
+   */
+  function findReferenceBorderSeed(source, width, height, backgroundColor) {
+    let best = { x: 0, y: 0, distance: Number.POSITIVE_INFINITY };
+    const inspect = (x, y) => {
+      const offset = (y * width + x) * 4;
+      const distance = colorDistance(
+        source[offset],
+        source[offset + 1],
+        source[offset + 2],
+        backgroundColor,
+      );
+      if (distance < best.distance) best = { x, y, distance };
+    };
+    for (let x = 0; x < width; x += 1) {
+      inspect(x, 0);
+      if (height > 1) inspect(x, height - 1);
+    }
+    for (let y = 1; y < height - 1; y += 1) {
+      inspect(0, y);
+      if (width > 1) inspect(width - 1, y);
+    }
+    return { x: best.x, y: best.y };
+  }
+
+  /**
+   * Applies the rebuilt edge-color restoration kernel when product protection
+   * samples provide a trustworthy uncontaminated foreground color.
+   * @param {Uint8ClampedArray} data Mutable cutout pixels.
+   * @param {number} width Image width.
+   * @param {number} height Image height.
+   * @param {Array<{r:number,g:number,b:number}>} protectedColors Foreground samples.
+   * @param {Array<{r:number,g:number,b:number}>} backgroundColors Contamination samples.
+   * @param {Uint8Array|null} operationMask Optional public 255 mask.
+   * @param {object} options Product processing options.
+   * @returns {void}
+   */
+  function restoreReferenceProtectedEdges(
+    data,
+    width,
+    height,
+    protectedColors,
+    backgroundColors,
+    operationMask,
+    options,
+  ) {
+    const strength = clamp(options.edgeRecoveryStrength ?? 0, 0, 100) / 100;
+    if (!strength || !protectedColors.length || !backgroundColors.length) return;
+    for (const correctColor of protectedColors.slice(0, 32)) {
+      for (const contaminatedColor of backgroundColors) {
+        let restored;
+        try {
+          restored = applyReferenceEdgeColorRestore(
+            data,
+            width,
+            height,
+            correctColor,
+            contaminatedColor,
+            {
+              tolerance: clamp(options.edgeRecoveryTolerance ?? 30, 0, 100),
+              edgeRadius: Math.max(0, Math.trunc(options.edgeDespillRadius || 0)),
+              backgroundRadius: clamp(options.backgroundRadius ?? 8, 1, 30),
+              mask: operationMask,
+            },
+          );
+        } catch (error) {
+          if (!(error instanceof RangeError)) throw error;
+          continue;
+        }
+        for (let pixel = 0; pixel < width * height; pixel += 1) {
+          if (operationMask && operationMask[pixel] !== 255) continue;
+          const offset = pixel * 4;
+          for (let channel = 0; channel < 3; channel += 1) {
+            data[offset + channel] = Math.round(
+              data[offset + channel]
+              + (restored[offset + channel] - data[offset + channel]) * strength,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Runs the rebuilt reference replacement kernels through the real product
+   * entry point, including multi-sample and connected-background semantics.
+   * @param {Uint8ClampedArray|Uint8Array} source Source RGBA pixels.
+   * @param {number} width Image width.
+   * @param {number} height Image height.
+   * @param {object} options Product processing options.
+   * @param {Array<{r:number,g:number,b:number}>} backgroundColors Background samples.
+   * @returns {{data:Uint8ClampedArray,removedPixels:number,partialPixels:number}}
+   */
+  function applyReferenceCutout(source, width, height, options, backgroundColors) {
+    const operationMask = createReferenceOperationMask(source, width, height, options);
+    const baseTolerance = clamp(options.tolerance ?? 18, 0, 100);
+    const cleanupAdjustment = (clamp(options.chromaCleanup ?? 40, 0, 100) - 40) * 0.25;
+    const adjustedTolerance = Math.trunc(clamp(baseTolerance + cleanupAdjustment, 0, 100));
+    const edgeEnhance = Math.trunc(clamp(options.edgeBoost ?? 0, 0, 100));
+    const tolerance = Math.trunc(
+      adjustedTolerance + (100 - adjustedTolerance) * edgeEnhance / 100,
+    );
+    const edgeRecoveryStrength = clamp(options.edgeRecoveryStrength ?? 0, 0, 100);
+    const protectedColors = Array.isArray(options.protectedColors) ? options.protectedColors : [];
+    const edgeRestoreRadius = Math.max(0, Math.trunc(options.edgeDespillRadius || 0));
+    const mode = referenceDespillMode(options.despillMode);
+    const seedPoints = Array.isArray(options.seedPoints) ? options.seedPoints : [];
+    const connected = options.connected !== false;
+    let data = new Uint8ClampedArray(source);
+    for (let backgroundIndex = 0; backgroundIndex < backgroundColors.length; backgroundIndex += 1) {
+      const backgroundColor = backgroundColors[backgroundIndex];
+      const referenceColor = { ...backgroundColor, a: 255 };
+      const pipelineOptions = {
+        mask: operationMask,
+        referenceColor,
+        edgeEnhance: 0,
+        blendStrength: edgeRecoveryStrength,
+        despillMode: mode,
+        despillRefColor: backgroundColor,
+        despillStrength: clamp(options.despillStrength ?? 0, 0, 100),
+        edgeRestoreRadius,
+        edgeRestoreMode: mode,
+        alphaThresholdHigh: clamp(options.alphaHigh ?? 255, 0, 255),
+        alphaThresholdLow: clamp(options.alphaLow ?? 0, 0, 255),
+      };
+      if (connected) {
+        const assignedSeeds = seedPoints.filter((seed) => {
+          if (!Number.isFinite(seed?.x) || !Number.isFinite(seed?.y)) return false;
+          const x = clamp(Math.round(seed.x), 0, width - 1);
+          const y = clamp(Math.round(seed.y), 0, height - 1);
+          const offset = (y * width + x) * 4;
+          let closestIndex = 0;
+          let closestDistance = Number.POSITIVE_INFINITY;
+          for (let index = 0; index < backgroundColors.length; index += 1) {
+            const distance = colorDistance(
+              source[offset],
+              source[offset + 1],
+              source[offset + 2],
+              backgroundColors[index],
+            );
+            if (distance < closestDistance) {
+              closestDistance = distance;
+              closestIndex = index;
+            }
+          }
+          return closestIndex === backgroundIndex;
+        });
+        const activeSeeds = assignedSeeds.length
+          ? assignedSeeds
+          : [findReferenceBorderSeed(source, width, height, backgroundColor)];
+        for (const seed of activeSeeds) {
+          data = applyReferenceFloodFillDespill(
+            data,
+            width,
+            height,
+            seed,
+            { r: 0, g: 0, b: 0, a: 0 },
+            tolerance,
+            pipelineOptions,
+          );
+        }
+      } else {
+        data = applyReferenceColorReplace(
+          data,
+          width,
+          height,
+          { x: 0, y: 0 },
+          { r: 0, g: 0, b: 0, a: 0 },
+          tolerance,
+          pipelineOptions,
+        );
+      }
+    }
+    const selectedMask = new Uint8Array(width * height);
+    for (let pixel = 0; pixel < selectedMask.length; pixel += 1) {
+      if (data[pixel * 4 + 3] < source[pixel * 4 + 3]) selectedMask[pixel] = 1;
+    }
+    applyReferenceAlphaThresholds(
+      data,
+      operationMask,
+      clamp(options.alphaHigh ?? 255, 0, 255),
+      clamp(options.alphaLow ?? 0, 0, 255),
+    );
+    if (connected) {
+      for (const backgroundColor of backgroundColors) {
+        applyReferenceDirectionalDespill(
+          data,
+          selectedMask,
+          operationMask,
+          null,
+          backgroundColor,
+          clamp(options.despillStrength ?? 0, 0, 100),
+        );
+      }
+    }
+    const alphaThreshold = clamp(options.alphaThreshold ?? 2, 0, 255);
+    for (let pixel = 0; pixel < selectedMask.length; pixel += 1) {
+      if (!selectedMask[pixel]) continue;
+      const alphaOffset = pixel * 4 + 3;
+      if (data[alphaOffset] <= alphaThreshold) data[alphaOffset] = 0;
+    }
+    const featherRadius = clamp(Math.round((
+      clamp(options.feather ?? 0, 0, 40)
+      + clamp(options.chromaFeather ?? 0, 0, 100) * 0.25
+    ) / 10), 0, 6);
+    const blurRadius = Math.max(featherRadius, clamp(options.blurRadius ?? 0, 0, 6));
+    let edgeDistance = chamferDistanceToTransparent(data, width, height);
+    if (blurRadius > 0) {
+      blurPremultipliedEdges(data, width, height, blurRadius, edgeDistance);
+      edgeDistance = chamferDistanceToTransparent(data, width, height);
+    }
+    if (edgeRecoveryStrength > 0 && protectedColors.length) {
+      restoreReferenceProtectedEdges(
+        data,
+        width,
+        height,
+        protectedColors,
+        backgroundColors,
+        operationMask,
+        options,
+      );
+    } else if (edgeRecoveryStrength > 0) {
+      recoverEdgeColors(data, width, height, edgeDistance, backgroundColors, {
+        strength: edgeRecoveryStrength,
+        edgeRadius: Math.max(1, edgeRestoreRadius || 2),
+        backgroundRadius: clamp(options.backgroundRadius ?? 8, 1, 30),
+        tolerance: clamp(options.edgeRecoveryTolerance ?? 30, 0, 100),
+      });
+    }
+    if (operationMask) {
+      for (let pixel = 0; pixel < operationMask.length; pixel += 1) {
+        if (operationMask[pixel] === 255) continue;
+        const offset = pixel * 4;
+        data.set(source.subarray(offset, offset + 4), offset);
+      }
+    }
+    let removedPixels = 0;
+    let partialPixels = 0;
+    for (let pixel = 0; pixel < selectedMask.length; pixel += 1) {
+      const alphaOffset = pixel * 4 + 3;
+      if (source[alphaOffset] > 0 && data[alphaOffset] === 0) removedPixels += 1;
+      else if (data[alphaOffset] < source[alphaOffset]) partialPixels += 1;
+    }
+    return { data, removedPixels, partialPixels };
+  }
+
+  /**
    * Removes a sampled background from RGBA pixels.
    * @param {Uint8ClampedArray|Uint8Array} source RGBA pixel data.
    * @param {number} width Image width.
@@ -2740,69 +1458,7 @@
       : [estimatedBackground];
     const backgroundColor = backgroundColors[0];
     if (options.referenceChromaKey === true) {
-      const data = applyReferenceChromaKey(source, width, height, {
-        backgroundColor,
-        replacementColor: [0, 0, 0, 0],
-        cleanup: options.chromaCleanup ?? 40,
-        feather: options.chromaFeather ?? 30,
-        mask: options.selectionMask || null,
-      });
-      const selectedMask = new Uint8Array(width * height);
-      for (let pixel = 0; pixel < selectedMask.length; pixel += 1) {
-        if (data[pixel * 4 + 3] < source[pixel * 4 + 3]) selectedMask[pixel] = 1;
-      }
-      const protectedMask = createReferenceProtectionMask(
-        source,
-        width,
-        height,
-        backgroundColor,
-        options.protectedColors || [],
-      );
-      if (protectedMask) {
-        for (let pixel = 0; pixel < protectedMask.length; pixel += 1) {
-          if (!protectedMask[pixel]) continue;
-          selectedMask[pixel] = 0;
-          const offset = pixel * 4;
-          data.set(source.subarray(offset, offset + 4), offset);
-        }
-      }
-      applyReferenceAlphaThresholds(
-        data,
-        options.selectionMask || null,
-        options.alphaHigh,
-        options.alphaLow,
-      );
-      if ((options.edgeRecoveryStrength ?? 0) > 0) {
-        restoreReferenceReplacementEdges(
-          data,
-          source,
-          width,
-          height,
-          selectedMask,
-          options.selectionMask || null,
-          protectedMask,
-          { ...backgroundColor, a: 255 },
-          { r: 0, g: 0, b: 0, a: 0 },
-          Math.max(1, Math.trunc(options.edgeDespillRadius || 2)),
-          options.despillMode === "chroma" ? 2 : 1,
-        );
-      }
-      applyReferenceDirectionalDespill(
-        data,
-        selectedMask,
-        options.selectionMask || null,
-        protectedMask,
-        backgroundColor,
-        options.despillStrength ?? 70,
-      );
-      let removedPixels = 0;
-      let partialPixels = 0;
-      for (let pixel = 0; pixel < selectedMask.length; pixel += 1) {
-        const alphaOffset = pixel * 4 + 3;
-        if (source[alphaOffset] > 0 && data[alphaOffset] === 0) removedPixels += 1;
-        else if (data[alphaOffset] < source[alphaOffset]) partialPixels += 1;
-      }
-      return { data, removedPixels, partialPixels };
+      return applyReferenceCutout(source, width, height, options, backgroundColors);
     }
     const tolerance = clamp(options.tolerance ?? 18, 0, 100);
     const feather = clamp(options.feather ?? 6, 0, 40);
@@ -2928,8 +1584,19 @@
     return { data, removedPixels, partialPixels };
   }
 
+  const productPipeline = productCore.createProductPipeline({
+    applyCutout,
+    clamp,
+    colorDistance,
+    estimateBackgroundColor,
+    perceptualColorDistance,
+  });
+
   return {
     applyCutout,
+    applyCutoutBrushStroke: productPipeline.applyCutoutBrushStroke,
+    applyCutoutRepairs: productPipeline.applyCutoutRepairs,
+    applyProductCutout: productPipeline.applyProductCutout,
     applyReferenceChromaKey,
     applyReferenceChromaKeyClean,
     applyReferenceColorReplace,
@@ -2941,6 +1608,7 @@
     colorDistance,
     connectedCandidateMask,
     connectedRemovalMask,
+    createReferenceProtectionMask,
     diffuseReferenceCandidateMask,
     diffuseReferenceGlobalCandidateMask,
     estimateBackgroundColor,
@@ -2950,6 +1618,7 @@
     perceptualColorDistance,
     referenceProtectionDescriptor,
     referenceProtectionMatches,
+    selectProtectedColorsInRectangle,
     selectReferenceProtectedColors,
     rgbToHex,
     rgbToOklab,

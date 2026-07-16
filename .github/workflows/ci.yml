@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install development tooling
+        run: npm ci
+      - name: Syntax and static checks
+        run: npm run check
+      - name: Unit and integration tests
+        run: npm test
+      - name: Install Chromium
+        run: npx playwright install chromium
+      - name: Browser and mobile regressions
+        run: npm run test:e2e
+      - name: Coverage report
+        run: npm run test:coverage
+      - name: FramePacker regression baseline
+        run: npm run perf:framepacker:check

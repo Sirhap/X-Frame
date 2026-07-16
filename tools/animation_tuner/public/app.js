@@ -248,6 +248,7 @@ const I18N = {
     updateNow: "更新并重启",
     updateReady: "将从 GitHub 更新 Tuner 和 Skill，然后自动重启并重新连接。",
     updateBlockedNotGit: "当前工具不是 Git 克隆，无法自动更新。",
+    updateBlockedNoRemote: "当前未配置 origin；自动更新入口已隐藏，可继续正常使用本地工具。",
     updateBlockedRemote: "当前 origin 不是官方 XSXB 仓库，已阻止自动更新。",
     updateBlockedBranch: "请先切换到 main 分支再更新。",
     updateBlockedChanges: "存在未提交的代码修改。请先处理这些修改，更新器不会覆盖它们。",
@@ -404,6 +405,7 @@ const I18N = {
     updateNow: "Update and restart",
     updateReady: "Update Tuner and Skill from GitHub, then restart and reconnect automatically.",
     updateBlockedNotGit: "This Tuner is not a Git clone, so it cannot update itself automatically.",
+    updateBlockedNoRemote: "No origin is configured. Automatic update controls are hidden; local use is unaffected.",
     updateBlockedRemote: "The origin is not the official XSXB repository. Automatic update was blocked.",
     updateBlockedBranch: "Switch to the main branch before updating.",
     updateBlockedChanges: "Tracked code changes are not committed. The updater will not overwrite them.",
@@ -417,16 +419,17 @@ const I18N = {
   },
 };
 let config = null;
+const initialUrlState = new URLSearchParams(window.location.search);
 let language = localStorage.getItem("xsxbFrameTuner.language") || "zh";
 let uiTheme = localStorage.getItem("xsxbFrameTuner.theme") || "dark";
 let canvasColor = localStorage.getItem("xsxbFrameTuner.canvasColor") || "#000000";
-let selectedProjectId = localStorage.getItem("xsxbFrameTuner.project") || "";
+let selectedProjectId = initialUrlState.get("project") || localStorage.getItem("xsxbFrameTuner.project") || "";
 let selectedSceneId = localStorage.getItem("xsxbFrameTuner.scene") || "";
 let currentGroup = null;
-let selectedFrame = 0;
+let selectedFrame = Math.max(0, Number.parseInt(initialUrlState.get("frame") || "0", 10) || 0);
 let selectedFrames = new Set([0]);
 let selectionAnchorFrame = 0;
-let selectedProfileId = localStorage.getItem("animationTuner.profile") || "all";
+let selectedProfileId = initialUrlState.get("profile") || localStorage.getItem("animationTuner.profile") || "all";
 let groupSearch = localStorage.getItem("animationTuner.groupSearch") || "";
 let images = [];
 let chainImages = [];
@@ -465,6 +468,7 @@ let ghost = true;
 let referenceFrameHiddenByKey = false;
 let playing = false;
 let lastPlay = 0;
+let playbackAnimationFrame = 0;
 let pointerStagePoint = null;
 let playbackPrimaryGroup = null;
 let playbackSecondaryGroup = null;
@@ -516,6 +520,27 @@ let tunerUpdatePhase = "";
 let batchCutout = null;
 let frameOrganizer = null;
 
+/**
+ * Persists the navigable project/group/frame selection in the browser URL.
+ * @param {{push?:boolean}} [options] History behavior.
+ * @returns {void}
+ */
+function syncUrlState(options = {}) {
+  const url = new URL(window.location.href);
+  const entries = {
+    project: activeProjectId(),
+    profile: selectedProfileId !== "all" ? selectedProfileId : "",
+    group: currentGroup?.uiId || "",
+    frame: currentGroup ? String(selectedFrame) : "",
+  };
+  for (const [key, value] of Object.entries(entries)) {
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+  }
+  const method = options.push ? "pushState" : "replaceState";
+  window.history[method]({ xsxbSelection: true }, "", url);
+}
+
 function t(key, vars = {}) {
   const table = I18N[language] || I18N.zh;
   const template = table[key] ?? I18N.zh[key] ?? key;
@@ -529,6 +554,7 @@ function shortCommit(value) {
 function tunerUpdateBlockMessage(reason) {
   const messages = {
     not_git_clone: "updateBlockedNotGit",
+    no_remote: "updateBlockedNoRemote",
     untrusted_remote: "updateBlockedRemote",
     wrong_branch: "updateBlockedBranch",
     tracked_changes: "updateBlockedChanges",
@@ -539,7 +565,7 @@ function tunerUpdateBlockMessage(reason) {
 function renderTunerUpdateStatus() {
   if (!els.updatePanel || !els.updateMessage || !els.updateButton || !els.updateVersion) return;
   const available = Boolean(tunerUpdateStatus?.updateAvailable);
-  els.updatePanel.hidden = !available;
+  els.updatePanel.hidden = !available || tunerUpdateStatus?.blockReason === "no_remote";
   if (!available) return;
 
   els.updateVersion.textContent = `${shortCommit(tunerUpdateStatus.currentCommit)} → ${shortCommit(tunerUpdateStatus.latestCommit)}`;
@@ -1424,6 +1450,7 @@ async function syncFrameAudioBindingsToGame(options = {}) {
     });
     if (!res.ok) throw new Error(await res.text());
     const result = await res.json();
+    if (result.dataRevision) config.dataRevision = result.dataRevision;
     if (!silent) status(t("frameSfxSaved", { count: result.frameAudioCount || 0 }));
     return result;
   })();
@@ -1728,12 +1755,16 @@ async function loadConfig() {
   renderChainGroupSelect();
   updateSaveState();
   updateHistoryControls();
-  const savedGroupUiId = localStorage.getItem("animationTuner.groupUiId");
+  const currentUrlState = new URLSearchParams(window.location.search);
+  const savedGroupUiId = currentUrlState.get("group") || localStorage.getItem("animationTuner.groupUiId");
   const initialGroup = config.groups.find((group) => group.uiId === savedGroupUiId)
     || config.groups.find((group) => group.name === "stand_attack")
     || config.groups[0];
   if (initialGroup) {
-    await selectGroup(initialGroup);
+    await selectGroup(initialGroup, {
+      frameIndex: Math.max(0, Number.parseInt(currentUrlState.get("frame") || "0", 10) || 0),
+      history: false,
+    });
     startPreloadImages(initialGroup);
   } else {
     resetProjectSession();
@@ -1764,7 +1795,7 @@ async function selectGroup(group, options = {}) {
   currentGroup = group;
   localStorage.setItem("animationTuner.groupUiId", group.uiId);
   selectedFrame = Number.isInteger(options.frameIndex) ? options.frameIndex : 0;
-  images = await Promise.all(group.frames.map(loadImageCached));
+  images = await loadImagesBounded(group.frames);
   if (group.huangXianAnchorFrame) {
     group.huangXianAnchorImage = await loadImageCached(group.huangXianAnchorFrame);
   } else {
@@ -1796,12 +1827,13 @@ async function selectGroup(group, options = {}) {
   const preserveView = options.preserveView === true || (options.preserveView !== false && hadCurrentGroup);
   if (options.fitView === true || !preserveView) fitView();
   draw();
+  syncUrlState({ push: options.history !== false && hadCurrentGroup });
 }
 
 async function loadChainImages() {
   const chain = playbackChainGroup();
   if (chain && currentGroup && chain.uiId !== currentGroup.uiId) {
-    chainImages = await Promise.all(chain.frames.map(loadImageCached));
+    chainImages = await loadImagesBounded(chain.frames);
     if (chain.huangXianAnchorFrame) {
       chain.huangXianAnchorImage = await loadImageCached(chain.huangXianAnchorFrame);
     } else {
@@ -1826,19 +1858,19 @@ function attachedLayerGroups(ownerGroup) {
 
 async function loadCompositeContext(group) {
   previewOwnerGroup = group?.previewOwner ? findRelatedGroup(group, group.previewOwner) : null;
-  previewOwnerImages = previewOwnerGroup ? await Promise.all(previewOwnerGroup.frames.map(loadImageCached)) : [];
+  previewOwnerImages = previewOwnerGroup ? await loadImagesBounded(previewOwnerGroup.frames) : [];
   const coordinateOwnerName = group?.previewOwner || (group?.type === "vfx" ? group.attachTo : "");
   coordinateOwnerGroup = coordinateOwnerName ? findRelatedGroup(group, coordinateOwnerName) : null;
   coordinateOwnerImages = coordinateOwnerGroup
     ? (coordinateOwnerGroup.uiId === previewOwnerGroup?.uiId
       ? previewOwnerImages
-      : await Promise.all(coordinateOwnerGroup.frames.map(loadImageCached)))
+      : await loadImagesBounded(coordinateOwnerGroup.frames))
     : [];
   attachedLayerImageSets = new Map();
   for (const ownerGroup of [group, previewOwnerGroup].filter(Boolean)) {
     for (const layerGroup of attachedLayerGroups(ownerGroup)) {
       if (attachedLayerImageSets.has(layerGroup.uiId)) continue;
-      attachedLayerImageSets.set(layerGroup.uiId, await Promise.all(layerGroup.frames.map(loadImageCached)));
+      attachedLayerImageSets.set(layerGroup.uiId, await loadImagesBounded(layerGroup.frames));
     }
   }
 }
@@ -1851,7 +1883,10 @@ async function loadFrameImageAttachmentsForGroup(group) {
       if (attachment.path) preloadFrames.set(imageCacheKey(attachment), attachment);
     }
   }
-  await Promise.all(Array.from(preloadFrames.values()).map((frame) => loadImageCached(frame).catch(() => null)));
+  await mapWithConcurrency(
+    Array.from(preloadFrames.values()),
+    (frame) => loadImageCached(frame).catch(() => null),
+  );
 }
 
 /**
@@ -1910,6 +1945,40 @@ function loadImageCached(frame) {
     }));
   }
   return imageCache.get(key);
+}
+
+/**
+ * Maps inputs with bounded concurrency to avoid decoding an entire animation at once.
+ * @template T,U
+ * @param {T[]} inputs Values to process.
+ * @param {(value:T,index:number)=>Promise<U>} mapper Async mapper.
+ * @param {number} [concurrency] Maximum active operations.
+ * @returns {Promise<U[]>} Ordered results.
+ */
+async function mapWithConcurrency(inputs, mapper, concurrency = PRELOAD_CONCURRENCY) {
+  const values = Array.from(inputs || []);
+  const results = new Array(values.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < values.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(values[index], index);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(Math.max(1, concurrency), values.length) }, () => worker()),
+  );
+  return results;
+}
+
+/**
+ * Loads frame images with the shared decoder concurrency limit.
+ * @param {object[]} frames Frame descriptors.
+ * @returns {Promise<HTMLImageElement[]>} Ordered images.
+ */
+function loadImagesBounded(frames) {
+  return mapWithConcurrency(frames, (frame) => loadImageCached(frame));
 }
 
 function loadImage(frame) {
@@ -3768,6 +3837,7 @@ function selectFilmstripFrame(index, event = null) {
   syncFrameInputs();
   renderFilmstrip();
   draw();
+  syncUrlState();
 }
 
 function renderFilmstrip() {
@@ -4117,7 +4187,7 @@ function renderFilmstripGroup(group, label) {
     item.title = `${label}${index + 1} - ${frame.name}${sourceLabel}`;
     const canAdjustDuration = isCurrent && canEditFramePlayback(group) && !usesAttachedPlaybackTiming(group);
     const audioBadge = audioBinding
-      ? `<span class="frameSfxBadge" data-action="delete-sfx" role="button" tabindex="0" title="${escapeHtml(audioBinding.name || "audio")}"><span class="frameSfxSpeaker" aria-hidden="true">&#128266;</span><span class="frameSfxRemove" aria-hidden="true">x</span></span>`
+      ? `<button type="button" class="frameSfxBadge" data-action="delete-sfx" title="${escapeHtml(audioBinding.name || "audio")}" aria-label="${escapeHtml(`Remove ${audioBinding.name || "audio"}`)}"><span class="frameSfxSpeaker" aria-hidden="true">&#128266;</span><span class="frameSfxRemove" aria-hidden="true">x</span></button>`
       : "";
     item.innerHTML = `
       ${audioBadge}
@@ -4136,10 +4206,6 @@ function renderFilmstripGroup(group, label) {
         await removeFrameAudioFromCard(index, group);
       };
       sfxBadge.addEventListener("click", removeSfx);
-      sfxBadge.addEventListener("keydown", async (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        await removeSfx(event);
-      });
     }
     const canDropOnFrame = isCurrent && Boolean(currentGroup);
     for (const eventName of ["dragenter", "dragover"]) {
@@ -5418,8 +5484,10 @@ function updateAdjustmentFromInputs() {
 }
 
 function animate(time) {
+  playbackAnimationFrame = 0;
+  if (!playing || document.visibilityState === "hidden") return;
   if (!currentGroup || !images.length || playbackSwitching) {
-    requestAnimationFrame(animate);
+    schedulePlaybackAnimation();
     return;
   }
   const interval = (1000 / groupPlaybackFps(currentGroup)) * Math.max(0.001, effectiveFrameDurationMultiplier(selectedFrame, currentGroup));
@@ -5432,7 +5500,16 @@ function animate(time) {
   if (!advanced && playbackNeedsContinuousDraw()) {
     draw();
   }
-  requestAnimationFrame(animate);
+  schedulePlaybackAnimation();
+}
+
+/**
+ * Starts the playback animation loop only while playback needs it.
+ * @returns {void}
+ */
+function schedulePlaybackAnimation() {
+  if (!playing || playbackAnimationFrame || document.visibilityState === "hidden") return;
+  playbackAnimationFrame = requestAnimationFrame(animate);
 }
 
 function firstPlayableFrame(group) {
@@ -5454,7 +5531,10 @@ function nextPlayableFrameInGroup(group, index) {
 
 async function loadImagesForBoxGeneration(group) {
   if (group?.uiId === currentGroup?.uiId && images.length) return images;
-  return Promise.all((group?.frames || []).map((frame) => loadImageCached(frame).catch(() => null)));
+  return mapWithConcurrency(
+    group?.frames || [],
+    (frame) => loadImageCached(frame).catch(() => null),
+  );
 }
 
 async function ensureCollisionBoxOverridesForSave() {
@@ -5531,6 +5611,7 @@ async function save() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         projectId: activeProjectId(),
+        baseRevision: String(config?.dataRevision || ""),
         values: collectTuningValues(),
         scene_settings: collectSceneSettings(),
         frame_audio_bindings: frameAudioBindingsForSave,
@@ -5578,6 +5659,7 @@ async function save() {
       status(t("saveLocalOnly", { message: result.error || `HTTP ${res.status}` }));
       return;
     }
+    if (result.dataRevision) config.dataRevision = result.dataRevision;
     if (Array.isArray(result.warnings)) config.warnings = result.warnings;
     saveInFlight = false;
     if (editRevision === savedRevision) {
@@ -5879,6 +5961,8 @@ async function persistAttachmentAssets() {
     body: JSON.stringify({ projectId: activeProjectId(), assets: attachmentAssets }),
   });
   if (!response.ok) throw new Error(await response.text());
+  const result = await response.json();
+  if (result.dataRevision) config.dataRevision = result.dataRevision;
 }
 
 /**
@@ -6365,6 +6449,7 @@ if (els.playPause) {
       setSingleFrameSelection(framePlayback(selectedFrame).disabled ? firstPlayableFrame(currentGroup) : selectedFrame, currentGroup);
       lastPlay = 0;
       playFrameAudio(selectedFrame, currentGroup);
+      schedulePlaybackAnimation();
     } else {
       playbackPrimaryGroup = null;
       playbackSecondaryGroup = null;
@@ -6721,17 +6806,15 @@ window.addEventListener("beforeunload", (event) => {
  */
 async function applyCutoutOutputsToCurrentAnimation(outputs) {
   if (!currentGroup?.frames?.length) throw new Error("No active animation group.");
-  if (outputs.length !== currentGroup.frames.length) {
-    throw new Error(`Expected ${currentGroup.frames.length} processed frames, received ${outputs.length}.`);
-  }
+  const payload = window.BatchCutoutOutputCore.createAnimationReplacementPayload(
+    activeProjectId(),
+    currentGroup.frames,
+    outputs,
+  );
   const response = await fetch("/api/replace-animation", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      projectId: activeProjectId(),
-      frames: currentGroup.frames.map((frame) => ({ path: frame.path })),
-      files: outputs.map((output) => ({ data: output.data })),
-    }),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) throw new Error(await response.text());
   imageCache.clear();
@@ -6820,7 +6903,27 @@ async function createAnimationFromOrganizer(metadata, items) {
 }
 
 window.addEventListener("resize", resizeCanvas);
-requestAnimationFrame(animate);
+window.addEventListener("popstate", () => {
+  const urlState = new URLSearchParams(window.location.search);
+  const requestedProject = urlState.get("project") || "";
+  const requestedGroup = urlState.get("group") || "";
+  const requestedFrame = Math.max(0, Number.parseInt(urlState.get("frame") || "0", 10) || 0);
+  const requestedProfile = urlState.get("profile") || "all";
+  const restore = async () => {
+    selectedProfileId = requestedProfile;
+    if (requestedProject && requestedProject !== activeProjectId()) {
+      selectedProjectId = requestedProject;
+      await loadConfig();
+      return;
+    }
+    const group = config?.groups?.find((entry) => entry.uiId === requestedGroup);
+    if (group) await selectGroup(group, { frameIndex: requestedFrame, history: false });
+  };
+  restore().catch((error) => status(t("loadFailed", { message: error.message })));
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") schedulePlaybackAnimation();
+});
 batchCutout = window.BatchCutout?.createController({
   getLanguage: () => language,
   getCurrentAnimation: () => (
@@ -6829,6 +6932,7 @@ batchCutout = window.BatchCutout?.createController({
           name: groupLabel(currentGroup),
           frames: currentGroup.frames,
           images,
+          loop: currentGroup.loop === true || currentGroup.loopMode === "loop",
         }
       : null
   ),

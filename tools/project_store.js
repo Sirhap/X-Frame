@@ -1,8 +1,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
 const DEFAULT_PROJECT_ID = "default";
-const DEFAULT_PROJECT_LABEL = "Default Empty Project";
 
 const EMPTY_MANIFEST = { schemaVersion: 1, profiles: [] };
 const EMPTY_TUNING = {
@@ -43,21 +43,20 @@ function samePath(left, right) {
 }
 
 /**
- * Creates a filesystem-safe timestamp for recovery artifacts.
- * @returns {string} Timestamp segment.
- */
-function recoveryStamp() {
-  return new Date().toISOString().replace(/[:.]/g, "-");
-}
-
-/**
  * Preserves malformed JSON before surfacing a blocking data error.
  * @param {string} filePath JSON file path.
  * @returns {string} Backup path.
  */
 function backupCorruptJson(filePath) {
-  const backupPath = `${filePath}.corrupt-${recoveryStamp()}`;
-  fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL);
+  const bytes = fs.readFileSync(filePath);
+  const digest = crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 12);
+  const backupPath = `${filePath}.corrupt-${digest}`;
+  if (fs.existsSync(backupPath)) return backupPath;
+  try {
+    fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL);
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+  }
   return backupPath;
 }
 
@@ -125,16 +124,6 @@ function uniqueId(baseId, usedIds) {
   return candidate;
 }
 
-function defaultProject() {
-  return {
-    id: DEFAULT_PROJECT_ID,
-    label: DEFAULT_PROJECT_LABEL,
-    projectRoot: "",
-    dataDir: "data/projects/default",
-    workspaceDir: "workspace/projects/default",
-  };
-}
-
 function projectDataDir(root, project) {
   return safeResolve(root, project?.dataDir) || path.join(root, "data", "projects", project.id);
 }
@@ -175,7 +164,8 @@ function ensureProjectFiles(root, project) {
     else writeJson(paths.tuning, EMPTY_TUNING);
   }
   if (!fs.existsSync(paths.frameAudio)) {
-    if (canMigrateLegacy && fs.existsSync(legacyFrameAudio)) fs.copyFileSync(legacyFrameAudio, paths.frameAudio);
+    if (canMigrateLegacy && fs.existsSync(legacyFrameAudio))
+      fs.copyFileSync(legacyFrameAudio, paths.frameAudio);
     else writeJson(paths.frameAudio, {});
   }
   if (!fs.existsSync(paths.frameImageAttachments)) {
@@ -206,10 +196,13 @@ function normalizeRegistry(raw) {
     projects = projects.filter((project) => slug(project?.id || project?.label || "") !== DEFAULT_PROJECT_ID);
   }
   if (!projects.length) projects = [];
-  const normalizedProjects = projects.map((project, index) => normalizeProject(project, usedIds, index === 0 ? DEFAULT_PROJECT_ID : `project_${index + 1}`));
-  const requestedActiveId = source.activeProjectId || normalizedProjects[0]?.id
-    ? slug(source.activeProjectId || normalizedProjects[0]?.id, DEFAULT_PROJECT_ID)
-    : "";
+  const normalizedProjects = projects.map((project, index) =>
+    normalizeProject(project, usedIds, index === 0 ? DEFAULT_PROJECT_ID : `project_${index + 1}`),
+  );
+  const requestedActiveId =
+    source.activeProjectId || normalizedProjects[0]?.id
+      ? slug(source.activeProjectId || normalizedProjects[0]?.id, DEFAULT_PROJECT_ID)
+      : "";
   const activeProjectId = normalizedProjects.some((project) => project.id === requestedActiveId)
     ? requestedActiveId
     : normalizedProjects[0]?.id || "";
@@ -234,7 +227,8 @@ function createProjectStore(root) {
     });
     const registry = normalizeRegistry(raw);
     for (const project of registry.projects) ensureProjectFiles(root, project);
-    if (!registryExists || JSON.stringify(raw) !== JSON.stringify(registry)) writeJson(projectsPath, registry);
+    if (!registryExists || JSON.stringify(raw) !== JSON.stringify(registry))
+      writeJson(projectsPath, registry);
     return registry;
   }
 
@@ -247,9 +241,11 @@ function createProjectStore(root) {
 
   function resolveProject(registry, projectId) {
     const requested = projectId ? slug(projectId, DEFAULT_PROJECT_ID) : registry.activeProjectId;
-    return registry.projects.find((project) => project.id === requested)
-      || registry.projects.find((project) => project.id === registry.activeProjectId)
-      || registry.projects[0];
+    return (
+      registry.projects.find((project) => project.id === requested) ||
+      registry.projects.find((project) => project.id === registry.activeProjectId) ||
+      registry.projects[0]
+    );
   }
 
   function setActiveProject(projectId) {
@@ -262,7 +258,9 @@ function createProjectStore(root) {
 
   function addProject(payload = {}) {
     const registry = readRegistry();
-    let projectRoot = String(payload.projectRoot || payload.root || "").trim().replace(/^["']|["']$/g, "");
+    let projectRoot = String(payload.projectRoot || payload.root || "")
+      .trim()
+      .replace(/^["']|["']$/g, "");
     if (projectRoot) {
       projectRoot = path.resolve(projectRoot);
       if (!fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) {
@@ -278,7 +276,15 @@ function createProjectStore(root) {
       }
     }
 
-    const label = String(payload.label || payload.name || payload.id || godotProjectName(projectRoot) || (projectRoot ? path.basename(projectRoot) : "") || "New Project").trim() || "New Project";
+    const label =
+      String(
+        payload.label ||
+          payload.name ||
+          payload.id ||
+          godotProjectName(projectRoot) ||
+          (projectRoot ? path.basename(projectRoot) : "") ||
+          "New Project",
+      ).trim() || "New Project";
     const usedIds = new Set(registry.projects.map((project) => project.id));
     const id = uniqueId(payload.id || label, usedIds);
     const project = {

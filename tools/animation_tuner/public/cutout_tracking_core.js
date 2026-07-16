@@ -467,7 +467,15 @@
     const areaRatio = target.area / source.area;
     const aspectRatio = target.aspectRatio / source.aspectRatio;
     const compactnessRatio = target.compactness / source.compactness;
-    const accepted = referenceMatch.passed;
+    const accepted = (
+      referenceMatch.passed
+      && areaRatio >= Number(options.areaMinimum ?? 0)
+      && areaRatio <= Number(options.areaMaximum ?? Number.POSITIVE_INFINITY)
+      && aspectRatio >= Number(options.aspectMinimum ?? 0)
+      && aspectRatio <= Number(options.aspectMaximum ?? Number.POSITIVE_INFINITY)
+      && compactnessRatio >= Number(options.compactnessMinimum ?? 0)
+      && compactnessRatio <= Number(options.compactnessMaximum ?? Number.POSITIVE_INFINITY)
+    );
     const logarithmicError = (
       Math.abs(Math.log(Math.max(0.001, areaRatio)))
       + Math.abs(Math.log(Math.max(0.001, aspectRatio)))
@@ -741,228 +749,46 @@
   }
 
   /**
-   * Summarizes the visible alpha plane for batch-quality analysis.
-   * @param {Uint8ClampedArray|Uint8Array} data RGBA pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @returns {{
-   *   width:number,
-   *   height:number,
-   *   alphaArea:number,
-   *   visiblePixels:number,
-   *   partialPixels:number,
-   *   partialRatio:number,
-   *   edgePixels:number,
-   *   softEdgePixels:number,
-   *   softEdgeRatio:number,
-   *   coverage:number,
-   *   center:{x:number,y:number}|null,
-   *   bounds:{x:number,y:number,width:number,height:number}|null
-   * }|null}
+   * Maps a serialized brush or eraser stroke between two subject descriptors.
+   * The scalar brush size follows the geometric mean of the PCA-axis scales so
+   * area remains stable when the target subject changes size anisotropically.
+   * @param {{points:Array<{x:number,y:number}>,size:number}} stroke Source stroke.
+   * @param {object} source Source descriptor.
+   * @param {object} target Target descriptor.
+   * @returns {{points:Array<{x:number,y:number}>,size:number}}
    */
-  function createCutoutQualityMetrics(data, width, height) {
-    const pixelCount = width * height;
-    if (width <= 0 || height <= 0 || !data || data.length !== pixelCount * 4) return null;
-    const visible = new Uint8Array(pixelCount);
-    let alphaArea = 0;
-    let visiblePixels = 0;
-    let partialPixels = 0;
-    let weightedX = 0;
-    let weightedY = 0;
-    let minimumX = width;
-    let minimumY = height;
-    let maximumX = -1;
-    let maximumY = -1;
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        const pixel = y * width + x;
-        const alpha = data[pixel * 4 + 3];
-        if (alpha === 0) continue;
-        const weight = alpha / 255;
-        visible[pixel] = 1;
-        alphaArea += weight;
-        visiblePixels += 1;
-        if (alpha < 255) partialPixels += 1;
-        weightedX += x * weight;
-        weightedY += y * weight;
-        minimumX = Math.min(minimumX, x);
-        minimumY = Math.min(minimumY, y);
-        maximumX = Math.max(maximumX, x);
-        maximumY = Math.max(maximumY, y);
-      }
-    }
-    let edgePixels = 0;
-    let softEdgePixels = 0;
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        const pixel = y * width + x;
-        if (!visible[pixel]) continue;
-        const edge = (
-          x === 0
-          || x + 1 === width
-          || y === 0
-          || y + 1 === height
-          || !visible[pixel - 1]
-          || !visible[pixel + 1]
-          || !visible[pixel - width]
-          || !visible[pixel + width]
-        );
-        if (!edge) continue;
-        edgePixels += 1;
-        if (data[pixel * 4 + 3] < 250) softEdgePixels += 1;
-      }
-    }
+  function mapBrushStroke(stroke, source, target) {
+    const points = Array.isArray(stroke?.points)
+      ? stroke.points
+        .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y))
+        .map((point) => {
+          const mapped = mapPoint(point, source, target);
+          return {
+            x: clamp(mapped.x, 0, Math.max(0, target.width - 1)),
+            y: clamp(mapped.y, 0, Math.max(0, target.height - 1)),
+          };
+        })
+      : [];
+    const majorScale = target.majorLength / Math.max(source.majorLength, 0.000001);
+    const minorScale = target.minorLength / Math.max(source.minorLength, 0.000001);
+    const sizeScale = Math.sqrt(Math.max(0, majorScale * minorScale));
     return {
-      width,
-      height,
-      alphaArea,
-      visiblePixels,
-      partialPixels,
-      partialRatio: visiblePixels ? partialPixels / visiblePixels : 0,
-      edgePixels,
-      softEdgePixels,
-      softEdgeRatio: edgePixels ? softEdgePixels / edgePixels : 0,
-      coverage: alphaArea / pixelCount,
-      center: alphaArea > 0 ? { x: weightedX / alphaArea, y: weightedY / alphaArea } : null,
-      bounds: visiblePixels ? {
-        x: minimumX,
-        y: minimumY,
-        width: maximumX - minimumX + 1,
-        height: maximumY - minimumY + 1,
-      } : null,
+      points,
+      size: Math.max(0.5, Number(stroke?.size || 1) * sizeScale),
     };
-  }
-
-  /**
-   * Finds the nearest available metric before or after an index.
-   * @param {Array<object|null>} metrics Quality metric sequence.
-   * @param {number} index Origin index.
-   * @param {-1|1} direction Search direction.
-   * @returns {object|null}
-   */
-  function nearestQualityMetric(metrics, index, direction) {
-    for (
-      let candidateIndex = index + direction;
-      candidateIndex >= 0 && candidateIndex < metrics.length;
-      candidateIndex += direction
-    ) {
-      if (metrics[candidateIndex]) return metrics[candidateIndex];
-    }
-    return null;
-  }
-
-  /**
-   * Detects abrupt alpha-area, center-position, and soft-edge changes across a batch.
-   * @param {Array<object|null>} metrics Quality metrics in frame order.
-   * @param {{
-   *   emptyArea?:number,
-   *   areaWarning?:number,
-   *   areaCritical?:number,
-   *   positionWarning?:number,
-   *   positionCritical?:number,
-   *   softEdgeMinimum?:number,
-   *   softEdgeDelta?:number
-   * }} [options] Optional sensitivity overrides.
-   * @returns {Array<{
-   *   severity:"pending"|"ok"|"warning"|"critical",
-   *   codes:Array<"empty"|"area"|"position"|"soft-edge">,
-   *   score:number,
-   *   details:{areaDeviation:number,positionDeviation:number,softEdgeDeviation:number}
-   * }>}
-   */
-  function analyzeCutoutQualitySequence(metrics, options = {}) {
-    const settings = {
-      emptyArea: Number(options.emptyArea ?? 4),
-      areaWarning: Number(options.areaWarning ?? 0.32),
-      areaCritical: Number(options.areaCritical ?? 0.62),
-      positionWarning: Number(options.positionWarning ?? 0.22),
-      positionCritical: Number(options.positionCritical ?? 0.4),
-      softEdgeMinimum: Number(options.softEdgeMinimum ?? 0.48),
-      softEdgeDelta: Number(options.softEdgeDelta ?? 0.18),
-    };
-    return metrics.map((metric, index) => {
-      const result = {
-        severity: metric ? "ok" : "pending",
-        codes: [],
-        score: 0,
-        details: {
-          areaDeviation: 0,
-          positionDeviation: 0,
-          softEdgeDeviation: 0,
-        },
-      };
-      if (!metric) return result;
-      if (metric.alphaArea < settings.emptyArea || !metric.center) {
-        result.severity = "critical";
-        result.codes.push("empty");
-        result.score = 100;
-        return result;
-      }
-      const previous = nearestQualityMetric(metrics, index, -1);
-      const next = nearestQualityMetric(metrics, index, 1);
-      if (!previous || !next) return result;
-      const expectedArea = Math.sqrt(
-        Math.max(1, previous.alphaArea) * Math.max(1, next.alphaArea),
-      );
-      const areaDeviation = Math.abs(Math.log(Math.max(1, metric.alphaArea) / expectedArea));
-      result.details.areaDeviation = areaDeviation;
-      if (areaDeviation > settings.areaWarning) {
-        result.codes.push("area");
-        result.score = Math.max(
-          result.score,
-          clamp(areaDeviation / settings.areaCritical, 0, 1) * 100,
-        );
-        result.severity = areaDeviation > settings.areaCritical ? "critical" : "warning";
-      }
-      const expectedCenter = {
-        x: (previous.center.x + next.center.x) / 2,
-        y: (previous.center.y + next.center.y) / 2,
-      };
-      const subjectScale = Math.max(12, Math.sqrt(expectedArea));
-      const positionDeviation = Math.hypot(
-        metric.center.x - expectedCenter.x,
-        metric.center.y - expectedCenter.y,
-      ) / subjectScale;
-      result.details.positionDeviation = positionDeviation;
-      if (positionDeviation > settings.positionWarning) {
-        result.codes.push("position");
-        result.score = Math.max(
-          result.score,
-          clamp(positionDeviation / settings.positionCritical, 0, 1) * 100,
-        );
-        if (positionDeviation > settings.positionCritical) result.severity = "critical";
-        else if (result.severity === "ok") result.severity = "warning";
-      }
-      const neighborSoftEdgeRatio = (previous.softEdgeRatio + next.softEdgeRatio) / 2;
-      const softEdgeDeviation = metric.softEdgeRatio - neighborSoftEdgeRatio;
-      result.details.softEdgeDeviation = softEdgeDeviation;
-      if (
-        metric.softEdgeRatio > settings.softEdgeMinimum
-        && softEdgeDeviation > settings.softEdgeDelta
-      ) {
-        result.codes.push("soft-edge");
-        result.score = Math.max(
-          result.score,
-          clamp(softEdgeDeviation / Math.max(settings.softEdgeDelta * 2, 0.01), 0, 1) * 100,
-        );
-        if (result.severity === "ok") result.severity = "warning";
-      }
-      return result;
-    });
   }
 
   return {
     advanceTrackingState,
-    analyzeCutoutQualitySequence,
     checkReferenceShapeMatch,
     compareShapeDescriptors,
     compareReferenceShapeStats,
     computeReferenceLocalFrame,
-    createCutoutQualityMetrics,
     createShapeDescriptor,
     createShapeCandidates,
     createTrackingState,
     findReferenceNearestColorInRadius,
+    mapBrushStroke,
     mapPoint,
     mapRectangle,
     predictTrackingCenter,
