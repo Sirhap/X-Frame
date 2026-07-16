@@ -42,21 +42,62 @@ function samePath(left, right) {
   return path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase();
 }
 
+/**
+ * Creates a filesystem-safe timestamp for recovery artifacts.
+ * @returns {string} Timestamp segment.
+ */
+function recoveryStamp() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+/**
+ * Preserves malformed JSON before surfacing a blocking data error.
+ * @param {string} filePath JSON file path.
+ * @returns {string} Backup path.
+ */
+function backupCorruptJson(filePath) {
+  const backupPath = `${filePath}.corrupt-${recoveryStamp()}`;
+  fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL);
+  return backupPath;
+}
+
+/**
+ * Reads JSON without converting corruption or permission failures into empty data.
+ * @param {string} filePath JSON file path.
+ * @param {unknown} fallback Value returned only when the file does not exist.
+ * @returns {unknown} Parsed JSON value.
+ */
 function readJson(filePath, fallback) {
+  if (!fs.existsSync(filePath)) return clone(fallback);
+  let text = "";
   try {
-    if (!fs.existsSync(filePath)) return clone(fallback);
-    const text = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+    text = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
     return JSON.parse(text);
-  } catch {
-    return clone(fallback);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      const backupPath = backupCorruptJson(filePath);
+      throw new Error(`Invalid JSON in ${filePath}. Preserved the original at ${backupPath}.`);
+    }
+    throw error;
   }
 }
 
+/**
+ * Atomically writes JSON using a unique sibling temporary file.
+ * @param {string} filePath Destination JSON path.
+ * @param {unknown} value Serializable value.
+ * @returns {void}
+ */
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.tmp`;
-  fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  fs.renameSync(tempPath, filePath);
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  try {
+    fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    if (fs.existsSync(tempPath)) fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
 }
 
 function godotProjectName(projectRoot) {
@@ -111,6 +152,7 @@ function projectPaths(root, project) {
     tuning: path.join(dataDir, "animation_tuning.json"),
     frameAudio: path.join(dataDir, "frame_audio_bindings.json"),
     frameImageAttachments: path.join(dataDir, "frame_image_attachments.json"),
+    attachmentAssets: path.join(dataDir, "attachment_assets.json"),
   };
 }
 
@@ -138,6 +180,9 @@ function ensureProjectFiles(root, project) {
   }
   if (!fs.existsSync(paths.frameImageAttachments)) {
     writeJson(paths.frameImageAttachments, []);
+  }
+  if (!fs.existsSync(paths.attachmentAssets)) {
+    writeJson(paths.attachmentAssets, []);
   }
 }
 

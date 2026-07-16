@@ -4,6 +4,7 @@ const els = {
   updateMessage: document.querySelector("#updateMessage"),
   updateButton: document.querySelector("#updateButton"),
   projectSelect: document.querySelector("#projectSelect"),
+  importAnimationOpen: document.querySelector("#importAnimationOpen"),
   refreshProject: document.querySelector("#refreshProject"),
   languageSelect: document.querySelector("#languageSelect"),
   languageButtons: Array.from(document.querySelectorAll("[data-language]")),
@@ -67,6 +68,12 @@ const els = {
   chainGroupSelect: document.querySelector("#chainGroupSelect"),
   playPause: document.querySelector("#playPause"),
   ghostToggle: document.querySelector("#ghostToggle"),
+  stageZoom: document.querySelector("#stageZoom"),
+  stageZoomValue: document.querySelector("#stageZoomValue"),
+  stageZoomOut: document.querySelector("#stageZoomOut"),
+  stageZoomIn: document.querySelector("#stageZoomIn"),
+  stageZoomFit: document.querySelector("#stageZoomFit"),
+  stageZoomActual: document.querySelector("#stageZoomActual"),
   applyBaseToFrame: document.querySelector("#applyBaseToFrame"),
   undo: document.querySelector("#undo"),
   undoTop: document.querySelector("#undoTop"),
@@ -82,6 +89,8 @@ const els = {
 const ctx = els.stage.getContext("2d");
 const FRAME_DURATION_STEP_MS = 10;
 const MIN_FRAME_DURATION_MS = 1;
+const PRELOAD_FRAME_LIMIT = 160;
+const PRELOAD_CONCURRENCY = 6;
 const BOX_PREF_KEYS = {
   show: "xsxbFrameTuner.showBoxes",
   only: "xsxbFrameTuner.boxOnlyMode",
@@ -140,6 +149,12 @@ const I18N = {
     frameAttachmentRemoved: "已删除附加图",
     frameAttachmentCanvasHint: "附加帧：拖动图片移动，R+滚轮旋转，Z+滚轮缩放；拖卡片到缝隙调层级",
     frameAttachmentUploadFailed: "附加图导入失败：{message}",
+    assetLibrary: "当前组素材",
+    assetLibraryEmpty: "导入处理后的图片会显示在这里",
+    assetImport: "添加图片",
+    assetApplySelected: "应用到选中帧",
+    assetApplied: "已将素材应用到 {count} 个帧",
+    assetAdded: "已添加 {count} 张图片到当前组素材",
     frameAttachmentCopied: "已复制附加图：{count}",
     frameAttachmentPasted: "已粘贴附加图：{count}",
     frameAttachmentCopyEmpty: "当前帧没有可复制的附加图。",
@@ -185,18 +200,29 @@ const I18N = {
     preloadedFrames: "已预载 {count} 帧\n{root}",
     project: "项目",
     projectRefreshFailed: "刷新失败：{message}",
+    projectRefreshConfirm: "刷新会丢弃未保存的调参，继续吗？",
     projectSwitchConfirm: "切换项目会丢弃未保存的调参，继续吗？",
     projectSwitchFailed: "项目切换失败：{message}",
     ready: "就绪",
+    importAnimation: "导入动画",
     refreshAnimationList: "刷新动画列表",
     resetView: "重置视图",
+    zoomFit: "适应",
+    zoomActual: "100%",
+    shortcutGuide: "快捷键",
+    shortcutPlay: "播放 / 暂停",
+    shortcutFrame: "上一帧 / 下一帧",
+    shortcutExtend: "扩展帧选区",
+    shortcutAll: "选择全部帧",
     rootX: "Root X",
     rootY: "Root Y",
     rotate: "旋转",
     saveFailed: "保存失败：{message}",
+    saveLocalOnly: "调参已保存到本地，但 Godot 同步失败：{message}",
     saveTuning: "保存调参",
     saveTuningDirty: "保存调参 *",
     savedAt: "已保存 {time}",
+    savedWithNewChanges: "已保存此前改动；保存期间产生的新改动仍未保存。",
     saving: "正在保存...",
     scale: "缩放",
     scaleX: "缩放 X",
@@ -279,6 +305,12 @@ const I18N = {
     frameAttachmentRemoved: "Attached image deleted",
     frameAttachmentCanvasHint: "Attached: drag image, R/Z+wheel, drag cards into gaps",
     frameAttachmentUploadFailed: "Attached image import failed: {message}",
+    assetLibrary: "Group Assets",
+    assetLibraryEmpty: "Processed images added from import appear here",
+    assetImport: "Add Images",
+    assetApplySelected: "Apply to Selected",
+    assetApplied: "Applied the asset to {count} frames",
+    assetAdded: "Added {count} images to the current group assets",
     frameAttachmentCopied: "Copied attached images: {count}",
     frameAttachmentPasted: "Pasted attached images: {count}",
     frameAttachmentCopyEmpty: "This frame has no attached image to copy.",
@@ -324,18 +356,29 @@ const I18N = {
     preloadedFrames: "Preloaded {count} frames\n{root}",
     project: "Project",
     projectRefreshFailed: "Refresh failed: {message}",
+    projectRefreshConfirm: "Refresh and discard unsaved tuning changes?",
     projectSwitchConfirm: "Switch project and discard unsaved tuning changes?",
     projectSwitchFailed: "Project switch failed: {message}",
     ready: "Ready",
+    importAnimation: "Import animation",
     refreshAnimationList: "Refresh animation list",
     resetView: "Reset view",
+    zoomFit: "Fit",
+    zoomActual: "100%",
+    shortcutGuide: "Shortcuts",
+    shortcutPlay: "Play / Pause",
+    shortcutFrame: "Previous / Next frame",
+    shortcutExtend: "Extend frame selection",
+    shortcutAll: "Select all frames",
     rootX: "Root X",
     rootY: "Root Y",
     rotate: "Rotate",
     saveFailed: "Save failed: {message}",
+    saveLocalOnly: "Tuning was saved locally, but Godot sync failed: {message}",
     saveTuning: "Save tuning",
     saveTuningDirty: "Save tuning *",
     savedAt: "Saved {time}",
+    savedWithNewChanges: "Earlier changes were saved. New changes made during saving remain unsaved.",
     saving: "Saving...",
     scale: "Scale",
     scaleX: "Scale X",
@@ -414,6 +457,7 @@ let coordinateOwnerGroup = null;
 let coordinateOwnerImages = [];
 let attachedLayerImageSets = new Map();
 let frameImageAttachments = [];
+let attachmentAssets = [];
 let selectedAttachmentId = "";
 let frameImageAttachmentClipboard = [];
 let frameImageAttachmentClipboardProjectId = "";
@@ -426,6 +470,7 @@ let playbackPrimaryGroup = null;
 let playbackSecondaryGroup = null;
 let playbackSwitching = false;
 let view = { zoom: 1, x: 0, y: 0 };
+let stageViewMode = "fit";
 let drag = null;
 let undoStack = [];
 let redoStack = [];
@@ -446,6 +491,7 @@ const FRAME_AUDIO_DB_NAME = "xsxb-frame-tuner-frame-audio";
 const FRAME_AUDIO_DB_VERSION = 1;
 const FRAME_AUDIO_STORE = "frameAudio";
 const LAYER_CARD_DRAG_TYPE = "application/x-xsxb-layer-card";
+const ATTACHMENT_ASSET_DRAG_TYPE = "application/x-xsxb-attachment-asset";
 let frameAudioDbPromise = null;
 let frameAudioSyncPromise = null;
 let imageElements = new Map();
@@ -461,11 +507,14 @@ let adjustmentMode = ADJUSTMENT_MODES.includes(localStorage.getItem(ADJUSTMENT_M
 let frameBoxOverrides = {};
 const GROUP_PLAYBACK_FRAME = "__group";
 let dirty = false;
+let editRevision = 0;
 let saveInFlight = false;
 let lastSavedAt = "";
 let tunerUpdateStatus = null;
 let tunerUpdateToken = "";
 let tunerUpdatePhase = "";
+let batchCutout = null;
+let frameOrganizer = null;
 
 function t(key, vars = {}) {
   const table = I18N[language] || I18N.zh;
@@ -590,7 +639,11 @@ function applyLanguage() {
   });
   document.querySelectorAll("[data-i18n-title]").forEach((node) => {
     node.title = t(node.dataset.i18nTitle);
+    if (node.hasAttribute("aria-label")) node.setAttribute("aria-label", t(node.dataset.i18nTitle));
   });
+  if (els.refreshProject) els.refreshProject.setAttribute("aria-label", t("refreshAnimationList"));
+  batchCutout?.setLanguage(language);
+  frameOrganizer?.setLanguage(language);
   updateSaveState();
   updateHistoryControls();
   syncFrameAudioInputs();
@@ -619,6 +672,8 @@ function applyUiTheme() {
   uiTheme = normalizeTheme(uiTheme);
   document.body.classList.toggle("theme-light", uiTheme === "light");
   document.body.classList.toggle("theme-dark", uiTheme !== "light");
+  document.querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", uiTheme === "light" ? "#edf1f4" : "#141922");
   for (const button of els.themeButtons) {
     const active = button.dataset.theme === uiTheme;
     button.classList.toggle("active", active);
@@ -719,6 +774,7 @@ function updateSaveState() {
 }
 
 function markDirty() {
+  editRevision += 1;
   dirty = true;
   updateSaveState();
 }
@@ -727,6 +783,20 @@ function markClean() {
   dirty = false;
   lastSavedAt = new Date().toLocaleTimeString();
   updateSaveState();
+}
+
+/**
+ * Reloads the active project after explicitly handling unsaved edits.
+ * @returns {Promise<void>}
+ */
+async function refreshActiveProject() {
+  if (dirty && !window.confirm(t("projectRefreshConfirm"))) return;
+  resetProjectSession();
+  dirty = false;
+  editRevision += 1;
+  imageCache.clear();
+  await loadConfig();
+  resizeCanvas();
 }
 
 function keyFor(groupName, index) {
@@ -939,6 +1009,25 @@ function loadFrameImageAttachmentsFromProject() {
   if (!frameImageAttachments.some((attachment) => attachment.id === selectedAttachmentId)) {
     selectedAttachmentId = "";
   }
+}
+
+/**
+ * Loads the reusable project attachment asset library.
+ * @returns {void}
+ */
+function loadAttachmentAssetsFromProject() {
+  attachmentAssets = (Array.isArray(config?.attachmentAssets) ? config.attachmentAssets : [])
+    .filter((asset) => asset && asset.path)
+    .map((asset) => ({
+      id: String(asset.id || asset.assetHash || newLocalId("asset")),
+      name: String(asset.name || "image"),
+      path: String(asset.path),
+      assetHash: String(asset.assetHash || ""),
+      type: String(asset.type || "image/png"),
+      width: Number(asset.width || 0),
+      height: Number(asset.height || 0),
+      groupKey: String(asset.groupKey || ""),
+    }));
 }
 
 function frameImageAttachmentsForFrame(index = selectedFrame, group = currentGroup) {
@@ -1461,6 +1550,7 @@ function resetProjectSession() {
   undoStack = [];
   redoStack = [];
   imageCache.clear();
+  imageElements.clear();
   opaqueRectCache = new WeakMap();
   huangXianAnchorXCache = new WeakMap();
   if (els.playPause) els.playPause.textContent = t("play");
@@ -1621,6 +1711,7 @@ async function loadConfig() {
   soulFrameBoxOverrides = structuredClone(config.soulTuning?.frame_box_overrides || {});
   yechengPropFrameOverrides = structuredClone(config.yechengPropTuning?.frame_visual_overrides || {});
   loadFrameImageAttachmentsFromProject();
+  loadAttachmentAssetsFromProject();
   resetFrameAudioBindings();
   loadFrameAudioBindingsFromProject();
   await loadFrameAudioBindingsFromDb();
@@ -1637,13 +1728,13 @@ async function loadConfig() {
   renderChainGroupSelect();
   updateSaveState();
   updateHistoryControls();
-  startPreloadImages();
   const savedGroupUiId = localStorage.getItem("animationTuner.groupUiId");
   const initialGroup = config.groups.find((group) => group.uiId === savedGroupUiId)
     || config.groups.find((group) => group.name === "stand_attack")
     || config.groups[0];
   if (initialGroup) {
     await selectGroup(initialGroup);
+    startPreloadImages(initialGroup);
   } else {
     resetProjectSession();
     renderProjectSelect();
@@ -1763,21 +1854,40 @@ async function loadFrameImageAttachmentsForGroup(group) {
   await Promise.all(Array.from(preloadFrames.values()).map((frame) => loadImageCached(frame).catch(() => null)));
 }
 
-function startPreloadImages() {
-  const paths = new Set();
+/**
+ * Preloads a bounded frame set with limited concurrency to avoid memory spikes.
+ * @param {object|null} priorityGroup Group whose frames should be queued first.
+ * @returns {void}
+ */
+function startPreloadImages(priorityGroup = currentGroup) {
+  const paths = new Set((priorityGroup?.frames || []).map((frame) => frame.path));
   for (const group of config.groups) {
-    for (const frame of group.frames) paths.add(frame.path);
+    for (const frame of group.frames) {
+      if (paths.size >= PRELOAD_FRAME_LIMIT) break;
+      paths.add(frame.path);
+    }
+    if (paths.size >= PRELOAD_FRAME_LIMIT) break;
   }
   preloadLoaded = 0;
   preloadTotal = paths.size;
-  for (const path of paths) {
-    loadImageCached({ path }).then(() => {
+  const queue = Array.from(paths);
+  const worker = async () => {
+    while (queue.length) {
+      const framePath = queue.shift();
+      try {
+        await loadImageCached({ path: framePath });
+      } catch {
+        // Individual missing frames are already represented by project warnings.
+      }
       preloadLoaded += 1;
-      if (preloadLoaded === preloadTotal) status(t("preloadedFrames", { count: preloadTotal, root: config.root }));
-    }).catch(() => {
-      preloadLoaded += 1;
-    });
-  }
+      if (preloadLoaded === preloadTotal) {
+        status(t("preloadedFrames", { count: preloadTotal, root: config.root }));
+      }
+    }
+  };
+  void Promise.all(
+    Array.from({ length: Math.min(PRELOAD_CONCURRENCY, queue.length) }, () => worker()),
+  );
 }
 
 function imageCacheKey(frame) {
@@ -3663,11 +3773,59 @@ function selectFilmstripFrame(index, event = null) {
 function renderFilmstrip() {
   els.filmstrip.innerHTML = "";
   if (!currentGroup) return;
+  renderAttachmentAssetTray();
   renderFilmstripGroup(currentGroup, t("mainLabel"));
   const chain = playbackChainGroup();
   if (chain && chain.uiId !== currentGroup.uiId) {
     renderFilmstripGroup(chain, t("thenLabel"));
   }
+}
+
+/**
+ * Renders reusable images for the current group before the frame stacks.
+ * @returns {void}
+ */
+function renderAttachmentAssetTray() {
+  const groupAssets = attachmentAssets.filter((asset) => asset.groupKey === attachmentAssetGroupKey());
+  const tray = document.createElement("section");
+  tray.className = "attachmentAssetTray";
+  tray.innerHTML = `
+    <header><strong>${escapeHtml(t("assetLibrary"))}</strong><button type="button" class="assetImportButton">＋</button></header>
+    <input class="assetImportInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+    <div class="attachmentAssetList"></div>
+    ${groupAssets.length ? "" : `<small>${escapeHtml(t("assetLibraryEmpty"))}</small>`}
+  `;
+  const list = tray.querySelector(".attachmentAssetList");
+  groupAssets.forEach((asset) => {
+    const card = document.createElement("article");
+    card.className = "attachmentAssetCard";
+    card.draggable = true;
+    card.title = `${asset.name}\n${t("assetApplySelected")}`;
+    card.innerHTML = `
+      <img src="${assetUrl(asset)}" alt="">
+      <span>${escapeHtml(asset.name)}</span>
+      <button type="button">${escapeHtml(t("assetApplySelected"))}</button>
+    `;
+    card.addEventListener("dragstart", (event) => {
+      event.dataTransfer.effectAllowed = "copy";
+      event.dataTransfer.setData(ATTACHMENT_ASSET_DRAG_TYPE, asset.id);
+    });
+    card.querySelector("button").addEventListener("click", () => {
+      applyAttachmentAsset(asset);
+    });
+    list.appendChild(card);
+  });
+  const input = tray.querySelector(".assetImportInput");
+  tray.querySelector(".assetImportButton").addEventListener("click", () => input.click());
+  input.addEventListener("change", () => {
+    const files = Array.from(input.files || []);
+    Promise.all(files.map(async (file) => ({
+      name: file.name,
+      type: file.type,
+      data: await readFileAsDataUrl(file),
+    }))).then(addImagesToCurrentGroupAssets).catch((error) => status(error.message));
+  });
+  els.filmstrip.appendChild(tray);
 }
 
 function layerCardKey(info) {
@@ -3899,17 +4057,20 @@ function moveFrameLayerCardToIndex(dragInfo, insertionIndex) {
 
 function createFrameImageAttachmentCard(attachment, index, group, label) {
   const isCurrent = group.uiId === currentGroup.uiId;
-  const card = document.createElement("button");
+  const card = document.createElement("div");
+  card.tabIndex = 0;
+  card.setAttribute("role", "option");
   const selected = selectedAttachmentId === attachment.id;
+  card.setAttribute("aria-selected", String(selected));
   const below = attachmentLayerOrder(attachment) < 0;
   card.className = `thumb attachmentThumb ${selected ? "selectedAttachment" : ""} ${below ? "layerBelow" : "layerAbove"} ${!isCurrent ? "chained" : ""}`;
   const layerTitle = below ? t("frameAttachmentLayerBelow") : t("frameAttachmentLayerAbove");
   card.title = `${label}${index + 1} - ${attachment.name || "image"}\n${layerTitle}`;
   card.innerHTML = `
     <span class="attachmentActions">
-      <button class="attachmentAction" data-action="remove-attachment" title="${escapeHtml(t("frameAttachmentRemove"))}">×</button>
+      <button type="button" class="attachmentAction" data-action="remove-attachment" title="${escapeHtml(t("frameAttachmentRemove"))}" aria-label="${escapeHtml(t("frameAttachmentRemove"))}">×</button>
     </span>
-    <img src="${assetUrl(attachment)}" alt="">
+    <img src="${assetUrl(attachment)}" alt="" width="${Math.max(1, Number(attachment.width || 1))}" height="${Math.max(1, Number(attachment.height || 1))}">
     <span class="thumbLabel">${label}${index + 1}</span>`;
   card.querySelector('[data-action="remove-attachment"]').addEventListener("click", (event) => {
     event.preventDefault();
@@ -3925,6 +4086,11 @@ function createFrameImageAttachmentCard(attachment, index, group, label) {
     }
     selectFrameImageAttachment(attachment, index, group);
   });
+  card.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    card.click();
+  });
   setupLayerCardDrag(card, layerCardInfoForAttachment(attachment, index, group));
   return card;
 }
@@ -3939,8 +4105,12 @@ function renderFilmstripGroup(group, label) {
     setupLayerStackDrag(stack, index, group);
 
     const playback = framePlayback(index, group);
-    const item = document.createElement("button");
+    const item = document.createElement("div");
+    item.tabIndex = 0;
+    item.setAttribute("role", "option");
+    item.dataset.frameIndex = String(index);
     const inSelection = isCurrent && selectedFrames.has(index) && !selectedAttachmentId;
+    item.setAttribute("aria-selected", String(inSelection));
     const audioBinding = frameAudioBinding(index, group);
     item.className = `thumb ${inSelection ? "selected" : ""} ${isCurrent && index === selectedFrame ? "primary" : ""} ${isReferenceFrame(index, group) ? "reference" : ""} ${!isCurrent ? "chained" : ""} ${store[tuningFrameKey(index, group)] ? "overridden" : ""} ${playback.disabled ? "disabled" : ""} ${audioBinding ? "hasSfx" : ""}`;
     const sourceLabel = Array.isArray(group.sourceFrameIndices) && group.sourceFrameIndices.length ? ` (src ${sourceFrameIndex(index, group) + 1})` : "";
@@ -3951,12 +4121,12 @@ function renderFilmstripGroup(group, label) {
       : "";
     item.innerHTML = `
       ${audioBadge}
-      <img src="${assetUrl(frame)}" alt="">
+      <img src="${assetUrl(frame)}" alt="" width="${Math.max(1, Number(frame.width || 1))}" height="${Math.max(1, Number(frame.height || 1))}">
       <span class="thumbLabel">${label}${index + 1}</span>
       <div class="thumbDuration">
-        <button class="durationStep" data-delta="${-FRAME_DURATION_STEP_MS}" ${canAdjustDuration ? "" : "disabled"} title="-${FRAME_DURATION_STEP_MS}ms">-</button>
+        <button type="button" class="durationStep" data-delta="${-FRAME_DURATION_STEP_MS}" ${canAdjustDuration ? "" : "disabled"} title="-${FRAME_DURATION_STEP_MS}ms" aria-label="-${FRAME_DURATION_STEP_MS}ms">-</button>
         <b>${frameDurationMsLabel(index, group)}</b>
-        <button class="durationStep" data-delta="${FRAME_DURATION_STEP_MS}" ${canAdjustDuration ? "" : "disabled"} title="+${FRAME_DURATION_STEP_MS}ms">+</button>
+        <button type="button" class="durationStep" data-delta="${FRAME_DURATION_STEP_MS}" ${canAdjustDuration ? "" : "disabled"} title="+${FRAME_DURATION_STEP_MS}ms" aria-label="+${FRAME_DURATION_STEP_MS}ms">+</button>
       </div>`;
     const sfxBadge = item.querySelector(".frameSfxBadge");
     if (sfxBadge) {
@@ -3976,6 +4146,13 @@ function renderFilmstripGroup(group, label) {
       item.addEventListener(eventName, (event) => {
         if (!canDropOnFrame) return;
         if (isLayerCardDragEvent(event)) return;
+        if (Array.from(event.dataTransfer?.types || []).includes(ATTACHMENT_ASSET_DRAG_TYPE)) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "copy";
+          item.classList.add("imageDragOver");
+          return;
+        }
         const items = Array.from(event.dataTransfer?.items || []);
         const hasFile = items.some((entry) => entry.kind === "file")
           || Array.from(event.dataTransfer?.types || []).includes("Files")
@@ -4003,6 +4180,12 @@ function renderFilmstripGroup(group, label) {
       event.preventDefault();
       event.stopPropagation();
       item.classList.remove("audioDragOver", "imageDragOver");
+      const assetId = event.dataTransfer?.getData(ATTACHMENT_ASSET_DRAG_TYPE);
+      if (assetId) {
+        const asset = attachmentAssets.find((entry) => entry.id === assetId);
+        if (asset) applyAttachmentAsset(asset, [index], group);
+        return;
+      }
       const imageFile = imageFileFromList(event.dataTransfer?.files);
       if (imageFile) {
         await bindFrameImageAttachmentFile(imageFile, index, group);
@@ -4034,6 +4217,11 @@ function renderFilmstripGroup(group, label) {
       }
       selectFilmstripFrame(index, event);
     });
+    item.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      item.click();
+    });
     setupLayerCardDrag(item, layerCardInfoForMain(index, group));
     for (const stackItem of stackItems) {
       if (stackItem.type === "main") {
@@ -4046,8 +4234,91 @@ function renderFilmstripGroup(group, label) {
   });
 }
 
+/**
+ * Updates the visible main-preview zoom percentage and mode buttons.
+ * @returns {void}
+ */
+function syncStageZoomControls() {
+  const percent = Math.round(view.zoom * 100);
+  if (els.stageZoom) els.stageZoom.value = String(Math.max(12, Math.min(800, percent)));
+  if (els.stageZoomValue) els.stageZoomValue.textContent = `${percent}%`;
+  els.stageZoomFit?.classList.toggle("active", stageViewMode === "fit");
+  els.stageZoomActual?.classList.toggle("active", stageViewMode === "actual");
+}
+
+/**
+ * Measures the active frame in stage coordinates at unit zoom and zero origin.
+ * @returns {{x:number,y:number,width:number,height:number}|null}
+ */
+function unitStageContentRect() {
+  if (!currentGroup || !images.length) return null;
+  const previousView = view;
+  view = { zoom: 1, x: 0, y: 0 };
+  const rect = currentFrameRect();
+  view = previousView;
+  return rect;
+}
+
+/**
+ * Centers the active frame at a requested zoom level.
+ * @param {number} zoom Requested stage zoom.
+ * @param {"fit"|"actual"|"custom"} mode View mode.
+ * @returns {void}
+ */
+function centerStageContent(zoom, mode = "custom") {
+  const safeZoom = Math.min(8, Math.max(0.12, Number(zoom || 1)));
+  const rect = unitStageContentRect();
+  stageViewMode = mode;
+  if (!rect) {
+    view = { zoom: safeZoom, x: els.stage.width / 2, y: els.stage.height / 2 };
+  } else {
+    const centerX = rect.x + rect.width / 2;
+    const centerY = rect.y + rect.height / 2;
+    view = {
+      zoom: safeZoom,
+      x: els.stage.width / 2 - centerX * safeZoom,
+      y: els.stage.height / 2 - centerY * safeZoom,
+    };
+  }
+  syncStageZoomControls();
+}
+
+/**
+ * Fits the active frame inside the main stage with editing room around it.
+ * @returns {void}
+ */
 function fitView() {
-  view = { zoom: 1, x: els.stage.width / 2, y: els.stage.height / 2 };
+  const rect = unitStageContentRect();
+  if (!rect?.width || !rect?.height) {
+    centerStageContent(1, "fit");
+    return;
+  }
+  const horizontalPadding = Math.max(96 * devicePixelRatio, els.stage.width * 0.14);
+  const verticalPadding = Math.max(72 * devicePixelRatio, els.stage.height * 0.14);
+  const zoom = Math.min(
+    (els.stage.width - horizontalPadding) / rect.width,
+    (els.stage.height - verticalPadding) / rect.height,
+  );
+  centerStageContent(zoom, "fit");
+}
+
+/**
+ * Changes zoom while preserving the world point under the stage center.
+ * @param {number} nextZoom Requested stage zoom.
+ * @returns {void}
+ */
+function setStageZoom(nextZoom) {
+  const zoom = Math.min(8, Math.max(0.12, Number(nextZoom || 1)));
+  const centerX = els.stage.width / 2;
+  const centerY = els.stage.height / 2;
+  const worldX = (centerX - view.x) / view.zoom;
+  const worldY = (centerY - view.y) / view.zoom;
+  view.zoom = zoom;
+  view.x = centerX - worldX * zoom;
+  view.y = centerY - worldY * zoom;
+  stageViewMode = "custom";
+  syncStageZoomControls();
+  draw();
 }
 
 function zoomViewAt(event) {
@@ -4062,6 +4333,8 @@ function zoomViewAt(event) {
   view.zoom = Math.min(8, Math.max(0.12, view.zoom * factor));
   view.x = px - before.x * view.zoom;
   view.y = py - before.y * view.zoom;
+  stageViewMode = "custom";
+  syncStageZoomControls();
   draw();
 }
 
@@ -4069,7 +4342,8 @@ function resizeCanvas() {
   const rect = els.stage.getBoundingClientRect();
   els.stage.width = Math.max(640, Math.floor(rect.width * devicePixelRatio));
   els.stage.height = Math.max(420, Math.floor(rect.height * devicePixelRatio));
-  fitView();
+  if (stageViewMode === "actual") centerStageContent(1, "actual");
+  else fitView();
   draw();
 }
 
@@ -5250,6 +5524,7 @@ async function save() {
   pruneNoopFrameOverrides();
   await ensureCollisionBoxOverridesForSave();
   const frameAudioBindingsForSave = await collectFrameAudioBindingsForSave();
+  const savedRevision = editRevision;
   try {
     const res = await fetch("/api/save", {
       method: "POST",
@@ -5291,15 +5566,31 @@ async function save() {
         },
       }),
     });
-    if (!res.ok) throw new Error(await res.text());
     const result = await res.json().catch(() => ({}));
+    if (!res.ok && !result.localSaved) throw new Error(result.error || `HTTP ${res.status}`);
+    if (result.localSaved && !res.ok) {
+      saveInFlight = false;
+      if (editRevision === savedRevision) markClean();
+      else {
+        dirty = true;
+        updateSaveState();
+      }
+      status(t("saveLocalOnly", { message: result.error || `HTTP ${res.status}` }));
+      return;
+    }
     if (Array.isArray(result.warnings)) config.warnings = result.warnings;
     saveInFlight = false;
-    markClean();
+    if (editRevision === savedRevision) {
+      markClean();
+    } else {
+      dirty = true;
+      updateSaveState();
+    }
     const warningText = Array.isArray(result.warnings) && result.warnings.length
       ? t("warnings", { warnings: result.warnings.join("\n") })
       : "";
-    status(warningText.trim());
+    const concurrentEditText = editRevision === savedRevision ? "" : t("savedWithNewChanges");
+    status([concurrentEditText, warningText.trim()].filter(Boolean).join("\n"));
   } catch (error) {
     saveInFlight = false;
     updateSaveState();
@@ -5381,9 +5672,11 @@ function collectYechengPropTuningValues() {
 els.projectSelect.addEventListener("change", () => {
   activateProject(els.projectSelect.value).catch((error) => status(t("projectSwitchFailed", { message: error.message })));
 });
+els.importAnimationOpen.addEventListener("click", () => {
+  frameOrganizer?.openImport().catch((error) => status(t("loadFailed", { message: error.message })));
+});
 els.refreshProject.addEventListener("click", () => {
-  imageCache.clear();
-  loadConfig().then(resizeCanvas).catch((error) => status(t("projectRefreshFailed", { message: error.message })));
+  refreshActiveProject().catch((error) => status(t("projectRefreshFailed", { message: error.message })));
 });
 if (els.languageSelect) {
   els.languageSelect.addEventListener("change", () => {
@@ -5533,15 +5826,29 @@ function imageSizeFromDataUrl(dataUrl) {
 
 async function uploadFrameAttachmentImage(file, id) {
   const data = await readFileAsDataUrl(file);
+  return uploadFrameAttachmentData(data, {
+    id,
+    name: file.name || "image",
+    type: file.type || "",
+  });
+}
+
+/**
+ * Uploads image data into the current project's reusable attachment directory.
+ * @param {string} data Image data URL.
+ * @param {{id:string,name:string,type?:string}} source Asset metadata.
+ * @returns {Promise<object>} Stored image descriptor.
+ */
+async function uploadFrameAttachmentData(data, source) {
   const size = await imageSizeFromDataUrl(data);
   const res = await fetch("/api/frame-attachment-image", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       projectId: activeProjectId(),
-      id,
-      name: file.name || "image",
-      type: file.type || "",
+      id: source.id,
+      name: source.name || "image",
+      type: source.type || "",
       width: size.width,
       height: size.height,
       data,
@@ -5550,6 +5857,91 @@ async function uploadFrameAttachmentImage(file, id) {
   if (!res.ok) throw new Error(await res.text());
   const result = await res.json();
   return result.image;
+}
+
+/**
+ * Returns a stable asset-library key for one animation group.
+ * @param {object|null} group Animation group.
+ * @returns {string} Group asset key.
+ */
+function attachmentAssetGroupKey(group = currentGroup) {
+  return group ? `${group.profileId || group.tuningTarget || "profile"}/${group.animationId || group.name}` : "";
+}
+
+/**
+ * Persists the current project asset library immediately.
+ * @returns {Promise<void>}
+ */
+async function persistAttachmentAssets() {
+  const response = await fetch("/api/attachment-assets", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: activeProjectId(), assets: attachmentAssets }),
+  });
+  if (!response.ok) throw new Error(await response.text());
+}
+
+/**
+ * Creates independent attachment instances of one asset on target frames.
+ * @param {object} asset Reusable image asset.
+ * @param {number[]} frameIndexes Target frame indexes.
+ * @param {object} group Target animation group.
+ * @returns {number} Number of created instances.
+ */
+function applyAttachmentAsset(asset, frameIndexes = selectedFrameIndexes(), group = currentGroup) {
+  if (!asset?.path || !group || !frameIndexes.length) return 0;
+  pushUndo("apply attachment asset");
+  for (const frameIndex of frameIndexes) {
+    frameImageAttachments.push(normalizeFrameImageAttachment({
+      ...asset,
+      id: newLocalId("layer"),
+      key: frameImageAttachmentKey(frameIndex, group),
+      metadata: frameImageAttachmentMetadata(frameIndex, group),
+      layer: "above",
+      layerOrder: nextAboveAttachmentLayerOrder(frameIndex, group),
+      transform: { scale: 1, scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 },
+    }));
+  }
+  clearSelectedAttachment();
+  loadImageCached(asset).catch(() => null);
+  markDirty();
+  renderFilmstrip();
+  draw();
+  status(t("assetApplied", { count: frameIndexes.length }));
+  return frameIndexes.length;
+}
+
+/**
+ * Uploads processed images and adds them to the active group's asset library.
+ * @param {Array<{name?:string,data?:string,image?:HTMLCanvasElement,type?:string}>} items Image sources.
+ * @returns {Promise<number>} Added asset count.
+ */
+async function addImagesToCurrentGroupAssets(items) {
+  if (!currentGroup) throw new Error(language === "zh" ? "请先选择当前动画组。" : "Select an animation group first.");
+  const groupKey = attachmentAssetGroupKey(currentGroup);
+  const added = [];
+  try {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const data = item.data || item.image?.toDataURL?.("image/png") || "";
+      if (!data) continue;
+      const id = newLocalId("asset");
+      const image = await uploadFrameAttachmentData(data, {
+        id,
+        name: item.name || `asset_${String(index + 1).padStart(4, "0")}.png`,
+        type: item.type || "image/png",
+      });
+      added.push({ id, ...image, groupKey });
+    }
+    attachmentAssets.push(...added);
+    await persistAttachmentAssets();
+    renderFilmstrip();
+    status(t("assetAdded", { count: added.length }));
+    return added.length;
+  } catch (error) {
+    attachmentAssets = attachmentAssets.filter((asset) => !added.some((entry) => entry.id === asset.id));
+    throw error;
+  }
 }
 
 async function bindFrameImageAttachmentFile(file, index = selectedFrame, group = currentGroup) {
@@ -5992,7 +6384,17 @@ if (els.ghostToggle) {
   });
 }
 
-els.resetView.addEventListener("click", () => { fitView(); draw(); });
+els.resetView?.addEventListener("click", () => { fitView(); draw(); });
+els.stageZoomOut?.addEventListener("click", () => setStageZoom(view.zoom / 1.2));
+els.stageZoomIn?.addEventListener("click", () => setStageZoom(view.zoom * 1.2));
+els.stageZoom?.addEventListener("input", () => setStageZoom(Number(els.stageZoom.value) / 100));
+els.stageZoomFit?.addEventListener("click", () => { fitView(); draw(); });
+els.stageZoomActual?.addEventListener("click", () => { centerStageContent(1, "actual"); draw(); });
+els.stage.addEventListener("dblclick", () => {
+  if (stageViewMode === "actual") fitView();
+  else centerStageContent(1, "actual");
+  draw();
+});
 els.save.addEventListener("click", () => save().catch((error) => status(t("saveFailed", { message: error.message }))));
 if (els.updateButton) els.updateButton.addEventListener("click", installTunerUpdate);
 if (els.fps) {
@@ -6216,9 +6618,18 @@ els.stage.addEventListener("wheel", (event) => {
 
 window.addEventListener("keydown", (event) => {
   const command = event.ctrlKey || event.metaKey;
+  const modalOpen = ["cutoutModal", "organizerModal"]
+    .some((id) => !document.querySelector(`#${id}`)?.hidden);
+  if (modalOpen) return;
   if (command && event.key.toLowerCase() === "s") {
     event.preventDefault();
     save().catch((error) => status(t("saveFailed", { message: error.message })));
+    return;
+  }
+  if (command && event.key.toLowerCase() === "z") {
+    event.preventDefault();
+    if (event.shiftKey) redo();
+    else undo();
     return;
   }
   if (command && event.key.toLowerCase() === "c" && copyFrameImageAttachments()) {
@@ -6246,6 +6657,36 @@ window.addEventListener("keydown", (event) => {
     }
   }
   if (typing) return;
+  if (command && event.key.toLowerCase() === "a" && currentGroup?.frames?.length) {
+    event.preventDefault();
+    selectedFrames = new Set(currentGroup.frames.map((_frame, index) => index));
+    selectedFrame = Math.max(0, currentGroup.frames.length - 1);
+    selectionAnchorFrame = 0;
+    syncFrameInputs();
+    renderFilmstrip();
+    draw();
+    return;
+  }
+  if (!command && (event.key === "ArrowLeft" || event.key === "ArrowRight") && currentGroup?.frames?.length) {
+    event.preventDefault();
+    const direction = event.key === "ArrowLeft" ? -1 : 1;
+    const nextIndex = Math.max(0, Math.min(currentGroup.frames.length - 1, selectedFrame + direction));
+    selectFilmstripFrame(nextIndex, event.shiftKey ? { shiftKey: true } : null);
+    document.querySelector(`.thumb[data-frame-index="${nextIndex}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    return;
+  }
+  if (!command && event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    fitView();
+    draw();
+    return;
+  }
+  if (!command && event.key === "0") {
+    event.preventDefault();
+    centerStageContent(1, "actual");
+    draw();
+    return;
+  }
   if (event.key === " " && els.playPause) {
     event.preventDefault();
     els.playPause.click();
@@ -6273,8 +6714,153 @@ window.addEventListener("beforeunload", (event) => {
   event.returnValue = "";
 });
 
+/**
+ * Replaces all PNG files in the active animation group with processed cutout results.
+ * @param {Array<{data:string}>} outputs Processed PNG data URLs in frame order.
+ * @returns {Promise<void>}
+ */
+async function applyCutoutOutputsToCurrentAnimation(outputs) {
+  if (!currentGroup?.frames?.length) throw new Error("No active animation group.");
+  if (outputs.length !== currentGroup.frames.length) {
+    throw new Error(`Expected ${currentGroup.frames.length} processed frames, received ${outputs.length}.`);
+  }
+  const response = await fetch("/api/replace-animation", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      projectId: activeProjectId(),
+      frames: currentGroup.frames.map((frame) => ({ path: frame.path })),
+      files: outputs.map((output) => ({ data: output.data })),
+    }),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  imageCache.clear();
+  imageElements.clear();
+  opaqueRectCache = new WeakMap();
+  const frameIndex = selectedFrame;
+  await selectGroup(currentGroup, { frameIndex, preserveView: true });
+}
+
+/**
+ * Applies a staged frame organizer plan and reloads project configuration.
+ * @param {Array<object>} items Ordered organizer frame plan.
+ * @returns {Promise<void>}
+ */
+async function applyFrameOrganizerPlan(items) {
+  if (!currentGroup?.profileId || !currentGroup?.animationId) {
+    throw new Error("The active group is not a manifest animation.");
+  }
+  const response = await fetch("/api/reorganize-animation", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      projectId: activeProjectId(),
+      profileId: currentGroup.profileId,
+      animationId: currentGroup.animationId,
+      items,
+    }),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  resetProjectSession();
+  imageCache.clear();
+  imageElements.clear();
+  await loadConfig();
+  resizeCanvas();
+}
+
+/**
+ * Creates a new manifest animation from a staged browser workset.
+ * @param {object} metadata Project, profile, animation, type, and FPS metadata.
+ * @param {Array<object>} items Ordered PNG workset.
+ * @returns {Promise<object>}
+ */
+async function createAnimationFromOrganizer(metadata, items) {
+  let response;
+  try {
+    response = await fetch("/api/import-animation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...metadata,
+        items,
+      }),
+    });
+  } catch (error) {
+    throw new Error(
+      language === "zh"
+        ? "本地服务连接已断开。请重新启动 XSXB Frame Tuner 服务并刷新页面后重试。"
+        : "The local XSXB Frame Tuner service is disconnected. Restart it, refresh the page, and try again.",
+      { cause: error },
+    );
+  }
+  const responseText = await response.text();
+  let result = null;
+  try {
+    result = JSON.parse(responseText);
+  } catch {
+    result = null;
+  }
+  if (!response.ok || !result?.ok) {
+    throw new Error(result?.error || responseText || `HTTP ${response.status}`);
+  }
+  selectedProjectId = result.activeProjectId;
+  localStorage.setItem("xsxbFrameTuner.project", selectedProjectId);
+  resetProjectSession();
+  imageCache.clear();
+  imageElements.clear();
+  await loadConfig();
+  const importedGroup = config.groups.find((group) => (
+    group.profileId === result.profileId && group.animationId === result.animationId
+  ));
+  if (importedGroup && importedGroup.uiId !== currentGroup?.uiId) {
+    await selectGroup(importedGroup, { fitView: true });
+  }
+  resizeCanvas();
+  return result;
+}
+
 window.addEventListener("resize", resizeCanvas);
 requestAnimationFrame(animate);
+batchCutout = window.BatchCutout?.createController({
+  getLanguage: () => language,
+  getCurrentAnimation: () => (
+    currentGroup?.frames?.length
+      ? {
+          name: groupLabel(currentGroup),
+          frames: currentGroup.frames,
+          images,
+        }
+      : null
+  ),
+  applyToCurrentAnimation: applyCutoutOutputsToCurrentAnimation,
+  onStatus: (message) => status(message),
+}) || null;
+frameOrganizer = window.FrameOrganizer?.createController({
+  getLanguage: () => language,
+  getImportContext: () => ({
+    activeProject: config?.activeProject || null,
+    profiles: config?.profiles || [],
+  }),
+  getCurrentAnimation: () => (
+    currentGroup?.frames?.length && currentGroup.profileId && currentGroup.animationId
+      ? {
+          name: groupLabel(currentGroup),
+          profileId: currentGroup.profileId,
+          animationId: currentGroup.animationId,
+          frames: currentGroup.frames,
+          images,
+        }
+      : null
+  ),
+  applyPlan: applyFrameOrganizerPlan,
+  createAnimation: createAnimationFromOrganizer,
+  addAssets: addImagesToCurrentGroupAssets,
+  editCutout: (workset) => {
+    if (!batchCutout?.openWorkset) throw new Error("Batch cutout is unavailable.");
+    return batchCutout.openWorkset(workset);
+  },
+  onStatus: (message) => status(message),
+}) || null;
 applyUiTheme();
 applyCanvasColor();
 applyLanguage();

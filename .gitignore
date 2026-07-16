@@ -30,3 +30,7 @@ workspace/projects/*
 audio/projects/*
 !audio/.gitkeep
 !audio/projects/.gitkeep
+
+# Generated exports, screenshots, and local browser audit state.
+output/
+.playwright-cli/

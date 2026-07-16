@@ -1,4 +1,4 @@
 interface:
   display_name: "XSXB Frame Tuner"
-  short_description: "Batch-import playable Godot frame animations."
-  default_prompt: "Use $xsxb-frame-tuner to batch-import these animation folders and fully wire the character into my Godot game."
+  short_description: "Process, tune, and wire Godot frame animations."
+  default_prompt: "Use $xsxb-frame-tuner to process these local animation assets, tune them, and fully wire the result into my Godot game."

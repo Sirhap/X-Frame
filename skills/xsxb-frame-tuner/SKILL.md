@@ -1,6 +1,16 @@
 ---
 name: xsxb-frame-tuner
-description: Batch-import one or many PNG frame folders or Godot SpriteFrames into XSXB Frame Tuner and wire a complete playable Godot runtime with saved hit/hurt/collision boxes, frame timing, SFX, image attachments, scene scale, facing, and WYSIWYG transforms. Use when the user asks to add a character, add or replace one or many animations/actions, import frame sequences, connect gameplay to XSXB, tune boxes/SFX/attachments, or says 添加角色, 批量添加动画, 一句话导入多组动画, 新动作, 接入角色, 接入 tuner, 接入 XSXB, 帧动画调参, 碰撞框, 音效, 附加帧, 场景系数.
+description: >-
+  Operate the complete local XSXB Frame Tuner workflow for Godot frame animation:
+  import or replace PNG/SpriteFrames animations, extract frames from local video,
+  batch-remove image backgrounds, organize/reduce/flip/diagnose frame sets, tune
+  Character/Group/Frame transforms, timing and hit/hurt/collision boxes, bind frame
+  SFX and image attachments, sync the Godot runtime, and validate gameplay integration.
+  Use for requests involving characters, animations/actions, cutout/background removal,
+  video-to-frames, frame cleanup or ordering, duplicate/jump/loop detection, visual
+  tuning, boxes, playback, SFX, attachments, scene scale, facing, Godot wiring, or
+  phrases such as 添加角色, 批量添加动画, 新动作, 接入 XSXB, 帧动画调参, 批量抠图,
+  去背景, 视频抽帧, 帧整理, 减帧, 重复帧, 跳变帧, 循环段, 水平翻转, 碰撞框, 音效, 附加帧.
 ---
 
 # XSXB Frame Tuner
@@ -15,7 +25,9 @@ For every actor import, animation import, replacement, or gameplay wiring task, 
 - [references/runtime-contract.md](references/runtime-contract.md) for gameplay wiring, playback, SFX, image attachments, scene scale, facing, and box transforms.
 - [references/validation.md](references/validation.md) for completion gates and commands.
 
-When modifying the tuner web UI or save payload, also read [references/ui-contract.md](references/ui-contract.md).
+For batch cutout, video extraction, frame organization, visual tuning, playback editing, SFX, attachments, or other existing tuner operations, read [references/media-and-tuning-workflows.md](references/media-and-tuning-workflows.md).
+
+When modifying the tuner web UI, save payload, or direct-manipulation behavior, also read [references/ui-contract.md](references/ui-contract.md).
 
 ## Completion Contract
 
@@ -32,6 +44,8 @@ Treat a request such as “add these animation folders to this character” as a
 9. Start the tuner only after import, sync, gameplay wiring, and validation succeed.
 
 Do not silently downgrade to “frames copied” or “runtime generated.” Report a partial result only when a concrete blocker remains.
+
+For media-processing or tuner-editing requests, complete the requested local workflow, save the result, resync the bound Godot project when one exists, and verify that frame counts and bindings remain consistent. Do not treat opening the relevant panel as completion.
 
 ## Locate the Tool
 
@@ -51,10 +65,12 @@ Infer safe inputs from the request and project before asking questions:
 - target Godot project root
 - new or existing XSXB profile
 - one or many animation folders or `.spriteframes.tres` resources
+- local image folders, image files, or video files used for cutout and frame organization
 - animation IDs, labels, FPS, actor/VFX type, and replacement intent
+- whether processed output should be exported separately or replace the current animation
 - gameplay actor/scene that must consume the runtime
 
-Ask only when guessing could bind the wrong Godot project, overwrite a tuned animation, or change gameplay semantics. Multiple animation paths in one message are one batch, not separate future tasks.
+Ask only when guessing could bind the wrong Godot project, overwrite source or tuned animation data, or change gameplay semantics. Multiple animation paths in one message are one batch, not separate future tasks.
 
 ## Required Workflow
 
@@ -71,6 +87,15 @@ Ask only when guessing could bind the wrong Godot project, overwrite a tuned ani
 8. Wire the generated XSXB actor into actual gameplay. Route animation state, action duration, collision, hit/hurt queries, movement scale, SFX, and attachments through runtime interfaces.
 9. Run `tools/validate_import.js` with `--require-gameplay --strict`, then run available Godot headless/smoke checks.
 10. Start or reuse the tuner server. If already open, tell the user to refresh the animation list.
+
+For cutout, video extraction, frame organization, or existing-project tuning without a new import:
+
+1. Inspect the active XSXB project, target profile/group, current frame count, tuning, SFX, and attachments.
+2. Start or reuse the local tuner and select the exact project and animation group.
+3. Execute the requested workflow according to `media-and-tuning-workflows.md`, using browser operation when the feature is implemented only in the tuner UI.
+4. Require explicit confirmation before replacing original frames, deleting frames, or applying a reorganized workset.
+5. Save the tuner state and allow its normal Godot synchronization to complete.
+6. Recheck frame counts, frame-indexed tuning, boxes, SFX, attachments, and validation warnings.
 
 ## Agent-Facing Commands
 
@@ -109,11 +134,21 @@ $env:PORT="5179"; node "<tuner_root>\tools\animation_tuner\server.js"
 
 The web tuner checks the official GitHub `main` branch once when the page opens. When an update is available, its update button fast-forwards the clean local clone, atomically replaces the installed `xsxb-frame-tuner` skill with the bundled copy, restarts the local server, and reconnects the page. Never work around an update block caused by an untrusted remote, a non-`main` branch, or tracked local changes; preserve the user's work and resolve that condition explicitly.
 
+## Tuner Operation Boundary
+
+- Prefer importer, synchronization, organizer, and validation scripts for deterministic file operations.
+- Use the local tuner UI for batch cutout, local video decoding, visual frame selection, attachment direct manipulation, and other browser-only interactions.
+- When browser operation is available, inspect the rendered result instead of inferring success from UI state or API responses.
+- Keep raw images and videos local. Do not upload them to a remote service unless the user explicitly requests a cloud workflow.
+- Never replace frames or apply a destructive workset without explicit replace/apply intent.
+- After any frame-order or frame-count change, verify that tuning, boxes, SFX, and attachments were remapped to the intended source frames.
+
 ## Non-Negotiable Data Rules
 
 - Keep every Godot project isolated by exact project root.
 - Keep source assets in stable folders; never leave runtime paths pointing to Downloads or temp directories.
 - Preserve tuned data when adding a new animation. Remove stale animation-prefixed overrides only when replacing that whole animation.
+- Preserve original media when the user asks only for preview, diagnosis, or exported processed copies.
 - Use `canvas_bottom_center` for grounded actors unless the existing project intentionally uses another authored anchor.
 - Keep collision, hit, and hurt boxes as local gameplay data. Never use box offsets to position the sprite.
 - Apply Character, Group, Frame, facing, and scene scale to visuals and boxes through the same outer transform.
@@ -135,6 +170,8 @@ Before reporting success, verify at minimum:
 - gameplay uses runtime animation duration, scene scale, collisionbox, hitbox, and hurtbox interfaces where applicable
 - an actual gameplay scene uses the generated actor
 - `/api/config?project=<id>` and `validate_import.js --strict` report no warnings
+- requested cutout, extraction, organization, or tuning results are visibly inspected when those workflows were used
+- destructive frame changes preserve the intended frame order and remap frame-indexed data correctly
 
 If Godot cannot run, state exactly which runtime checks remain unverified.
 
@@ -142,7 +179,8 @@ If Godot cannot run, state exactly which runtime checks remain unverified.
 
 Report:
 
-- imported profile, animation IDs, per-group counts, and total frame count
+- affected profile, animation IDs, before/after per-group counts, and total frame count
+- media operations performed, including cutout, video extraction, reordering, reduction, flipping, or diagnostics
 - tuner-local and Godot-local destinations
 - manifest, tuning, runtime, SFX, attachment, and gameplay files changed
 - deterministic and Godot validation that passed

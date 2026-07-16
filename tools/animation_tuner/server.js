@@ -5,6 +5,7 @@ const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { EMPTY_MANIFEST, EMPTY_TUNING, createProjectStore, reslash } = require("../project_store");
 const { syncFrameAudio, syncGodotProject } = require("../godot_sync");
+const { importAnimation, reorganizeAnimation } = require("../frame_organizer");
 const { checkForUpdates, performUpdate } = require("../updater");
 
 const ROOT = path.resolve(__dirname, "..", "..");
@@ -13,6 +14,17 @@ const PORT = Number(process.env.PORT || 5179);
 const projectStore = createProjectStore(ROOT);
 const UPDATE_TOKEN = crypto.randomBytes(24).toString("hex");
 let restartScheduled = false;
+const DEFAULT_BODY_LIMIT = 2 * 1024 * 1024;
+const SAVE_BODY_LIMIT = 64 * 1024 * 1024;
+const MEDIA_BODY_LIMIT = 256 * 1024 * 1024;
+const MEDIA_ROUTES = new Set([
+  "/api/attachment-assets",
+  "/api/frame-attachment-image",
+  "/api/import-animation",
+  "/api/replace-animation",
+  "/api/replace-frame",
+  "/api/reorganize-animation",
+]);
 
 const DEFAULT_SUPPORTS = [
   "character_transform",
@@ -40,26 +52,121 @@ function ensureDataFiles() {
 }
 
 function send(res, status, body, contentType = "application/json") {
+  if (res.destroyed || res.writableEnded) return false;
   const data = Buffer.isBuffer(body)
     ? body
     : contentType === "application/json"
       ? Buffer.from(JSON.stringify(body, null, 2))
       : Buffer.from(String(body));
-  res.writeHead(status, {
-    "content-type": contentType,
-    "cache-control": "no-store",
-  });
-  res.end(data);
+  try {
+    if (!res.headersSent) {
+      res.writeHead(status, {
+        "content-type": contentType,
+        "cache-control": "no-store",
+      });
+    }
+    res.end(data);
+    return true;
+  } catch (error) {
+    console.error("Failed to send HTTP response:", error);
+    if (!res.destroyed) res.destroy();
+    return false;
+  }
 }
 
-function readBody(req) {
+class HttpError extends Error {
+  /**
+   * Creates an HTTP-safe application error.
+   * @param {number} status HTTP status.
+   * @param {string} message User-facing error message.
+   */
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/**
+ * Returns the maximum accepted JSON request size for one API route.
+ * @param {string} pathname Request path.
+ * @returns {number} Limit in bytes.
+ */
+function requestBodyLimit(pathname) {
+  if (MEDIA_ROUTES.has(pathname)) return MEDIA_BODY_LIMIT;
+  if (pathname === "/api/save" || pathname === "/api/frame-audio") return SAVE_BODY_LIMIT;
+  return DEFAULT_BODY_LIMIT;
+}
+
+/**
+ * Rejects browser cross-origin writes while preserving CLI access without Origin.
+ * @param {http.IncomingMessage} req HTTP request.
+ * @returns {void}
+ */
+function validateWriteRequest(req) {
+  const contentType = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+  if (contentType !== "application/json") {
+    throw new HttpError(415, "Expected Content-Type: application/json.");
+  }
+  const origin = String(req.headers.origin || "").trim();
+  if (!origin) return;
+  const allowedOrigins = new Set([
+    `http://127.0.0.1:${PORT}`,
+    `http://localhost:${PORT}`,
+  ]);
+  if (!allowedOrigins.has(origin)) throw new HttpError(403, "Cross-origin local API writes are not allowed.");
+}
+
+/**
+ * Reads one bounded UTF-8 request body.
+ * @param {http.IncomingMessage} req HTTP request.
+ * @param {number} limit Maximum body size in bytes.
+ * @returns {Promise<string>} Request body.
+ */
+function readBody(req, limit) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let received = 0;
+    let settled = false;
     req.setEncoding("utf8");
-    req.on("data", (chunk) => { body += chunk; });
-    req.on("end", () => resolve(body));
-    req.on("error", reject);
+    req.on("data", (chunk) => {
+      if (settled) return;
+      received += Buffer.byteLength(chunk, "utf8");
+      if (received > limit) {
+        settled = true;
+        body = "";
+        req.resume();
+        reject(new HttpError(413, `Request body exceeds the ${Math.round(limit / 1024 / 1024)} MB limit.`));
+        return;
+      }
+      body += chunk;
+    });
+    req.on("end", () => {
+      if (!settled) resolve(body);
+    });
+    req.on("error", (error) => {
+      if (!settled) reject(error);
+    });
   });
+}
+
+/**
+ * Parses one bounded JSON request body.
+ * @param {http.IncomingMessage} req HTTP request.
+ * @param {string} pathname Request path.
+ * @returns {Promise<object>} Parsed JSON object.
+ */
+async function readJsonBody(req, pathname) {
+  const body = await readBody(req, requestBodyLimit(pathname));
+  try {
+    const payload = JSON.parse(body || "{}");
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new HttpError(400, "Expected a JSON object.");
+    }
+    return payload;
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(400, `Invalid JSON request: ${error.message}`);
+  }
 }
 
 function safeResolve(base, requested) {
@@ -234,6 +341,19 @@ function readFrameImageAttachments(project) {
     : [];
 }
 
+/**
+ * Reads reusable attachment assets for the active project.
+ * @param {object} project Project record.
+ * @returns {object[]} Persisted image assets.
+ */
+function readAttachmentAssets(project) {
+  projectStore.ensureProjectFiles(project);
+  const raw = projectStore.readJson(projectStore.projectPaths(project).attachmentAssets, []);
+  return Array.isArray(raw)
+    ? raw.filter((entry) => entry && typeof entry === "object" && entry.path)
+    : [];
+}
+
 function tuningForClient(tuningFile) {
   return {
     ...tuningFile.values,
@@ -288,6 +408,7 @@ function buildGroups(manifest, tuningFile) {
         ?? null;
       groups.push({
         name: groupName,
+        animationId,
         runtimeAnimation: `${profile.id}/${animationId}`,
         profileId: profile.id,
         profileLabel: profile.label,
@@ -877,6 +998,7 @@ function configResponse(projectId) {
       profiles: [],
       frameAudioBindings: [],
       frameImageAttachments: [],
+      attachmentAssets: [],
       tuning: tuningForClient(EMPTY_TUNING),
       tuningDefaults: {},
       bossTuning: {},
@@ -890,7 +1012,7 @@ function configResponse(projectId) {
       soulManifest: {},
       yechengPropTuning: {},
       yechengPropDefaults: {},
-      warnings: ["当前 tuner 没有项目。请用 skill 给新的 Godot 项目导入角色或动画。"],
+      warnings: ["当前 tuner 没有项目。点击“导入动画”可从图片序列或视频创建本地项目。"],
       references: {
         playerCanonicalIdleHeight: 0,
         playerSpriteCenterX: 0,
@@ -906,7 +1028,7 @@ function configResponse(projectId) {
   const groups = buildGroups(manifest, tuningFile);
   const warnings = validateProject(project, manifest);
   if (!groups.length) {
-    warnings.unshift("当前项目没有已导入的动画组。请先用 skill/import_frames/import_spriteframes 导入 PNG 序列或 SpriteFrames。");
+    warnings.unshift("当前项目没有动画组。点击“导入动画”可导入 PNG 序列或本地视频。");
   }
   const projectClient = projectStore.projectForClient(project);
   return {
@@ -921,6 +1043,7 @@ function configResponse(projectId) {
     profiles: manifest.profiles.map(profileForClient),
     frameAudioBindings: readFrameAudioBindings(project),
     frameImageAttachments: readFrameImageAttachments(project),
+    attachmentAssets: readAttachmentAssets(project),
     tuning: tuningForClient(tuningFile),
     tuningDefaults: {},
     bossTuning: {},
@@ -980,6 +1103,29 @@ function saveFrameImageAttachments(payload, project) {
     : [];
   projectStore.writeJson(projectStore.projectPaths(project).frameImageAttachments, attachments);
   return attachments;
+}
+
+/**
+ * Persists reusable attachment assets independently from frame instances.
+ * @param {unknown} payload Asset records.
+ * @param {object} project Project record.
+ * @returns {object[]} Saved assets.
+ */
+function saveAttachmentAssets(payload, project) {
+  const assets = Array.isArray(payload)
+    ? payload.filter((entry) => entry && typeof entry === "object" && entry.path).map((entry) => ({
+        id: String(entry.id || entry.assetHash || crypto.randomUUID()),
+        name: String(entry.name || "image"),
+        path: String(entry.path),
+        assetHash: String(entry.assetHash || ""),
+        type: String(entry.type || "image/png"),
+        width: Number(entry.width || 0),
+        height: Number(entry.height || 0),
+        groupKey: String(entry.groupKey || ""),
+      }))
+    : [];
+  projectStore.writeJson(projectStore.projectPaths(project).attachmentAssets, assets);
+  return assets;
 }
 
 function saveFrameAudioBindings(payload, project) {
@@ -1082,8 +1228,9 @@ ensureDataFiles();
 const server = http.createServer(async (req, res) => {
   try {
     const parsed = new URL(req.url, "http://127.0.0.1");
+    if (req.method === "POST") validateWriteRequest(req);
     if (req.method === "GET" && parsed.pathname === "/api/update-status") {
-      return send(res, 200, { ...checkForUpdates(ROOT), token: UPDATE_TOKEN, restarting: restartScheduled });
+      return send(res, 200, { ...await checkForUpdates(ROOT), token: UPDATE_TOKEN, restarting: restartScheduled });
     }
     if (req.method === "POST" && parsed.pathname === "/api/update") {
       if (req.headers["x-xsxb-update-token"] !== UPDATE_TOKEN) {
@@ -1100,7 +1247,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, projectsResponse());
     }
     if (req.method === "POST" && parsed.pathname === "/api/projects") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = await readJsonBody(req, parsed.pathname);
       const registry = projectStore.addProject(payload);
       return send(res, 200, {
         ok: true,
@@ -1109,7 +1256,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (req.method === "POST" && parsed.pathname === "/api/projects/active") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = await readJsonBody(req, parsed.pathname);
       const registry = projectStore.setActiveProject(payload.projectId);
       return send(res, 200, {
         ok: true,
@@ -1121,7 +1268,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, configResponse(parsed.searchParams.get("project")));
     }
     if (req.method === "POST" && parsed.pathname === "/api/save") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       saveTuningPayload(payload, project);
       let frameAudioBindings = null;
@@ -1132,11 +1279,21 @@ const server = http.createServer(async (req, res) => {
       if (Array.isArray(payload.frame_image_attachments) || Array.isArray(payload.frameImageAttachments)) {
         frameImageAttachments = saveFrameImageAttachments(payload.frame_image_attachments || payload.frameImageAttachments, project);
       }
-      const godotSync = syncGodotProject(ROOT, projectStore, project, {
-        ...(frameAudioBindings ? { frameAudioBindings } : {}),
-        ...(frameImageAttachments ? { frameImageAttachments } : {}),
-      });
-      const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
+      let godotSync;
+      let runtimeProjectIdFiles;
+      try {
+        godotSync = syncGodotProject(ROOT, projectStore, project, {
+          ...(frameAudioBindings ? { frameAudioBindings } : {}),
+          ...(frameImageAttachments ? { frameImageAttachments } : {}),
+        });
+        runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
+      } catch (error) {
+        return send(res, 502, {
+          error: String(error.message || error),
+          localSaved: true,
+          warnings: validateProject(project, readManifest(project)),
+        });
+      }
       return send(res, 200, {
         ok: true,
         tuning: tuningForClient(readTuningFile(project)),
@@ -1146,7 +1303,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (req.method === "POST" && parsed.pathname === "/api/frame-audio") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       const bindings = Array.isArray(payload.frameAudioBindings)
         ? payload.frameAudioBindings
@@ -1159,17 +1316,22 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, frameAudioCount: bindings.length, godotAudioSync });
     }
     if (req.method === "POST" && parsed.pathname === "/api/frame-attachment-image") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       return send(res, 200, { ok: true, image: saveFrameAttachmentImage(payload, project) });
     }
+    if (req.method === "POST" && parsed.pathname === "/api/attachment-assets") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+      return send(res, 200, { ok: true, assets: saveAttachmentAssets(payload.assets, project) });
+    }
     if (req.method === "POST" && parsed.pathname === "/api/replace-frame") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       return send(res, 200, { ok: true, frame: replaceFrameImage(payload, project) });
     }
     if (req.method === "POST" && parsed.pathname === "/api/replace-animation") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = await readJsonBody(req, parsed.pathname);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       const frames = Array.isArray(payload.frames) ? payload.frames : [];
       const files = Array.isArray(payload.files) ? payload.files : [];
@@ -1177,7 +1339,99 @@ const server = http.createServer(async (req, res) => {
         return send(res, 400, { error: `Expected exactly ${frames.length} PNG files` });
       }
       const result = frames.map((frame, index) => replaceFrameImage({ path: frame.path, data: files[index].data }, project));
-      return send(res, 200, { ok: true, frames: result });
+      const godotSync = syncGodotProject(ROOT, projectStore, project);
+      return send(res, 200, { ok: true, frames: result, godotSync });
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/import-animation") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const profileLabel = String(payload.profileLabel || "").trim();
+      const animationName = String(payload.animationName || "").trim();
+      const projectLabel = String(payload.projectLabel || "").trim();
+      if (!items.length) throw new Error("Import at least one animation frame.");
+      if (!profileLabel || !animationName) throw new Error("Profile and animation names are required.");
+      if (!payload.projectId && !projectLabel) throw new Error("A project name is required when creating a local project.");
+      const hasInvalidPng = items.some((item) => {
+        const decoded = decodeDataUrl(item?.data);
+        return decoded?.mime !== "image/png"
+          || decoded.buffer.length < 24
+          || decoded.buffer.toString("ascii", 1, 4) !== "PNG"
+          || decoded.buffer.readUInt32BE(16) < 1
+          || decoded.buffer.readUInt32BE(20) < 1;
+      });
+      if (hasInvalidPng) {
+        throw new Error("Every imported frame must contain PNG image data.");
+      }
+      let registry = projectStore.readRegistry();
+      const requestedProjectId = payload.projectId ? projectStore.slug(payload.projectId) : "";
+      let project = requestedProjectId
+        ? registry.projects.find((entry) => entry.id === requestedProjectId)
+        : null;
+      if (requestedProjectId && !project) throw new Error(`Project not found: ${payload.projectId}`);
+      if (!project) {
+        registry = projectStore.addProject({
+          label: projectLabel,
+        });
+        project = projectStore.resolveProject(registry, registry.activeProjectId);
+      } else if (registry.activeProjectId !== project.id) {
+        registry = projectStore.setActiveProject(project.id);
+        project = projectStore.resolveProject(registry, project.id);
+      }
+      const imported = importAnimation({
+        root: ROOT,
+        projectStore,
+        project,
+        profileId: projectStore.slug(payload.profileId || profileLabel, "character"),
+        profileLabel,
+        profileKind: String(payload.profileKind || "actor"),
+        animationId: projectStore.slug(payload.animationId || animationName, "animation"),
+        animationName,
+        animationType: String(payload.animationType || "actor"),
+        anchorMode: String(payload.anchorMode || "canvas_bottom_center"),
+        fps: Number(payload.fps || 12),
+        items,
+      });
+      const godotSync = syncGodotProject(ROOT, projectStore, project, {
+        manifest: imported.manifest,
+        tuning: imported.tuning,
+      });
+      const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
+      return send(res, 200, {
+        ok: true,
+        activeProjectId: project.id,
+        profileId: imported.profileId,
+        animationId: imported.animationId,
+        frameCount: imported.frameCount,
+        godotSync,
+        runtimeProjectIdFiles,
+        warnings: validateProject(project, imported.manifest),
+      });
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/reorganize-animation") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+      const organized = reorganizeAnimation({
+        root: ROOT,
+        projectStore,
+        project,
+        profileId: String(payload.profileId || ""),
+        animationId: String(payload.animationId || ""),
+        items: payload.items,
+      });
+      const godotSync = syncGodotProject(ROOT, projectStore, project, {
+        manifest: organized.manifest,
+        tuning: organized.tuning,
+        frameAudioBindings: organized.frameAudioBindings,
+        frameImageAttachments: organized.frameImageAttachments,
+      });
+      const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
+      return send(res, 200, {
+        ok: true,
+        frameCount: organized.frameCount,
+        godotSync,
+        runtimeProjectIdFiles,
+        warnings: validateProject(project, organized.manifest),
+      });
     }
     if (req.method === "GET" && parsed.pathname === "/asset") {
       const relPath = parsed.searchParams.get("path");
@@ -1199,8 +1453,15 @@ const server = http.createServer(async (req, res) => {
     return serveStatic(req, res, parsed.pathname);
   } catch (error) {
     console.error(error);
-    return send(res, 500, { error: String(error.message || error) });
+    send(res, Number(error.status || 500), { error: String(error.message || error) });
+    return undefined;
   }
+});
+
+server.on("clientError", (error, socket) => {
+  console.error("HTTP client connection error:", error.message);
+  if (socket.destroyed) return;
+  socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
 });
 
 server.listen(PORT, "127.0.0.1", () => {

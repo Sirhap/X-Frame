@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#141922" />
     <title>XSXB Frame Tuner</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/style.css" />
@@ -36,7 +37,8 @@
           <select id="projectSelect"></select>
         </label>
         <div class="buttonRow projectActions">
-          <button id="refreshProject" class="secondary" data-i18n="refreshAnimationList">刷新动画列表</button>
+          <button id="importAnimationOpen" class="importAnimationButton" data-i18n="importAnimation">导入动画</button>
+          <button id="refreshProject" class="secondary projectRefreshButton" data-i18n-title="refreshAnimationList" title="刷新动画列表" aria-label="刷新动画列表">↻</button>
         </div>
         <label class="field languageField">
           <span data-i18n="language">语言</span>
@@ -74,10 +76,10 @@
         </details>
         <details class="panel" data-panel="adjustment-base" open>
           <summary><h2 data-i18n="adjustmentBase">调整 Base</h2></summary>
-          <div class="adjustModeRow">
-            <label class="toggle compact"><input id="adjustCharacter" type="checkbox" /><span data-i18n="character">角色</span></label>
-            <label class="toggle compact"><input id="adjustGroup" type="checkbox" /><span data-i18n="group">组</span></label>
-            <label class="toggle compact"><input id="adjustFrame" type="checkbox" /><span data-i18n="frame">帧</span></label>
+          <div class="adjustModeRow" role="radiogroup" aria-label="调整层级">
+            <label class="toggle compact"><input id="adjustCharacter" type="radio" name="adjustmentMode" value="character" /><span data-i18n="character">角色</span></label>
+            <label class="toggle compact"><input id="adjustGroup" type="radio" name="adjustmentMode" value="group" /><span data-i18n="group">组</span></label>
+            <label class="toggle compact"><input id="adjustFrame" type="radio" name="adjustmentMode" value="frame" /><span data-i18n="frame">帧</span></label>
           </div>
           <div class="adjustGrid">
             <label class="number stepNumber"><span data-i18n="scale">缩放</span><span class="numberStepper"><button type="button" class="numberStep" data-step-target="baseScale" data-step-dir="-1">&lsaquo;</button><input id="baseScale" type="number" step="0.001" readonly /><button type="button" class="numberStep" data-step-target="baseScale" data-step-dir="1">&rsaquo;</button></span></label>
@@ -116,8 +118,8 @@
           <label class="toggle"><input id="boxEnabled" type="checkbox" /><span data-i18n="boxEnabled">这一帧启用碰撞框</span></label>
         </details>
         <button id="save" class="save" data-i18n="saveTuning">保存调参</button>
-        <div id="saveState" class="saveState" data-i18n="noChanges">没有改动</div>
-        <div id="status" class="status" hidden></div>
+        <div id="saveState" class="saveState" aria-live="polite" data-i18n="noChanges">没有改动</div>
+        <div id="status" class="status" role="status" aria-live="polite" hidden></div>
       </aside>
 
       <section class="workspace">
@@ -140,16 +142,568 @@
             <div class="historyControls">
               <button id="playPause" class="secondary iconButton playButton" data-i18n-title="play" title="播放">播放</button>
               <button id="ghostToggle" class="secondary iconButton active" data-i18n-title="ghost" title="残影">影</button>
-              <button id="undoTop" class="secondary iconButton" data-i18n-title="undo" title="撤销">&larr;</button>
-              <button id="redoTop" class="secondary iconButton" data-i18n-title="redo" title="重做">&rarr;</button>
+              <button id="undoTop" class="secondary iconButton" data-i18n-title="undo" title="撤销" aria-label="撤销">&larr;</button>
+              <button id="redoTop" class="secondary iconButton" data-i18n-title="redo" title="重做" aria-label="重做">&rarr;</button>
             </div>
-            <button id="resetView" class="secondary" data-i18n="resetView">重置视图</button>
+            <div class="stageZoomControls" aria-label="预览缩放">
+              <button id="stageZoomOut" type="button" class="secondary" aria-label="缩小">−</button>
+              <label class="stageZoomSlider" aria-label="预览缩放百分比">
+                <input id="stageZoom" type="range" min="12" max="800" step="1" value="100" />
+                <output id="stageZoomValue">100%</output>
+              </label>
+              <button id="stageZoomIn" type="button" class="secondary" aria-label="放大">+</button>
+              <button id="stageZoomFit" type="button" class="secondary" data-i18n="zoomFit">适应</button>
+              <button id="stageZoomActual" type="button" class="secondary" data-i18n="zoomActual">100%</button>
+            </div>
+            <button id="cutoutOpen" class="cutoutLaunch" type="button" data-cutout-i18n="open">批量抠图</button>
+            <button id="organizerOpen" class="organizerLaunch" type="button" data-organizer-i18n="open">帧整理</button>
+            <details class="shortcutGuide">
+              <summary data-i18n-title="shortcutGuide" title="快捷键" aria-label="快捷键">⌘</summary>
+              <div class="shortcutGuidePanel">
+                <strong data-i18n="shortcutGuide">快捷键</strong>
+                <span><kbd>Space</kbd><b data-i18n="shortcutPlay">播放 / 暂停</b></span>
+                <span><kbd>← / →</kbd><b data-i18n="shortcutFrame">上一帧 / 下一帧</b></span>
+                <span><kbd>⇧ ← / →</kbd><b data-i18n="shortcutExtend">扩展帧选区</b></span>
+                <span><kbd>⌘ A</kbd><b data-i18n="shortcutAll">选择全部帧</b></span>
+                <span><kbd>⌘ Z</kbd><b data-i18n="undo">撤销</b></span>
+                <span><kbd>⇧ ⌘ Z</kbd><b data-i18n="redo">重做</b></span>
+                <span><kbd>F</kbd><b data-i18n="zoomFit">适应</b></span>
+                <span><kbd>0</kbd><b data-i18n="zoomActual">100%</b></span>
+              </div>
+            </details>
           </div>
         </div>
-        <canvas id="stage" width="1280" height="760"></canvas>
+        <canvas id="stage" width="1280" height="760" tabindex="0" aria-label="动画预览画布"></canvas>
         <div id="filmstrip" class="filmstrip"></div>
       </section>
     </main>
+    <section id="cutoutModal" class="cutoutModal" role="dialog" aria-modal="true" aria-labelledby="cutoutTitle" hidden>
+      <div class="cutoutWorkbench">
+        <header class="cutoutHeader">
+          <div>
+            <span class="cutoutEyebrow">ALPHA LAB / LOCAL</span>
+            <h2 id="cutoutTitle" data-cutout-i18n="title">批量抠图</h2>
+            <p data-cutout-i18n="subtitle">本地像素处理 · 图片不会上传</p>
+          </div>
+          <div class="cutoutWorkflow" aria-label="Cutout workflow">
+            <span class="active"><b>01</b> KEY</span>
+            <span><b>02</b> REFINE</span>
+            <span><b>03</b> EXPORT</span>
+          </div>
+          <button id="cutoutClose" class="cutoutClose" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="cutoutBody">
+          <aside class="cutoutControls">
+            <div id="cutoutDropzone" class="cutoutDropzone">
+              <strong data-cutout-i18n="emptyTitle">拖入 PNG / JPG / WebP</strong>
+              <span data-cutout-i18n="emptyHint">支持多选。默认从画布边缘识别背景，只清除连通区域。</span>
+              <input id="cutoutFileInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+              <div class="cutoutActionGrid">
+                <button id="cutoutAddFiles" type="button" data-cutout-i18n="addFiles">选择图片</button>
+                <button id="cutoutLoadGroup" type="button" class="secondary" data-cutout-i18n="loadGroup">载入当前组</button>
+              </div>
+            </div>
+            <div class="cutoutSettings">
+              <div class="cutoutSettingsHeading">
+                <div><span>PROCESS STACK</span><strong data-cutout-i18n="settingsTitle">处理参数</strong></div>
+                <small data-cutout-i18n="settingsHint">调整后自动刷新预览</small>
+              </div>
+              <div class="cutoutSettingTabs" role="tablist" aria-label="抠图参数">
+                <button id="cutoutTabRegular" type="button" role="tab" class="active" aria-selected="true" aria-controls="cutoutPanelRegular" data-cutout-tab="regular"><b>01</b><span data-cutout-i18n="regular">常规</span></button>
+                <button id="cutoutTabPost" type="button" role="tab" aria-selected="false" aria-controls="cutoutPanelPost" data-cutout-tab="post"><b>02</b><span data-cutout-i18n="post">后处理</span></button>
+                <button id="cutoutTabAdvanced" type="button" role="tab" aria-selected="false" aria-controls="cutoutPanelAdvanced" data-cutout-tab="advanced"><b>03</b><span data-cutout-i18n="advanced">高级</span></button>
+              </div>
+              <div id="cutoutPanelRegular" class="cutoutSettingPanel active" role="tabpanel" aria-labelledby="cutoutTabRegular" data-cutout-panel="regular">
+                <section class="cutoutParameterCard cutoutSourceCard">
+                  <header><div><span>A / SOURCE</span><strong data-cutout-i18n="sourceDetection">背景识别</strong></div></header>
+                  <label class="cutoutCheck"><input id="cutoutAutoColor" type="checkbox" checked /><span data-cutout-i18n="autoColor">每张图自动取背景色</span></label>
+                  <label class="cutoutColorField">
+                    <span data-cutout-i18n="backgroundColor">背景色</span>
+                    <input id="cutoutColor" type="color" value="#ffffff" disabled />
+                    <small id="cutoutSample">等待图片</small>
+                  </label>
+                  <div class="cutoutBackgroundSamples">
+                    <button id="cutoutBackgroundSample" type="button" class="secondary" data-cutout-i18n="backgroundSample">添加背景样本</button>
+                    <button id="cutoutBackgroundClear" type="button" class="secondary" data-cutout-i18n="backgroundClear">清除样本</button>
+                    <div id="cutoutBackgroundColors" class="cutoutProtectedColors"></div>
+                  </div>
+                </section>
+                <section class="cutoutParameterCard">
+                  <header><div><span>B / KEY</span><strong data-cutout-i18n="keyQuality">抠图质量</strong></div></header>
+                  <label class="cutoutRange"><span data-cutout-i18n="tolerance">容差</span><input id="cutoutTolerance" type="range" min="0" max="60" step="1" value="15" /><output id="cutoutToleranceValue">15</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="edgeBoost">边缘清除增强</span><input id="cutoutEdgeBoost" type="range" min="0" max="100" step="1" value="25" /><output id="cutoutEdgeBoostValue">25</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="feather">边缘柔化</span><input id="cutoutFeather" type="range" min="0" max="24" step="1" value="6" /><output id="cutoutFeatherValue">6</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="chromaCleanup">色键清理</span><input id="cutoutChromaCleanup" type="range" min="0" max="100" step="1" value="40" /><output id="cutoutChromaCleanupValue">40</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="chromaFeather">色键柔边</span><input id="cutoutChromaFeather" type="range" min="0" max="100" step="1" value="30" /><output id="cutoutChromaFeatherValue">30</output></label>
+                  <div class="cutoutToggleGrid">
+                    <label class="cutoutCheck"><input id="cutoutConnected" type="checkbox" /><span data-cutout-i18n="connected">仅清除边缘连通背景</span></label>
+                    <label class="cutoutCheck"><input id="cutoutPerceptual" type="checkbox" /><span data-cutout-i18n="perceptual">OKLab / YCbCr 柔性色键</span></label>
+                  </div>
+                </section>
+              </div>
+              <div id="cutoutPanelPost" class="cutoutSettingPanel" role="tabpanel" aria-labelledby="cutoutTabPost" data-cutout-panel="post" hidden>
+                <section class="cutoutParameterCard">
+                  <header><div><span>A / DESPILL</span><strong data-cutout-i18n="spillCleanup">色彩净化</strong></div></header>
+                  <label class="cutoutRange"><span data-cutout-i18n="despillStrength">全局去污强度</span><input id="cutoutDespillStrength" type="range" min="0" max="100" step="1" value="70" /><output id="cutoutDespillStrengthValue">70</output></label>
+                  <label class="cutoutSelectField">
+                    <span data-cutout-i18n="despillMode">边缘去污模式</span>
+                    <select id="cutoutDespillMode">
+                      <option value="general" data-cutout-i18n="despillGeneral">通用模式</option>
+                      <option value="blend" data-cutout-i18n="despillBlend">混合模式</option>
+                      <option value="chroma" data-cutout-i18n="despillChroma">褪色模式</option>
+                    </select>
+                  </label>
+                  <label class="cutoutRange"><span data-cutout-i18n="edgeDespillRadius">边缘去污半径</span><input id="cutoutEdgeDespillRadius" type="range" min="0" max="12" step="1" value="0" /><output id="cutoutEdgeDespillRadiusValue">0</output></label>
+                </section>
+                <section class="cutoutParameterCard">
+                  <header><div><span>B / RECOVER</span><strong data-cutout-i18n="edgeRefinement">边缘重建</strong></div></header>
+                  <label class="cutoutRange"><span data-cutout-i18n="edgeRecoveryStrength">边缘颜色恢复</span><input id="cutoutEdgeRecoveryStrength" type="range" min="0" max="100" step="1" value="60" /><output id="cutoutEdgeRecoveryStrengthValue">60</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="backgroundRadius">背景搜索半径</span><input id="cutoutBackgroundRadius" type="range" min="1" max="30" step="1" value="30" /><output id="cutoutBackgroundRadiusValue">30</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="blurRadius">柔化半径</span><input id="cutoutBlurRadius" type="range" min="0" max="6" step="1" value="0" /><output id="cutoutBlurRadiusValue">0</output></label>
+                  <small class="cutoutPanelHint" data-cutout-i18n="postHint">用于清理主体边缘残留的背景色，不改变透明区域。</small>
+                </section>
+              </div>
+              <div id="cutoutPanelAdvanced" class="cutoutSettingPanel cutoutAdvancedPanel" role="tabpanel" aria-labelledby="cutoutTabAdvanced" data-cutout-panel="advanced" hidden>
+                <div class="cutoutAdvancedIntro">
+                  <div><span>ALPHA CONTROL / EXPERT</span><strong data-cutout-i18n="advancedTitle">精细 Alpha 与保护色</strong><small data-cutout-i18n="advancedHint">先选择预设，再针对边缘细节微调。</small></div>
+                  <div id="cutoutAdvancedSummary" class="cutoutAdvancedSummary">0 — 255 / T 2</div>
+                </div>
+                <div class="cutoutPresetBar" role="group" aria-label="Advanced presets">
+                  <button type="button" data-cutout-preset="conservative"><b data-cutout-i18n="presetConservative">保守</b><small data-cutout-i18n="presetConservativeHint">保留发丝与半透明</small></button>
+                  <button type="button" class="active" data-cutout-preset="balanced"><b data-cutout-i18n="presetBalanced">均衡</b><small data-cutout-i18n="presetBalancedHint">适合大多数序列</small></button>
+                  <button type="button" data-cutout-preset="hard"><b data-cutout-i18n="presetHard">硬边</b><small data-cutout-i18n="presetHardHint">像素图与纯色边缘</small></button>
+                </div>
+                <section class="cutoutParameterCard cutoutAlphaCard">
+                  <header><div><span>A / ALPHA WINDOW</span><strong data-cutout-i18n="alphaWindow">透明度窗口</strong></div><small data-cutout-i18n="alphaWindowHint">低于下限清空，高于上限转为不透明</small></header>
+                  <label class="cutoutRange"><span data-cutout-i18n="alphaLow">半透明低阈值</span><input id="cutoutAlphaLow" type="range" min="0" max="255" step="1" value="0" /><output id="cutoutAlphaLowValue">0</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="alphaHigh">半透明高阈值</span><input id="cutoutAlphaHigh" type="range" min="0" max="255" step="1" value="255" /><output id="cutoutAlphaHighValue">255</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="alphaThreshold">硬透明阈值</span><input id="cutoutAlphaThreshold" type="range" min="0" max="48" step="1" value="2" /><output id="cutoutAlphaValue">2</output></label>
+                </section>
+                <section class="cutoutParameterCard cutoutProtectionCard">
+                  <header><div><span>B / COLOR GUARD</span><strong data-cutout-i18n="colorProtection">颜色保护</strong></div><small data-cutout-i18n="colorProtectionHint">启用后点击原图，保留相近颜色</small></header>
+                  <label class="cutoutRange"><span data-cutout-i18n="protectionTolerance">保护色容差</span><input id="cutoutProtectionTolerance" type="range" min="0" max="40" step="1" value="8" /><output id="cutoutProtectionToleranceValue">8</output></label>
+                  <div class="cutoutColorProtection">
+                    <div><strong data-cutout-i18n="protectedPalette">保护色板</strong><small data-cutout-i18n="protectedPaletteHint">点击色块可移除</small></div>
+                    <button id="cutoutProtectSample" type="button" class="secondary" data-cutout-i18n="protectSample">吸取保护色</button>
+                    <button id="cutoutProtectClear" type="button" class="secondary" data-cutout-i18n="protectClear">清除</button>
+                    <div id="cutoutProtectedColors" class="cutoutProtectedColors"></div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </aside>
+          <section class="cutoutPreview">
+            <div class="cutoutPreviewHeader">
+              <div class="cutoutFrameNavigation" aria-label="批次帧导航">
+                <button id="cutoutPrevious" type="button" class="secondary" aria-label="上一张">◀</button>
+                <label class="cutoutFramePosition">
+                  <span data-cutout-i18n="framePrefix">帧</span>
+                  <input id="cutoutFrameNumber" type="number" min="1" value="1" inputmode="numeric" />
+                  <output id="cutoutCounter">/ 0</output>
+                </label>
+                <button id="cutoutNext" type="button" class="secondary" aria-label="下一张">▶</button>
+                <input id="cutoutFrameSlider" class="cutoutFrameSlider" type="range" min="1" max="1" value="1" step="1" aria-label="批次帧位置" />
+                <button id="cutoutPreviewPlay" type="button" class="secondary cutoutPreviewPlay" aria-label="播放批次预览">▶</button>
+              </div>
+              <div class="cutoutViewModes" role="group" aria-label="预览显示模式">
+                <button id="cutoutViewResult" type="button" class="secondary active" aria-pressed="true" data-cutout-i18n="viewResult">结果</button>
+                <button id="cutoutViewOriginal" type="button" class="secondary" aria-pressed="false" data-cutout-i18n="viewOriginal">原图</button>
+                <button id="cutoutViewAlpha" type="button" class="secondary" aria-pressed="false" data-cutout-i18n="viewAlpha">Alpha</button>
+                <button id="cutoutViewDifference" type="button" class="secondary" aria-pressed="false" data-cutout-i18n="viewDifference">差异</button>
+              </div>
+              <div class="cutoutZoomControls" aria-label="Preview zoom">
+                <button id="cutoutZoomOut" type="button" class="secondary" aria-label="Zoom out">−</button>
+                <label class="cutoutZoomSlider">
+                  <input id="cutoutZoom" type="range" min="10" max="500" step="5" value="100" />
+                  <output id="cutoutZoomValue">FIT</output>
+                </label>
+                <button id="cutoutZoomIn" type="button" class="secondary" aria-label="Zoom in">+</button>
+                <button id="cutoutZoomFit" type="button" class="secondary active" data-cutout-i18n="zoomFit">适应</button>
+                <button id="cutoutZoomActual" type="button" class="secondary" data-cutout-i18n="zoomActual">100%</button>
+              </div>
+            </div>
+            <div id="cutoutRepairTools" class="cutoutRepairTools" role="toolbar" aria-label="局部修正工具">
+              <div class="cutoutRepairIntro">
+                <strong data-cutout-i18n="localRepair">框选局部修正</strong>
+                <small data-cutout-i18n="repairHint">在“透明结果”上拖出矩形区域</small>
+              </div>
+              <div class="cutoutRepairModes" aria-label="修正模式">
+                <button id="cutoutRepairBrush" type="button" class="secondary" data-cutout-tool="brush" data-cutout-i18n="repairBrush" title="在结果图上绘制颜色和透明度">画笔</button>
+                <button id="cutoutRepairEraser" type="button" class="secondary" data-cutout-tool="eraser" data-cutout-i18n="repairEraser" title="擦除结果图的透明度">橡皮擦</button>
+                <button id="cutoutRepairSmart" type="button" class="secondary active" data-cutout-tool="smart" data-cutout-i18n="repairSmart" title="框选后按当前色键参数智能清除背景">智能清除</button>
+                <button id="cutoutRepairClear" type="button" class="secondary" data-cutout-tool="clear" data-cutout-i18n="repairClear" title="将框选区域直接变为完全透明">整块清空</button>
+                <button id="cutoutRepairRestore" type="button" class="secondary" data-cutout-tool="restore" data-cutout-i18n="repairRestore" title="从原图恢复框选区域中的主体">恢复主体</button>
+                <button id="cutoutRepairProtect" type="button" class="secondary" data-cutout-tool="protect" data-cutout-i18n="repairProtect" title="提取框选区域颜色并加入保护色板">框选保护</button>
+              </div>
+              <div class="cutoutBrushControls">
+                <label><span data-cutout-i18n="brushSize">大小</span><input id="cutoutBrushSize" type="range" min="1" max="100" step="1" value="16" /><output id="cutoutBrushSizeValue">16</output></label>
+                <label><span data-cutout-i18n="brushHardness">硬度</span><input id="cutoutBrushHardness" type="range" min="1" max="100" step="1" value="85" /><output id="cutoutBrushHardnessValue">85%</output></label>
+                <label><span data-cutout-i18n="brushOpacity">不透明度</span><input id="cutoutBrushOpacity" type="range" min="1" max="100" step="1" value="100" /><output id="cutoutBrushOpacityValue">100%</output></label>
+                <label class="cutoutBrushColor"><span data-cutout-i18n="brushColor">颜色</span><input id="cutoutBrushColor" type="color" value="#00c800" /></label>
+              </div>
+              <div class="cutoutRepairActions" aria-label="历史与批量">
+                <div class="cutoutHistoryButtons">
+                  <button id="cutoutRepairUndo" type="button" class="secondary cutoutIconAction" data-cutout-action="undo" data-cutout-i18n="repairUndoShort">撤销</button>
+                  <button id="cutoutRepairRedo" type="button" class="secondary cutoutIconAction" data-cutout-action="redo" data-cutout-i18n="repairRedoShort">重做</button>
+                  <button id="cutoutRepairReset" type="button" class="secondary cutoutIconAction" data-cutout-action="reset" data-cutout-i18n="repairResetShort">清除</button>
+                </div>
+                <button id="cutoutRepairBatch" type="button" class="cutoutBatchAction" data-cutout-action="batch" data-cutout-i18n="repairBatch">传播到全部帧</button>
+              </div>
+            </div>
+            <div class="cutoutCompare" data-cutout-i18n-title="zoomHint" title="滚轮缩放；按住空格拖拽平移">
+              <figure class="cutoutSourceReference" aria-hidden="true">
+                <figcaption data-cutout-i18n="original">原图</figcaption>
+                <canvas id="cutoutOriginal" width="480" height="360"></canvas>
+              </figure>
+              <figure class="cutoutEditingCanvas">
+                <figcaption id="cutoutViewCaption" data-cutout-i18n="editorCanvas">编辑画布</figcaption>
+                <canvas id="cutoutResult" width="480" height="360"></canvas>
+              </figure>
+            </div>
+            <section class="cutoutBatchTray" aria-labelledby="cutoutBatchTrayTitle">
+              <header class="cutoutBatchTrayHeader">
+                <div>
+                  <span>FRAME BATCH / RESULTS</span>
+                  <strong id="cutoutBatchTrayTitle" data-cutout-i18n="batchTray">批次结果</strong>
+                  <small id="cutoutBatchSummary">0 / 0</small>
+                  <button id="cutoutQualityOnly" type="button" class="secondary cutoutQualityFilter" aria-pressed="false">
+                    <span data-cutout-i18n="qualityOnly">只看异常</span>
+                    <b id="cutoutQualityCount">0</b>
+                  </button>
+                  <button id="cutoutNextIssue" type="button" class="secondary cutoutNextIssue" data-cutout-i18n="nextIssue">下一异常</button>
+                  <button id="cutoutBatchTrayToggle" type="button" class="secondary cutoutBatchTrayToggle" aria-expanded="false" title="展开或收起批次图片栏">▴</button>
+                </div>
+                <div class="cutoutBatchTrayActions">
+                  <div class="cutoutThumbnailMode" role="group" aria-label="缩略图显示">
+                    <button id="cutoutShowResult" type="button" class="secondary active" data-icon="◐" data-cutout-i18n="showResult" title="缩略图显示抠图结果">结果</button>
+                    <button id="cutoutShowOriginal" type="button" class="secondary" data-icon="▣" data-cutout-i18n="showOriginal" title="缩略图显示原始图片">原图</button>
+                  </div>
+                  <button id="cutoutIncludeAll" type="button" class="secondary" data-icon="✓" data-cutout-i18n="includeAll" title="将所有图片纳入处理与导出">全部包含</button>
+                  <button id="cutoutExcludeAll" type="button" class="secondary" data-icon="○" data-cutout-i18n="excludeAll" title="暂时排除所有图片，但不删除">全部排除</button>
+                  <button id="cutoutSelectAll" type="button" class="secondary" data-icon="☑" data-cutout-i18n="selectAll" title="选择全部缩略图用于批量操作">全选</button>
+                  <button id="cutoutInvertSelection" type="button" class="secondary" data-icon="⇄" data-cutout-i18n="invertSelection" title="反转当前缩略图选择">反选</button>
+                  <button id="cutoutExcludeSelected" type="button" class="secondary" data-icon="⊘" data-cutout-i18n="excludeSelected" title="从处理与导出中排除选中图片">排除所选</button>
+                  <button id="cutoutDeleteSelected" type="button" class="secondary cutoutBatchDanger" data-icon="⌫" data-cutout-i18n="deleteSelected" title="永久移除选中的批次图片">删除所选</button>
+                  <button id="cutoutRetryFailed" type="button" class="secondary" data-icon="↻" data-cutout-i18n="retryFailed" title="重新处理失败的图片">重试失败</button>
+                </div>
+              </header>
+              <div id="cutoutQueue" class="cutoutQueue" role="listbox" aria-label="批量图片" aria-multiselectable="true"></div>
+            </section>
+            <footer class="cutoutFooter">
+              <div id="cutoutStatus" class="cutoutStatus" aria-live="polite">等待图片</div>
+              <div class="cutoutFooterActions">
+                <button id="cutoutCancelProcess" type="button" class="secondary cutoutCancelProcess" data-cutout-i18n="cancelProcess" hidden>停止处理</button>
+                <button id="cutoutClear" type="button" class="secondary cutoutFooterUtility" data-icon="⌫" data-cutout-i18n="clear" title="清空当前批次">清空</button>
+                <button id="cutoutApplyGroup" type="button" class="secondary cutoutFooterApply" data-icon="↩" data-cutout-i18n="applyGroup" title="将结果写回当前动画组或单帧编辑会话">替换当前动画组</button>
+                <button id="cutoutDownload" type="button" class="cutoutPrimary" data-icon="⇩" data-cutout-i18n="download" title="把包含的结果导出为 ZIP">导出 ZIP</button>
+              </div>
+            </footer>
+          </section>
+        </div>
+        <section id="cutoutConfirmPanel" class="cutoutConfirmPanel" role="alertdialog" aria-modal="true" aria-labelledby="cutoutConfirmTitle" hidden>
+          <div class="cutoutConfirmCard">
+            <span>APPLY / DESTRUCTIVE</span>
+            <h3 id="cutoutConfirmTitle" data-cutout-i18n="applyTitle">替换当前动画组？</h3>
+            <p id="cutoutConfirmMessage"></p>
+            <dl id="cutoutConfirmDetails"></dl>
+            <div>
+              <button id="cutoutConfirmCancel" type="button" class="secondary" data-cutout-i18n="cancel">取消</button>
+              <button id="cutoutConfirmApply" type="button" class="cutoutPrimary" data-cutout-i18n="confirmApply">确认替换</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+    <section id="organizerModal" class="organizerModal" role="dialog" aria-modal="true" aria-labelledby="organizerTitle" hidden>
+      <div class="organizerWorkbench">
+        <header class="organizerHeader">
+          <div>
+            <span class="organizerEyebrow">SEQUENCE DESK / LOCAL</span>
+            <h2 id="organizerTitle" data-organizer-i18n="title">帧工作集</h2>
+            <p id="organizerSubtitle" data-organizer-i18n="subtitle">重排、减帧与相似度诊断</p>
+          </div>
+          <button id="organizerClose" class="organizerClose" type="button" aria-label="关闭">×</button>
+        </header>
+        <section id="organizerImportSetup" class="organizerImportSetup" aria-labelledby="organizerImportSetupTitle" hidden>
+          <div class="organizerImportIntro">
+            <span>NEW ANIMATION / LOCAL</span>
+            <strong id="organizerImportSetupTitle" data-organizer-i18n="importSetupTitle">动画信息</strong>
+            <small data-organizer-i18n="importSetupHint">可保存到当前项目；没有项目时会自动创建本地项目。</small>
+          </div>
+          <label>
+            <span data-organizer-i18n="importProject">保存到</span>
+            <select id="organizerProjectSelect"></select>
+          </label>
+          <label id="organizerProjectNameField">
+            <span data-organizer-i18n="importProjectName">新项目名称</span>
+            <input id="organizerProjectName" type="text" value="动画项目" maxlength="80" />
+          </label>
+          <label>
+            <span data-organizer-i18n="importProfileName">角色名称</span>
+            <input id="organizerProfileName" type="text" value="character" maxlength="80" />
+          </label>
+          <label>
+            <span data-organizer-i18n="importAnimationName">动画名称</span>
+            <input id="organizerAnimationName" type="text" value="idle" maxlength="80" />
+          </label>
+          <label>
+            <span data-organizer-i18n="importFps">播放 FPS</span>
+            <input id="organizerImportFps" type="number" min="1" max="120" step="1" value="12" inputmode="numeric" />
+          </label>
+          <label>
+            <span data-organizer-i18n="importType">类型</span>
+            <select id="organizerAnimationType">
+              <option value="actor" data-organizer-i18n="importTypeActor">角色</option>
+              <option value="boss" data-organizer-i18n="importTypeBoss">Boss</option>
+              <option value="vfx" data-organizer-i18n="importTypeVfx">特效</option>
+              <option value="prop" data-organizer-i18n="importTypeProp">道具</option>
+            </select>
+          </label>
+        </section>
+        <div class="organizerToolbar">
+          <div class="organizerToolbarRow organizerToolbarPrimary">
+            <div class="organizerToolGroup organizerSourceTools" role="group" aria-label="导入来源">
+              <span data-organizer-i18n="sourceTools">来源</span>
+              <button id="organizerImport" type="button" data-organizer-i18n="import">导入图片</button>
+              <input id="organizerFileInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+              <button id="organizerImportVideo" type="button" class="organizerVideoButton" data-organizer-i18n="importVideo">导入视频</button>
+              <input id="organizerVideoInput" type="file" accept="video/mp4,video/webm,video/quicktime,video/x-m4v" hidden />
+            </div>
+            <div class="organizerToolGroup organizerEditTools" role="group" aria-label="帧编辑">
+              <span data-organizer-i18n="editTools">编辑</span>
+              <button id="organizerInvert" type="button" data-organizer-i18n="invert">反选工作集</button>
+              <label class="organizerReduceControl">
+                <span data-organizer-i18n="reduceEvery">每</span>
+                <input id="organizerReduceStep" type="number" min="2" max="20" step="1" value="2" inputmode="numeric" aria-label="减帧间隔" />
+                <button id="organizerReduce" type="button" data-organizer-i18n="reduce">减帧</button>
+              </label>
+              <button id="organizerAutoSort" type="button" data-organizer-i18n="autoSort">恢复原顺序</button>
+              <button id="organizerFlip" type="button" data-organizer-i18n="flip">水平翻转</button>
+            </div>
+          </div>
+          <div class="organizerToolbarRow organizerToolbarSecondary">
+            <div class="organizerToolGroup organizerAnalysisTools" role="group" aria-label="序列分析">
+              <span data-organizer-i18n="analysisTools">分析</span>
+              <label class="organizerThreshold">
+                <span data-organizer-i18n="threshold">相似度阈值</span>
+                <input id="organizerThreshold" type="range" min="55" max="100" step="1" value="88" />
+                <output id="organizerThresholdValue">88</output>
+              </label>
+              <button id="organizerFindJump" type="button" class="secondary" data-organizer-i18n="findJump">寻找跳变帧</button>
+              <button id="organizerFindDuplicate" type="button" class="secondary" data-organizer-i18n="findDuplicate">寻找重复帧</button>
+              <button id="organizerFindLoop" type="button" class="secondary" data-organizer-i18n="findLoop">寻找循环段</button>
+            </div>
+            <div class="organizerToolGroup organizerDangerTools" role="group" aria-label="删除操作">
+              <span data-organizer-i18n="dangerTools">移除</span>
+              <button id="organizerDeleteSelected" type="button" class="dangerActive" data-organizer-i18n="deleteSelected">删除选中</button>
+              <button id="organizerDeleteExcluded" type="button" class="dangerActive" data-organizer-i18n="deleteExcluded">删除未入集</button>
+            </div>
+          </div>
+        </div>
+        <section id="organizerConfirmPanel" class="organizerConfirmPanel" role="alertdialog" aria-modal="true" aria-labelledby="organizerConfirmTitle" hidden>
+          <div class="organizerConfirmCard">
+            <span>COMMIT / SEQUENCE</span>
+            <h3 id="organizerConfirmTitle" data-organizer-i18n="confirmTitle">确认应用</h3>
+            <p id="organizerConfirmMessage"></p>
+            <dl id="organizerConfirmDetails"></dl>
+            <div>
+              <button id="organizerConfirmCancel" type="button" class="secondary" data-organizer-i18n="cancel">取消</button>
+              <button id="organizerConfirmAccept" type="button" class="organizerPrimary" data-organizer-i18n="confirm">确认</button>
+            </div>
+          </div>
+        </section>
+        <section id="organizerLoopPanel" class="organizerLoopPanel" role="dialog" aria-modal="true" aria-labelledby="organizerLoopTitle" hidden>
+          <div class="organizerLoopCard">
+            <header class="organizerLoopHeader">
+              <div>
+                <span>SEQUENCE / LOOP LAB</span>
+                <h3 id="organizerLoopTitle" data-organizer-i18n="loopDialogTitle">寻找循环帧</h3>
+                <p data-organizer-i18n="loopDialogSubtitle">分析帧间周期、重复边界和首尾过渡</p>
+              </div>
+              <button id="organizerLoopClose" type="button" aria-label="关闭">×</button>
+            </header>
+            <div class="organizerLoopBody">
+              <section id="organizerLoopParams" class="organizerLoopParams">
+                <div class="organizerLoopParamSection">
+                  <strong data-organizer-i18n="loopPreference">循环偏好</strong>
+                  <div id="organizerLoopPreference" class="organizerLoopSegments" role="group" aria-label="循环偏好">
+                    <button type="button" class="active" data-loop-preference="auto" data-organizer-i18n="loopPreferenceAuto">自动</button>
+                    <button type="button" data-loop-preference="short" data-organizer-i18n="loopPreferenceShort">短动画优先</button>
+                    <button type="button" data-loop-preference="long" data-organizer-i18n="loopPreferenceLong">长动画优先</button>
+                  </div>
+                </div>
+                <fieldset class="organizerLoopParamSection">
+                  <legend data-organizer-i18n="loopStartFrame">起始帧</legend>
+                  <label class="organizerLoopRadio">
+                    <input id="organizerLoopStartAuto" type="radio" name="organizerLoopStartMode" value="auto" checked />
+                    <span data-organizer-i18n="loopStartAuto">自动</span>
+                  </label>
+                  <label class="organizerLoopRadio">
+                    <input id="organizerLoopStartCustom" type="radio" name="organizerLoopStartMode" value="custom" />
+                    <span data-organizer-i18n="loopStartCustom">指定</span>
+                  </label>
+                  <label id="organizerLoopStartRow" class="organizerLoopStartRow" hidden>
+                    <span data-organizer-i18n="loopStartPrefix">从第</span>
+                    <input id="organizerLoopStartInput" type="number" min="1" step="1" value="1" inputmode="numeric" />
+                    <span data-organizer-i18n="loopStartSuffix">帧开始搜索</span>
+                  </label>
+                </fieldset>
+              </section>
+              <section id="organizerLoopSearch" class="organizerLoopSearch" aria-live="polite" hidden>
+                <span class="organizerLoopSearchPulse">ACF</span>
+                <strong id="organizerLoopSearchLabel" data-organizer-i18n="loopSearching">正在寻找稳定循环…</strong>
+                <div class="organizerLoopProgressTrack"><span id="organizerLoopProgressBar"></span></div>
+                <small id="organizerLoopProgressText">0%</small>
+              </section>
+              <section id="organizerLoopResults" class="organizerLoopResults" hidden>
+                <div id="organizerLoopEmpty" class="organizerLoopEmpty" hidden>
+                  <strong data-organizer-i18n="loopNoResult">没有找到可靠循环</strong>
+                  <p data-organizer-i18n="loopNoResultHint">可以改用其他循环偏好，或指定更靠后的起始帧后重试。</p>
+                </div>
+                <div id="organizerLoopResultContent" class="organizerLoopResultContent">
+                  <div id="organizerLoopCandidates" class="organizerLoopCandidates" role="listbox" aria-label="循环候选"></div>
+                  <div class="organizerLoopPreview">
+                    <canvas id="organizerLoopCanvas" width="720" height="420"></canvas>
+                    <div class="organizerLoopPreviewControls">
+                      <button id="organizerLoopPrevious" type="button" class="secondary" aria-label="上一帧">←</button>
+                      <label>
+                        <span data-organizer-i18n="loopPreviewFrame">帧</span>
+                        <input id="organizerLoopFrameInput" type="number" min="1" step="1" value="1" />
+                        <span id="organizerLoopFrameTotal">/ 0</span>
+                      </label>
+                      <button id="organizerLoopNext" type="button" class="secondary" aria-label="下一帧">→</button>
+                      <input id="organizerLoopFrameRange" type="range" min="1" max="1" step="1" value="1" aria-label="循环预览帧" />
+                      <button id="organizerLoopPlay" type="button" class="organizerLoopPlay" data-organizer-i18n="loopPlay">播放</button>
+                    </div>
+                    <label class="organizerLoopSpeed">
+                      <span data-organizer-i18n="loopPlaybackSpeed">播放速度</span>
+                      <input id="organizerLoopSpeed" type="range" min="50" max="500" step="10" value="390" />
+                    </label>
+                  </div>
+                </div>
+              </section>
+            </div>
+            <footer class="organizerLoopFooter">
+              <button id="organizerLoopCancel" type="button" class="secondary" data-organizer-i18n="cancel">取消</button>
+              <button id="organizerLoopRetry" type="button" class="secondary" data-organizer-i18n="loopRetry" hidden>重新设置</button>
+              <button id="organizerLoopStartSearch" type="button" class="organizerPrimary" data-organizer-i18n="loopStartSearch">开始搜索</button>
+              <button id="organizerLoopTrim" type="button" class="organizerPrimary" data-organizer-i18n="loopTrim" hidden>保留循环段并关闭</button>
+            </footer>
+          </div>
+        </section>
+        <section id="organizerVideoPanel" class="organizerVideoPanel" aria-labelledby="organizerVideoTitle" hidden>
+          <div class="organizerVideoCard">
+            <header class="organizerVideoHeader">
+              <div>
+                <span>VIDEO → FRAME SEQUENCE</span>
+                <h3 id="organizerVideoTitle" data-organizer-i18n="videoTitle">视频帧提取</h3>
+                <p data-organizer-i18n="videoSubtitle">在浏览器本地选择片段与帧率，视频不会上传</p>
+              </div>
+              <button id="organizerVideoClose" type="button" aria-label="关闭">×</button>
+            </header>
+            <div class="organizerVideoBody">
+              <div class="organizerVideoPreview">
+                <video id="organizerVideoElement" controls playsinline preload="metadata"></video>
+                <div class="organizerVideoFile">
+                  <strong id="organizerVideoName" data-organizer-i18n="videoNoFile">尚未选择视频</strong>
+                  <span id="organizerVideoMeta">—</span>
+                  <button id="organizerVideoReselect" type="button" class="secondary" data-organizer-i18n="videoReselect">重新选择</button>
+                </div>
+              </div>
+              <div class="organizerVideoControls">
+                <div class="organizerVideoRange">
+                  <strong data-organizer-i18n="videoRange">提取时间段</strong>
+                  <div class="organizerVideoTimeInputs">
+                    <label>
+                      <span data-organizer-i18n="videoStart">开始</span>
+                      <input id="organizerVideoStart" type="number" min="0" step="0.01" value="0" />
+                    </label>
+                    <label>
+                      <span data-organizer-i18n="videoEnd">结束</span>
+                      <input id="organizerVideoEnd" type="number" min="0" step="0.01" value="0" />
+                    </label>
+                  </div>
+                  <label class="organizerVideoSlider">
+                    <span data-organizer-i18n="videoStart">开始</span>
+                    <input id="organizerVideoStartRange" type="range" min="0" max="0" step="0.01" value="0" />
+                  </label>
+                  <label class="organizerVideoSlider">
+                    <span data-organizer-i18n="videoEnd">结束</span>
+                    <input id="organizerVideoEndRange" type="range" min="0" max="0" step="0.01" value="0" />
+                  </label>
+                  <div id="organizerVideoDuration" class="organizerVideoDuration">00:00.00 → 00:00.00</div>
+                </div>
+                <label class="organizerVideoRate">
+                  <span data-organizer-i18n="videoFps">抽帧率</span>
+                  <input id="organizerVideoFps" type="range" min="1" max="60" step="1" value="12" />
+                  <input id="organizerVideoFpsNumber" type="number" min="1" max="60" step="1" value="12" inputmode="numeric" />
+                  <small data-organizer-i18n="videoFpsUnit">帧/秒</small>
+                </label>
+                <div class="organizerVideoEstimate">
+                  <span data-organizer-i18n="videoEstimate">预计帧数</span>
+                  <strong id="organizerVideoEstimate">0</strong>
+                  <small data-organizer-i18n="videoFramesUnit">帧</small>
+                </div>
+                <p class="organizerVideoHint" data-organizer-i18n="videoHint">最多一次提取 300 帧；长视频请缩短片段或降低帧率。</p>
+              </div>
+            </div>
+            <footer class="organizerVideoFooter">
+              <div id="organizerVideoStatus" class="organizerVideoStatus" aria-live="polite" data-organizer-i18n="videoReady">选择视频后开始设置</div>
+              <div>
+                <button id="organizerVideoCancel" type="button" class="secondary" data-organizer-i18n="videoCancel">取消</button>
+                <button id="organizerVideoExtract" type="button" class="organizerPrimary" data-organizer-i18n="videoExtract" disabled>提取到工作集</button>
+              </div>
+            </footer>
+          </div>
+        </section>
+        <div class="organizerBody">
+          <section class="organizerFramesPanel">
+            <div class="organizerPanelHeading">
+              <div>
+                <strong data-organizer-i18n="frames">帧缩略图</strong>
+                <span id="organizerCount">工作集 0 / 0 帧</span>
+                <span id="organizerSelection">选中 0 帧</span>
+              </div>
+              <div class="organizerTagTools">
+                <input id="organizerTag" type="text" placeholder="标记，例如：攻击有效帧" />
+                <button id="organizerApplyTag" type="button" class="secondary" data-organizer-i18n="applyTag">标记选中</button>
+                <button id="organizerClearTag" type="button" class="secondary" data-organizer-i18n="clearTag">清除标记</button>
+              </div>
+            </div>
+            <div id="organizerGrid" class="organizerGrid"></div>
+          </section>
+          <aside class="organizerPreviewPanel">
+            <div class="organizerPanelHeading">
+              <strong data-organizer-i18n="preview">动画预览</strong>
+              <div class="organizerViewToggle">
+                <button id="organizerViewOriginal" type="button" class="secondary" data-organizer-i18n="original">原始</button>
+                <button id="organizerViewEdited" type="button" class="secondary active" data-organizer-i18n="edited">编辑结果</button>
+              </div>
+            </div>
+            <canvas id="organizerPreview" width="520" height="520"></canvas>
+            <label class="organizerSpeed">
+              <span data-organizer-i18n="speed">预览速度</span>
+              <input id="organizerSpeed" type="range" min="40" max="600" step="10" value="480" />
+            </label>
+            <div class="organizerStatusRow">
+              <div id="organizerStatus" class="organizerStatus" aria-live="polite">等待操作</div>
+              <button id="organizerUndoDelete" type="button" class="secondary" data-organizer-i18n="undoDelete" hidden>撤销删除</button>
+            </div>
+            <div class="organizerFooterActions">
+              <button id="organizerReset" type="button" class="secondary" data-organizer-i18n="reset">还原</button>
+              <button id="organizerAddAssets" type="button" class="secondary" data-organizer-i18n="addToAssets">添加到当前组素材</button>
+              <button id="organizerApply" type="button" class="organizerPrimary" data-organizer-i18n="apply">应用到动画组</button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+    <script src="/batch_cutout_core.js"></script>
+    <script src="/batch_zip.js"></script>
+    <script src="/cutout_tracking_core.js"></script>
+    <script src="/batch_cutout.js"></script>
+    <script src="/frame_organizer_core.js"></script>
+    <script src="/frame_organizer.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

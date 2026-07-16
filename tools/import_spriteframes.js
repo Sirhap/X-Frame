@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { EMPTY_MANIFEST, EMPTY_TUNING, createProjectStore, godotProjectName, slug } = require("./project_store");
 const { syncGodotProject } = require("./godot_sync");
 const { upsertEstimatedFrameBoxes } = require("./box_estimator");
@@ -31,6 +32,15 @@ function parseArgs(argv) {
 
 function naturalSort(a, b) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+/**
+ * Creates a detached JSON-compatible copy for rollback.
+ * @param {unknown} value Source value.
+ * @returns {unknown} Cloned value.
+ */
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function walk(dir, result = []) {
@@ -152,7 +162,7 @@ function projectForImport(args, projectRoot) {
   return project;
 }
 
-function importSpriteFrames(filePath, projectRoot, project, manifest, tuning) {
+function importSpriteFrames(filePath, projectRoot, project, manifest, tuning, transaction) {
   const relFile = path.relative(projectRoot, filePath).replaceAll("\\", "/");
   const profileId = slug(relFile.replace(/\.spriteframes\.tres$/i, ""));
   const profileLabel = path.basename(filePath, ".spriteframes.tres");
@@ -166,22 +176,32 @@ function importSpriteFrames(filePath, projectRoot, project, manifest, tuning) {
 
   for (const animation of animations) {
     const targetDir = path.join(workspaceAssets, profileId, animation.id);
-    fs.rmSync(targetDir, { recursive: true, force: true });
-    fs.mkdirSync(targetDir, { recursive: true });
+    if (transaction.targets.has(targetDir)) {
+      throw new Error(`Duplicate SpriteFrames animation target: ${profileId}/${animation.id}`);
+    }
+    transaction.targets.add(targetDir);
+    const stagingDir = `${targetDir}.import-${transaction.operationId}`;
+    const backupDir = `${targetDir}.backup-${transaction.operationId}`;
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    fs.mkdirSync(stagingDir, { recursive: true });
+    transaction.installs.push({ targetDir, stagingDir, backupDir });
     const frameFiles = [];
     const frames = animation.frames.map((frame, index) => {
       const targetName = `frame_${String(index + 1).padStart(4, "0")}.png`;
-      const target = path.join(targetDir, targetName);
-      fs.copyFileSync(frame.source, target);
-      frameFiles.push(target);
-      scaleSamples.push({ filePath: target, animationId: animation.id, animationName: animation.name });
+      const stagingPath = path.join(stagingDir, targetName);
+      const finalPath = path.join(targetDir, targetName);
+      fs.copyFileSync(frame.source, stagingPath);
+      frameFiles.push(stagingPath);
+      scaleSamples.push({ filePath: stagingPath, animationId: animation.id, animationName: animation.name });
       importedFrames += 1;
+      const size = getPngSize(stagingPath);
+      if (size.width < 1 || size.height < 1) throw new Error(`Invalid PNG frame: ${frame.source}`);
       return {
         id: `frame_${String(index + 1).padStart(4, "0")}`,
         name: targetName,
-        path: path.relative(ROOT, target).replaceAll("\\", "/"),
+        path: path.relative(ROOT, finalPath).replaceAll("\\", "/"),
         duration: frame.duration,
-        ...getPngSize(target),
+        ...size,
       };
     });
     const nextAnimation = {
@@ -203,6 +223,54 @@ function importSpriteFrames(filePath, projectRoot, project, manifest, tuning) {
   return { profileId, animations: animations.length, frames: importedFrames, scaleResult };
 }
 
+/**
+ * Atomically installs every staged animation directory and metadata file.
+ * @param {object} transaction Staged directory transaction.
+ * @param {object} paths Project metadata paths.
+ * @param {object} manifest Updated manifest.
+ * @param {object} tuning Updated tuning.
+ * @param {object} originals Original metadata for rollback.
+ * @returns {void}
+ */
+function commitImportTransaction(transaction, paths, manifest, tuning, originals) {
+  const installed = [];
+  try {
+    for (const entry of transaction.installs) {
+      const installedEntry = { ...entry, backupCreated: false, directoryInstalled: false };
+      installed.push(installedEntry);
+      if (fs.existsSync(entry.targetDir)) {
+        fs.renameSync(entry.targetDir, entry.backupDir);
+        installedEntry.backupCreated = true;
+      }
+      fs.renameSync(entry.stagingDir, entry.targetDir);
+      installedEntry.directoryInstalled = true;
+    }
+    projectStore.writeJson(paths.manifest, manifest);
+    projectStore.writeJson(paths.tuning, tuning);
+  } catch (error) {
+    for (const entry of installed.reverse()) {
+      if (entry.directoryInstalled && fs.existsSync(entry.targetDir)) {
+        fs.rmSync(entry.targetDir, { recursive: true, force: true });
+      }
+      if (entry.backupCreated && fs.existsSync(entry.backupDir)) fs.renameSync(entry.backupDir, entry.targetDir);
+    }
+    for (const entry of transaction.installs) {
+      if (fs.existsSync(entry.stagingDir)) fs.rmSync(entry.stagingDir, { recursive: true, force: true });
+    }
+    projectStore.writeJson(paths.manifest, originals.manifest);
+    projectStore.writeJson(paths.tuning, originals.tuning);
+    throw error;
+  }
+  for (const entry of installed) {
+    if (!entry.backupCreated) continue;
+    try {
+      fs.rmSync(entry.backupDir, { recursive: true, force: true });
+    } catch (error) {
+      console.warn(`Could not remove import backup ${entry.backupDir}: ${error.message}`);
+    }
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args["project-root"]) {
@@ -222,9 +290,32 @@ function main() {
   const paths = projectStore.projectPaths(project);
   const manifest = projectStore.readJson(paths.manifest, EMPTY_MANIFEST);
   const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
-  const results = files.map((filePath) => importSpriteFrames(filePath, projectRoot, project, manifest, tuning));
-  projectStore.writeJson(paths.manifest, manifest);
-  projectStore.writeJson(paths.tuning, tuning);
+  const originals = {
+    manifest: clone(manifest),
+    tuning: clone(tuning),
+  };
+  const transaction = {
+    operationId: crypto.randomBytes(8).toString("hex"),
+    installs: [],
+    targets: new Set(),
+  };
+  let results;
+  try {
+    results = files.map((filePath) => importSpriteFrames(
+      filePath,
+      projectRoot,
+      project,
+      manifest,
+      tuning,
+      transaction,
+    ));
+    commitImportTransaction(transaction, paths, manifest, tuning, originals);
+  } catch (error) {
+    for (const entry of transaction.installs) {
+      if (fs.existsSync(entry.stagingDir)) fs.rmSync(entry.stagingDir, { recursive: true, force: true });
+    }
+    throw error;
+  }
   const godotSync = syncGodotProject(ROOT, projectStore, project, { manifest, tuning });
 
   const frameCount = results.reduce((sum, result) => sum + result.frames, 0);

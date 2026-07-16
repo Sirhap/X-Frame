@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { spawnSync } = require("node:child_process");
+const { execFile, spawnSync } = require("node:child_process");
 
 const OFFICIAL_REPOSITORY = "https://github.com/sparklecatta-lang/XSXB-Frame-Tuner.git";
 const OFFICIAL_BRANCH = "main";
@@ -81,11 +81,35 @@ function inspectLocalRepository(root) {
   };
 }
 
+/**
+ * Reads the latest official commit without blocking the local HTTP event loop.
+ * @returns {Promise<string>} Official main commit.
+ */
 function latestOfficialCommit() {
-  const result = runGit(process.cwd(), ["ls-remote", OFFICIAL_REPOSITORY, `refs/heads/${OFFICIAL_BRANCH}`], { timeout: 15000 });
-  const commit = String(result.output || "").split(/\s+/)[0];
-  if (!/^[0-9a-f]{40}$/i.test(commit)) throw new Error("GitHub did not return a valid main-branch commit.");
-  return commit;
+  return new Promise((resolve, reject) => {
+    execFile(
+      "git",
+      ["ls-remote", OFFICIAL_REPOSITORY, `refs/heads/${OFFICIAL_BRANCH}`],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        timeout: 15000,
+        windowsHide: true,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(String(stderr || error.message || "GitHub update check failed").trim()));
+          return;
+        }
+        const commit = String(stdout || "").trim().split(/\s+/)[0];
+        if (!/^[0-9a-f]{40}$/i.test(commit)) {
+          reject(new Error("GitHub did not return a valid main-branch commit."));
+          return;
+        }
+        resolve(commit);
+      },
+    );
+  });
 }
 
 function updateBlockReason(local, updateAvailable) {
@@ -96,7 +120,7 @@ function updateBlockReason(local, updateAvailable) {
   return updateAvailable ? "" : "up_to_date";
 }
 
-function checkForUpdates(root) {
+async function checkForUpdates(root) {
   const local = inspectLocalRepository(root);
   if (!local.supported) {
     return {
@@ -107,7 +131,7 @@ function checkForUpdates(root) {
       checkedAt: new Date().toISOString(),
     };
   }
-  const latestCommit = latestOfficialCommit();
+  const latestCommit = await latestOfficialCommit();
   const updateAvailable = latestCommit !== local.currentCommit;
   const blockReason = updateBlockReason(local, updateAvailable);
   return {

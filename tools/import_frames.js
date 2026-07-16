@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { EMPTY_MANIFEST, EMPTY_TUNING, createProjectStore, godotProjectName, slug } = require("./project_store");
 const { syncGodotProject } = require("./godot_sync");
 const { upsertEstimatedFrameBoxes } = require("./box_estimator");
@@ -32,6 +33,15 @@ function parseArgs(argv) {
 
 function naturalSort(a, b) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+/**
+ * Creates a detached JSON-compatible copy for rollback.
+ * @param {unknown} value Source value.
+ * @returns {unknown} Cloned value.
+ */
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function getPngSize(filePath) {
@@ -133,31 +143,48 @@ function main() {
   const profileId = slug(args.profile);
   const animationId = slug(args.animation);
   const targetDir = path.join(workspaceAssets, profileId, animationId);
-  if (args.replace && fs.existsSync(targetDir)) {
-    fs.rmSync(targetDir, { recursive: true, force: true });
-  }
-  fs.mkdirSync(targetDir, { recursive: true });
+  const operationId = crypto.randomBytes(8).toString("hex");
+  const stagingDir = `${targetDir}.import-${operationId}`;
+  const backupDir = `${targetDir}.backup-${operationId}`;
+  fs.rmSync(stagingDir, { recursive: true, force: true });
+  fs.mkdirSync(stagingDir, { recursive: true });
 
   const frameFiles = [];
-  const frames = pngs.map((name, index) => {
-    const frameName = `frame_${String(index + 1).padStart(4, "0")}.png`;
-    const source = path.join(sourceDir, name);
-    const target = path.join(targetDir, frameName);
-    fs.copyFileSync(source, target);
-    frameFiles.push(target);
-    const size = getPngSize(target);
-    return {
-      id: `frame_${String(index + 1).padStart(4, "0")}`,
-      name: frameName,
-      path: path.relative(ROOT, target).replaceAll("\\", "/"),
-      duration: 1,
-      ...size,
-    };
-  });
-
   const manifest = projectStore.readJson(paths.manifest, EMPTY_MANIFEST);
+  const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+  const originals = {
+    manifest: clone(manifest),
+    tuning: clone(tuning),
+  };
   const profile = ensureProfile(manifest, profileId, args.label || args.profile);
   const existingIndex = profile.animations.findIndex((entry) => entry.id === animationId);
+  if (existingIndex >= 0 && !args.replace) {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    throw new Error(`Animation already exists: ${profileId}/${animationId}. Pass --replace to replace it.`);
+  }
+  let frames;
+  try {
+    frames = pngs.map((name, index) => {
+      const frameName = `frame_${String(index + 1).padStart(4, "0")}.png`;
+      const source = path.join(sourceDir, name);
+      const stagingPath = path.join(stagingDir, frameName);
+      const finalPath = path.join(targetDir, frameName);
+      fs.copyFileSync(source, stagingPath);
+      frameFiles.push(stagingPath);
+      const size = getPngSize(stagingPath);
+      if (size.width < 1 || size.height < 1) throw new Error(`Invalid PNG frame: ${source}`);
+      return {
+        id: `frame_${String(index + 1).padStart(4, "0")}`,
+        name: frameName,
+        path: path.relative(ROOT, finalPath).replaceAll("\\", "/"),
+        duration: 1,
+        ...size,
+      };
+    });
+  } catch (error) {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    throw error;
+  }
   const animation = {
     id: animationId,
     name: args.animation,
@@ -170,7 +197,6 @@ function main() {
   if (existingIndex >= 0) profile.animations[existingIndex] = animation;
   else profile.animations.push(animation);
 
-  const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
   const scaleResult = ensureInitialCharacterScale(
     tuning,
     profileId,
@@ -180,8 +206,32 @@ function main() {
   upsertEstimatedFrameBoxes(tuning, profileId, animation, frameFiles, {
     replace: args.replace || existingIndex < 0,
   });
-  projectStore.writeJson(paths.manifest, manifest);
-  projectStore.writeJson(paths.tuning, tuning);
+  let backupCreated = false;
+  let directoryInstalled = false;
+  try {
+    if (fs.existsSync(targetDir)) {
+      fs.renameSync(targetDir, backupDir);
+      backupCreated = true;
+    }
+    fs.renameSync(stagingDir, targetDir);
+    directoryInstalled = true;
+    projectStore.writeJson(paths.manifest, manifest);
+    projectStore.writeJson(paths.tuning, tuning);
+  } catch (error) {
+    if (directoryInstalled && fs.existsSync(targetDir)) fs.rmSync(targetDir, { recursive: true, force: true });
+    if (backupCreated && fs.existsSync(backupDir)) fs.renameSync(backupDir, targetDir);
+    if (fs.existsSync(stagingDir)) fs.rmSync(stagingDir, { recursive: true, force: true });
+    projectStore.writeJson(paths.manifest, originals.manifest);
+    projectStore.writeJson(paths.tuning, originals.tuning);
+    throw error;
+  }
+  if (backupCreated) {
+    try {
+      fs.rmSync(backupDir, { recursive: true, force: true });
+    } catch (error) {
+      console.warn(`Could not remove import backup ${backupDir}: ${error.message}`);
+    }
+  }
   const godotSync = syncGodotProject(ROOT, projectStore, project, { manifest, tuning });
   console.log(`Imported ${frames.length} frames`);
   console.log(`Project: ${project.id}`);
