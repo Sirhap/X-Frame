@@ -55,8 +55,16 @@ module.exports = [
     },
   },
   {
+    files: ["tools/animation_tuner/public/batch_cutout.js"],
+    rules: {
+      "max-lines": ["error", { max: 4350 }],
+    },
+  },
+  {
     files: [
       "tools/animation_tuner/server_io_worker.js",
+      "tools/animation_mutations.js",
+      "tools/frame_organizer.js",
       "tools/framepacker_perf_baseline.js",
       "tools/project_store.js",
       "tools/updater.js",

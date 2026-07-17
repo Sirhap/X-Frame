@@ -14,6 +14,7 @@
    *   srgbToLinear:Function
    * }} dependencies Reference protection dependencies owned by the core facade.
    * @returns {{
+   *   createProtectedRegionMask:Function,
    *   createReferenceProtectionMask:Function,
    *   extractProtectedColors:Function,
    *   referenceProtectionDescriptor:Function,
@@ -45,6 +46,189 @@
      */
     function clamp(value, minimum, maximum) {
       return Math.max(minimum, Math.min(maximum, Number(value || 0)));
+    }
+
+    /**
+     * Detects a foreground boundary inside a coarse rectangle. Alpha from the
+     * current preview is a positive hint, while distance from known background
+     * colors and connected components determine the final spatial mask.
+     * @param {Uint8ClampedArray|Uint8Array} data Original RGBA pixels.
+     * @param {Uint8ClampedArray|Uint8Array|null} previewData Automatic cutout pixels.
+     * @param {number} width Image width.
+     * @param {number} height Image height.
+     * @param {{x1:number,y1:number,x2:number,y2:number}} rectangle Coarse rectangle.
+     * @param {{backgroundColors?:Array<object>,boundaryStrength?:number,padding?:number}} options Detection options.
+    * @returns {{mask:Uint8Array,count:number,bounds:object|null,coverage:number}}
+     */
+    function createProtectedRegionMask(data, previewData, width, height, rectangle, options = {}) {
+      if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+        throw new RangeError("Protected-region dimensions must be positive integers.");
+      }
+      const pixelCount = width * height;
+      const empty = { mask: new Uint8Array(pixelCount), count: 0, bounds: null, coverage: 0 };
+      if (!data || data.length !== pixelCount * 4) {
+        throw new RangeError("Protected-region RGBA length does not match its dimensions.");
+      }
+      if (previewData && previewData.length !== data.length) {
+        throw new RangeError("Protected-region preview length does not match its source.");
+      }
+      if (![rectangle?.x1, rectangle?.y1, rectangle?.x2, rectangle?.y2].every(Number.isFinite)) {
+        return empty;
+      }
+      const startX = Math.max(0, Math.floor(Math.min(rectangle.x1, rectangle.x2)));
+      const endX = Math.min(width - 1, Math.ceil(Math.max(rectangle.x1, rectangle.x2)));
+      const startY = Math.max(0, Math.floor(Math.min(rectangle.y1, rectangle.y2)));
+      const endY = Math.min(height - 1, Math.ceil(Math.max(rectangle.y1, rectangle.y2)));
+      const regionArea = Math.max(0, endX - startX + 1) * Math.max(0, endY - startY + 1);
+      if (!regionArea) return empty;
+      const providedBackgrounds = Array.isArray(options.backgroundColors)
+        ? options.backgroundColors.filter((color) => (
+          [color?.r, color?.g, color?.b].every(Number.isFinite)
+        ))
+        : [];
+      const backgrounds = providedBackgrounds.length
+        ? providedBackgrounds
+        : [{ r: 0, g: 255, b: 0 }];
+      const boundaryStrength = clamp(options.boundaryStrength ?? 55, 0, 100);
+      const distanceThreshold = 5 + boundaryStrength * 0.27;
+      const padding = Math.round(clamp(options.padding ?? 2, 0, 8));
+      const searchStartX = Math.max(0, startX - padding);
+      const searchEndX = Math.min(width - 1, endX + padding);
+      const searchStartY = Math.max(0, startY - padding);
+      const searchEndY = Math.min(height - 1, endY + padding);
+      const distanceCache = new Float32Array(pixelCount);
+      const distanceKnown = new Uint8Array(pixelCount);
+      const normalizedDistance = (index) => {
+        if (distanceKnown[index]) return distanceCache[index];
+        const offset = index * 4;
+        let nearest = Number.POSITIVE_INFINITY;
+        for (const background of backgrounds) {
+          nearest = Math.min(nearest, Math.hypot(
+            data[offset] - Number(background.r || 0),
+            data[offset + 1] - Number(background.g || 0),
+            data[offset + 2] - Number(background.b || 0),
+          ) / 4.416729559);
+        }
+        distanceKnown[index] = 1;
+        distanceCache[index] = nearest;
+        return nearest;
+      };
+      const candidates = new Uint8Array(pixelCount);
+      const strongSeeds = new Uint8Array(pixelCount);
+      for (let y = startY; y <= endY; y += 1) {
+        for (let x = startX; x <= endX; x += 1) {
+          const index = y * width + x;
+          const offset = index * 4;
+          if (!data[offset + 3]) continue;
+          const distance = normalizedDistance(index);
+          const previewAlpha = previewData ? previewData[offset + 3] : 0;
+          if (distance >= distanceThreshold || (previewAlpha >= 24 && distance >= distanceThreshold * 0.35)) {
+            candidates[index] = 1;
+          }
+          if (previewAlpha >= 112 && distance >= distanceThreshold * 0.35) strongSeeds[index] = 1;
+        }
+      }
+      const mask = new Uint8Array(pixelCount);
+      const visited = new Uint8Array(pixelCount);
+      const minimumComponentSize = Math.max(1, Math.floor(regionArea * 0.0015));
+      const components = [];
+      for (let y = startY; y <= endY; y += 1) {
+        for (let x = startX; x <= endX; x += 1) {
+          const startIndex = y * width + x;
+          if (!candidates[startIndex] || visited[startIndex]) continue;
+          const stack = [startIndex];
+          const component = [];
+          let hasStrongSeed = false;
+          visited[startIndex] = 1;
+          while (stack.length) {
+            const index = stack.pop();
+            component.push(index);
+            hasStrongSeed ||= Boolean(strongSeeds[index]);
+            const pointX = index % width;
+            const pointY = Math.floor(index / width);
+            for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+              for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+                if (!offsetX && !offsetY) continue;
+                const nextX = pointX + offsetX;
+                const nextY = pointY + offsetY;
+                if (nextX < startX || nextX > endX || nextY < startY || nextY > endY) continue;
+                const nextIndex = nextY * width + nextX;
+                if (!candidates[nextIndex] || visited[nextIndex]) continue;
+                visited[nextIndex] = 1;
+                stack.push(nextIndex);
+              }
+            }
+          }
+          components.push({ indices: component, hasStrongSeed });
+        }
+      }
+      const hasSeededComponent = components.some((component) => component.hasStrongSeed);
+      const largestComponentSize = components.reduce(
+        (largest, component) => Math.max(largest, component.indices.length),
+        0,
+      );
+      const fallbackComponentSize = Math.max(
+        minimumComponentSize,
+        largestComponentSize > 1 ? 2 : 1,
+        Math.ceil(largestComponentSize * 0.2),
+      );
+      for (const component of components) {
+        const keepComponent = hasSeededComponent
+          ? component.hasStrongSeed
+          : component.indices.length >= fallbackComponentSize;
+        if (!keepComponent) continue;
+        component.indices.forEach((index) => { mask[index] = 1; });
+      }
+      for (let iteration = 0; iteration < padding; iteration += 1) {
+        const expanded = new Uint8Array(mask);
+        for (let y = searchStartY; y <= searchEndY; y += 1) {
+          for (let x = searchStartX; x <= searchEndX; x += 1) {
+            const index = y * width + x;
+            if (!mask[index]) continue;
+            const expand = (nextIndex) => {
+              const offset = nextIndex * 4;
+              const previewAlpha = previewData ? previewData[offset + 3] : 0;
+              if (
+                data[offset + 3]
+                && (normalizedDistance(nextIndex) >= distanceThreshold * 0.35 || previewAlpha)
+              ) {
+                expanded[nextIndex] = 1;
+              }
+            };
+            if (x > searchStartX) expand(index - 1);
+            if (x < searchEndX) expand(index + 1);
+            if (y > searchStartY) expand(index - width);
+            if (y < searchEndY) expand(index + width);
+          }
+        }
+        mask.set(expanded);
+      }
+      let count = 0;
+      let countInsideSelection = 0;
+      let detectedBounds = null;
+      for (let y = searchStartY; y <= searchEndY; y += 1) {
+        for (let x = searchStartX; x <= searchEndX; x += 1) {
+          if (!mask[y * width + x]) continue;
+          count += 1;
+          if (x >= startX && x <= endX && y >= startY && y <= endY) {
+            countInsideSelection += 1;
+          }
+          detectedBounds = detectedBounds
+            ? {
+              x1: Math.min(detectedBounds.x1, x),
+              y1: Math.min(detectedBounds.y1, y),
+              x2: Math.max(detectedBounds.x2, x),
+              y2: Math.max(detectedBounds.y2, y),
+            }
+            : { x1: x, y1: y, x2: x, y2: y };
+        }
+      }
+      return {
+        mask,
+        count,
+        bounds: detectedBounds,
+        coverage: Math.round((countInsideSelection * 100) / regionArea),
+      };
     }
 
     /**
@@ -559,6 +743,7 @@
     }
 
     return Object.freeze({
+      createProtectedRegionMask,
       createReferenceProtectionMask,
       extractProtectedColors,
       referenceProtectionDescriptor,

@@ -7,7 +7,19 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
-  const DEFAULT_WORKER_URL = "batch_cutout_worker.js";
+  /**
+   * Resolves the Worker beside this client script instead of against the page
+   * route. Tool routes such as `/tools/cutout` must not turn the request into
+   * `/tools/batch_cutout_worker.js`.
+   * @returns {string} Route-safe Worker URL.
+   */
+  function defaultWorkerUrl() {
+    const scriptUrl = root.document?.currentScript?.src;
+    if (!scriptUrl || typeof root.URL !== "function") return "batch_cutout_worker.js";
+    return new root.URL("batch_cutout_worker.js", scriptUrl).toString();
+  }
+
+  const DEFAULT_WORKER_URL = defaultWorkerUrl();
 
   /**
    * Creates an Error compatible with DOM AbortError checks.

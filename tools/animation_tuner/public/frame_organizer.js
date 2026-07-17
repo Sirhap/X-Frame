@@ -31,6 +31,9 @@
       confirmTitle: "确认应用",
       confirm: "确认",
       cancel: "取消",
+      discardTitle: "放弃工作集修改？",
+      discardConfirm: "当前帧工作集有未应用的修改。关闭后这些修改将丢失。",
+      discardAccept: "放弃修改",
       detailProject: "项目",
       detailProfile: "角色",
       detailAnimation: "动画",
@@ -45,6 +48,10 @@
       createConfirm: "将当前工作集创建为新动画，共 {count} 帧。确定继续吗？",
       created: "动画创建完成，共导入 {count} 帧",
       close: "关闭",
+      home: "← 首页",
+      copyLink: "复制链接",
+      linkCopied: "已复制当前工具链接",
+      linkCopyFailed: "无法复制链接，请从地址栏手动复制。",
       noGroup: "当前没有可整理的动画组",
       invert: "反选工作集",
       reduce: "减帧",
@@ -118,6 +125,8 @@
       apply: "应用到动画组",
       frames: "帧缩略图",
       preview: "动画预览",
+      previewFrame: "第 {current} / {total} 帧",
+      previewFrameEmpty: "第 - / 0 帧",
       workset: "工作集 {included} / {total} 帧",
       selected: "选中 {count} 帧",
       ready: "等待操作",
@@ -126,6 +135,16 @@
       sorted: "已恢复原始帧顺序，导入帧排在末尾",
       flipped: "已水平翻转 {count} 帧",
       imported: "已导入 {count} 张图片",
+      importBusy: "正在处理上一批文件，请稍候…",
+      importInvalid: "未找到可读取的 PNG、JPG 或 WebP 图片。请重新选择支持的文件。",
+      importLimit: "工作集最多包含 240 帧；本次还可导入 {count} 帧。",
+      importOversized: "有 {count} 个文件超过单文件 48 MB 限制，已跳过。",
+      importPartial: "已导入 {count} 张；跳过 {failed} 个无法读取或过大的文件。",
+      imagePixelLimit: "图片 {width}×{height} 像素过大；单图最多 {limit} 百万像素。",
+      batchPixelLimit: "工作集解码后的累计像素超过 {limit} 百万；请减少图片数量或尺寸。",
+      needFrames: "请先导入或载入图片帧。",
+      needThreeFrames: "至少需要 3 帧才能执行此分析。",
+      needFourFrames: "至少需要 4 帧才能寻找循环段。",
       deleted: "已删除 {count} 帧",
       foundJump: "找到 {count} 个跳变帧",
       foundDuplicate: "找到 {count} 个重复帧",
@@ -171,6 +190,9 @@
       confirmTitle: "Confirm changes",
       confirm: "Confirm",
       cancel: "Cancel",
+      discardTitle: "Discard workset changes?",
+      discardConfirm: "The frame workset has unapplied changes. Closing will discard them.",
+      discardAccept: "Discard Changes",
       detailProject: "Project",
       detailProfile: "Profile",
       detailAnimation: "Animation",
@@ -185,6 +207,10 @@
       createConfirm: "Create a new animation from the current {count}-frame workset?",
       created: "Animation created with {count} frames",
       close: "Close",
+      home: "← Home",
+      copyLink: "Copy Link",
+      linkCopied: "Workbench link copied",
+      linkCopyFailed: "Could not copy the link. Copy it from the address bar instead.",
       noGroup: "No animation group is available",
       invert: "Invert Workset",
       reduce: "Reduce Frames",
@@ -258,6 +284,8 @@
       apply: "Apply to Group",
       frames: "Frame Thumbnails",
       preview: "Animation Preview",
+      previewFrame: "Frame {current} / {total}",
+      previewFrameEmpty: "Frame - / 0",
       workset: "Workset {included} / {total} frames",
       selected: "{count} selected",
       ready: "Ready",
@@ -266,12 +294,25 @@
       sorted: "Restored source order; imported frames were placed last",
       flipped: "Flipped {count} frames horizontally",
       imported: "Imported {count} images",
+      importBusy: "The previous import is still processing. Try again in a moment…",
+      importInvalid: "No readable PNG, JPG, or WebP images were found. Choose supported files and try again.",
+      importLimit: "A workset can contain up to 240 frames; {count} more can be imported.",
+      importOversized: "Skipped {count} files larger than the 48 MB per-file limit.",
+      importPartial: "Imported {count}; skipped {failed} unreadable or oversized files.",
+      imagePixelLimit:
+        "The {width}×{height} image is too large; each image is limited to {limit} megapixels.",
+      batchPixelLimit:
+        "Decoded workset images exceed the {limit} megapixel limit. Reduce their count or dimensions.",
+      needFrames: "Import or load image frames first.",
+      needThreeFrames: "At least 3 frames are required for this analysis.",
+      needFourFrames: "At least 4 frames are required to find a loop.",
       deleted: "Deleted {count} frames",
       foundJump: "Found {count} jump frames",
       foundDuplicate: "Found {count} duplicate frames",
       foundLoop: "Loop candidate: frames {start}–{end}, {similarity}% similarity",
       noneFound: "No matching frames found",
-      applyConfirm: "This replaces the animation frames and migrates tuning, boxes, audio, and attachments. Continue?",
+      applyConfirm:
+        "This replaces the animation frames and migrates tuning, boxes, audio, and attachments. Continue?",
       applied: "Organizer applied; {count} frames remain",
       failed: "Operation failed: {message}",
       reducePrompt: "Keep one frame out of every how many?",
@@ -293,45 +334,118 @@
    *   applyPlan?:(items:Array<object>)=>Promise<void>,
    *   createAnimation?:(metadata:object,items:Array<object>)=>Promise<void>,
    *   addAssets?:(items:Array<{name:string,image:HTMLCanvasElement}>)=>Promise<number>,
-   *   editCutout?:(workset:{name:string,items:Array<{name:string,image:HTMLCanvasElement,frame:object}>})=>Promise<Array<{canvas?:HTMLCanvasElement,data?:string,frame?:object}>|null>,
+   *   editCutout?:(workset:{name:string,onLiveApply?:(outputs:Array<object>)=>void,items:Array<{name:string,image:HTMLCanvasElement,frame:object}>})=>Promise<Array<{canvas?:HTMLCanvasElement,data?:string,frame?:object}>|null>,
+   *   onOpen?:(mode:"edit"|"import")=>void,
+   *   onClose?:()=>void,
    *   onStatus?:(message:string)=>void
    * }} hooks Host integration hooks.
-   * @returns {{open:()=>Promise<void>,openImport:()=>Promise<void>,setLanguage:(language:string)=>void}}
+   * @returns {{open:(options?:object)=>Promise<void>,openImport:(options?:object)=>Promise<void>,close:(options?:object)=>void,requestClose:(options?:object)=>Promise<boolean>,isOpen:()=>boolean,getMode:()=>"edit"|"import",hasUnsavedChanges:()=>boolean,setLanguage:(language:string)=>void}}
    */
   function createController(hooks = {}) {
+    const imagePixelBudget = root.ImagePixelBudget;
+    if (!imagePixelBudget) throw new Error("ImagePixelBudget is required.");
     const core = root.FrameOrganizerCore;
     if (!core) throw new Error("FrameOrganizerCore is required.");
     const ids = [
-      "organizerOpen", "organizerModal", "organizerClose", "organizerTitle", "organizerSubtitle",
-      "organizerImportSetup", "organizerProjectSelect", "organizerProjectNameField",
-      "organizerProjectName", "organizerProfileName", "organizerAnimationName",
-      "organizerImportFps", "organizerAnimationType", "organizerInvert", "organizerReduce",
-      "organizerReduceStep", "organizerUndoDelete", "organizerConfirmPanel",
-      "organizerConfirmTitle", "organizerConfirmMessage", "organizerConfirmDetails",
-      "organizerConfirmCancel", "organizerConfirmAccept",
-      "organizerLoopPanel", "organizerLoopTitle", "organizerLoopClose", "organizerLoopParams",
-      "organizerLoopPreference", "organizerLoopStartAuto", "organizerLoopStartCustom",
-      "organizerLoopStartRow", "organizerLoopStartInput", "organizerLoopSearch",
-      "organizerLoopSearchLabel", "organizerLoopProgressBar", "organizerLoopProgressText",
-      "organizerLoopResults", "organizerLoopEmpty", "organizerLoopResultContent",
-      "organizerLoopCandidates", "organizerLoopCanvas", "organizerLoopPrevious",
-      "organizerLoopNext", "organizerLoopFrameInput", "organizerLoopFrameTotal",
-      "organizerLoopFrameRange", "organizerLoopPlay", "organizerLoopSpeed",
-      "organizerLoopCancel", "organizerLoopRetry", "organizerLoopStartSearch",
+      "organizerOpen",
+      "organizerModal",
+      "organizerCopyLink",
+      "organizerHome",
+      "organizerClose",
+      "organizerTitle",
+      "organizerSubtitle",
+      "organizerImportSetup",
+      "organizerProjectSelect",
+      "organizerProjectNameField",
+      "organizerProjectName",
+      "organizerProfileName",
+      "organizerAnimationName",
+      "organizerImportFps",
+      "organizerAnimationType",
+      "organizerInvert",
+      "organizerReduce",
+      "organizerReduceStep",
+      "organizerUndoDelete",
+      "organizerConfirmPanel",
+      "organizerConfirmTitle",
+      "organizerConfirmMessage",
+      "organizerConfirmDetails",
+      "organizerConfirmCancel",
+      "organizerConfirmAccept",
+      "organizerLoopPanel",
+      "organizerLoopTitle",
+      "organizerLoopClose",
+      "organizerLoopParams",
+      "organizerLoopPreference",
+      "organizerLoopStartAuto",
+      "organizerLoopStartCustom",
+      "organizerLoopStartRow",
+      "organizerLoopStartInput",
+      "organizerLoopSearch",
+      "organizerLoopSearchLabel",
+      "organizerLoopProgressBar",
+      "organizerLoopProgressText",
+      "organizerLoopResults",
+      "organizerLoopEmpty",
+      "organizerLoopResultContent",
+      "organizerLoopCandidates",
+      "organizerLoopCanvas",
+      "organizerLoopPrevious",
+      "organizerLoopNext",
+      "organizerLoopFrameInput",
+      "organizerLoopFrameTotal",
+      "organizerLoopFrameRange",
+      "organizerLoopPlay",
+      "organizerLoopSpeed",
+      "organizerLoopCancel",
+      "organizerLoopRetry",
+      "organizerLoopStartSearch",
       "organizerLoopTrim",
-      "organizerAutoSort", "organizerFlip", "organizerImport", "organizerFileInput",
-      "organizerImportVideo", "organizerVideoInput", "organizerVideoPanel", "organizerVideoClose",
-      "organizerVideoElement", "organizerVideoName", "organizerVideoMeta", "organizerVideoReselect",
-      "organizerVideoStart", "organizerVideoEnd", "organizerVideoStartRange",
-      "organizerVideoEndRange", "organizerVideoDuration", "organizerVideoFps",
-      "organizerVideoFpsNumber", "organizerVideoEstimate", "organizerVideoStatus",
-      "organizerVideoCancel", "organizerVideoExtract",
-      "organizerDeleteSelected", "organizerDeleteExcluded", "organizerThreshold",
-      "organizerThresholdValue", "organizerFindJump", "organizerFindDuplicate",
-      "organizerFindLoop", "organizerReset", "organizerAddAssets", "organizerApply", "organizerGrid",
-      "organizerStatus", "organizerCount", "organizerSelection", "organizerPreview",
-      "organizerSpeed", "organizerTag", "organizerApplyTag", "organizerClearTag",
-      "organizerViewOriginal", "organizerViewEdited",
+      "organizerAutoSort",
+      "organizerFlip",
+      "organizerImport",
+      "organizerFileInput",
+      "organizerImportVideo",
+      "organizerVideoInput",
+      "organizerVideoPanel",
+      "organizerVideoClose",
+      "organizerVideoElement",
+      "organizerVideoName",
+      "organizerVideoMeta",
+      "organizerVideoReselect",
+      "organizerVideoStart",
+      "organizerVideoEnd",
+      "organizerVideoStartRange",
+      "organizerVideoEndRange",
+      "organizerVideoDuration",
+      "organizerVideoFps",
+      "organizerVideoFpsNumber",
+      "organizerVideoEstimate",
+      "organizerVideoStatus",
+      "organizerVideoCancel",
+      "organizerVideoExtract",
+      "organizerDeleteSelected",
+      "organizerDeleteExcluded",
+      "organizerThreshold",
+      "organizerThresholdValue",
+      "organizerFindJump",
+      "organizerFindDuplicate",
+      "organizerFindLoop",
+      "organizerReset",
+      "organizerAddAssets",
+      "organizerApply",
+      "organizerGrid",
+      "organizerStatus",
+      "organizerCount",
+      "organizerSelection",
+      "organizerPreview",
+      "organizerPreviewFrame",
+      "organizerSpeed",
+      "organizerTag",
+      "organizerApplyTag",
+      "organizerClearTag",
+      "organizerViewOriginal",
+      "organizerViewEdited",
     ];
     const elements = Object.fromEntries(ids.map((id) => [id, document.querySelector(`#${id}`)]));
     const state = {
@@ -362,7 +476,16 @@
       loopSearchToken: 0,
       loopCancelled: false,
       loopSourceEntries: [],
+      baselineFrameIds: [],
     };
+    const MAX_WORKSET_FRAMES = 240;
+    const MAX_IMAGE_FILE_BYTES = 48 * 1024 * 1024;
+    const MAX_IMAGE_IMPORT_BYTES = 256 * 1024 * 1024;
+    const IMAGE_IMPORT_CONCURRENCY = 4;
+    const IMAGE_PIXEL_LIMITS = Object.freeze({
+      maxPixelsPerImage: 16_777_216,
+      maxTotalPixels: 64_000_000,
+    });
 
     /**
      * Translates a UI key.
@@ -373,6 +496,24 @@
     function text(key, variables = {}) {
       const template = TEXT[state.language]?.[key] || TEXT.zh[key] || key;
       return String(template).replace(/\{(\w+)\}/g, (_match, name) => variables[name] ?? "");
+    }
+
+    /**
+     * Validates decoded image memory before allocating organizer canvases.
+     * @param {CanvasImageSource} source Browser image or canvas source.
+     * @param {number} currentPixels Pixels already retained by the workset.
+     * @returns {{width:number,height:number,pixels:number,totalPixels:number}} Accepted metrics.
+     * @throws {Error} When the image or workset exceeds its decoded-pixel budget.
+     */
+    function assertImagePixelBudget(source, currentPixels = 0) {
+      const result = imagePixelBudget.evaluate(source, currentPixels, IMAGE_PIXEL_LIMITS);
+      if (result.allowed) return result;
+      const limit = Math.max(1, Math.floor(result.limit / 1_000_000));
+      if (result.reason === "single") {
+        throw new Error(text("imagePixelLimit", { width: result.width, height: result.height, limit }));
+      }
+      if (result.reason === "total") throw new Error(text("batchPixelLimit", { limit }));
+      throw new Error(text("importInvalid"));
     }
 
     /**
@@ -415,6 +556,24 @@
     }
 
     /**
+     * Reports whether the staged workset differs from its loaded baseline.
+     * @returns {boolean} True when navigation could discard staged changes.
+     */
+    function hasUnsavedChanges() {
+      if (state.videoExtracting) return true;
+      if (state.mode === "import") return state.frames.length > 0;
+      if (state.frames.length !== state.baselineFrameIds.length) return true;
+      return state.frames.some(
+        (frame, index) =>
+          frame.uid !== state.baselineFrameIds[index] ||
+          frame.imported ||
+          frame.flipped ||
+          !frame.included ||
+          Boolean(frame.tag),
+      );
+    }
+
+    /**
      * Publishes a status message to both organizer and host.
      * @param {string} message Status text.
      * @param {"idle"|"success"|"error"|"busy"} tone Visual tone.
@@ -444,9 +603,13 @@
      * Opens an application-styled confirmation layer.
      * @param {string} message Confirmation message.
      * @param {Array<[string,string|number]>} details Operation details.
+     * @param {{title?:string,confirmLabel?:string}} [options] Dialog labels.
      * @returns {Promise<boolean>}
      */
-    function requestConfirmation(message, details = []) {
+    function requestConfirmation(message, details = [], options = {}) {
+      if (state.confirmResolver) resolveConfirmation(false);
+      elements.organizerConfirmTitle.textContent = options.title || text("confirmTitle");
+      elements.organizerConfirmAccept.textContent = options.confirmLabel || text("confirm");
       elements.organizerConfirmMessage.textContent = message;
       elements.organizerConfirmDetails.replaceChildren();
       details.forEach(([label, value]) => {
@@ -458,7 +621,9 @@
       });
       elements.organizerConfirmPanel.hidden = false;
       elements.organizerConfirmAccept.focus();
-      return new Promise((resolve) => { state.confirmResolver = resolve; });
+      return new Promise((resolve) => {
+        state.confirmResolver = resolve;
+      });
     }
 
     /**
@@ -479,9 +644,11 @@
      */
     function trapFocus(event, container) {
       if (event.key !== "Tab") return;
-      const focusable = Array.from(container.querySelectorAll(
-        'button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), select:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])',
-      )).filter((element) => element.offsetParent !== null);
+      const focusable = Array.from(
+        container.querySelectorAll(
+          'button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), select:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.offsetParent !== null);
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -537,19 +704,27 @@
       newOption.textContent = text("importProjectNew");
       elements.organizerProjectSelect.appendChild(newOption);
       const nextProjectValue = resetValues
-        ? (activeProject?.id ? String(activeProject.id) : "__new__")
+        ? activeProject?.id
+          ? String(activeProject.id)
+          : "__new__"
         : selectedValue;
-      elements.organizerProjectSelect.value = Array.from(elements.organizerProjectSelect.options)
-        .some((option) => option.value === nextProjectValue)
+      elements.organizerProjectSelect.value = Array.from(elements.organizerProjectSelect.options).some(
+        (option) => option.value === nextProjectValue,
+      )
         ? nextProjectValue
-        : (activeProject?.id ? String(activeProject.id) : "__new__");
+        : activeProject?.id
+          ? String(activeProject.id)
+          : "__new__";
       if (resetValues) {
         const defaultProfile = Array.isArray(context.profiles) ? context.profiles[0] : null;
         elements.organizerProjectName.value = state.language === "en" ? "Animation Project" : "动画项目";
-        elements.organizerProfileName.value = String(defaultProfile?.label || defaultProfile?.id || "character");
+        elements.organizerProfileName.value = String(
+          defaultProfile?.label || defaultProfile?.id || "character",
+        );
         elements.organizerAnimationName.value = "idle";
         elements.organizerImportFps.value = "12";
-        elements.organizerAnimationType.value = String(defaultProfile?.kind || "actor") === "boss" ? "boss" : "actor";
+        elements.organizerAnimationType.value =
+          String(defaultProfile?.kind || "actor") === "boss" ? "boss" : "actor";
       }
       syncImportProjectField();
     }
@@ -593,7 +768,9 @@
       elements.organizerApply.textContent = text(state.mode === "import" ? "create" : "apply");
       elements.organizerReset.textContent = text(state.mode === "import" ? "clearWorkset" : "reset");
       elements.organizerImportSetup.hidden = state.mode !== "import";
-      elements.organizerImportSetup.closest(".organizerWorkbench")?.classList.toggle("importMode", state.mode === "import");
+      elements.organizerImportSetup
+        .closest(".organizerWorkbench")
+        ?.classList.toggle("importMode", state.mode === "import");
       if (state.mode === "import") renderImportContext(false);
       renderCounts();
     }
@@ -604,9 +781,10 @@
      * @returns {HTMLCanvasElement}
      */
     function imageCanvas(image) {
+      const dimensions = assertImagePixelBudget(image);
       const canvas = document.createElement("canvas");
-      canvas.width = Number(image.naturalWidth || image.width || 1);
-      canvas.height = Number(image.naturalHeight || image.height || 1);
+      canvas.width = dimensions.width;
+      canvas.height = dimensions.height;
       const context = canvas.getContext("2d", { willReadFrequently: true });
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       return canvas;
@@ -619,13 +797,14 @@
      * @returns {object}
      */
     function createFrame(image, options = {}) {
-      const originalCanvas = options.reuseCanvas && image instanceof HTMLCanvasElement
-        ? image
-        : imageCanvas(image);
+      const originalCanvas =
+        options.reuseCanvas && image instanceof HTMLCanvasElement ? image : imageCanvas(image);
       return {
         uid: root.crypto?.randomUUID?.() || `frame_${Date.now()}_${Math.random()}`,
         sourceIndex: Number.isInteger(options.sourceIndex) ? options.sourceIndex : null,
-        originalIndex: Number.isInteger(options.originalIndex) ? options.originalIndex : Number.MAX_SAFE_INTEGER,
+        originalIndex: Number.isInteger(options.originalIndex)
+          ? options.originalIndex
+          : Number.MAX_SAFE_INTEGER,
         sourcePath: String(options.sourcePath || ""),
         name: String(options.name || "frame.png"),
         originalCanvas,
@@ -659,6 +838,31 @@
         };
         image.src = url;
       });
+    }
+
+    /**
+     * Loads image files with bounded concurrency and preserves input order.
+     * @param {File[]} files Validated local image files.
+     * @returns {Promise<Array<{status:"fulfilled",value:HTMLImageElement}|{status:"rejected",reason:Error}>>}
+     */
+    async function loadImageFiles(files) {
+      const results = new Array(files.length);
+      let cursor = 0;
+      async function worker() {
+        while (cursor < files.length) {
+          const index = cursor;
+          cursor += 1;
+          try {
+            results[index] = { status: "fulfilled", value: await loadFileImage(files[index]) };
+          } catch (error) {
+            results[index] = { status: "rejected", reason: error };
+          }
+        }
+      }
+      await Promise.all(
+        Array.from({ length: Math.min(IMAGE_IMPORT_CONCURRENCY, files.length) }, () => worker()),
+      );
+      return results;
     }
 
     /**
@@ -764,10 +968,10 @@
      * @returns {Promise<void>}
      */
     async function loadVideoFile(file) {
-      if (!file || !(
-        String(file.type || "").startsWith("video/")
-        || /\.(mp4|webm|mov|m4v)$/i.test(file.name || "")
-      )) {
+      if (
+        !file ||
+        !(String(file.type || "").startsWith("video/") || /\.(mp4|webm|mov|m4v)$/i.test(file.name || ""))
+      ) {
         setStatus(text("videoUnsupported"), "error");
         return;
       }
@@ -799,7 +1003,12 @@
           video.load();
         });
         const video = elements.organizerVideoElement;
-        if (!Number.isFinite(video.duration) || video.duration <= 0 || !video.videoWidth || !video.videoHeight) {
+        if (
+          !Number.isFinite(video.duration) ||
+          video.duration <= 0 ||
+          !video.videoWidth ||
+          !video.videoHeight
+        ) {
           throw new Error(text("videoUnsupported"));
         }
         state.videoDuration = video.duration;
@@ -898,12 +1107,14 @@
           canvas.height = frameHeight;
           const context = canvas.getContext("2d", { alpha: true });
           context.drawImage(elements.organizerVideoElement, 0, 0, frameWidth, frameHeight);
-          extractedFrames.push(createFrame(canvas, {
-            originalIndex: Number.MAX_SAFE_INTEGER - selection.count + index,
-            name: `${baseName}_frame_${String(index + 1).padStart(4, "0")}.png`,
-            imported: true,
-            reuseCanvas: true,
-          }));
+          extractedFrames.push(
+            createFrame(canvas, {
+              originalIndex: Number.MAX_SAFE_INTEGER - selection.count + index,
+              name: `${baseName}_frame_${String(index + 1).padStart(4, "0")}.png`,
+              imported: true,
+              reuseCanvas: true,
+            }),
+          );
           if (index % 4 === 3) await new Promise((resolve) => window.setTimeout(resolve, 0));
         }
         state.frames.push(...extractedFrames);
@@ -951,24 +1162,33 @@
       const animation = hooks.getCurrentAnimation?.();
       elements.organizerCount.textContent = text("workset", { included, total: state.frames.length });
       elements.organizerSelection.textContent = text("selected", { count: selected });
-      elements.organizerApply.disabled = !included
-        || state.busy
-        || (state.mode === "edit" && !animation?.frames?.length);
+      elements.organizerApply.disabled =
+        !included || state.busy || (state.mode === "edit" && !animation?.frames?.length);
       elements.organizerDeleteSelected.disabled = !selected || state.busy;
+      elements.organizerInvert.disabled = !state.frames.length || state.busy;
       elements.organizerFlip.disabled = (!selected && !included) || state.busy;
       elements.organizerDeleteExcluded.disabled = included === state.frames.length || state.busy;
-      elements.organizerImport.disabled = state.busy;
-      elements.organizerImportVideo.disabled = state.busy;
+      elements.organizerFileInput.disabled = state.busy;
+      elements.organizerVideoInput.disabled = state.busy;
       elements.organizerAddAssets.hidden = state.mode !== "import";
-      elements.organizerAddAssets.disabled = state.mode !== "import"
-        || !included
-        || state.busy
-        || !animation?.frames?.length
-        || typeof hooks.addAssets !== "function";
+      elements.organizerAddAssets.disabled =
+        state.mode !== "import" ||
+        !included ||
+        state.busy ||
+        !animation?.frames?.length ||
+        typeof hooks.addAssets !== "function";
       elements.organizerReduce.disabled = !included || state.busy;
+      elements.organizerAutoSort.disabled = state.frames.length < 2 || state.busy;
       elements.organizerFindJump.disabled = included < 3 || state.busy;
       elements.organizerFindDuplicate.disabled = included < 3 || state.busy;
       elements.organizerFindLoop.disabled = included < 4 || state.busy;
+      elements.organizerGrid.querySelectorAll(".organizerFrameCutout").forEach((button) => {
+        button.disabled = state.busy;
+      });
+      elements.organizerReduce.title = included ? "" : text("needFrames");
+      elements.organizerFindJump.title = included >= 3 ? "" : text("needThreeFrames");
+      elements.organizerFindDuplicate.title = included >= 3 ? "" : text("needThreeFrames");
+      elements.organizerFindLoop.title = included >= 4 ? "" : text("needFourFrames");
     }
 
     /**
@@ -981,12 +1201,16 @@
       if (event.shiftKey && state.anchorIndex >= 0) {
         const start = Math.min(index, state.anchorIndex);
         const end = Math.max(index, state.anchorIndex);
-        state.frames.forEach((frame, cursor) => { frame.selected = cursor >= start && cursor <= end; });
+        state.frames.forEach((frame, cursor) => {
+          frame.selected = cursor >= start && cursor <= end;
+        });
       } else if (event.metaKey || event.ctrlKey) {
         state.frames[index].selected = !state.frames[index].selected;
         state.anchorIndex = index;
       } else {
-        state.frames.forEach((frame, cursor) => { frame.selected = cursor === index; });
+        state.frames.forEach((frame, cursor) => {
+          frame.selected = cursor === index;
+        });
         state.anchorIndex = index;
       }
       state.previewIndex = index;
@@ -1014,11 +1238,11 @@
      * @returns {HTMLDivElement}
      */
     function createFrameCard(frame) {
-        const card = document.createElement("div");
-        card.tabIndex = 0;
-        card.setAttribute("role", "button");
-        card.dataset.frameUid = frame.uid;
-        card.innerHTML = `
+      const card = document.createElement("div");
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.dataset.frameUid = frame.uid;
+      card.innerHTML = `
           <span class="organizerFrameNumber"></span>
           <img alt="">
           <span class="organizerFrameName"></span>
@@ -1026,33 +1250,33 @@
           <input type="checkbox" aria-label="workset">
           <button type="button" class="organizerFrameCutout" aria-label="${text("editCutout")}" title="${text("editCutout")}">✎</button>
         `;
-        card.querySelector("input").addEventListener("click", (event) => {
-          event.stopPropagation();
-          const currentFrame = state.frames.find((entry) => entry.uid === card.dataset.frameUid);
-          if (!currentFrame) return;
-          currentFrame.included = event.currentTarget.checked;
-          renderCounts();
-          restartPreview();
+      card.querySelector("input").addEventListener("click", (event) => {
+        event.stopPropagation();
+        const currentFrame = state.frames.find((entry) => entry.uid === card.dataset.frameUid);
+        if (!currentFrame) return;
+        currentFrame.included = event.currentTarget.checked;
+        renderCounts();
+        restartPreview();
+      });
+      card.querySelector(".organizerFrameCutout").addEventListener("click", (event) => {
+        event.stopPropagation();
+        const currentFrame = state.frames.find((entry) => entry.uid === card.dataset.frameUid);
+        if (!currentFrame) return;
+        editImportCutout(currentFrame).catch((error) => {
+          setStatus(text("failed", { message: error.message }), "error");
         });
-        card.querySelector(".organizerFrameCutout").addEventListener("click", (event) => {
-          event.stopPropagation();
-          const currentFrame = state.frames.find((entry) => entry.uid === card.dataset.frameUid);
-          if (!currentFrame) return;
-          editImportCutout(currentFrame).catch((error) => {
-            setStatus(text("failed", { message: error.message }), "error");
-          });
-        });
-        card.addEventListener("click", (event) => {
-          const index = state.frames.findIndex((entry) => entry.uid === card.dataset.frameUid);
-          if (index >= 0) selectFrame(index, event);
-        });
-        card.addEventListener("keydown", (event) => {
-          if (event.target !== card || (event.key !== "Enter" && event.key !== " ")) return;
-          event.preventDefault();
-          const index = state.frames.findIndex((entry) => entry.uid === card.dataset.frameUid);
-          if (index >= 0) selectFrame(index, event);
-        });
-        return card;
+      });
+      card.addEventListener("click", (event) => {
+        const index = state.frames.findIndex((entry) => entry.uid === card.dataset.frameUid);
+        if (index >= 0) selectFrame(index, event);
+      });
+      card.addEventListener("keydown", (event) => {
+        if (event.target !== card || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        const index = state.frames.findIndex((entry) => entry.uid === card.dataset.frameUid);
+        if (index >= 0) selectFrame(index, event);
+      });
+      return card;
     }
 
     /**
@@ -1060,8 +1284,9 @@
      * @returns {void}
      */
     function renderGrid() {
-      const existingCards = new Map(Array.from(elements.organizerGrid.children)
-        .map((card) => [card.dataset.frameUid, card]));
+      const existingCards = new Map(
+        Array.from(elements.organizerGrid.children).map((card) => [card.dataset.frameUid, card]),
+      );
       const fragment = document.createDocumentFragment();
       state.frames.forEach((frame, index) => {
         const card = existingCards.get(frame.uid) || createFrameCard(frame);
@@ -1112,9 +1337,12 @@
      */
     function renderPreview() {
       const frames = includedFrames();
-      const frame = frames.length
-        ? frames[state.previewIndex % frames.length]
-        : null;
+      const normalizedIndex = frames.length ? state.previewIndex % frames.length : -1;
+      const frame = normalizedIndex >= 0 ? frames[normalizedIndex] : null;
+      elements.organizerPreviewFrame.textContent =
+        normalizedIndex >= 0
+          ? text("previewFrame", { current: normalizedIndex + 1, total: frames.length })
+          : text("previewFrameEmpty");
       drawFrameToCanvas(frame, elements.organizerPreview);
     }
 
@@ -1165,18 +1393,36 @@
       const animation = hooks.getCurrentAnimation?.();
       if (!animation?.frames?.length || animation.images?.length !== animation.frames.length) {
         state.frames = [];
+        state.baselineFrameIds = [];
         state.animationName = "";
         renderGrid();
         renderPreview();
         setStatus(text("noGroup"), "error");
         return;
       }
-      state.frames = animation.frames.map((frame, index) => createFrame(animation.images[index], {
-        sourceIndex: index,
-        originalIndex: index,
-        sourcePath: frame.path,
-        name: frame.name,
-      }));
+      try {
+        let retainedPixels = 0;
+        animation.images.forEach((image) => {
+          retainedPixels = assertImagePixelBudget(image, retainedPixels).totalPixels;
+        });
+      } catch (error) {
+        state.frames = [];
+        state.baselineFrameIds = [];
+        state.animationName = "";
+        renderGrid();
+        renderPreview();
+        setStatus(error.message, "error");
+        return;
+      }
+      state.frames = animation.frames.map((frame, index) =>
+        createFrame(animation.images[index], {
+          sourceIndex: index,
+          originalIndex: index,
+          sourcePath: frame.path,
+          name: frame.name,
+        }),
+      );
+      state.baselineFrameIds = state.frames.map((frame) => frame.uid);
       state.animationName = animation.name;
       state.anchorIndex = -1;
       state.previewIndex = 0;
@@ -1192,7 +1438,9 @@
      */
     function selectIndexes(indexes) {
       const selected = new Set(indexes);
-      state.frames.forEach((frame, index) => { frame.selected = selected.has(index); });
+      state.frames.forEach((frame, index) => {
+        frame.selected = selected.has(index);
+      });
       state.anchorIndex = indexes[0] ?? -1;
       renderGrid();
     }
@@ -1212,9 +1460,7 @@
     function currentLoopFrames() {
       const candidate = currentLoopCandidate();
       if (!candidate) return [];
-      return state.loopSourceEntries
-        .slice(candidate.start, candidate.end + 1)
-        .map((entry) => entry.frame);
+      return state.loopSourceEntries.slice(candidate.start, candidate.end + 1).map((entry) => entry.frame);
     }
 
     /**
@@ -1296,9 +1542,9 @@
         button.classList.toggle("active", index === candidateIndex);
         button.setAttribute("aria-selected", String(index === candidateIndex));
       });
-      selectIndexes(state.loopSourceEntries
-        .slice(candidate.start, candidate.end + 1)
-        .map((entry) => entry.index));
+      selectIndexes(
+        state.loopSourceEntries.slice(candidate.start, candidate.end + 1).map((entry) => entry.index),
+      );
       window.requestAnimationFrame(renderLoopPreview);
     }
 
@@ -1461,16 +1707,20 @@
           sourceEntries.length,
         );
         elements.organizerLoopStartInput.value = String(startFrame);
-        const candidates = await core.findLoopCandidatesAsync(signatures, {
-          minPeriod: 2,
-          maxPeriod: Math.max(2, Math.floor((2 * signatures.length) / 3)),
-          startFrame: customStart ? startFrame - 1 : 0,
-          preference: state.loopPreference,
-          boundaryFactor: 0.85,
-        }, {
-          onProgress: renderLoopProgress,
-          isCancelled: () => state.loopCancelled || searchToken !== state.loopSearchToken,
-        });
+        const candidates = await core.findLoopCandidatesAsync(
+          signatures,
+          {
+            minPeriod: 2,
+            maxPeriod: Math.max(2, Math.floor((2 * signatures.length) / 3)),
+            startFrame: customStart ? startFrame - 1 : 0,
+            preference: state.loopPreference,
+            boundaryFactor: 0.85,
+          },
+          {
+            onProgress: renderLoopProgress,
+            isCancelled: () => state.loopCancelled || searchToken !== state.loopSearchToken,
+          },
+        );
         if (state.loopCancelled || searchToken !== state.loopSearchToken) return;
         state.loopCandidates = candidates;
         state.loopCandidateIndex = -1;
@@ -1497,15 +1747,20 @@
       if (!candidate) return;
       const keptEntries = state.loopSourceEntries.slice(candidate.start, candidate.end + 1);
       const keptUids = new Set(keptEntries.map((entry) => entry.frame.uid));
-      state.frames.forEach((frame) => { frame.included = keptUids.has(frame.uid); });
+      state.frames.forEach((frame) => {
+        frame.included = keptUids.has(frame.uid);
+      });
       selectIndexes(keptEntries.map((entry) => entry.index));
       restartPreview();
       closeLoopFinder();
-      setStatus(text("loopTrimmed", {
-        start: candidate.start + 1,
-        end: candidate.end + 1,
-        count: keptEntries.length,
-      }), "success");
+      setStatus(
+        text("loopTrimmed", {
+          start: candidate.start + 1,
+          end: candidate.end + 1,
+          count: keptEntries.length,
+        }),
+        "success",
+      );
     }
 
     /**
@@ -1527,10 +1782,14 @@
           elements.organizerThreshold.value = String(result.autoAdjustedThreshold);
           elements.organizerThresholdValue.textContent = String(result.autoAdjustedThreshold);
         }
-        const adjusted = result.autoAdjustedThreshold == null
-          ? ""
-          : ` · ${text("thresholdAdjusted", { threshold: result.autoAdjustedThreshold })}`;
-        setStatus(matches.length ? `${text("foundJump", { count: matches.length })}${adjusted}` : text("noneFound"), matches.length ? "success" : "idle");
+        const adjusted =
+          result.autoAdjustedThreshold == null
+            ? ""
+            : ` · ${text("thresholdAdjusted", { threshold: result.autoAdjustedThreshold })}`;
+        setStatus(
+          matches.length ? `${text("foundJump", { count: matches.length })}${adjusted}` : text("noneFound"),
+          matches.length ? "success" : "idle",
+        );
         return;
       }
       const result = core.analyzeDuplicateFrames(signatures, threshold);
@@ -1540,10 +1799,16 @@
         elements.organizerThreshold.value = String(result.autoAdjustedThreshold);
         elements.organizerThresholdValue.textContent = String(result.autoAdjustedThreshold);
       }
-      const adjusted = result.autoAdjustedThreshold == null
-        ? ""
-        : ` · ${text("thresholdAdjusted", { threshold: result.autoAdjustedThreshold })}`;
-      setStatus(matches.length ? `${text("foundDuplicate", { count: matches.length })}${adjusted}` : text("noneFound"), matches.length ? "success" : "idle");
+      const adjusted =
+        result.autoAdjustedThreshold == null
+          ? ""
+          : ` · ${text("thresholdAdjusted", { threshold: result.autoAdjustedThreshold })}`;
+      setStatus(
+        matches.length
+          ? `${text("foundDuplicate", { count: matches.length })}${adjusted}`
+          : text("noneFound"),
+        matches.length ? "success" : "idle",
+      );
     }
 
     /**
@@ -1577,26 +1842,92 @@
      * @returns {Promise<void>}
      */
     async function importFiles(fileList) {
-      const files = Array.from(fileList || []).filter((file) => (
-        String(file.type || "").startsWith("image/")
-        || /\.(png|jpe?g|webp)$/i.test(file.name || "")
-      ));
-      if (!files.length) return;
-      const images = await Promise.all(files.map(loadFileImage));
-      images.forEach((image, index) => {
-        state.frames.push(createFrame(image, {
-          originalIndex: Number.MAX_SAFE_INTEGER - files.length + index,
-          name: files[index].name,
-          imported: true,
-        }));
+      if (state.busy) {
+        setStatus(text("importBusy"), "error");
+        return;
+      }
+      const candidates = Array.from(fileList || []);
+      const supportedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+      const supported = candidates.filter(
+        (file) =>
+          supportedMimeTypes.has(String(file.type || "").toLowerCase()) ||
+          /\.(png|jpe?g|webp)$/i.test(file.name || ""),
+      );
+      if (!supported.length) {
+        setStatus(text("importInvalid"), "error");
+        return;
+      }
+      const remaining = Math.max(0, MAX_WORKSET_FRAMES - state.frames.length);
+      if (!remaining) {
+        setStatus(text("importLimit", { count: 0 }), "error");
+        return;
+      }
+      let totalBytes = 0;
+      let skipped = candidates.length - supported.length;
+      const sizeAccepted = supported.filter((file) => {
+        if (file.size > MAX_IMAGE_FILE_BYTES || totalBytes + file.size > MAX_IMAGE_IMPORT_BYTES) {
+          skipped += 1;
+          return false;
+        }
+        totalBytes += file.size;
+        return true;
       });
-      renderGrid();
-      restartPreview();
-      setStatus(text("imported", { count: files.length }), "success");
+      const files = sizeAccepted.slice(0, remaining);
+      skipped += Math.max(0, sizeAccepted.length - files.length);
+      if (!files.length) {
+        setStatus(text("importOversized", { count: skipped }), "error");
+        return;
+      }
+      state.busy = true;
+      renderCounts();
+      setStatus(text("importBusy"), "busy");
+      try {
+        const results = await loadImageFiles(files);
+        const additions = [];
+        let rejectionMessage = "";
+        let retainedPixels = imagePixelBudget.totalPixels(state.frames.map((frame) => frame.originalCanvas));
+        results.forEach((result, index) => {
+          if (result.status === "fulfilled") {
+            try {
+              const budget = assertImagePixelBudget(result.value, retainedPixels);
+              additions.push(
+                createFrame(result.value, {
+                  originalIndex: Number.MAX_SAFE_INTEGER - files.length + index,
+                  name: files[index].name,
+                  imported: true,
+                }),
+              );
+              retainedPixels = budget.totalPixels;
+            } catch (error) {
+              rejectionMessage ||= error.message;
+              skipped += 1;
+            }
+          } else {
+            skipped += 1;
+          }
+        });
+        if (!additions.length) {
+          setStatus(rejectionMessage || text("importInvalid"), "error");
+          return;
+        }
+        state.frames.push(...additions);
+        renderGrid();
+        restartPreview();
+        elements.organizerGrid.lastElementChild?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        setStatus(
+          skipped
+            ? text("importPartial", { count: additions.length, failed: skipped })
+            : text("imported", { count: additions.length }),
+          skipped ? "error" : "success",
+        );
+      } finally {
+        state.busy = false;
+        renderCounts();
+      }
     }
 
     /**
-     * Opens one workset frame in the cutout editor and writes its result back in place.
+     * Opens one workset frame while retaining the full image set as propagation targets.
      * @param {object} targetFrame Organizer frame to edit.
      * @returns {Promise<void>}
      */
@@ -1609,28 +1940,20 @@
         setStatus(text("failed", { message: "Batch cutout is unavailable." }), "error");
         return;
       }
-      const sourceFrames = [targetFrame];
-      state.busy = true;
-      renderCounts();
-      window.clearTimeout(state.previewTimer);
-      elements.organizerModal.hidden = true;
-      document.body.classList.remove("organizerOpen");
-      try {
-        const outputs = await hooks.editCutout({
-          name: elements.organizerAnimationName.value.trim() || "animation",
-          items: sourceFrames.map((frame) => ({
-            name: frame.name,
-            image: frame.editedCanvas,
-            frame: { uid: frame.uid },
-          })),
-        });
-        if (!outputs) return;
+      const sourceFrames = [...state.frames];
+      const selectedIndex = sourceFrames.indexOf(targetFrame);
+      /**
+       * Copies live or final cutout outputs into the organizer workset.
+       * @param {Array<object>} outputs Processed workset outputs.
+       * @returns {void}
+       */
+      const applyCutoutOutputs = (outputs) => {
         if (outputs.length !== sourceFrames.length) {
           throw new Error(`Expected ${sourceFrames.length} cutout frames, received ${outputs.length}.`);
         }
-        const outputByUid = new Map(outputs
-          .filter((output) => output?.frame?.uid)
-          .map((output) => [output.frame.uid, output]));
+        const outputByUid = new Map(
+          outputs.filter((output) => output?.frame?.uid).map((output) => [output.frame.uid, output]),
+        );
         sourceFrames.forEach((frame, index) => {
           const output = outputByUid.get(frame.uid) || outputs[index];
           if (!output?.canvas) throw new Error(`Missing cutout canvas for frame ${index + 1}.`);
@@ -1641,6 +1964,26 @@
           frame.thumbnails.edited = "";
         });
         renderGrid();
+      };
+      state.busy = true;
+      renderCounts();
+      window.clearTimeout(state.previewTimer);
+      elements.organizerModal.hidden = true;
+      document.body.classList.remove("organizerOpen");
+      try {
+        const outputs = await hooks.editCutout({
+          name: elements.organizerAnimationName.value.trim() || "animation",
+          mode: "single",
+          selectedIndex,
+          onLiveApply: applyCutoutOutputs,
+          items: sourceFrames.map((frame) => ({
+            name: frame.name,
+            image: frame.editedCanvas,
+            frame: { uid: frame.uid },
+          })),
+        });
+        if (!outputs) return;
+        applyCutoutOutputs(outputs);
         setStatus(text("cutoutReady", { count: outputs.length }), "success");
       } catch (error) {
         setStatus(text("failed", { message: error.message }), "error");
@@ -1671,21 +2014,21 @@
         setStatus(error.message, "error");
         return;
       }
-      const confirmation = state.mode === "import"
-        ? text("createConfirm", { count: frames.length })
-        : text("applyConfirm");
-      const details = state.mode === "import"
-        ? [
-            [text("detailProject"), metadata.projectId || metadata.projectLabel],
-            [text("detailProfile"), metadata.profileLabel],
-            [text("detailAnimation"), metadata.animationName],
-            [text("detailFrames"), frames.length],
-            [text("detailFps"), metadata.fps],
-          ]
-        : [
-            [text("detailAnimation"), state.animationName],
-            [text("detailFrames"), frames.length],
-          ];
+      const confirmation =
+        state.mode === "import" ? text("createConfirm", { count: frames.length }) : text("applyConfirm");
+      const details =
+        state.mode === "import"
+          ? [
+              [text("detailProject"), metadata.projectId || metadata.projectLabel],
+              [text("detailProfile"), metadata.profileLabel],
+              [text("detailAnimation"), metadata.animationName],
+              [text("detailFrames"), frames.length],
+              [text("detailFps"), metadata.fps],
+            ]
+          : [
+              [text("detailAnimation"), state.animationName],
+              [text("detailFrames"), frames.length],
+            ];
       if (!frames.length || !(await requestConfirmation(confirmation, details))) return;
       state.busy = true;
       renderCounts();
@@ -1695,9 +2038,10 @@
           sourcePath: frame.sourcePath,
           name: frame.name,
           flipped: frame.flipped,
-          data: state.mode === "import" || frame.imported || frame.flipped
-            ? frame.editedCanvas.toDataURL("image/png")
-            : "",
+          data:
+            state.mode === "import" || frame.imported || frame.flipped
+              ? frame.editedCanvas.toDataURL("image/png")
+              : "",
         }));
         if (state.mode === "import") {
           await hooks.createAnimation?.(metadata, items);
@@ -1727,10 +2071,12 @@
       state.busy = true;
       renderCounts();
       try {
-        const count = await hooks.addAssets(frames.map((frame) => ({
-          name: frame.name,
-          image: frame.editedCanvas,
-        })));
+        const count = await hooks.addAssets(
+          frames.map((frame) => ({
+            name: frame.name,
+            image: frame.editedCanvas,
+          })),
+        );
         setStatus(text("assetsAdded", { count }), "success");
       } catch (error) {
         setStatus(text("failed", { message: error.message }), "error");
@@ -1742,9 +2088,10 @@
 
     /**
      * Opens the organizer and reloads the current animation.
+     * @param {{syncRoute?:boolean}} [options] Route synchronization behavior.
      * @returns {Promise<void>}
      */
-    async function open() {
+    async function open(options = {}) {
       state.returnFocus = document.activeElement;
       state.mode = "edit";
       state.deletedFramesSnapshot = null;
@@ -1752,16 +2099,18 @@
       elements.organizerModal.hidden = false;
       setEditorInert(true);
       document.body.classList.add("organizerOpen");
+      if (options.syncRoute !== false) hooks.onOpen?.("edit");
       renderLanguage();
       await loadCurrentAnimation();
-      elements.organizerImport.focus();
+      elements.organizerFileInput.focus();
     }
 
     /**
      * Opens a blank organizer workset for creating a new animation.
+     * @param {{syncRoute?:boolean}} [options] Route synchronization behavior.
      * @returns {Promise<void>}
      */
-    async function openImport() {
+    async function openImport(options = {}) {
       state.returnFocus = document.activeElement;
       state.mode = "import";
       state.frames = [];
@@ -1773,6 +2122,7 @@
       elements.organizerModal.hidden = false;
       setEditorInert(true);
       document.body.classList.add("organizerOpen");
+      if (options.syncRoute !== false) hooks.onOpen?.("import");
       renderImportContext(true);
       renderLanguage();
       renderGrid();
@@ -1783,26 +2133,65 @@
 
     /**
      * Closes the organizer.
+     * @param {{syncRoute?:boolean}} [options] Route synchronization behavior.
      * @returns {void}
      */
-    function close() {
+    function close(options = {}) {
       if (state.videoExtracting) return;
       if (!elements.organizerLoopPanel.hidden) closeLoopFinder();
       closeVideoImporter();
       elements.organizerModal.hidden = true;
       setEditorInert(false);
       document.body.classList.remove("organizerOpen");
+      if (options.syncRoute !== false) hooks.onClose?.();
       window.clearTimeout(state.previewTimer);
       if (state.returnFocus && typeof state.returnFocus.focus === "function") state.returnFocus.focus();
     }
 
-    elements.organizerOpen.addEventListener("click", () => open().catch((error) => setStatus(text("failed", { message: error.message }), "error")));
-    elements.organizerClose.addEventListener("click", close);
+    /**
+     * Requests a safe close and confirms before discarding staged workset changes.
+     * @param {{syncRoute?:boolean,force?:boolean}} [options] Close behavior.
+     * @returns {Promise<boolean>} Whether the organizer closed.
+     */
+    async function requestClose(options = {}) {
+      if (state.busy || state.videoExtracting) return false;
+      if (hasUnsavedChanges() && !options.force) {
+        const confirmed = await requestConfirmation(text("discardConfirm"), [], {
+          title: text("discardTitle"),
+          confirmLabel: text("discardAccept"),
+        });
+        if (!confirmed) return false;
+      }
+      close(options);
+      return true;
+    }
+
+    elements.organizerOpen.addEventListener("click", () =>
+      open().catch((error) => setStatus(text("failed", { message: error.message }), "error")),
+    );
+    elements.organizerCopyLink.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        setStatus(text("linkCopied"), "success");
+      } catch (_error) {
+        setStatus(text("linkCopyFailed"), "error");
+      }
+    });
+    elements.organizerHome.addEventListener("click", () => {
+      requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
+    });
+    elements.organizerClose.addEventListener("click", () => {
+      requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
+    });
     elements.organizerModal.addEventListener("pointerdown", (event) => {
-      if (event.target === elements.organizerModal) close();
+      if (event.target === elements.organizerModal) {
+        requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
+      }
     });
     elements.organizerInvert.addEventListener("click", () => {
-      state.frames.forEach((frame) => { frame.included = !frame.included; });
+      state.frames.forEach((frame) => {
+        frame.included = !frame.included;
+      });
       renderGrid();
       restartPreview();
     });
@@ -1827,25 +2216,21 @@
       setStatus(text("sorted"), "success");
     });
     elements.organizerFlip.addEventListener("click", flipFrames);
-    elements.organizerImport.addEventListener("click", () => {
-      elements.organizerFileInput.value = "";
-      elements.organizerFileInput.click();
-    });
     elements.organizerFileInput.addEventListener("change", () => {
-      importFiles(elements.organizerFileInput.files).catch((error) => {
+      const files = Array.from(elements.organizerFileInput.files || []);
+      elements.organizerFileInput.value = "";
+      importFiles(files).catch((error) => {
         setStatus(text("failed", { message: error.message }), "error");
       });
-    });
-    elements.organizerImportVideo.addEventListener("click", () => {
-      elements.organizerVideoInput.value = "";
-      elements.organizerVideoInput.click();
     });
     elements.organizerVideoReselect.addEventListener("click", () => {
       elements.organizerVideoInput.value = "";
       elements.organizerVideoInput.click();
     });
     elements.organizerVideoInput.addEventListener("change", () => {
-      loadVideoFile(elements.organizerVideoInput.files?.[0]).catch((error) => {
+      const [file] = Array.from(elements.organizerVideoInput.files || []);
+      elements.organizerVideoInput.value = "";
+      loadVideoFile(file).catch((error) => {
         setVideoStatus(text("failed", { message: error.message }), "error");
       });
     });
@@ -1874,11 +2259,9 @@
     });
     elements.organizerLoopStartInput.addEventListener("blur", () => {
       const maximum = Math.max(1, state.frames.filter((frame) => frame.included).length);
-      elements.organizerLoopStartInput.value = String(clamp(
-        Math.round(elements.organizerLoopStartInput.value || 1),
-        1,
-        maximum,
-      ));
+      elements.organizerLoopStartInput.value = String(
+        clamp(Math.round(elements.organizerLoopStartInput.value || 1), 1, maximum),
+      );
     });
     elements.organizerLoopStartSearch.addEventListener("click", () => {
       startLoopSearch().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
@@ -2007,11 +2390,15 @@
     elements.organizerProjectSelect.addEventListener("change", syncImportProjectField);
     elements.organizerSpeed.addEventListener("input", schedulePreviewFrame);
     elements.organizerApplyTag.addEventListener("click", () => {
-      selectedFrames().forEach((frame) => { frame.tag = elements.organizerTag.value.trim(); });
+      selectedFrames().forEach((frame) => {
+        frame.tag = elements.organizerTag.value.trim();
+      });
       renderGrid();
     });
     elements.organizerClearTag.addEventListener("click", () => {
-      selectedFrames().forEach((frame) => { frame.tag = ""; });
+      selectedFrames().forEach((frame) => {
+        frame.tag = "";
+      });
       renderGrid();
     });
     elements.organizerViewOriginal.addEventListener("click", () => {
@@ -2040,12 +2427,19 @@
         trapFocus(event, layer);
         return;
       }
-      if (!elements.organizerModal.hidden && elements.organizerConfirmPanel.hidden && elements.organizerLoopPanel.hidden && elements.organizerVideoPanel.hidden) {
+      if (
+        !elements.organizerModal.hidden &&
+        elements.organizerConfirmPanel.hidden &&
+        elements.organizerLoopPanel.hidden &&
+        elements.organizerVideoPanel.hidden
+      ) {
         const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(event.target?.tagName);
         const command = event.metaKey || event.ctrlKey;
         if (!typing && command && event.key.toLowerCase() === "a") {
           event.preventDefault();
-          state.frames.forEach((frame) => { frame.selected = true; });
+          state.frames.forEach((frame) => {
+            frame.selected = true;
+          });
           state.anchorIndex = 0;
           renderGrid();
           return;
@@ -2069,7 +2463,7 @@
       if (!elements.organizerConfirmPanel.hidden) resolveConfirmation(false);
       else if (!elements.organizerLoopPanel.hidden) closeLoopFinder();
       else if (!elements.organizerVideoPanel.hidden) closeVideoImporter();
-      else close();
+      else requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
     });
 
     renderLanguage();
@@ -2077,6 +2471,11 @@
     return {
       open,
       openImport,
+      close,
+      requestClose,
+      isOpen: () => !elements.organizerModal.hidden,
+      getMode: () => state.mode,
+      hasUnsavedChanges,
       setLanguage(nextLanguage) {
         state.language = nextLanguage === "en" ? "en" : "zh";
         renderLanguage();
@@ -2085,4 +2484,4 @@
   }
 
   root.FrameOrganizer = { createController };
-}(globalThis));
+})(globalThis);

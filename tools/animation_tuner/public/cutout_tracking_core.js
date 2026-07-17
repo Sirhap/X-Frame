@@ -525,32 +525,81 @@
   }
 
   /**
+   * Keeps PCA axes continuous across frames. Eigenvectors are directionless,
+   * so the same pose may otherwise alternate between 0 and 180 degrees and
+   * mirror every mapped repair around the subject center.
+   * @param {object} reference Last accepted descriptor.
+   * @param {object} candidate Newly measured descriptor.
+   * @returns {object} Descriptor with stable major/minor axis directions.
+   */
+  function alignTrackingDescriptor(reference, candidate) {
+    if (!reference?.majorAxis || !candidate?.majorAxis) return candidate;
+    const aligned = {
+      ...candidate,
+      majorAxis: { ...candidate.majorAxis },
+      minorAxis: { ...candidate.minorAxis },
+    };
+    if (candidate.isotropic && reference.majorAxis && reference.minorAxis) {
+      aligned.majorAxis = { ...reference.majorAxis };
+      aligned.minorAxis = { ...reference.minorAxis };
+      aligned.angle = Number(reference.angle || 0);
+      return aligned;
+    }
+    const directionDot = (
+      aligned.majorAxis.x * reference.majorAxis.x
+      + aligned.majorAxis.y * reference.majorAxis.y
+    );
+    if (directionDot >= 0) return aligned;
+    aligned.majorAxis.x *= -1;
+    aligned.majorAxis.y *= -1;
+    aligned.minorAxis.x *= -1;
+    aligned.minorAxis.y *= -1;
+    aligned.angle = Math.atan2(aligned.majorAxis.y, aligned.majorAxis.x);
+    return aligned;
+  }
+
+  /**
+   * Applies a deliberately broad but bounded reacquisition gate after several
+   * missing frames. Local texture/region validation remains the final guard for
+   * point repairs, while these limits reject unrelated tiny debris and scenery.
+   * @param {ReturnType<typeof compareShapeDescriptors>} comparison Last-frame comparison.
+   * @param {ReturnType<typeof compareShapeDescriptors>} sourceComparison Source-frame comparison.
+   * @returns {boolean} Whether the candidate is safe enough for reacquisition.
+   */
+  function isPlausibleReacquisition(comparison, sourceComparison) {
+    const candidates = [comparison, sourceComparison];
+    return candidates.some((result) => (
+      result.score >= 0.24
+      && result.areaRatio >= 0.35
+      && result.areaRatio <= 2.85
+      && result.aspectRatio >= 0.25
+      && result.aspectRatio <= 4
+      && result.compactnessRatio >= 0.2
+      && result.compactnessRatio <= 5
+    ));
+  }
+
+  /**
    * Selects the best shape candidate using shape similarity and motion prediction.
    * @param {object} sourceDescriptor Original propagation source descriptor.
    * @param {Array<object>} candidates Target-frame candidates.
    * @param {object} state Sequential tracking state.
-   * @returns {{candidate:object,score:number,strictMode:boolean}|null}
+   * @returns {{candidate:object,score:number,strictMode:boolean,reacquisitionLevel:number}|null}
    */
   function selectTrackedCandidate(sourceDescriptor, candidates, state) {
     if (!sourceDescriptor || !Array.isArray(candidates) || !candidates.length || !state) return null;
-    const strictMode = state.failureStreak >= 8;
+    const reacquisitionLevel = Math.min(3, Math.floor(state.failureStreak / 2));
     const predictedCenter = predictTrackingCenter(state, state.failureStreak + 1);
     const reference = state.lastDescriptor || sourceDescriptor;
     const searchRadius = Math.max(
-      strictMode ? 40 : 60,
-      reference.majorLength * (strictMode ? 2.5 : 5),
+      60 + reacquisitionLevel * 36,
+      reference.majorLength * (5 + reacquisitionLevel * 1.5),
     );
     let best = null;
-    for (const candidate of candidates.slice(0, 8)) {
-      const comparison = compareShapeDescriptors(reference, candidate, strictMode ? {
-        areaMinimum: 0.78,
-        areaMaximum: 1.28,
-        aspectMinimum: 0.72,
-        aspectMaximum: 1.4,
-        compactnessMinimum: 0.62,
-        compactnessMaximum: 1.65,
-      } : {});
-      if (!comparison.accepted) continue;
+    const candidateLimit = reacquisitionLevel ? 16 : 8;
+    for (const rawCandidate of candidates.slice(0, candidateLimit)) {
+      const candidate = alignTrackingDescriptor(reference, rawCandidate);
+      const comparison = compareShapeDescriptors(reference, candidate);
       const motionDistance = Math.hypot(
         candidate.center.x - predictedCenter.x,
         candidate.center.y - predictedCenter.y,
@@ -558,9 +607,25 @@
       if (motionDistance > searchRadius) continue;
       const motionScore = clamp(1 - motionDistance / searchRadius, 0, 1);
       const sourceComparison = compareShapeDescriptors(sourceDescriptor, candidate);
-      if (!sourceComparison.accepted && strictMode) continue;
-      const score = comparison.score * 0.55 + sourceComparison.score * 0.2 + motionScore * 0.25;
-      if (!best || score > best.score) best = { candidate, score, strictMode };
+      const accepted = comparison.accepted || (
+        reacquisitionLevel >= 1 && sourceComparison.accepted
+      ) || (
+        reacquisitionLevel >= 2 && isPlausibleReacquisition(comparison, sourceComparison)
+      );
+      if (!accepted) continue;
+      const score = (
+        comparison.score * 0.4
+        + sourceComparison.score * 0.25
+        + motionScore * 0.35
+      );
+      if (!best || score > best.score) {
+        best = {
+          candidate,
+          score,
+          strictMode: false,
+          reacquisitionLevel,
+        };
+      }
     }
     return best;
   }
@@ -778,8 +843,69 @@
     };
   }
 
+  /**
+   * Maps one pixel coordinate between source canvases without subject tracking.
+   * This is the deterministic propagation model used by isolated single-frame editing.
+   * @param {{x:number,y:number}} point Source-canvas point.
+   * @param {{width:number,height:number}} source Source canvas dimensions.
+   * @param {{width:number,height:number}} target Target canvas dimensions.
+   * @returns {{x:number,y:number}} Proportionally mapped target-canvas point.
+   */
+  function mapCanvasPoint(point, source, target) {
+    const sourceWidth = Math.max(1, Number(source?.width || 1));
+    const sourceHeight = Math.max(1, Number(source?.height || 1));
+    const targetWidth = Math.max(1, Number(target?.width || 1));
+    const targetHeight = Math.max(1, Number(target?.height || 1));
+    return {
+      x: clamp(Number(point?.x || 0) * targetWidth / sourceWidth, 0, targetWidth - 1),
+      y: clamp(Number(point?.y || 0) * targetHeight / sourceHeight, 0, targetHeight - 1),
+    };
+  }
+
+  /**
+   * Maps an axis-aligned selection between canvases by normalized coordinates.
+   * @param {{x1:number,y1:number,x2:number,y2:number}} rectangle Source rectangle.
+   * @param {{width:number,height:number}} source Source canvas dimensions.
+   * @param {{width:number,height:number}} target Target canvas dimensions.
+   * @returns {{x1:number,y1:number,x2:number,y2:number}} Target rectangle.
+   */
+  function mapCanvasRectangle(rectangle, source, target) {
+    const first = mapCanvasPoint({ x: rectangle.x1, y: rectangle.y1 }, source, target);
+    const second = mapCanvasPoint({ x: rectangle.x2, y: rectangle.y2 }, source, target);
+    return {
+      x1: Math.min(first.x, second.x),
+      y1: Math.min(first.y, second.y),
+      x2: Math.max(first.x, second.x),
+      y2: Math.max(first.y, second.y),
+    };
+  }
+
+  /**
+   * Maps a brush stroke or point repair between canvases by normalized coordinates.
+   * @param {{points:Array<{x:number,y:number}>,size?:number}} stroke Source stroke.
+   * @param {{width:number,height:number}} source Source canvas dimensions.
+   * @param {{width:number,height:number}} target Target canvas dimensions.
+   * @returns {{points:Array<{x:number,y:number}>,size:number}} Target stroke geometry.
+   */
+  function mapCanvasBrushStroke(stroke, source, target) {
+    const points = Array.isArray(stroke?.points)
+      ? stroke.points
+        .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y))
+        .map((point) => mapCanvasPoint(point, source, target))
+      : [];
+    const widthScale = Math.max(1, Number(target?.width || 1))
+      / Math.max(1, Number(source?.width || 1));
+    const heightScale = Math.max(1, Number(target?.height || 1))
+      / Math.max(1, Number(source?.height || 1));
+    return {
+      points,
+      size: Math.max(0.5, Number(stroke?.size || 1) * Math.sqrt(widthScale * heightScale)),
+    };
+  }
+
   return {
     advanceTrackingState,
+    alignTrackingDescriptor,
     checkReferenceShapeMatch,
     compareShapeDescriptors,
     compareReferenceShapeStats,
@@ -788,6 +914,9 @@
     createShapeCandidates,
     createTrackingState,
     findReferenceNearestColorInRadius,
+    mapCanvasBrushStroke,
+    mapCanvasPoint,
+    mapCanvasRectangle,
     mapBrushStroke,
     mapPoint,
     mapRectangle,

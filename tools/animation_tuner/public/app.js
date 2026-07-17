@@ -6,6 +6,8 @@ const els = {
   projectSelect: document.querySelector("#projectSelect"),
   importAnimationOpen: document.querySelector("#importAnimationOpen"),
   refreshProject: document.querySelector("#refreshProject"),
+  clearProject: document.querySelector("#clearProject"),
+  deleteProject: document.querySelector("#deleteProject"),
   languageSelect: document.querySelector("#languageSelect"),
   languageButtons: Array.from(document.querySelectorAll("[data-language]")),
   themeButtons: Array.from(document.querySelectorAll("[data-theme]")),
@@ -20,6 +22,19 @@ const els = {
   canvasTitle: document.querySelector("#canvasTitle"),
   selectionHud: document.querySelector("#selectionHud"),
   coordHud: document.querySelector("#coordHud"),
+  homeHub: document.querySelector("#homeHub"),
+  homeHubOpen: document.querySelector("#homeHubOpen"),
+  homeHubContinue: document.querySelector("#homeHubContinue"),
+  homeAnimationCount: document.querySelector("#homeAnimationCount"),
+  homeFrameCount: document.querySelector("#homeFrameCount"),
+  homeProfileCount: document.querySelector("#homeProfileCount"),
+  homeLastEdited: document.querySelector("#homeLastEdited"),
+  homeRecentProject: document.querySelector("#homeRecentProject"),
+  homeRecentAnimation: document.querySelector("#homeRecentAnimation"),
+  homeRecentTool: document.querySelector("#homeRecentTool"),
+  homeProjectPath: document.querySelector("#homeProjectPath"),
+  homeCopyProjectPath: document.querySelector("#homeCopyProjectPath"),
+  homeToolButtons: Array.from(document.querySelectorAll("[data-home-tool]")),
   stage: document.querySelector("#stage"),
   filmstrip: document.querySelector("#filmstrip"),
   baseScale: document.querySelector("#baseScale"),
@@ -115,16 +130,47 @@ const I18N = {
     boxY: "框 Y",
     brandSubtitle: "帧动画调参工作台",
     canvas: "画布",
+    homeHubTitle: "选择工作台",
+    skipToMain: "跳到主要内容",
+    homeHubSubtitle: "从导入、整理到抠图，所有处理都在本机完成。",
+    homeHubContinue: "继续编辑画布 →",
+    homeHubOpen: "⌂ 工作台首页",
+    homeImportTitle: "导入动画",
+    homeImportHint: "从图片序列或视频创建动画",
+    homeOrganizerTitle: "帧工作集",
+    homeOrganizerHint: "重排、减帧与相似度分析",
+    homeCutoutTitle: "批量抠图",
+    homeCutoutHint: "本地背景清除与边缘修正",
+    homeRecentProject: "当前项目",
+    homeRecentAnimation: "当前动画",
+    homeRecentTool: "最近工作台",
+    homeAnimations: "动画",
+    homeFrames: "总帧数",
+    homeCharacters: "角色",
+    homeLastEdit: "最近编辑",
+    homeProjectPath: "项目路径",
+    copy: "复制",
+    copied: "已复制项目路径",
+    copyFailed: "无法复制路径，请手动选择文本。",
+    switchDiscardConfirm: "当前帧工作集有未应用的修改。切换工具将丢失这些修改，是否继续？",
     character: "角色",
     characterBase: "角色 Base",
     clearBoxOverride: "清除碰撞框覆盖",
     clearFrameSfx: "清除帧音效",
     clearGroupOverrides: "清除整组覆盖",
+    clearAnimation: "清空动画",
+    clearAnimationConfirm: "清空动画“{animation}”？将删除该动画组及全部 {count} 帧。此操作无法撤销。",
+    clearProject: "清空项目",
+    clearProjectConfirm: "清空项目“{project}”？将删除所有动画、帧、附件和调参，但保留项目及 Godot 绑定。此操作无法撤销。",
     clearSelected: "清除选中帧",
     compareThenPlay: "对比 / 接着播放",
     coordHudIdle: "鼠标 -, - | 偏移 -, -",
     copyBaseToSelected: "复制 Base 到选中帧",
     deleteBoxSelected: "删除选中帧的碰撞框",
+    deleteProject: "删除项目",
+    deleteProjectConfirm: "删除项目“{project}”？将删除 Frame Tuner 中的项目记录、动画和本地素材；不会删除外部 Godot 工程。此操作无法撤销。",
+    deleteSelectedFrames: "删除所选",
+    deleteFramesConfirm: "删除当前动画中选中的 {count} 帧？剩余帧会重新编号。",
     disableFrame: "禁用此帧",
     dropAudioFile: "请把音频文件拖到当前帧音效区域。",
     dropFrameSfx: "把这一帧的音效拖到这里",
@@ -134,6 +180,8 @@ const I18N = {
     frame: "帧",
     frameBase: "帧 Base",
     frameCountLabel: "{count} 帧",
+    frameMutationFailed: "帧操作失败：{message}",
+    framesDeleted: "已删除 {count} 帧",
     frameSfx: "帧音效：{name}",
     frameSfxDeleteConfirm: "删除这一帧的音效？",
     frameSfxDeleted: "已删除帧音效",
@@ -142,7 +190,6 @@ const I18N = {
     frameSfxSessionOnly: "帧音效只会保留在本次会话：{message}",
     frameSfxSaved: "帧音效已保存到项目：{count}",
     frameAttachmentAdded: "已添加附加图：{name}",
-    frameAttachmentDeleteConfirm: "删除这个附加图？",
     frameAttachmentLayerAbove: "附加图在角色上方",
     frameAttachmentLayerBelow: "附加图在角色下方",
     frameAttachmentRemove: "删除附加图",
@@ -199,6 +246,9 @@ const I18N = {
     playback: "播放",
     preloadedFrames: "已预载 {count} 帧\n{root}",
     project: "项目",
+    projectCleared: "项目已清空：{project}",
+    projectDeleted: "项目已删除：{project}",
+    projectMutationFailed: "项目操作失败：{message}",
     projectRefreshFailed: "刷新失败：{message}",
     projectRefreshConfirm: "刷新会丢弃未保存的调参，继续吗？",
     projectSwitchConfirm: "切换项目会丢弃未保存的调参，继续吗？",
@@ -257,6 +307,7 @@ const I18N = {
     updateRestarting: "更新完成，正在重启 Tuner 并重新连接……",
     updateFailed: "更新失败：{message}",
     updateReconnectFailed: "Tuner 已更新，但自动重连超时。请刷新页面或重新启动 Tuner。",
+    animationCleared: "已清空动画：{animation}",
     warnings: "\n警告：\n{warnings}",
     width: "宽",
   },
@@ -272,16 +323,47 @@ const I18N = {
     boxY: "Box Y",
     brandSubtitle: "Frame tuning workbench",
     canvas: "Canvas",
+    homeHubTitle: "Choose a workbench",
+    skipToMain: "Skip to main content",
+    homeHubSubtitle: "Import, organize, and cut out frames entirely on this Mac.",
+    homeHubContinue: "Continue to canvas →",
+    homeHubOpen: "⌂ Workbench Home",
+    homeImportTitle: "Import Animation",
+    homeImportHint: "Create an animation from images or video",
+    homeOrganizerTitle: "Frame Workset",
+    homeOrganizerHint: "Reorder, reduce, and analyze similarity",
+    homeCutoutTitle: "Batch Cutout",
+    homeCutoutHint: "Remove backgrounds and refine edges locally",
+    homeRecentProject: "Current project",
+    homeRecentAnimation: "Current animation",
+    homeRecentTool: "Recent workbench",
+    homeAnimations: "Animations",
+    homeFrames: "Total frames",
+    homeCharacters: "Characters",
+    homeLastEdit: "Last edit",
+    homeProjectPath: "Project path",
+    copy: "Copy",
+    copied: "Project path copied",
+    copyFailed: "Could not copy the path. Select the text manually.",
+    switchDiscardConfirm: "The frame workset has unapplied changes. Switching tools will discard them. Continue?",
     character: "Character",
     characterBase: "Character Base",
     clearBoxOverride: "Clear box override",
     clearFrameSfx: "Clear frame SFX",
     clearGroupOverrides: "Clear group overrides",
+    clearAnimation: "Clear Animation",
+    clearAnimationConfirm: "Clear animation “{animation}” and delete all {count} frames? This cannot be undone.",
+    clearProject: "Clear Project",
+    clearProjectConfirm: "Clear project “{project}”? All animations, frames, attachments, and tuning will be deleted while the project and Godot binding remain. This cannot be undone.",
     clearSelected: "Clear selected",
     compareThenPlay: "Compare / then play",
     coordHudIdle: "Mouse -, - | Offset -, -",
     copyBaseToSelected: "Copy base to selected",
     deleteBoxSelected: "Delete box on selected frames",
+    deleteProject: "Delete Project",
+    deleteProjectConfirm: "Delete project “{project}” from Frame Tuner, including its animations and local assets? The external Godot project will not be deleted. This cannot be undone.",
+    deleteSelectedFrames: "Delete Selected",
+    deleteFramesConfirm: "Delete {count} selected frames from this animation? Remaining frames will be renumbered.",
     disableFrame: "Disable frame",
     dropAudioFile: "Drop an audio file onto the current frame SFX area.",
     dropFrameSfx: "Drop frame SFX here",
@@ -291,6 +373,8 @@ const I18N = {
     frame: "Frame",
     frameBase: "Frame Base",
     frameCountLabel: "{count} frames",
+    frameMutationFailed: "Frame operation failed: {message}",
+    framesDeleted: "Deleted {count} frames",
     frameSfx: "Frame SFX: {name}",
     frameSfxDeleteConfirm: "Delete this frame SFX?",
     frameSfxDeleted: "Frame SFX deleted",
@@ -299,7 +383,6 @@ const I18N = {
     frameSfxSessionOnly: "Frame SFX will stay for this session only: {message}",
     frameSfxSaved: "Frame SFX saved to project: {count}",
     frameAttachmentAdded: "Added attached image: {name}",
-    frameAttachmentDeleteConfirm: "Delete this attached image?",
     frameAttachmentLayerAbove: "Attached image above character",
     frameAttachmentLayerBelow: "Attached image below character",
     frameAttachmentRemove: "Delete attached image",
@@ -356,6 +439,9 @@ const I18N = {
     playback: "Playback",
     preloadedFrames: "Preloaded {count} frames\n{root}",
     project: "Project",
+    projectCleared: "Project cleared: {project}",
+    projectDeleted: "Project deleted: {project}",
+    projectMutationFailed: "Project operation failed: {message}",
     projectRefreshFailed: "Refresh failed: {message}",
     projectRefreshConfirm: "Refresh and discard unsaved tuning changes?",
     projectSwitchConfirm: "Switch project and discard unsaved tuning changes?",
@@ -414,6 +500,7 @@ const I18N = {
     updateRestarting: "Update complete. Restarting Tuner and reconnecting…",
     updateFailed: "Update failed: {message}",
     updateReconnectFailed: "Tuner was updated, but automatic reconnect timed out. Refresh the page or restart Tuner.",
+    animationCleared: "Animation cleared: {animation}",
     warnings: "\nWarnings:\n{warnings}",
     width: "Width",
   },
@@ -461,6 +548,7 @@ let coordinateOwnerImages = [];
 let attachedLayerImageSets = new Map();
 let frameImageAttachments = [];
 let attachmentAssets = [];
+let frameMutationPending = false;
 let selectedAttachmentId = "";
 let frameImageAttachmentClipboard = [];
 let frameImageAttachmentClipboardProjectId = "";
@@ -519,6 +607,181 @@ let tunerUpdateToken = "";
 let tunerUpdatePhase = "";
 let batchCutout = null;
 let frameOrganizer = null;
+let cutoutReturnTool = "";
+
+/**
+ * Keeps the original canvas editor as the default view for every page load.
+ * The optional workbench hub is shown only after an explicit user action.
+ * @type {boolean}
+ */
+let homeHubDismissed = true;
+
+/**
+ * Updates the home dashboard visibility and recent-work labels.
+ * @returns {void}
+ */
+function renderHomeHub() {
+  if (!els.homeHub) return;
+  els.homeHub.hidden = currentWorkbenchRoute() !== "" || homeHubDismissed;
+  els.homeHubOpen?.setAttribute("aria-pressed", String(!els.homeHub.hidden));
+  if (els.homeRecentProject) {
+    els.homeRecentProject.textContent = projectLabel(config?.activeProject) || "—";
+  }
+  const groups = Array.isArray(config?.groups) ? config.groups : [];
+  const profiles = Array.isArray(config?.profiles) ? config.profiles : [];
+  const numberFormatter = new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en");
+  if (els.homeAnimationCount) els.homeAnimationCount.textContent = numberFormatter.format(groups.length);
+  if (els.homeFrameCount) {
+    const frameCount = groups.reduce((total, group) => total + (Array.isArray(group.frames) ? group.frames.length : 0), 0);
+    els.homeFrameCount.textContent = numberFormatter.format(frameCount);
+  }
+  if (els.homeProfileCount) els.homeProfileCount.textContent = numberFormatter.format(profiles.length);
+  if (els.homeRecentAnimation) els.homeRecentAnimation.textContent = currentGroup ? groupLabel(currentGroup) : "—";
+  if (els.homeProjectPath) {
+    els.homeProjectPath.textContent = config?.activeProject?.workspacePath || config?.workspaceRoot || "—";
+  }
+  if (els.homeLastEdited) {
+    const timestamp = Date.parse(localStorage.getItem("xsxbFrameTuner.lastEditedAt") || "");
+    els.homeLastEdited.textContent = Number.isFinite(timestamp)
+      ? new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(timestamp)
+      : "—";
+  }
+  if (els.homeRecentTool) {
+    const recent = localStorage.getItem("xsxbFrameTuner.recentWorkbench") || "";
+    const labels = {
+      cutout: t("homeCutoutTitle"),
+      import: t("homeImportTitle"),
+      organizer: t("homeOrganizerTitle"),
+    };
+    els.homeRecentTool.textContent = labels[recent] || "—";
+  }
+  updateDocumentTitle();
+}
+
+/**
+ * Reads the workbench route encoded in the current URL.
+ * @returns {"cutout"|"organizer"|"import"|""} Active workbench route.
+ */
+function currentWorkbenchRoute() {
+  const routeByPath = {
+    "/tools/cutout": "cutout",
+    "/tools/import": "import",
+    "/tools/organizer": "organizer",
+  };
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (routeByPath[pathname]) return routeByPath[pathname];
+  const legacyRoute = new URLSearchParams(window.location.search).get("tool") || "";
+  return ["cutout", "organizer", "import"].includes(legacyRoute) ? legacyRoute : "";
+}
+
+/**
+ * Updates the browser tab title from the active route and animation.
+ * @returns {void}
+ */
+function updateDocumentTitle() {
+  const route = currentWorkbenchRoute();
+  const routeLabels = {
+    cutout: t("homeCutoutTitle"),
+    import: t("homeImportTitle"),
+    organizer: t("homeOrganizerTitle"),
+  };
+  const context = routeLabels[route] || (currentGroup ? groupLabel(currentGroup) : "");
+  document.title = context ? `${context} · XSXB Frame Tuner` : "XSXB Frame Tuner";
+}
+
+/**
+ * Writes a workbench route without disturbing project, group, or frame state.
+ * @param {"cutout"|"organizer"|"import"|""} route Destination route.
+ * @param {{push?:boolean}} [options] History behavior.
+ * @returns {void}
+ */
+function syncWorkbenchRoute(route, options = {}) {
+  const pathByRoute = {
+    cutout: "/tools/cutout",
+    import: "/tools/import",
+    organizer: "/tools/organizer",
+  };
+  const targetPath = pathByRoute[route] || "/";
+  const legacyRoute = new URLSearchParams(window.location.search).has("tool");
+  if (currentWorkbenchRoute() === route && window.location.pathname === targetPath && !legacyRoute) return;
+  const url = new URL(window.location.href);
+  url.pathname = targetPath;
+  url.searchParams.delete("tool");
+  const method = options.push ? "pushState" : "replaceState";
+  window.history[method]({ xsxbWorkbench: route || "home" }, "", url);
+  if (route) localStorage.setItem("xsxbFrameTuner.recentWorkbench", route);
+  renderHomeHub();
+}
+
+/**
+ * Opens or closes workbenches to match the current browser URL.
+ * @returns {Promise<boolean>} Whether the requested route was applied.
+ */
+async function applyWorkbenchRoute() {
+  const route = currentWorkbenchRoute();
+  if (new URLSearchParams(window.location.search).has("tool")) {
+    syncWorkbenchRoute(route);
+  }
+  renderHomeHub();
+  if (route === "cutout") {
+    if (frameOrganizer?.isOpen()) {
+      const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
+      const closed = frameOrganizer.requestClose
+        ? await frameOrganizer.requestClose({ syncRoute: false })
+        : (frameOrganizer.close({ syncRoute: false }), true);
+      if (!closed) {
+        syncWorkbenchRoute(organizerRoute);
+        return false;
+      }
+    }
+    if (!batchCutout?.isOpen()) batchCutout?.open({ syncRoute: false });
+    return true;
+  }
+  if (batchCutout?.isOpen()) {
+    const closed = batchCutout.requestClose
+      ? await batchCutout.requestClose(null, { syncRoute: false })
+      : (batchCutout.close(null, { syncRoute: false }), true);
+    if (!closed) {
+      syncWorkbenchRoute("cutout");
+      return false;
+    }
+    await Promise.resolve();
+  }
+  if (route === "organizer" || route === "import") {
+    const targetMode = route === "import" ? "import" : "edit";
+    if (!frameOrganizer?.isOpen() || frameOrganizer.getMode?.() !== targetMode) {
+      if (frameOrganizer?.isOpen()) {
+        const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
+        const closed = frameOrganizer.requestClose
+          ? await frameOrganizer.requestClose({ syncRoute: false })
+          : (frameOrganizer.close({ syncRoute: false }), true);
+        if (!closed) {
+          syncWorkbenchRoute(organizerRoute);
+          return false;
+        }
+      }
+      const open = targetMode === "import" ? frameOrganizer?.openImport : frameOrganizer?.open;
+      await open?.({ syncRoute: false });
+    }
+    return true;
+  }
+  if (frameOrganizer?.isOpen()) {
+    const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
+    const closed = frameOrganizer.requestClose
+      ? await frameOrganizer.requestClose({ syncRoute: false })
+      : (frameOrganizer.close({ syncRoute: false }), true);
+    if (!closed) {
+      syncWorkbenchRoute(organizerRoute);
+      return false;
+    }
+  }
+  return true;
+}
 
 /**
  * Persists the navigable project/group/frame selection in the browser URL.
@@ -683,6 +946,7 @@ function applyLanguage() {
     renderFilmstrip();
     status(loadedStatusText());
   }
+  renderHomeHub();
 }
 
 function normalizeTheme(theme) {
@@ -802,7 +1066,9 @@ function updateSaveState() {
 function markDirty() {
   editRevision += 1;
   dirty = true;
+  localStorage.setItem("xsxbFrameTuner.lastEditedAt", new Date().toISOString());
   updateSaveState();
+  renderHomeHub();
 }
 
 function markClean() {
@@ -1555,6 +1821,8 @@ function renderProjectSelect() {
   if (active) localStorage.setItem("xsxbFrameTuner.project", active);
   els.projectSelect.value = active;
   els.projectSelect.disabled = !projects.length;
+  if (els.clearProject) els.clearProject.disabled = !active;
+  if (els.deleteProject) els.deleteProject.disabled = !active;
 }
 
 function resetProjectSession() {
@@ -1606,6 +1874,94 @@ async function activateProject(projectId) {
   dirty = false;
   await loadConfig();
   resizeCanvas();
+}
+
+/**
+ * Reads a JSON mutation response and preserves the server's useful error message.
+ * @param {Response} response Fetch response.
+ * @returns {Promise<object>} Parsed payload.
+ */
+async function readMutationResponse(response) {
+  const responseText = await response.text();
+  let result = null;
+  try {
+    result = JSON.parse(responseText);
+  } catch {
+    result = null;
+  }
+  if (!response.ok) throw new Error(result?.error || responseText || `HTTP ${response.status}`);
+  return result || {};
+}
+
+/**
+ * Disables project-destructive controls while a request is in flight.
+ * @param {boolean} busy Whether a project mutation is running.
+ * @returns {void}
+ */
+function setProjectMutationBusy(busy) {
+  const disabled = Boolean(busy);
+  if (els.clearProject) els.clearProject.disabled = disabled || !activeProjectId();
+  if (els.deleteProject) els.deleteProject.disabled = disabled || !activeProjectId();
+  if (els.projectSelect) els.projectSelect.disabled = disabled || !(config?.projects?.length);
+}
+
+/**
+ * Clears all Frame Tuner content owned by the active project.
+ * @returns {Promise<boolean>} Whether the project was cleared.
+ */
+async function clearActiveProject() {
+  const project = config?.activeProject;
+  if (!project?.id) return false;
+  const label = projectLabel(project);
+  if (!window.confirm(t("clearProjectConfirm", { project: label }))) return false;
+  setProjectMutationBusy(true);
+  try {
+    const response = await fetch("/api/projects/clear", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, baseRevision: config.dataRevision }),
+    });
+    await readMutationResponse(response);
+    resetProjectSession();
+    dirty = false;
+    await loadConfig();
+    resizeCanvas();
+    status(t("projectCleared", { project: label }));
+    return true;
+  } finally {
+    setProjectMutationBusy(false);
+  }
+}
+
+/**
+ * Deletes the active Frame Tuner project without touching its external Godot root.
+ * @returns {Promise<boolean>} Whether the project was deleted.
+ */
+async function deleteActiveProject() {
+  const project = config?.activeProject;
+  if (!project?.id) return false;
+  const label = projectLabel(project);
+  if (!window.confirm(t("deleteProjectConfirm", { project: label }))) return false;
+  setProjectMutationBusy(true);
+  try {
+    const response = await fetch("/api/projects/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, baseRevision: config.dataRevision }),
+    });
+    const result = await readMutationResponse(response);
+    selectedProjectId = String(result.activeProjectId || "");
+    if (selectedProjectId) localStorage.setItem("xsxbFrameTuner.project", selectedProjectId);
+    else localStorage.removeItem("xsxbFrameTuner.project");
+    resetProjectSession();
+    dirty = false;
+    await loadConfig();
+    resizeCanvas();
+    status(t("projectDeleted", { project: label }));
+    return true;
+  } finally {
+    setProjectMutationBusy(false);
+  }
 }
 
 function groupBindingLabel(group) {
@@ -2437,11 +2793,13 @@ function updateCanvasTitle(group = currentGroup) {
   if (!group) {
     els.canvasTitle.textContent = t("canvas");
     updateWorkbenchHud(null);
+    updateDocumentTitle();
     return;
   }
   const count = selectedFrameCount();
   els.canvasTitle.textContent = `${group.name} - ${t("frameCountLabel", { count: group.frames.length })}${count > 1 ? ` - ${t("selectedFrames", { count })}` : ""}`;
   updateWorkbenchHud(group);
+  updateDocumentTitle();
 }
 
 function frameTransform(index = selectedFrame, group = currentGroup) {
@@ -3864,6 +4222,10 @@ function renderAttachmentAssetTray() {
     <input class="assetImportInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
     <div class="attachmentAssetList"></div>
     ${groupAssets.length ? "" : `<small>${escapeHtml(t("assetLibraryEmpty"))}</small>`}
+    <div class="animationFrameActions">
+      <button type="button" class="secondary deleteSelectedFrames">${escapeHtml(t("deleteSelectedFrames"))} (${selectedFrameCount()})</button>
+      <button type="button" class="secondary dangerAction clearAnimation">${escapeHtml(t("clearAnimation"))}</button>
+    </div>
   `;
   const list = tray.querySelector(".attachmentAssetList");
   groupAssets.forEach((asset) => {
@@ -3894,6 +4256,19 @@ function renderAttachmentAssetTray() {
       type: file.type,
       data: await readFileAsDataUrl(file),
     }))).then(addImagesToCurrentGroupAssets).catch((error) => status(error.message));
+  });
+  const canDeleteFrames = Boolean(currentGroup?.profileId && currentGroup?.animationId && currentGroup.frames?.length);
+  const deleteFramesButton = tray.querySelector(".deleteSelectedFrames");
+  const clearAnimationButton = tray.querySelector(".clearAnimation");
+  deleteFramesButton.disabled = !canDeleteFrames;
+  clearAnimationButton.disabled = !canDeleteFrames;
+  deleteFramesButton.addEventListener("click", () => {
+    deleteSelectedAnimationFrames()
+      .catch((error) => status(t("frameMutationFailed", { message: error.message })));
+  });
+  clearAnimationButton.addEventListener("click", () => {
+    clearCurrentAnimation()
+      .catch((error) => status(t("frameMutationFailed", { message: error.message })));
   });
   els.filmstrip.appendChild(tray);
 }
@@ -5760,6 +6135,12 @@ els.importAnimationOpen.addEventListener("click", () => {
 els.refreshProject.addEventListener("click", () => {
   refreshActiveProject().catch((error) => status(t("projectRefreshFailed", { message: error.message })));
 });
+els.clearProject?.addEventListener("click", () => {
+  clearActiveProject().catch((error) => status(t("projectMutationFailed", { message: error.message })));
+});
+els.deleteProject?.addEventListener("click", () => {
+  deleteActiveProject().catch((error) => status(t("projectMutationFailed", { message: error.message })));
+});
 if (els.languageSelect) {
   els.languageSelect.addEventListener("change", () => {
     language = els.languageSelect.value === "en" ? "en" : "zh";
@@ -6063,7 +6444,7 @@ async function bindFrameImageAttachmentFile(file, index = selectedFrame, group =
 
 function removeFrameImageAttachment(attachmentId) {
   const attachment = frameImageAttachments.find((entry) => entry.id === attachmentId);
-  if (!attachment || !window.confirm(t("frameAttachmentDeleteConfirm"))) return;
+  if (!attachment) return;
   pushUndo("remove attached image");
   frameImageAttachments = frameImageAttachments.filter((entry) => entry.id !== attachmentId);
   if (selectedAttachmentId === attachmentId) clearSelectedAttachment();
@@ -6793,12 +7174,6 @@ window.addEventListener("blur", () => {
   draw();
 });
 
-window.addEventListener("beforeunload", (event) => {
-  if (!dirty) return;
-  event.preventDefault();
-  event.returnValue = "";
-});
-
 /**
  * Replaces all PNG files in the active animation group with processed cutout results.
  * @param {Array<{data:string}>} outputs Processed PNG data URLs in frame order.
@@ -6840,15 +7215,82 @@ async function applyFrameOrganizerPlan(items) {
       projectId: activeProjectId(),
       profileId: currentGroup.profileId,
       animationId: currentGroup.animationId,
+      baseRevision: config?.dataRevision || "",
       items,
     }),
   });
-  if (!response.ok) throw new Error(await response.text());
+  await readMutationResponse(response);
   resetProjectSession();
   imageCache.clear();
   imageElements.clear();
   await loadConfig();
   resizeCanvas();
+}
+
+/**
+ * Deletes the selected frames and atomically renumbers all remaining frame data.
+ * @returns {Promise<boolean>} Whether frames were deleted.
+ */
+async function deleteSelectedAnimationFrames() {
+  const group = currentGroup;
+  if (frameMutationPending || !group?.profileId || !group?.animationId || !group.frames?.length) return false;
+  const indexes = selectedFrameIndexes(group);
+  if (!indexes.length) return false;
+  if (indexes.length === group.frames.length) return clearCurrentAnimation();
+  if (!window.confirm(t("deleteFramesConfirm", { count: indexes.length }))) return false;
+  const removedIndexes = new Set(indexes);
+  const items = group.frames
+    .map((frame, sourceIndex) => ({ frame, sourceIndex }))
+    .filter(({ sourceIndex }) => !removedIndexes.has(sourceIndex))
+    .map(({ frame, sourceIndex }) => ({
+      sourceIndex,
+      sourcePath: frame.path,
+      name: frame.name,
+    }));
+  frameMutationPending = true;
+  try {
+    await applyFrameOrganizerPlan(items);
+    status(t("framesDeleted", { count: indexes.length }));
+    return true;
+  } finally {
+    frameMutationPending = false;
+  }
+}
+
+/**
+ * Deletes the current manifest animation and all Frame Tuner data owned by it.
+ * @returns {Promise<boolean>} Whether the animation was cleared.
+ */
+async function clearCurrentAnimation() {
+  const group = currentGroup;
+  if (frameMutationPending || !group?.profileId || !group?.animationId || !group.frames?.length) return false;
+  const animationLabel = group.name || group.animationId;
+  if (!window.confirm(t("clearAnimationConfirm", {
+    animation: animationLabel,
+    count: group.frames.length,
+  }))) return false;
+  frameMutationPending = true;
+  try {
+    const response = await fetch("/api/delete-animation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: activeProjectId(),
+        profileId: group.profileId,
+        animationId: group.animationId,
+        baseRevision: config?.dataRevision || "",
+      }),
+    });
+    await readMutationResponse(response);
+    resetProjectSession();
+    dirty = false;
+    await loadConfig();
+    resizeCanvas();
+    status(t("animationCleared", { animation: animationLabel }));
+    return true;
+  } finally {
+    frameMutationPending = false;
+  }
 }
 
 /**
@@ -6903,6 +7345,25 @@ async function createAnimationFromOrganizer(metadata, items) {
 }
 
 window.addEventListener("resize", resizeCanvas);
+window.addEventListener("beforeunload", (event) => {
+  if (
+    !dirty
+    && !frameOrganizer?.hasUnsavedChanges?.()
+    && !batchCutout?.hasUnsavedChanges?.()
+  ) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+window.addEventListener("keydown", (event) => {
+  if ((!event.metaKey && !event.ctrlKey) || event.altKey || event.shiftKey) return;
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(event.target?.tagName)) return;
+  const routeByKey = { "1": "import", "2": "organizer", "3": "cutout" };
+  const route = routeByKey[event.key];
+  if (!route || route === currentWorkbenchRoute()) return;
+  event.preventDefault();
+  syncWorkbenchRoute(route, { push: true });
+  applyWorkbenchRoute().catch((error) => status(t("loadFailed", { message: error.message })));
+});
 window.addEventListener("popstate", () => {
   const urlState = new URLSearchParams(window.location.search);
   const requestedProject = urlState.get("project") || "";
@@ -6914,10 +7375,12 @@ window.addEventListener("popstate", () => {
     if (requestedProject && requestedProject !== activeProjectId()) {
       selectedProjectId = requestedProject;
       await loadConfig();
+      await applyWorkbenchRoute();
       return;
     }
     const group = config?.groups?.find((entry) => entry.uiId === requestedGroup);
     if (group) await selectGroup(group, { frameIndex: requestedFrame, history: false });
+    await applyWorkbenchRoute();
   };
   restore().catch((error) => status(t("loadFailed", { message: error.message })));
 });
@@ -6937,6 +7400,15 @@ batchCutout = window.BatchCutout?.createController({
       : null
   ),
   applyToCurrentAnimation: applyCutoutOutputsToCurrentAnimation,
+  onOpen: () => {
+    const currentRoute = currentWorkbenchRoute();
+    cutoutReturnTool = currentRoute === "organizer" || currentRoute === "import" ? currentRoute : "";
+    syncWorkbenchRoute("cutout", { push: true });
+  },
+  onClose: () => {
+    syncWorkbenchRoute(cutoutReturnTool);
+    cutoutReturnTool = "";
+  },
   onStatus: (message) => status(message),
 }) || null;
 frameOrganizer = window.FrameOrganizer?.createController({
@@ -6963,14 +7435,49 @@ frameOrganizer = window.FrameOrganizer?.createController({
     if (!batchCutout?.openWorkset) throw new Error("Batch cutout is unavailable.");
     return batchCutout.openWorkset(workset);
   },
+  onOpen: (mode) => syncWorkbenchRoute(mode === "import" ? "import" : "organizer", { push: true }),
+  onClose: () => syncWorkbenchRoute(""),
   onStatus: (message) => status(message),
 }) || null;
+els.homeHubContinue?.addEventListener("click", () => {
+  homeHubDismissed = true;
+  renderHomeHub();
+  els.stage.focus();
+});
+els.homeHubOpen?.addEventListener("click", () => {
+  homeHubDismissed = false;
+  renderHomeHub();
+  els.homeHub.querySelector("[data-home-tool]")?.focus();
+});
+els.homeCopyProjectPath?.addEventListener("click", async () => {
+  const projectPath = els.homeProjectPath?.textContent || "";
+  if (!projectPath || projectPath === "—") return;
+  try {
+    await navigator.clipboard.writeText(projectPath);
+    status(t("copied"));
+  } catch (_error) {
+    status(t("copyFailed"));
+  }
+});
+for (const button of els.homeToolButtons) {
+  button.addEventListener("click", () => {
+    const tool = button.dataset.homeTool;
+    if (tool === "import") {
+      frameOrganizer?.openImport().catch((error) => status(t("loadFailed", { message: error.message })));
+    } else if (tool === "organizer") {
+      frameOrganizer?.open().catch((error) => status(t("loadFailed", { message: error.message })));
+    } else if (tool === "cutout") {
+      batchCutout?.open();
+    }
+  });
+}
 applyUiTheme();
 applyCanvasColor();
 applyLanguage();
 loadConfig()
-  .then(() => {
+  .then(async () => {
     resizeCanvas();
     checkTunerUpdate();
+    await applyWorkbenchRoute();
   })
   .catch((error) => status(t("loadFailed", { message: error.message })));

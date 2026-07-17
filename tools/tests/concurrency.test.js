@@ -41,7 +41,7 @@ function startServer(root, port) {
   });
 }
 
-test("concurrent saves serialize and reject stale revisions", async (context) => {
+test("concurrent saves and destructive project lifecycle remain revision-safe", async (context) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-concurrency-"));
   const port = 30000 + Math.floor(Math.random() * 10000);
   const store = createProjectStore(root);
@@ -84,4 +84,45 @@ test("concurrent saves serialize and reject stale revisions", async (context) =>
   const conflict = await responses.find((response) => response.status === 409).json();
   assert.equal(conflict.code, "revision_conflict");
   assert.match(conflict.dataRevision, /^[0-9a-f]{64}$/);
+
+  const freshConfigResponse = await fetch(`${baseUrl}/api/config?project=${project.id}`);
+  const freshConfig = await freshConfigResponse.json();
+  const staleClearResponse = await fetch(`${baseUrl}/api/projects/clear`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: project.id, baseRevision: config.dataRevision }),
+  });
+  assert.equal(staleClearResponse.status, 409);
+
+  const clearResponse = await fetch(`${baseUrl}/api/projects/clear`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: project.id, baseRevision: freshConfig.dataRevision }),
+  });
+  assert.equal(clearResponse.status, 200);
+  const cleared = await clearResponse.json();
+  assert.match(cleared.dataRevision, /^[0-9a-f]{64}$/);
+  assert.deepEqual(store.readJson(store.projectPaths(project).manifest, null).profiles, []);
+  assert.ok(store.readRegistry().projects.some((entry) => entry.id === project.id));
+
+  const missingIdDeleteResponse = await fetch(`${baseUrl}/api/projects/delete`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ baseRevision: cleared.dataRevision }),
+  });
+  assert.equal(missingIdDeleteResponse.status, 400);
+  assert.ok(store.readRegistry().projects.some((entry) => entry.id === project.id));
+
+  store.addProject({ id: "remaining", label: "Remaining" });
+  const deleteResponse = await fetch(`${baseUrl}/api/projects/delete`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: project.id, baseRevision: cleared.dataRevision }),
+  });
+  assert.equal(deleteResponse.status, 200);
+  const deleted = await deleteResponse.json();
+  assert.equal(deleted.deletedProjectId, project.id);
+  assert.equal(deleted.activeProjectId, "remaining");
+  assert.equal(fs.existsSync(store.projectPaths(project).dataDir), false);
+  assert.equal(fs.existsSync(store.projectPaths(project).workspaceDir), false);
 });

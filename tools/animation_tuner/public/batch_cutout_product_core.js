@@ -13,6 +13,7 @@
    *   applyCutout:Function,
    *   clamp:Function,
    *   colorDistance:Function,
+   *   createProtectedRegionMask:Function,
    *   estimateBackgroundColor:Function,
    *   perceptualColorDistance:Function
    * }} dependencies Pixel-kernel dependencies owned by the core facade.
@@ -27,6 +28,7 @@
       applyCutout,
       clamp,
       colorDistance,
+      createProtectedRegionMask,
       estimateBackgroundColor,
       perceptualColorDistance,
     } = dependencies || {};
@@ -34,6 +36,7 @@
       ["applyCutout", applyCutout],
       ["clamp", clamp],
       ["colorDistance", colorDistance],
+      ["createProtectedRegionMask", createProtectedRegionMask],
       ["estimateBackgroundColor", estimateBackgroundColor],
       ["perceptualColorDistance", perceptualColorDistance],
     ].forEach(([name, dependency]) => {
@@ -43,16 +46,22 @@
     });
 
     /**
-     * Applies one serialized brush or eraser stroke to mutable RGBA pixels.
+     * Applies one serialized brush, eraser, or source-restore stroke to mutable RGBA pixels.
+     * Eraser strokes are normally translated to source restoration by the repair
+     * pipeline so they remove paint without changing the underlying cutout.
      * @param {Uint8ClampedArray} pixels Mutable result pixels.
      * @param {number} width Image width.
      * @param {number} height Image height.
      * @param {object} stroke Brush settings and source-space points.
+     * @param {Uint8ClampedArray|Uint8Array|null} source Original RGBA pixels for source restore.
      * @returns {void}
      */
-    function applyCutoutBrushStroke(pixels, width, height, stroke) {
+    function applyCutoutBrushStroke(pixels, width, height, stroke, source = null) {
       const points = Array.isArray(stroke?.points) ? stroke.points : [];
       if (!points.length) return;
+      if (stroke.mode === "restore-source" && source?.length !== pixels.length) {
+        throw new RangeError("Source pixels must match the repair result for source restore.");
+      }
       const radius = Math.max(0.5, Number(stroke.size || 1) / 2);
       const hardness = Math.max(0.01, Math.min(0.999, Number(stroke.hardness || 1)));
       const opacity = Math.max(0.01, Math.min(1, Number(stroke.opacity || 1)));
@@ -73,6 +82,13 @@
             const offset = (y * width + x) * 4;
             if (stroke.mode === "eraser") {
               pixels[offset + 3] = Math.round(pixels[offset + 3] * (1 - strength));
+            } else if (stroke.mode === "restore-source") {
+              for (let channel = 0; channel < 4; channel += 1) {
+                pixels[offset + channel] = Math.round(
+                  pixels[offset + channel] * (1 - strength)
+                    + source[offset + channel] * strength,
+                );
+              }
             } else {
               pixels[offset] = Math.round(
                 pixels[offset] * (1 - strength) + color.r * strength,
@@ -105,6 +121,102 @@
     }
 
     /**
+     * Applies a click-based fill or color replacement to mutable RGBA pixels.
+     * Fill is always connected and restores opacity; recolor can target either a
+     * connected area or every matching visible pixel while preserving alpha.
+     * @param {Uint8ClampedArray} pixels Mutable result pixels.
+     * @param {number} width Image width.
+     * @param {number} height Image height.
+     * @param {object} repair Serialized area-color repair.
+     * @returns {void}
+     */
+    function applyAreaColorRepair(pixels, width, height, repair) {
+      const seedX = Math.max(0, Math.min(width - 1, Math.round(Number(repair.x || 0))));
+      const seedY = Math.max(0, Math.min(height - 1, Math.round(Number(repair.y || 0))));
+      const seedOffset = (seedY * width + seedX) * 4;
+      const sampled = repair.sourceColor || {
+        r: pixels[seedOffset],
+        g: pixels[seedOffset + 1],
+        b: pixels[seedOffset + 2],
+        a: pixels[seedOffset + 3],
+      };
+      const replacement = repair.color || { r: 0, g: 200, b: 0 };
+      const replacementAlpha = Number.isFinite(replacement.a)
+        ? clamp(replacement.a, 0, 255)
+        : null;
+      const tolerance = clamp(repair.tolerance ?? 18, 0, 100);
+      const alphaTolerance = Math.max(12, Math.round(tolerance * 2.55));
+      const pixelCount = width * height;
+      const matches = (index) => {
+        const offset = index * 4;
+        const alpha = pixels[offset + 3];
+        if (sampled.a <= 16) return alpha <= Math.max(16, alphaTolerance);
+        return Math.abs(alpha - sampled.a) <= alphaTolerance
+          && colorDistance(pixels[offset], pixels[offset + 1], pixels[offset + 2], sampled)
+            <= tolerance;
+      };
+      const applyPixel = (index) => {
+        const offset = index * 4;
+        const becomesTransparent = replacementAlpha === 0;
+        pixels[offset] = becomesTransparent ? 0 : replacement.r;
+        pixels[offset + 1] = becomesTransparent ? 0 : replacement.g;
+        pixels[offset + 2] = becomesTransparent ? 0 : replacement.b;
+        if (replacementAlpha !== null) pixels[offset + 3] = replacementAlpha;
+        else if (repair.mode === "fill") pixels[offset + 3] = 255;
+      };
+      if (repair.mode === "recolor" && repair.scope === "global") {
+        for (let index = 0; index < pixelCount; index += 1) {
+          if (matches(index)) applyPixel(index);
+        }
+        return;
+      }
+      const visited = new Uint8Array(pixelCount);
+      const stack = [seedY * width + seedX];
+      while (stack.length) {
+        const index = stack.pop();
+        if (index < 0 || index >= pixelCount || visited[index]) continue;
+        visited[index] = 1;
+        if (!matches(index)) continue;
+        applyPixel(index);
+        const x = index % width;
+        const y = Math.floor(index / width);
+        if (x > 0) stack.push(index - 1);
+        if (x + 1 < width) stack.push(index + 1);
+        if (y > 0) stack.push(index - width);
+        if (y + 1 < height) stack.push(index + width);
+      }
+    }
+
+    /**
+     * Merges color-protection repair records into immutable processing options.
+     * This keeps serialized repairs self-contained for Worker, export, and direct
+     * core callers instead of relying on the UI to duplicate their colors.
+     * @param {object} options Processing options.
+     * @param {Array<object>} repairs Serialized repairs.
+     * @returns {object}
+     */
+    function mergeProtectionOptions(options, repairs) {
+      const protectedColors = [];
+      const appendColor = (color) => {
+        if (![color?.r, color?.g, color?.b].every(Number.isFinite)) return;
+        if (protectedColors.some((candidate) => (
+          colorDistance(color.r, color.g, color.b, candidate) < 2
+        ))) return;
+        protectedColors.push({
+          r: Number(color.r),
+          g: Number(color.g),
+          b: Number(color.b),
+        });
+      };
+      (Array.isArray(options?.protectedColors) ? options.protectedColors : []).forEach(appendColor);
+      for (const repair of repairs) {
+        if (repair?.mode !== "protect-color" || !Array.isArray(repair.colors)) continue;
+        repair.colors.forEach(appendColor);
+      }
+      return { ...(options || {}), protectedColors };
+    }
+
+    /**
      * Applies serialized product repairs to one automatic cutout result.
      * @param {Uint8ClampedArray|Uint8Array} source Original RGBA pixels.
      * @param {Uint8ClampedArray} resultData Mutable automatic cutout pixels.
@@ -112,19 +224,72 @@
      * @param {number} height Image height.
      * @param {object} options Processing options.
      * @param {Array<object>} repairs Serialized repairs.
+     * @param {Uint8ClampedArray|Uint8Array|null} automaticData Immutable automatic cutout pixels.
      * @returns {Uint8ClampedArray}
      */
-    function applyCutoutRepairs(source, resultData, width, height, options, repairs = []) {
+    function applyCutoutRepairs(
+      source,
+      resultData,
+      width,
+      height,
+      options,
+      repairs = [],
+      automaticData = null,
+    ) {
       const protectedColors = Array.isArray(options.protectedColors) ? options.protectedColors : [];
       const protectionTolerance = clamp(options.protectionTolerance ?? 8, 0, 100);
+      const protectionPreview = automaticData || new Uint8ClampedArray(resultData);
+      if (protectionPreview.length !== resultData.length) {
+        throw new RangeError("Automatic cutout preview length does not match the repair result.");
+      }
       const defaultBackground = (
         Array.isArray(options.backgroundColors) && options.backgroundColors.length
           ? options.backgroundColors[0]
           : options.backgroundColor
       ) || estimateBackgroundColor(source, width, height);
+      const hasEraser = repairs.some((repair) => repair?.mode === "eraser");
+      const paintBaseline = hasEraser
+        ? applyCutoutRepairs(
+          source,
+          new Uint8ClampedArray(resultData),
+          width,
+          height,
+          options,
+          repairs.filter((repair) => !["brush", "eraser"].includes(repair?.mode)),
+          automaticData,
+        )
+        : null;
       for (const repair of repairs) {
-        if (repair.mode === "brush" || repair.mode === "eraser") {
-          applyCutoutBrushStroke(resultData, width, height, repair);
+        if (repair.mode === "eraser") {
+          applyCutoutBrushStroke(
+            resultData,
+            width,
+            height,
+            { ...repair, mode: "restore-source" },
+            paintBaseline,
+          );
+          continue;
+        }
+        if (["brush", "restore-source"].includes(repair.mode)) {
+          applyCutoutBrushStroke(resultData, width, height, repair, source);
+          continue;
+        }
+        if (repair.mode === "fill" || repair.mode === "recolor") {
+          applyAreaColorRepair(resultData, width, height, repair);
+          continue;
+        }
+        if (repair.mode === "protect-color") continue;
+        if (repair.mode === "protect-range") {
+          const region = createProtectedRegionMask(source, protectionPreview, width, height, repair, {
+            backgroundColors: options.backgroundColors || [defaultBackground],
+            boundaryStrength: repair.boundaryStrength,
+            padding: repair.padding,
+          });
+          for (let index = 0; index < region.mask.length; index += 1) {
+            if (!region.mask[index]) continue;
+            const offset = index * 4;
+            resultData.set(source.subarray(offset, offset + 4), offset);
+          }
           continue;
         }
         if (![repair.x1, repair.y1, repair.x2, repair.y2].every(Number.isFinite)) continue;
@@ -228,9 +393,25 @@
      * @returns {{data:Uint8ClampedArray,automaticData:Uint8ClampedArray,removedPixels:number,partialPixels:number}}
      */
     function applyProductCutout(source, width, height, options = {}, repairs = []) {
-      const result = applyCutout(source, width, height, options);
+      const normalizedRepairs = Array.isArray(repairs) ? repairs : [];
+      const normalizedOptions = mergeProtectionOptions(options, normalizedRepairs);
+      const result = normalizedOptions.automaticCutout === false
+        ? {
+          data: new Uint8ClampedArray(source),
+          removedPixels: 0,
+          partialPixels: 0,
+        }
+        : applyCutout(source, width, height, normalizedOptions);
       const automaticData = new Uint8ClampedArray(result.data);
-      applyCutoutRepairs(source, result.data, width, height, options, repairs);
+      applyCutoutRepairs(
+        source,
+        result.data,
+        width,
+        height,
+        normalizedOptions,
+        normalizedRepairs,
+        automaticData,
+      );
       return { ...result, automaticData };
     }
 

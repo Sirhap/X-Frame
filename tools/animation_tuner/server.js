@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 const { Worker } = require("node:worker_threads");
 const { EMPTY_MANIFEST, EMPTY_TUNING, createProjectStore, reslash } = require("../project_store");
 const { importAnimation, reorganizeAnimation } = require("../frame_organizer");
+const { deleteAnimation } = require("../animation_mutations");
 const { checkForUpdates, performUpdate } = require("../updater");
 
 const ROOT = path.resolve(process.env.XSXB_ROOT || path.resolve(__dirname, "..", ".."));
@@ -26,6 +27,11 @@ const MEDIA_ROUTES = new Set([
   "/api/replace-animation",
   "/api/replace-frame",
   "/api/reorganize-animation",
+]);
+const WORKBENCH_ROUTES = new Set([
+  "/tools/cutout",
+  "/tools/import",
+  "/tools/organizer",
 ]);
 
 const DEFAULT_SUPPORTS = [
@@ -282,6 +288,24 @@ async function createFilesystemSnapshot(inputPaths) {
 }
 
 /**
+ * Restores and disposes a filesystem transaction while retaining both failures.
+ * @param {{restore:()=>Promise<void>,dispose:()=>Promise<void>}} transaction Snapshot controls.
+ * @param {Error} cause Mutation failure.
+ * @param {string} message Aggregate rollback failure message.
+ * @returns {Promise<never>} Always rejects with the mutation or aggregate failure.
+ */
+async function rollbackFilesystemSnapshot(transaction, cause, message) {
+  try {
+    await transaction.restore();
+  } catch (rollbackError) {
+    await transaction.dispose();
+    throw new AggregateError([cause, rollbackError], message);
+  }
+  await transaction.dispose();
+  throw cause;
+}
+
+/**
  * Lists files that may be changed while updating the embedded runtime project id.
  * @param {object} project Project record.
  * @returns {string[]} Matching GDScript paths.
@@ -473,6 +497,78 @@ function projectFromRequest(projectId, options = {}) {
     registry,
     project: projectStore.resolveProject(registry, projectId),
   };
+}
+
+/**
+ * Resolves exactly the requested project instead of falling back to the active one.
+ * @param {string} projectId Required project id.
+ * @returns {{registry:object,project:object}} Registry and exact project.
+ */
+function requiredProjectFromRequest(projectId) {
+  if (!String(projectId || "").trim()) throw new HttpError(400, "A project id is required.");
+  const registry = projectStore.readRegistry();
+  const requestedId = projectStore.slug(projectId);
+  const project = registry.projects.find((entry) => entry.id === requestedId);
+  if (!project) throw new HttpError(404, `Project not found: ${projectId || "missing id"}`);
+  return { registry, project };
+}
+
+/**
+ * Returns local and Godot paths owned exclusively by one tuner project.
+ * @param {object} project Project record.
+ * @returns {string[]} Managed paths.
+ */
+function managedProjectPaths(project) {
+  const paths = projectStore.projectPaths(project);
+  const result = [paths.dataDir, paths.workspaceDir];
+  const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
+  if (!projectRoot) return result;
+  const syncRoot = path.join(projectRoot, "xsxb_frame_tuner");
+  result.push(
+    path.join(syncRoot, "data", "projects", project.id),
+    path.join(syncRoot, "workspace", "projects", project.id),
+    path.join(syncRoot, "audio", "projects", project.id),
+    path.join(syncRoot, "attachments", "projects", project.id),
+  );
+  return result;
+}
+
+/**
+ * Maps a tuner workspace path to its synchronized Godot mirror.
+ * @param {object} project Project record.
+ * @param {string} localPath Absolute tuner path.
+ * @returns {string} Safe Godot mirror path or an empty string.
+ */
+function godotMirrorPath(project, localPath) {
+  const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
+  if (!projectRoot || !localPath) return "";
+  const relative = path.relative(ROOT, path.resolve(localPath));
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return "";
+  return path.join(projectRoot, "xsxb_frame_tuner", relative);
+}
+
+/**
+ * Clears all local project content while preserving its registry entry and Godot binding.
+ * @param {object} project Project record.
+ * @returns {Promise<object>} Empty-project synchronization result.
+ */
+async function clearProjectContent(project) {
+  const paths = projectStore.projectPaths(project);
+  for (const targetPath of managedProjectPaths(project)) {
+    await fs.promises.rm(targetPath, { recursive: true, force: true });
+  }
+  projectStore.ensureProjectFiles(project);
+  projectStore.writeJson(paths.manifest, EMPTY_MANIFEST);
+  projectStore.writeJson(paths.tuning, EMPTY_TUNING);
+  projectStore.writeJson(paths.frameAudio, []);
+  projectStore.writeJson(paths.frameImageAttachments, []);
+  projectStore.writeJson(paths.attachmentAssets, []);
+  return syncGodotProjectAsync(project, {
+    manifest: EMPTY_MANIFEST,
+    tuning: EMPTY_TUNING,
+    frameAudioBindings: [],
+    frameImageAttachments: [],
+  });
 }
 
 function readManifest(project) {
@@ -1483,7 +1579,9 @@ function scheduleServerRestart() {
 }
 
 function serveStatic(req, res, pathname) {
-  const requestPath = pathname === "/" ? "index.html" : pathname.slice(1);
+  const requestPath = pathname === "/" || WORKBENCH_ROUTES.has(pathname)
+    ? "index.html"
+    : pathname.slice(1);
   const full = safeResolve(PUBLIC, requestPath);
   if (!full || !fs.existsSync(full) || fs.statSync(full).isDirectory()) {
     return send(res, 404, "Not found", "text/plain");
@@ -1537,6 +1635,65 @@ const server = http.createServer(async (req, res) => {
           projects: registry.projects.map(projectStore.projectForClient),
         });
       });
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/projects/clear") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const { project } = requiredProjectFromRequest(payload.projectId);
+      return await withProjectWrite(project.id, async () => {
+        const currentRevision = projectDataRevision(project);
+        if (payload.baseRevision && payload.baseRevision !== currentRevision) {
+          return send(res, 409, {
+            error: "Project data changed in another window. Reload before clearing it.",
+            code: "revision_conflict",
+            dataRevision: currentRevision,
+          });
+        }
+        const transaction = await createFilesystemSnapshot(managedProjectPaths(project));
+        try {
+          const godotSync = await clearProjectContent(project);
+          const dataRevision = projectDataRevision(project);
+          await transaction.dispose();
+          return send(res, 200, { ok: true, projectId: project.id, dataRevision, godotSync });
+        } catch (error) {
+          return rollbackFilesystemSnapshot(transaction, error, "Project clear failed and rollback was incomplete.");
+        }
+      });
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/projects/delete") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const initial = requiredProjectFromRequest(payload.projectId);
+      return await withProjectWrite(initial.project.id, () => withProjectWrite("__registry__", async () => {
+        const { registry, project } = requiredProjectFromRequest(payload.projectId);
+        const currentRevision = projectDataRevision(project);
+        if (payload.baseRevision && payload.baseRevision !== currentRevision) {
+          return send(res, 409, {
+            error: "Project data changed in another window. Reload before deleting it.",
+            code: "revision_conflict",
+            dataRevision: currentRevision,
+          });
+        }
+        const transaction = await createFilesystemSnapshot([
+          projectStore.path,
+          ...managedProjectPaths(project),
+        ]);
+        try {
+          for (const targetPath of managedProjectPaths(project)) {
+            await fs.promises.rm(targetPath, { recursive: true, force: true });
+          }
+          registry.projects = registry.projects.filter((entry) => entry.id !== project.id);
+          registry.activeProjectId = registry.projects[0]?.id || "";
+          const nextRegistry = projectStore.writeRegistry(registry);
+          await transaction.dispose();
+          return send(res, 200, {
+            ok: true,
+            deletedProjectId: project.id,
+            activeProjectId: nextRegistry.activeProjectId,
+            projects: nextRegistry.projects.map(projectStore.projectForClient),
+          });
+        } catch (error) {
+          return rollbackFilesystemSnapshot(transaction, error, "Project deletion failed and rollback was incomplete.");
+        }
+      }));
     }
     if (req.method === "GET" && parsed.pathname === "/api/config") {
       return send(res, 200, configResponse(parsed.searchParams.get("project")));
@@ -1621,9 +1778,7 @@ const server = http.createServer(async (req, res) => {
             dataRevision: projectDataRevision(project),
           });
         } catch (error) {
-          await transaction.restore();
-          await transaction.dispose();
-          throw error;
+          return rollbackFilesystemSnapshot(transaction, error, "Frame audio sync failed and rollback was incomplete.");
         }
       });
     }
@@ -1681,6 +1836,50 @@ const server = http.createServer(async (req, res) => {
           }
           await transaction.dispose();
           throw error;
+        }
+      });
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/delete-animation") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const { project } = requiredProjectFromRequest(payload.projectId);
+      return await withProjectWrite(project.id, async () => {
+        const currentRevision = projectDataRevision(project);
+        if (payload.baseRevision && payload.baseRevision !== currentRevision) {
+          return send(res, 409, {
+            error: "Project data changed in another window. Reload before deleting the animation.",
+            code: "revision_conflict",
+            dataRevision: currentRevision,
+          });
+        }
+        const transaction = await createFilesystemSnapshot(managedProjectPaths(project));
+        try {
+          const deleted = deleteAnimation({
+            root: ROOT,
+            projectStore,
+            project,
+            profileId: String(payload.profileId || ""),
+            animationId: String(payload.animationId || ""),
+          });
+          const externalDirectory = godotMirrorPath(project, deleted.removedDirectory);
+          if (externalDirectory) {
+            await fs.promises.rm(externalDirectory, { recursive: true, force: true });
+          }
+          const godotSync = await syncGodotProjectAsync(project, {
+            manifest: deleted.manifest,
+            tuning: deleted.tuning,
+            frameAudioBindings: deleted.frameAudioBindings,
+            frameImageAttachments: deleted.frameImageAttachments,
+          });
+          const dataRevision = projectDataRevision(project);
+          await transaction.dispose();
+          return send(res, 200, {
+            ok: true,
+            removedFrames: deleted.removedFrames,
+            dataRevision,
+            godotSync,
+          });
+        } catch (error) {
+          return rollbackFilesystemSnapshot(transaction, error, "Animation deletion failed and rollback was incomplete.");
         }
       });
     }
@@ -1753,30 +1952,50 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && parsed.pathname === "/api/reorganize-animation") {
       const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+      const { project } = requiredProjectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       return await withProjectWrite(project.id, async () => {
-        const organized = reorganizeAnimation({
-          root: ROOT,
-          projectStore,
-          project,
-          profileId: String(payload.profileId || ""),
-          animationId: String(payload.animationId || ""),
-          items: payload.items,
-        });
-        const godotSync = await syncGodotProjectAsync(project, {
-          manifest: organized.manifest,
-          tuning: organized.tuning,
-          frameAudioBindings: organized.frameAudioBindings,
-          frameImageAttachments: organized.frameImageAttachments,
-        });
-        const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
-        return send(res, 200, {
-          ok: true,
-          frameCount: organized.frameCount,
-          godotSync,
-          runtimeProjectIdFiles,
-          warnings: validateProject(project, organized.manifest),
-        });
+        const currentRevision = projectDataRevision(project);
+        if (payload.baseRevision && payload.baseRevision !== currentRevision) {
+          return send(res, 409, {
+            error: "Project data changed in another window. Reload before deleting frames.",
+            code: "revision_conflict",
+            dataRevision: currentRevision,
+          });
+        }
+        const transaction = await createFilesystemSnapshot(managedProjectPaths(project));
+        try {
+          const organized = reorganizeAnimation({
+            root: ROOT,
+            projectStore,
+            project,
+            profileId: String(payload.profileId || ""),
+            animationId: String(payload.animationId || ""),
+            items: payload.items,
+          });
+          const externalDirectory = godotMirrorPath(project, organized.targetDir);
+          if (externalDirectory) {
+            await fs.promises.rm(externalDirectory, { recursive: true, force: true });
+          }
+          const godotSync = await syncGodotProjectAsync(project, {
+            manifest: organized.manifest,
+            tuning: organized.tuning,
+            frameAudioBindings: organized.frameAudioBindings,
+            frameImageAttachments: organized.frameImageAttachments,
+          });
+          const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
+          const dataRevision = projectDataRevision(project);
+          await transaction.dispose();
+          return send(res, 200, {
+            ok: true,
+            frameCount: organized.frameCount,
+            dataRevision,
+            godotSync,
+            runtimeProjectIdFiles,
+            warnings: validateProject(project, organized.manifest),
+          });
+        } catch (error) {
+          return rollbackFilesystemSnapshot(transaction, error, "Frame deletion failed and rollback was incomplete.");
+        }
       });
     }
     if (req.method === "GET" && parsed.pathname === "/asset") {
@@ -1809,6 +2028,24 @@ server.on("clientError", (error, socket) => {
   if (socket.destroyed) return;
   socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
 });
+
+/**
+ * Reports startup failures without emitting Node's unhandled EventEmitter stack trace.
+ * @param {NodeJS.ErrnoException} error Server startup error.
+ * @returns {void}
+ */
+function handleServerStartupError(error) {
+  if (error.code === "EADDRINUSE") {
+    console.error(`XSXB Frame Tuner is already running, or port ${PORT} is occupied.`);
+    console.error(`Open http://127.0.0.1:${PORT}, or start another instance with PORT=5180 npm start.`);
+    process.exitCode = 1;
+    return;
+  }
+  console.error(`Unable to start XSXB Frame Tuner on 127.0.0.1:${PORT}:`, error.message);
+  process.exitCode = 1;
+}
+
+server.on("error", handleServerStartupError);
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`XSXB Frame Tuner running at http://127.0.0.1:${PORT}`);

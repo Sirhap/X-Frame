@@ -469,11 +469,27 @@
       const green = data[offset + 1];
       const blue = data[offset + 2];
       const key = `${red >> 4},${green >> 4},${blue >> 4}`;
-      const bucket = buckets.get(key) || { r: 0, g: 0, b: 0, count: 0 };
+      const bucket = buckets.get(key) || {
+        r: 0,
+        g: 0,
+        b: 0,
+        count: 0,
+        colors: new Map(),
+      };
       bucket.r += red;
       bucket.g += green;
       bucket.b += blue;
       bucket.count += 1;
+      const packedColor = (red << 16) | (green << 8) | blue;
+      const exactColor = bucket.colors.get(packedColor) || {
+        r: red,
+        g: green,
+        b: blue,
+        count: 0,
+        firstSeen: bucket.count,
+      };
+      exactColor.count += 1;
+      bucket.colors.set(packedColor, exactColor);
       buckets.set(key, bucket);
     };
 
@@ -497,10 +513,29 @@
     if (!dominant?.count) {
       return { r: 255, g: 255, b: 255, hex: "#ffffff", sampleCount: 0 };
     }
+    const centroid = {
+      r: dominant.r / dominant.count,
+      g: dominant.g / dominant.count,
+      b: dominant.b / dominant.count,
+    };
+    const selectedColor = [...dominant.colors.values()].sort((left, right) => {
+      if (left.count !== right.count) return right.count - left.count;
+      const leftDistance = (
+        (left.r - centroid.r) ** 2
+        + (left.g - centroid.g) ** 2
+        + (left.b - centroid.b) ** 2
+      );
+      const rightDistance = (
+        (right.r - centroid.r) ** 2
+        + (right.g - centroid.g) ** 2
+        + (right.b - centroid.b) ** 2
+      );
+      return leftDistance - rightDistance || left.firstSeen - right.firstSeen;
+    })[0];
     const color = {
-      r: Math.round(dominant.r / dominant.count),
-      g: Math.round(dominant.g / dominant.count),
-      b: Math.round(dominant.b / dominant.count),
+      r: selectedColor.r,
+      g: selectedColor.g,
+      b: selectedColor.b,
     };
     return { ...color, hex: rgbToHex(color), sampleCount: dominant.count };
   }
@@ -733,6 +768,7 @@
     srgbToLinear,
   });
   const {
+    createProtectedRegionMask,
     createReferenceProtectionMask,
     extractProtectedColors,
     referenceProtectionDescriptor,
@@ -760,6 +796,7 @@
   const {
     applyReferenceColorReplace,
     applyReferenceFloodFillDespill,
+    createReferenceColorCandidateMask,
     diffuseReferenceCandidateMask,
     diffuseReferenceGlobalCandidateMask,
   } = referenceReplacementKernels;
@@ -1168,37 +1205,6 @@
   }
 
   /**
-   * Finds a border seed nearest to one background sample.
-   * @param {Uint8ClampedArray|Uint8Array} source Source RGBA pixels.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @param {{r:number,g:number,b:number}} backgroundColor Background sample.
-   * @returns {{x:number,y:number}}
-   */
-  function findReferenceBorderSeed(source, width, height, backgroundColor) {
-    let best = { x: 0, y: 0, distance: Number.POSITIVE_INFINITY };
-    const inspect = (x, y) => {
-      const offset = (y * width + x) * 4;
-      const distance = colorDistance(
-        source[offset],
-        source[offset + 1],
-        source[offset + 2],
-        backgroundColor,
-      );
-      if (distance < best.distance) best = { x, y, distance };
-    };
-    for (let x = 0; x < width; x += 1) {
-      inspect(x, 0);
-      if (height > 1) inspect(x, height - 1);
-    }
-    for (let y = 1; y < height - 1; y += 1) {
-      inspect(0, y);
-      if (width > 1) inspect(width - 1, y);
-    }
-    return { x: best.x, y: best.y };
-  }
-
-  /**
    * Applies the rebuilt edge-color restoration kernel when product protection
    * samples provide a trustworthy uncontaminated foreground color.
    * @param {Uint8ClampedArray} data Mutable cutout pixels.
@@ -1268,13 +1274,11 @@
    */
   function applyReferenceCutout(source, width, height, options, backgroundColors) {
     const operationMask = createReferenceOperationMask(source, width, height, options);
-    const baseTolerance = clamp(options.tolerance ?? 18, 0, 100);
-    const cleanupAdjustment = (clamp(options.chromaCleanup ?? 40, 0, 100) - 40) * 0.25;
-    const adjustedTolerance = Math.trunc(clamp(baseTolerance + cleanupAdjustment, 0, 100));
+    // Keep the regular replacement controls byte-compatible with FramePacker.
+    // Chroma cleanup belongs to the perceptual key path and must not silently
+    // rewrite the tolerance shown in the regular panel.
+    const baseTolerance = Math.trunc(clamp(options.tolerance ?? 18, 0, 100));
     const edgeEnhance = Math.trunc(clamp(options.edgeBoost ?? 0, 0, 100));
-    const tolerance = Math.trunc(
-      adjustedTolerance + (100 - adjustedTolerance) * edgeEnhance / 100,
-    );
     const edgeRecoveryStrength = clamp(options.edgeRecoveryStrength ?? 0, 0, 100);
     const protectedColors = Array.isArray(options.protectedColors) ? options.protectedColors : [];
     const edgeRestoreRadius = Math.max(0, Math.trunc(options.edgeDespillRadius || 0));
@@ -1288,8 +1292,8 @@
       const pipelineOptions = {
         mask: operationMask,
         referenceColor,
-        edgeEnhance: 0,
-        blendStrength: edgeRecoveryStrength,
+        edgeEnhance,
+        blendStrength: clamp(options.blendStrength ?? edgeRecoveryStrength, 0, 100),
         despillMode: mode,
         despillRefColor: backgroundColor,
         despillStrength: clamp(options.despillStrength ?? 0, 0, 100),
@@ -1320,20 +1324,37 @@
           }
           return closestIndex === backgroundIndex;
         });
-        const activeSeeds = assignedSeeds.length
-          ? assignedSeeds
-          : [findReferenceBorderSeed(source, width, height, backgroundColor)];
-        for (const seed of activeSeeds) {
-          data = applyReferenceFloodFillDespill(
-            data,
-            width,
-            height,
-            seed,
-            { r: 0, g: 0, b: 0, a: 0 },
-            tolerance,
-            pipelineOptions,
-          );
-        }
+        const referenceCandidates = createReferenceColorCandidateMask(
+          data,
+          width,
+          height,
+          referenceColor,
+          baseTolerance,
+          edgeEnhance,
+          operationMask,
+        );
+        const connectedCandidates = connectedCandidateMask(
+          referenceCandidates,
+          width,
+          height,
+          {
+            seeds: assignedSeeds.length ? assignedSeeds : undefined,
+            selectionMask: operationMask,
+          },
+        );
+        const connectedOperationMask = Uint8Array.from(
+          connectedCandidates,
+          (candidate) => (candidate ? 255 : 0),
+        );
+        data = applyReferenceColorReplace(
+          data,
+          width,
+          height,
+          { x: 0, y: 0 },
+          { r: 0, g: 0, b: 0, a: 0 },
+          baseTolerance,
+          { ...pipelineOptions, mask: connectedOperationMask },
+        );
       } else {
         data = applyReferenceColorReplace(
           data,
@@ -1341,7 +1362,7 @@
           height,
           { x: 0, y: 0 },
           { r: 0, g: 0, b: 0, a: 0 },
-          tolerance,
+          baseTolerance,
           pipelineOptions,
         );
       }
@@ -1436,6 +1457,7 @@
    *   selectionMask?:Uint8Array|null,
    *   maximumPixels?:number,
    *   edgeBoost?:number,
+   *   blendStrength?:number,
    *   alphaLow?:number,
    *   alphaHigh?:number,
    *   despillStrength?:number,
@@ -1588,6 +1610,7 @@
     applyCutout,
     clamp,
     colorDistance,
+    createProtectedRegionMask,
     estimateBackgroundColor,
     perceptualColorDistance,
   });
@@ -1608,6 +1631,7 @@
     colorDistance,
     connectedCandidateMask,
     connectedRemovalMask,
+    createProtectedRegionMask,
     createReferenceProtectionMask,
     diffuseReferenceCandidateMask,
     diffuseReferenceGlobalCandidateMask,

@@ -14,6 +14,7 @@
    * @returns {{
    *   diffuseReferenceCandidateMask: Function,
    *   diffuseReferenceGlobalCandidateMask: Function,
+   *   createReferenceColorCandidateMask: Function,
    *   applyReferenceColorReplace: Function,
    *   applyReferenceFloodFillDespill: Function,
    * }}
@@ -181,6 +182,115 @@
     }
 
     /**
+     * Expands trusted base-tolerance pixels through four-neighbour candidates.
+     * FramePacker treats edge enhancement as a spatial expansion: a wider color
+     * match is accepted only when it remains connected to a base-tolerance pixel.
+     * @param {Uint8ClampedArray|Uint8Array} source RGBA source pixels.
+     * @param {number} width Image width.
+     * @param {number} height Image height.
+     * @param {{r:number,g:number,b:number,a?:number}} referenceColor Reference RGBA color.
+     * @param {number} baseThresholdSquared Trusted seed threshold squared.
+     * @param {number} enhancedThresholdSquared Expanded candidate threshold squared.
+     * @param {Uint8Array|null} operationMask Optional exact-selection mask.
+     * @returns {Uint8Array}
+     */
+    function expandReferenceCandidateMask(
+      source,
+      width,
+      height,
+      referenceColor,
+      baseThresholdSquared,
+      enhancedThresholdSquared,
+      operationMask,
+    ) {
+      const pixelCount = width * height;
+      const candidates = new Uint8Array(pixelCount);
+      const selected = new Uint8Array(pixelCount);
+      const queue = new Int32Array(pixelCount);
+      let queueHead = 0;
+      let queueTail = 0;
+
+      if (baseThresholdSquared < 0 || enhancedThresholdSquared < 0) return selected;
+      for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+        if (operationMask && operationMask[pixel] !== 255) continue;
+        if (!referenceRgbaMatches(source, pixel, referenceColor, enhancedThresholdSquared)) continue;
+        candidates[pixel] = 1;
+        if (!referenceRgbaMatches(source, pixel, referenceColor, baseThresholdSquared)) continue;
+        selected[pixel] = 1;
+        queue[queueTail] = pixel;
+        queueTail += 1;
+      }
+
+      const enqueueCandidate = (neighbour) => {
+        if (!candidates[neighbour] || selected[neighbour]) return;
+        selected[neighbour] = 1;
+        queue[queueTail] = neighbour;
+        queueTail += 1;
+      };
+      while (queueHead < queueTail) {
+        const pixel = queue[queueHead];
+        queueHead += 1;
+        const x = pixel % width;
+        if (x > 0) enqueueCandidate(pixel - 1);
+        if (x + 1 < width) enqueueCandidate(pixel + 1);
+        if (pixel >= width) enqueueCandidate(pixel - width);
+        if (pixel + width < pixelCount) enqueueCandidate(pixel + width);
+      }
+      return selected;
+    }
+
+    /**
+     * Builds the exact base-seeded candidate plane used by color replacement.
+     * This lets product-level connected-background mode constrain the reference
+     * candidates spatially without changing edge-enhancement tolerance semantics.
+     * @param {Uint8ClampedArray|Uint8Array} source RGBA source pixels.
+     * @param {number} width Image width.
+     * @param {number} height Image height.
+     * @param {{r:number,g:number,b:number,a?:number}} referenceColor Reference RGBA color.
+     * @param {number} tolerance Base tolerance.
+     * @param {number} edgeEnhance Edge-enhancement percentage.
+     * @param {Uint8Array|null} [operationMask=null] Optional exact-selection mask.
+     * @returns {Uint8Array} Non-zero pixels belong to the reference candidate plane.
+     */
+    function createReferenceColorCandidateMask(
+      source,
+      width,
+      height,
+      referenceColor,
+      tolerance,
+      edgeEnhance,
+      operationMask = null,
+    ) {
+      const pixelCount = width * height;
+      if (width <= 0 || height <= 0 || !source || source.length !== pixelCount * 4) {
+        throw new RangeError("Reference candidate RGBA length does not match its dimensions.");
+      }
+      if (operationMask && operationMask.length !== pixelCount) {
+        throw new RangeError("Reference candidate mask length does not match its dimensions.");
+      }
+      const safeTolerance = Math.trunc(tolerance);
+      const safeEdgeEnhance = Math.trunc(edgeEnhance || 0);
+      const effectiveTolerance = safeTolerance < 0
+        ? -1
+        : (Math.max(0, 100 - safeTolerance) * safeEdgeEnhance / 100 + safeTolerance);
+      const baseThresholdSquared = safeTolerance < 0
+        ? -1
+        : Math.trunc((safeTolerance * 5.1) ** 2 + 0.5);
+      const enhancedThresholdSquared = effectiveTolerance < 0
+        ? -1
+        : Math.trunc((effectiveTolerance * 5.1) ** 2 + 0.5);
+      return expandReferenceCandidateMask(
+        source,
+        width,
+        height,
+        referenceColor,
+        baseThresholdSquared,
+        enhancedThresholdSquared,
+        operationMask,
+      );
+    }
+
+    /**
      * Rebuilds the public `fp_kernel_07` color-replacement entry point.
      * @param {Uint8ClampedArray|Uint8Array} source RGBA source pixels.
      * @param {number} width Image width.
@@ -245,15 +355,15 @@
       const thresholdSquared = effectiveTolerance < 0
         ? -1
         : Math.trunc((effectiveTolerance * 5.1) ** 2 + 0.5);
-      const selectedMask = new Uint8Array(pixelCount);
-      if (thresholdSquared >= 0) {
-        for (let pixel = 0; pixel < pixelCount; pixel += 1) {
-          if (operationMask && operationMask[pixel] !== 255) continue;
-          if (referenceRgbaMatches(source, pixel, reference, thresholdSquared)) {
-            selectedMask[pixel] = 1;
-          }
-        }
-      }
+      const selectedMask = createReferenceColorCandidateMask(
+        source,
+        width,
+        height,
+        reference,
+        safeTolerance,
+        edgeEnhance,
+        operationMask,
+      );
       return applyReferenceReplacementPipeline(
         source,
         width,
@@ -362,6 +472,7 @@
     return {
       diffuseReferenceCandidateMask,
       diffuseReferenceGlobalCandidateMask,
+      createReferenceColorCandidateMask,
       applyReferenceColorReplace,
       applyReferenceFloodFillDespill,
     };

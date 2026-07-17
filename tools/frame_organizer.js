@@ -108,7 +108,9 @@ function bindingInfo(binding) {
   let animation = String(metadata.animation || binding?.animation || "");
   const profileId = String(metadata.profileId || binding?.profileId || "");
   if (animation && profileId && !animation.includes("/")) animation = `${profileId}/${animation}`;
-  const frame = Number(metadata.frame ?? binding?.frame);
+  const keyMatch = /^(.*):(\d+)$/.exec(String(binding?.key || binding?.frameKey || ""));
+  if (!animation && keyMatch) animation = keyMatch[1];
+  const frame = Number(metadata.frame ?? binding?.frame ?? keyMatch?.[2]);
   return { animation, frame: Number.isFinite(frame) ? frame : null };
 }
 
@@ -125,7 +127,7 @@ function rekeyBindingValue(value, frame) {
 
 /**
  * Remaps frame audio or attachment bindings to the new frame plan.
- * @param {object[]} bindings Existing bindings.
+ * @param {object[]|object} bindings Existing bindings, including the legacy keyed format.
  * @param {string} animationKey Stable animation key.
  * @param {Array<{sourceIndex:number|null}>} items New frame plan.
  * @returns {object[]}
@@ -133,7 +135,13 @@ function rekeyBindingValue(value, frame) {
 function remapBindings(bindings, animationKey, items) {
   const untouched = [];
   const indexed = new Map();
-  for (const binding of Array.isArray(bindings) ? bindings : []) {
+  const normalizedBindings = Array.isArray(bindings)
+    ? bindings
+    : Object.entries(bindings && typeof bindings === "object" ? bindings : {}).map(([key, value]) => ({
+        key,
+        ...(value && typeof value === "object" ? value : {}),
+      }));
+  for (const binding of normalizedBindings) {
     const info = bindingInfo(binding);
     if (info.animation === animationKey && Number.isInteger(info.frame)) {
       if (!indexed.has(info.frame)) indexed.set(info.frame, []);

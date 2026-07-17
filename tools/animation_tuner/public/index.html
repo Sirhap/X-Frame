@@ -9,7 +9,8 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <main class="app">
+    <a class="skipLink" href="#mainWorkbench" data-i18n="skipToMain">跳到主要内容</a>
+    <main id="mainWorkbench" class="app" tabindex="-1">
       <aside class="sidebar">
         <div class="brand">
           <div class="mark"></div>
@@ -39,6 +40,10 @@
         <div class="buttonRow projectActions">
           <button id="importAnimationOpen" class="importAnimationButton" data-i18n="importAnimation">导入动画</button>
           <button id="refreshProject" class="secondary projectRefreshButton" data-i18n-title="refreshAnimationList" title="刷新动画列表" aria-label="刷新动画列表">↻</button>
+        </div>
+        <div class="buttonRow projectDangerActions">
+          <button id="clearProject" type="button" class="secondary" data-i18n="clearProject">清空项目</button>
+          <button id="deleteProject" type="button" class="secondary dangerAction" data-i18n="deleteProject">删除项目</button>
         </div>
         <label class="field languageField">
           <span data-i18n="language">语言</span>
@@ -155,6 +160,7 @@
               <button id="stageZoomFit" type="button" class="secondary" data-i18n="zoomFit">适应</button>
               <button id="stageZoomActual" type="button" class="secondary" data-i18n="zoomActual">100%</button>
             </div>
+            <button id="homeHubOpen" class="homeHubLaunch" type="button" data-i18n="homeHubOpen">⌂ 工作台首页</button>
             <button id="cutoutOpen" class="cutoutLaunch" type="button" data-cutout-i18n="open">批量抠图</button>
             <button id="organizerOpen" class="organizerLaunch" type="button" data-organizer-i18n="open">帧整理</button>
             <details class="shortcutGuide">
@@ -173,6 +179,40 @@
             </details>
           </div>
         </div>
+        <section id="homeHub" class="homeHub" aria-labelledby="homeHubTitle">
+          <header class="homeHubHeader">
+            <div>
+              <span>LOCAL FRAME WORKSHOP / START</span>
+              <h2 id="homeHubTitle" data-i18n="homeHubTitle">选择工作台</h2>
+              <p data-i18n="homeHubSubtitle">从导入、整理到抠图，所有处理都在本机完成。</p>
+            </div>
+            <button id="homeHubContinue" type="button" class="secondary" data-i18n="homeHubContinue">继续编辑画布 →</button>
+          </header>
+          <div class="homeToolGrid">
+            <button type="button" class="homeToolCard homeToolImport" data-home-tool="import">
+              <b>01 / INGEST</b><strong data-i18n="homeImportTitle">导入动画</strong><span data-i18n="homeImportHint">从图片序列或视频创建动画</span><i aria-hidden="true">→</i>
+            </button>
+            <button type="button" class="homeToolCard homeToolOrganizer" data-home-tool="organizer">
+              <b>02 / SEQUENCE</b><strong data-i18n="homeOrganizerTitle">帧工作集</strong><span data-i18n="homeOrganizerHint">重排、减帧与相似度分析</span><i aria-hidden="true">→</i>
+            </button>
+            <button type="button" class="homeToolCard homeToolCutout" data-home-tool="cutout">
+              <b>03 / ALPHA</b><strong data-i18n="homeCutoutTitle">批量抠图</strong><span data-i18n="homeCutoutHint">本地背景清除与边缘修正</span><i aria-hidden="true">→</i>
+            </button>
+          </div>
+          <dl class="homeStats" aria-label="项目统计">
+            <div><dt data-i18n="homeAnimations">动画</dt><dd id="homeAnimationCount">0</dd></div>
+            <div><dt data-i18n="homeFrames">总帧数</dt><dd id="homeFrameCount">0</dd></div>
+            <div><dt data-i18n="homeCharacters">角色</dt><dd id="homeProfileCount">0</dd></div>
+            <div><dt data-i18n="homeLastEdit">最近编辑</dt><dd id="homeLastEdited">—</dd></div>
+          </dl>
+          <footer class="homeRecent">
+            <span data-i18n="homeRecentProject">当前项目</span><strong id="homeRecentProject">—</strong>
+            <span data-i18n="homeRecentAnimation">当前动画</span><strong id="homeRecentAnimation">—</strong>
+            <span data-i18n="homeRecentTool">最近工作台</span><strong id="homeRecentTool">—</strong>
+            <span data-i18n="homeProjectPath">项目路径</span>
+            <span class="homeProjectPath"><strong id="homeProjectPath">—</strong><button id="homeCopyProjectPath" type="button" class="secondary" data-i18n="copy">复制</button></span>
+          </footer>
+        </section>
         <canvas id="stage" width="1280" height="760" tabindex="0" aria-label="动画预览画布"></canvas>
         <div id="filmstrip" class="filmstrip"></div>
       </section>
@@ -190,7 +230,11 @@
             <span><b>02</b> REFINE</span>
             <span><b>03</b> EXPORT</span>
           </div>
-          <button id="cutoutClose" class="cutoutClose" type="button" aria-label="关闭">×</button>
+          <div class="workbenchHeaderActions">
+            <button id="cutoutCopyLink" class="workbenchLink" type="button" data-cutout-i18n="copyLink">复制链接</button>
+            <button id="cutoutHome" class="workbenchHome" type="button" data-cutout-i18n="home">← 首页</button>
+            <button id="cutoutClose" class="cutoutClose" type="button" aria-label="关闭">×</button>
+          </div>
         </header>
         <div class="cutoutBody">
           <aside class="cutoutControls">
@@ -203,48 +247,49 @@
                 <button id="cutoutLoadGroup" type="button" class="secondary" data-cutout-i18n="loadGroup">载入当前组</button>
               </div>
             </div>
-            <div class="cutoutSettings">
+            <div id="cutoutSettings" class="cutoutSettings">
               <div class="cutoutSettingsHeading">
                 <div><span>PROCESS STACK</span><strong data-cutout-i18n="settingsTitle">处理参数</strong></div>
                 <small data-cutout-i18n="settingsHint">调整后自动刷新预览</small>
               </div>
+              <div class="cutoutSettingsContext" role="tablist" aria-label="参数类型">
+                <button id="cutoutSettingsAutomatic" type="button" class="active" role="tab" aria-selected="true" data-cutout-i18n="automaticSettings">抠图参数</button>
+                <button id="cutoutSettingsTool" type="button" role="tab" aria-selected="false" data-cutout-i18n="toolSettings">当前工具</button>
+              </div>
+              <div id="cutoutAutomaticSettings" class="cutoutAutomaticSettings">
               <div class="cutoutSettingTabs" role="tablist" aria-label="抠图参数">
-                <button id="cutoutTabRegular" type="button" role="tab" class="active" aria-selected="true" aria-controls="cutoutPanelRegular" data-cutout-tab="regular"><b>01</b><span data-cutout-i18n="regular">常规</span></button>
-                <button id="cutoutTabPost" type="button" role="tab" aria-selected="false" aria-controls="cutoutPanelPost" data-cutout-tab="post"><b>02</b><span data-cutout-i18n="post">后处理</span></button>
-                <button id="cutoutTabAdvanced" type="button" role="tab" aria-selected="false" aria-controls="cutoutPanelAdvanced" data-cutout-tab="advanced"><b>03</b><span data-cutout-i18n="advanced">高级</span></button>
+                <button id="cutoutTabRegular" type="button" role="tab" class="active" aria-selected="true" aria-controls="cutoutPanelRegular" data-cutout-tab="regular"><span data-cutout-i18n="regular">常规</span></button>
+                <button id="cutoutTabPost" type="button" role="tab" aria-selected="false" aria-controls="cutoutPanelPost" data-cutout-tab="post"><span data-cutout-i18n="post">后处理</span></button>
+                <button id="cutoutTabAdvanced" type="button" role="tab" aria-selected="false" aria-controls="cutoutPanelAdvanced" data-cutout-tab="advanced"><span data-cutout-i18n="advanced">高级</span></button>
               </div>
               <div id="cutoutPanelRegular" class="cutoutSettingPanel active" role="tabpanel" aria-labelledby="cutoutTabRegular" data-cutout-panel="regular">
                 <section class="cutoutParameterCard cutoutSourceCard">
                   <header><div><span>A / SOURCE</span><strong data-cutout-i18n="sourceDetection">背景识别</strong></div></header>
-                  <label class="cutoutCheck"><input id="cutoutAutoColor" type="checkbox" checked /><span data-cutout-i18n="autoColor">每张图自动取背景色</span></label>
+                  <label class="cutoutCheck"><input id="cutoutAutoColor" type="checkbox" checked /><span id="cutoutAutoColorLabel" data-cutout-i18n="autoColor">每张图自动取背景色</span></label>
                   <label class="cutoutColorField">
                     <span data-cutout-i18n="backgroundColor">背景色</span>
                     <input id="cutoutColor" type="color" value="#ffffff" disabled />
                     <small id="cutoutSample">等待图片</small>
                   </label>
                   <div class="cutoutBackgroundSamples">
-                    <button id="cutoutBackgroundSample" type="button" class="secondary" data-cutout-i18n="backgroundSample">添加背景样本</button>
+                    <button id="cutoutBackgroundSample" type="button" class="secondary cutoutEyedropperButton" data-cutout-i18n="backgroundSample" data-cutout-i18n-title="backgroundSampleTitle" title="点击后在画布上吸取要清除的背景颜色">吸取背景色</button>
                     <button id="cutoutBackgroundClear" type="button" class="secondary" data-cutout-i18n="backgroundClear">清除样本</button>
                     <div id="cutoutBackgroundColors" class="cutoutProtectedColors"></div>
                   </div>
                 </section>
-                <section class="cutoutParameterCard">
-                  <header><div><span>B / KEY</span><strong data-cutout-i18n="keyQuality">抠图质量</strong></div></header>
-                  <label class="cutoutRange"><span data-cutout-i18n="tolerance">容差</span><input id="cutoutTolerance" type="range" min="0" max="60" step="1" value="15" /><output id="cutoutToleranceValue">15</output></label>
-                  <label class="cutoutRange"><span data-cutout-i18n="edgeBoost">边缘清除增强</span><input id="cutoutEdgeBoost" type="range" min="0" max="100" step="1" value="25" /><output id="cutoutEdgeBoostValue">25</output></label>
-                  <label class="cutoutRange"><span data-cutout-i18n="feather">边缘柔化</span><input id="cutoutFeather" type="range" min="0" max="24" step="1" value="6" /><output id="cutoutFeatherValue">6</output></label>
-                  <label class="cutoutRange"><span data-cutout-i18n="chromaCleanup">色键清理</span><input id="cutoutChromaCleanup" type="range" min="0" max="100" step="1" value="40" /><output id="cutoutChromaCleanupValue">40</output></label>
-                  <label class="cutoutRange"><span data-cutout-i18n="chromaFeather">色键柔边</span><input id="cutoutChromaFeather" type="range" min="0" max="100" step="1" value="30" /><output id="cutoutChromaFeatherValue">30</output></label>
-                  <div class="cutoutToggleGrid">
-                    <label class="cutoutCheck"><input id="cutoutConnected" type="checkbox" /><span data-cutout-i18n="connected">仅清除边缘连通背景</span></label>
-                    <label class="cutoutCheck"><input id="cutoutPerceptual" type="checkbox" /><span data-cutout-i18n="perceptual">OKLab / YCbCr 柔性色键</span></label>
-                  </div>
+                <section class="cutoutParameterCard cutoutKeyCard">
+                  <header><div><span>B / TRANSPARENT REPLACE</span><strong data-cutout-i18n="keyQuality">透明替换</strong></div></header>
+                  <p class="cutoutParameterSection" data-cutout-i18n="boundaryClear">适用于边界清晰的图像</p>
+                  <label class="cutoutRange"><span data-cutout-i18n="tolerance">容差</span><input id="cutoutTolerance" type="range" min="0" max="60" step="1" value="1" /><output id="cutoutToleranceValue">1</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="edgeBoost">边缘清除增强</span><input id="cutoutEdgeBoost" type="range" min="0" max="100" step="1" value="10" /><output id="cutoutEdgeBoostValue">10</output></label>
+                  <p class="cutoutParameterSection" data-cutout-i18n="translucentEffect">适用于半透明图像（如特效）</p>
+                  <label class="cutoutRange"><span data-cutout-i18n="blendStrength">混合换色强度</span><input id="cutoutBlendStrength" type="range" min="0" max="100" step="1" value="0" /><output id="cutoutBlendStrengthValue">0</output></label>
                 </section>
               </div>
               <div id="cutoutPanelPost" class="cutoutSettingPanel" role="tabpanel" aria-labelledby="cutoutTabPost" data-cutout-panel="post" hidden>
                 <section class="cutoutParameterCard">
                   <header><div><span>A / DESPILL</span><strong data-cutout-i18n="spillCleanup">色彩净化</strong></div></header>
-                  <label class="cutoutRange"><span data-cutout-i18n="despillStrength">全局去污强度</span><input id="cutoutDespillStrength" type="range" min="0" max="100" step="1" value="70" /><output id="cutoutDespillStrengthValue">70</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="despillStrength">全局去污强度</span><input id="cutoutDespillStrength" type="range" min="0" max="100" step="1" value="0" /><output id="cutoutDespillStrengthValue">0</output></label>
                   <label class="cutoutSelectField">
                     <span data-cutout-i18n="despillMode">边缘去污模式</span>
                     <select id="cutoutDespillMode">
@@ -257,8 +302,8 @@
                 </section>
                 <section class="cutoutParameterCard">
                   <header><div><span>B / RECOVER</span><strong data-cutout-i18n="edgeRefinement">边缘重建</strong></div></header>
-                  <label class="cutoutRange"><span data-cutout-i18n="edgeRecoveryStrength">边缘颜色恢复</span><input id="cutoutEdgeRecoveryStrength" type="range" min="0" max="100" step="1" value="60" /><output id="cutoutEdgeRecoveryStrengthValue">60</output></label>
-                  <label class="cutoutRange"><span data-cutout-i18n="backgroundRadius">背景搜索半径</span><input id="cutoutBackgroundRadius" type="range" min="1" max="30" step="1" value="30" /><output id="cutoutBackgroundRadiusValue">30</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="edgeRecoveryStrength">边缘颜色恢复</span><input id="cutoutEdgeRecoveryStrength" type="range" min="0" max="100" step="1" value="0" /><output id="cutoutEdgeRecoveryStrengthValue">0</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="backgroundRadius">背景搜索半径</span><input id="cutoutBackgroundRadius" type="range" min="0" max="30" step="1" value="0" /><output id="cutoutBackgroundRadiusValue">0</output></label>
                   <label class="cutoutRange"><span data-cutout-i18n="blurRadius">柔化半径</span><input id="cutoutBlurRadius" type="range" min="0" max="6" step="1" value="0" /><output id="cutoutBlurRadiusValue">0</output></label>
                   <small class="cutoutPanelHint" data-cutout-i18n="postHint">用于清理主体边缘残留的背景色，不改变透明区域。</small>
                 </section>
@@ -266,22 +311,29 @@
               <div id="cutoutPanelAdvanced" class="cutoutSettingPanel cutoutAdvancedPanel" role="tabpanel" aria-labelledby="cutoutTabAdvanced" data-cutout-panel="advanced" hidden>
                 <div class="cutoutAdvancedIntro">
                   <div><span>ALPHA CONTROL / EXPERT</span><strong data-cutout-i18n="advancedTitle">精细 Alpha 与保护色</strong><small data-cutout-i18n="advancedHint">先选择预设，再针对边缘细节微调。</small></div>
-                  <div id="cutoutAdvancedSummary" class="cutoutAdvancedSummary">0 — 255 / T 2</div>
+                  <div id="cutoutAdvancedSummary" class="cutoutAdvancedSummary">0 — 0 / T 0</div>
                 </div>
                 <div class="cutoutPresetBar" role="group" aria-label="Advanced presets">
                   <button type="button" data-cutout-preset="conservative"><b data-cutout-i18n="presetConservative">保守</b><small data-cutout-i18n="presetConservativeHint">保留发丝与半透明</small></button>
-                  <button type="button" class="active" data-cutout-preset="balanced"><b data-cutout-i18n="presetBalanced">均衡</b><small data-cutout-i18n="presetBalancedHint">适合大多数序列</small></button>
+                  <button type="button" data-cutout-preset="balanced"><b data-cutout-i18n="presetBalanced">均衡</b><small data-cutout-i18n="presetBalancedHint">适合大多数序列</small></button>
                   <button type="button" data-cutout-preset="hard"><b data-cutout-i18n="presetHard">硬边</b><small data-cutout-i18n="presetHardHint">像素图与纯色边缘</small></button>
                 </div>
+                <section class="cutoutParameterCard cutoutComplexKeyCard">
+                  <header><div><span>A / COMPLEX KEY</span><strong data-cutout-i18n="complexKey">复杂背景与柔性色键</strong></div></header>
+                  <label class="cutoutRange"><span data-cutout-i18n="feather">边缘柔化</span><input id="cutoutFeather" type="range" min="0" max="24" step="1" value="0" /><output id="cutoutFeatherValue">0</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="chromaFeather">色键柔边</span><input id="cutoutChromaFeather" type="range" min="0" max="100" step="1" value="0" /><output id="cutoutChromaFeatherValue">0</output></label>
+                  <label class="cutoutCheck" title="开启后会保留未与画面边缘连通的内部背景；关闭时与 FramePacker 常规换色一致"><input id="cutoutConnected" type="checkbox" /><span data-cutout-i18n="connected">仅从画面边缘清除（保留内部背景）</span></label>
+                  <label class="cutoutCheck"><input id="cutoutPerceptual" type="checkbox" /><span data-cutout-i18n="perceptual">OKLab / YCbCr 柔性色键（复杂背景）</span></label>
+                </section>
                 <section class="cutoutParameterCard cutoutAlphaCard">
-                  <header><div><span>A / ALPHA WINDOW</span><strong data-cutout-i18n="alphaWindow">透明度窗口</strong></div><small data-cutout-i18n="alphaWindowHint">低于下限清空，高于上限转为不透明</small></header>
+                  <header><div><span>B / ALPHA WINDOW</span><strong data-cutout-i18n="alphaWindow">透明度窗口</strong></div><small data-cutout-i18n="alphaWindowHint">低于下限清空，高于上限转为不透明</small></header>
                   <label class="cutoutRange"><span data-cutout-i18n="alphaLow">半透明低阈值</span><input id="cutoutAlphaLow" type="range" min="0" max="255" step="1" value="0" /><output id="cutoutAlphaLowValue">0</output></label>
-                  <label class="cutoutRange"><span data-cutout-i18n="alphaHigh">半透明高阈值</span><input id="cutoutAlphaHigh" type="range" min="0" max="255" step="1" value="255" /><output id="cutoutAlphaHighValue">255</output></label>
-                  <label class="cutoutRange"><span data-cutout-i18n="alphaThreshold">硬透明阈值</span><input id="cutoutAlphaThreshold" type="range" min="0" max="48" step="1" value="2" /><output id="cutoutAlphaValue">2</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="alphaHigh">半透明高阈值</span><input id="cutoutAlphaHigh" type="range" min="0" max="255" step="1" value="0" /><output id="cutoutAlphaHighValue">0</output></label>
+                  <label class="cutoutRange"><span data-cutout-i18n="alphaThreshold">硬透明阈值</span><input id="cutoutAlphaThreshold" type="range" min="0" max="48" step="1" value="0" /><output id="cutoutAlphaValue">0</output></label>
                 </section>
                 <section class="cutoutParameterCard cutoutProtectionCard">
-                  <header><div><span>B / COLOR GUARD</span><strong data-cutout-i18n="colorProtection">颜色保护</strong></div><small data-cutout-i18n="colorProtectionHint">启用后点击原图，保留相近颜色</small></header>
-                  <label class="cutoutRange"><span data-cutout-i18n="protectionTolerance">保护色容差</span><input id="cutoutProtectionTolerance" type="range" min="0" max="40" step="1" value="8" /><output id="cutoutProtectionToleranceValue">8</output></label>
+                  <header><div><span>C / COLOR GUARD</span><strong data-cutout-i18n="colorProtection">颜色保护</strong></div><small data-cutout-i18n="colorProtectionHint">启用后点击原图，保留相近颜色</small></header>
+                  <label class="cutoutRange"><span data-cutout-i18n="protectionTolerance">保护色容差</span><input id="cutoutProtectionTolerance" type="range" min="0" max="40" step="1" value="0" /><output id="cutoutProtectionToleranceValue">0</output></label>
                   <div class="cutoutColorProtection">
                     <div><strong data-cutout-i18n="protectedPalette">保护色板</strong><small data-cutout-i18n="protectedPaletteHint">点击色块可移除</small></div>
                     <button id="cutoutProtectSample" type="button" class="secondary" data-cutout-i18n="protectSample">吸取保护色</button>
@@ -290,6 +342,44 @@
                   </div>
                 </section>
               </div>
+              </div>
+              <div id="cutoutLocalSettings" class="cutoutLocalSettings" hidden>
+                <div class="cutoutLocalSettingsHeading">
+                  <div><span>ACTIVE TOOL</span><strong id="cutoutActiveToolTitle" data-cutout-i18n="repairAutomatic">自动抠图</strong></div>
+                  <small data-cutout-i18n="toolSettingsHint">这里只显示当前工具需要的参数</small>
+                </div>
+                <div class="cutoutToolOptions cutoutBrushControls" data-cutout-options="brush" hidden>
+                  <label><span data-cutout-i18n="brushSize">大小</span><input id="cutoutBrushSize" type="range" min="1" max="100" step="1" value="16" /><output id="cutoutBrushSizeValue">16</output></label>
+                  <label><span data-cutout-i18n="brushHardness">硬度</span><input id="cutoutBrushHardness" type="range" min="1" max="100" step="1" value="85" /><output id="cutoutBrushHardnessValue">85%</output></label>
+                  <label><span data-cutout-i18n="brushOpacity">不透明度</span><input id="cutoutBrushOpacity" type="range" min="1" max="100" step="1" value="100" /><output id="cutoutBrushOpacityValue">100%</output></label>
+                  <label class="cutoutBrushColor"><span data-cutout-i18n="brushColor">颜色</span><input id="cutoutBrushColor" type="color" value="#00c800" /></label>
+                </div>
+                <div class="cutoutToolOptions cutoutAreaControls" data-cutout-options="area" hidden>
+                  <div class="cutoutAreaColor">
+                    <label for="cutoutAreaColor" data-cutout-i18n="targetColor">目标颜色</label>
+                    <input id="cutoutAreaColor" type="color" value="#00c800" />
+                    <button id="cutoutAreaTransparent" type="button" class="secondary cutoutTransparentColor" aria-pressed="false">
+                      <span class="cutoutTransparencySwatch" aria-hidden="true"></span>
+                      <span data-cutout-i18n="noColor">无颜色</span>
+                    </button>
+                  </div>
+                  <label><span data-cutout-i18n="areaTolerance">颜色容差</span><input id="cutoutAreaTolerance" type="range" min="0" max="100" step="1" value="18" /><output id="cutoutAreaToleranceValue">18</output></label>
+                  <label class="cutoutAreaScope"><span data-cutout-i18n="areaScope">作用范围</span><select id="cutoutAreaScope"><option value="connected" data-cutout-i18n="scopeConnected">连通区域</option><option value="global" data-cutout-i18n="scopeGlobal">整张图</option></select></label>
+                  <small id="cutoutAreaHint" data-cutout-i18n="fillHint">点击缺失或透明区域进行局部补色</small>
+                </div>
+                <div class="cutoutToolOptions cutoutSelectionControls" data-cutout-options="selection">
+                  <strong id="cutoutSelectionToolLabel" data-cutout-i18n="repairClear">清空区域</strong>
+                  <small id="cutoutSelectionHint" data-cutout-i18n="selectionHint">在画布中拖出矩形，松开后应用</small>
+                  <div id="cutoutProtectionControls" class="cutoutProtectionControls" hidden>
+                    <label class="cutoutSelectField"><span data-cutout-i18n="protectionType">保护方式</span><select id="cutoutProtectionType"><option value="color" data-cutout-i18n="protectColors">保护颜色</option><option value="range" data-cutout-i18n="protectRange">保护范围</option></select></label>
+                    <div id="cutoutProtectionRangeOptions" class="cutoutProtectionRangeOptions" hidden>
+                      <label class="cutoutRange"><span data-cutout-i18n="boundaryStrength">边界识别</span><input id="cutoutProtectionBoundary" type="range" min="0" max="100" step="1" value="55" /><output id="cutoutProtectionBoundaryValue">55</output></label>
+                      <label class="cutoutRange"><span data-cutout-i18n="boundaryPadding">边界扩展</span><input id="cutoutProtectionPadding" type="range" min="0" max="8" step="1" value="2" /><output id="cutoutProtectionPaddingValue">2</output></label>
+                      <small data-cutout-i18n="protectRangeHint">粗略框住主体，系统会排除背景并收紧到主体边界</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </aside>
           <section class="cutoutPreview">
@@ -297,7 +387,7 @@
               <div class="cutoutFrameNavigation" aria-label="批次帧导航">
                 <button id="cutoutPrevious" type="button" class="secondary" aria-label="上一张">◀</button>
                 <label class="cutoutFramePosition">
-                  <span data-cutout-i18n="framePrefix">帧</span>
+                  <span id="cutoutFramePrefix" data-cutout-i18n="framePrefix">帧</span>
                   <input id="cutoutFrameNumber" type="number" min="1" value="1" inputmode="numeric" />
                   <output id="cutoutCounter">/ 0</output>
                 </label>
@@ -311,35 +401,42 @@
                 <button id="cutoutViewAlpha" type="button" class="secondary" aria-pressed="false" data-cutout-i18n="viewAlpha">Alpha</button>
                 <button id="cutoutViewDifference" type="button" class="secondary" aria-pressed="false" data-cutout-i18n="viewDifference">差异</button>
               </div>
-              <div class="cutoutZoomControls" aria-label="Preview zoom">
-                <button id="cutoutZoomOut" type="button" class="secondary" aria-label="Zoom out">−</button>
-                <label class="cutoutZoomSlider">
-                  <input id="cutoutZoom" type="range" min="10" max="500" step="5" value="100" />
-                  <output id="cutoutZoomValue">FIT</output>
-                </label>
-                <button id="cutoutZoomIn" type="button" class="secondary" aria-label="Zoom in">+</button>
-                <button id="cutoutZoomFit" type="button" class="secondary active" data-cutout-i18n="zoomFit">适应</button>
-                <button id="cutoutZoomActual" type="button" class="secondary" data-cutout-i18n="zoomActual">100%</button>
-              </div>
             </div>
             <div id="cutoutRepairTools" class="cutoutRepairTools" role="toolbar" aria-label="局部修正工具">
               <div class="cutoutRepairIntro">
-                <strong data-cutout-i18n="localRepair">框选局部修正</strong>
-                <small data-cutout-i18n="repairHint">在“透明结果”上拖出矩形区域</small>
+                <span>LOCAL EDIT / NON-DESTRUCTIVE</span>
+                <strong data-cutout-i18n="localRepair">局部编辑</strong>
+                <small data-cutout-i18n="repairHint">选择工具后直接编辑结果，可撤销</small>
               </div>
               <div class="cutoutRepairModes" aria-label="修正模式">
-                <button id="cutoutRepairBrush" type="button" class="secondary" data-cutout-tool="brush" data-cutout-i18n="repairBrush" title="在结果图上绘制颜色和透明度">画笔</button>
-                <button id="cutoutRepairEraser" type="button" class="secondary" data-cutout-tool="eraser" data-cutout-i18n="repairEraser" title="擦除结果图的透明度">橡皮擦</button>
-                <button id="cutoutRepairSmart" type="button" class="secondary active" data-cutout-tool="smart" data-cutout-i18n="repairSmart" title="框选后按当前色键参数智能清除背景">智能清除</button>
-                <button id="cutoutRepairClear" type="button" class="secondary" data-cutout-tool="clear" data-cutout-i18n="repairClear" title="将框选区域直接变为完全透明">整块清空</button>
-                <button id="cutoutRepairRestore" type="button" class="secondary" data-cutout-tool="restore" data-cutout-i18n="repairRestore" title="从原图恢复框选区域中的主体">恢复主体</button>
-                <button id="cutoutRepairProtect" type="button" class="secondary" data-cutout-tool="protect" data-cutout-i18n="repairProtect" title="提取框选区域颜色并加入保护色板">框选保护</button>
-              </div>
-              <div class="cutoutBrushControls">
-                <label><span data-cutout-i18n="brushSize">大小</span><input id="cutoutBrushSize" type="range" min="1" max="100" step="1" value="16" /><output id="cutoutBrushSizeValue">16</output></label>
-                <label><span data-cutout-i18n="brushHardness">硬度</span><input id="cutoutBrushHardness" type="range" min="1" max="100" step="1" value="85" /><output id="cutoutBrushHardnessValue">85%</output></label>
-                <label><span data-cutout-i18n="brushOpacity">不透明度</span><input id="cutoutBrushOpacity" type="range" min="1" max="100" step="1" value="100" /><output id="cutoutBrushOpacityValue">100%</output></label>
-                <label class="cutoutBrushColor"><span data-cutout-i18n="brushColor">颜色</span><input id="cutoutBrushColor" type="color" value="#00c800" /></label>
+                <div class="cutoutToolGroup">
+                  <span data-cutout-i18n="toolGroupDraw">绘制</span>
+                  <div>
+                    <button id="cutoutRepairBrush" type="button" class="secondary" data-cutout-tool="brush" data-cutout-i18n="repairBrush" title="在结果图上绘制颜色和透明度">画笔</button>
+                    <button id="cutoutRepairEraser" type="button" class="secondary" data-cutout-tool="eraser" data-cutout-i18n="repairEraser" title="擦除结果图的透明度">橡皮擦</button>
+                    <button id="cutoutRepairSource" type="button" class="secondary" data-cutout-tool="restore-source" data-cutout-i18n="repairSource" title="直接从原图恢复笔刷经过的 RGBA 像素，不进行背景色判断">原图恢复笔</button>
+                  </div>
+                </div>
+                <div class="cutoutToolGroup cutoutToolGroupArea">
+                  <span data-cutout-i18n="toolGroupArea">区域</span>
+                  <div>
+                    <button id="cutoutRepairFill" type="button" class="secondary" data-cutout-tool="fill" data-cutout-i18n="repairFill" title="点击缺失或透明的连通区域进行补色">区域补色</button>
+                    <button id="cutoutRepairRecolor" type="button" class="secondary" data-cutout-tool="recolor" data-cutout-i18n="repairRecolor" title="替换局部或整张图中的匹配颜色">颜色替换</button>
+                    <button id="cutoutAreaTransparentQuick" type="button" class="secondary cutoutTransparentQuick" aria-pressed="false" title="使用透明色进行区域补色或颜色替换">
+                      <span class="cutoutTransparencySwatch" aria-hidden="true"></span>
+                      <span data-cutout-i18n="noColor">无颜色</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="cutoutToolGroup cutoutToolGroupWide">
+                  <span data-cutout-i18n="toolGroupRepair">修复</span>
+                  <div>
+                    <button id="cutoutRepairAutomatic" type="button" class="secondary active" data-cutout-tool="automatic" data-cutout-i18n="repairAutomatic" data-cutout-i18n-title="automaticCutoutTitle" title="点击后自动识别并清除整张图片的背景">自动抠图</button>
+                    <button id="cutoutRepairRestore" type="button" class="secondary" data-cutout-tool="restore" data-cutout-i18n="repairRestore" title="从原图恢复框选区域中的主体">恢复主体</button>
+                    <button id="cutoutRepairClear" type="button" class="secondary" data-cutout-tool="clear" data-cutout-i18n="repairClear" title="将框选区域直接变为完全透明">清空区域</button>
+                    <button id="cutoutRepairProtect" type="button" class="secondary" data-cutout-tool="protect" data-cutout-i18n="repairProtect" title="框选后保护颜色或智能识别范围">保护</button>
+                  </div>
+                </div>
               </div>
               <div class="cutoutRepairActions" aria-label="历史与批量">
                 <div class="cutoutHistoryButtons">
@@ -347,7 +444,7 @@
                   <button id="cutoutRepairRedo" type="button" class="secondary cutoutIconAction" data-cutout-action="redo" data-cutout-i18n="repairRedoShort">重做</button>
                   <button id="cutoutRepairReset" type="button" class="secondary cutoutIconAction" data-cutout-action="reset" data-cutout-i18n="repairResetShort">清除</button>
                 </div>
-                <button id="cutoutRepairBatch" type="button" class="cutoutBatchAction" data-cutout-action="batch" data-cutout-i18n="repairBatch">传播到全部帧</button>
+                <button id="cutoutRepairBatch" type="button" class="cutoutBatchAction" data-cutout-action="batch" data-cutout-i18n="repairBatch" aria-live="polite">传播到全部帧</button>
               </div>
             </div>
             <div class="cutoutCompare" data-cutout-i18n-title="zoomHint" title="滚轮缩放；按住空格拖拽平移">
@@ -359,6 +456,16 @@
                 <figcaption id="cutoutViewCaption" data-cutout-i18n="editorCanvas">编辑画布</figcaption>
                 <canvas id="cutoutResult" width="480" height="360" tabindex="0" aria-label="抠图编辑画布。方向键移动键盘修正光标，Enter 应用当前工具，减号和加号缩放。"></canvas>
               </figure>
+              <div class="cutoutZoomControls" aria-label="Preview zoom">
+                <button id="cutoutZoomOut" type="button" class="secondary" aria-label="Zoom out">−</button>
+                <label class="cutoutZoomSlider">
+                  <input id="cutoutZoom" type="range" min="10" max="500" step="5" value="100" />
+                  <output id="cutoutZoomValue">FIT</output>
+                </label>
+                <button id="cutoutZoomIn" type="button" class="secondary" aria-label="Zoom in">+</button>
+                <button id="cutoutZoomFit" type="button" class="secondary active" data-cutout-i18n="zoomFit">适应</button>
+                <button id="cutoutZoomActual" type="button" class="secondary" data-cutout-i18n="zoomActual">100%</button>
+              </div>
             </div>
             <section class="cutoutBatchTray" aria-labelledby="cutoutBatchTrayTitle">
               <header class="cutoutBatchTrayHeader">
@@ -371,20 +478,26 @@
                     <b id="cutoutQualityCount">0</b>
                   </button>
                   <button id="cutoutNextIssue" type="button" class="secondary cutoutNextIssue" data-cutout-i18n="nextIssue">下一异常</button>
-                  <button id="cutoutBatchTrayToggle" type="button" class="secondary cutoutBatchTrayToggle" aria-expanded="false" title="展开或收起批次图片栏">▴</button>
+                  <button id="cutoutBatchTrayToggle" type="button" class="secondary cutoutBatchTrayToggle" aria-expanded="false" aria-label="展开批次图片栏" title="展开批次图片栏">▴</button>
                 </div>
-                <div class="cutoutBatchTrayActions">
+                <div id="cutoutBatchTrayActions" class="cutoutBatchTrayActions" role="toolbar" aria-label="批次结果操作" tabindex="0">
                   <div class="cutoutThumbnailMode" role="group" aria-label="缩略图显示">
                     <button id="cutoutShowResult" type="button" class="secondary active" data-icon="◐" data-cutout-i18n="showResult" title="缩略图显示抠图结果">结果</button>
                     <button id="cutoutShowOriginal" type="button" class="secondary" data-icon="▣" data-cutout-i18n="showOriginal" title="缩略图显示原始图片">原图</button>
                   </div>
-                  <button id="cutoutIncludeAll" type="button" class="secondary" data-icon="✓" data-cutout-i18n="includeAll" title="将所有图片纳入处理与导出">全部包含</button>
-                  <button id="cutoutExcludeAll" type="button" class="secondary" data-icon="○" data-cutout-i18n="excludeAll" title="暂时排除所有图片，但不删除">全部排除</button>
-                  <button id="cutoutSelectAll" type="button" class="secondary" data-icon="☑" data-cutout-i18n="selectAll" title="选择全部缩略图用于批量操作">全选</button>
-                  <button id="cutoutInvertSelection" type="button" class="secondary" data-icon="⇄" data-cutout-i18n="invertSelection" title="反转当前缩略图选择">反选</button>
-                  <button id="cutoutExcludeSelected" type="button" class="secondary" data-icon="⊘" data-cutout-i18n="excludeSelected" title="从处理与导出中排除选中图片">排除所选</button>
-                  <button id="cutoutDeleteSelected" type="button" class="secondary cutoutBatchDanger" data-icon="⌫" data-cutout-i18n="deleteSelected" title="永久移除选中的批次图片">删除所选</button>
-                  <button id="cutoutRetryFailed" type="button" class="secondary" data-icon="↻" data-cutout-i18n="retryFailed" title="重新处理失败的图片">重试失败</button>
+                  <div class="cutoutBatchActionGroup" role="group" aria-label="包含范围">
+                    <button id="cutoutIncludeAll" type="button" class="secondary" data-icon="✓" data-cutout-i18n="includeAll" title="将所有图片纳入处理与导出">全部包含</button>
+                    <button id="cutoutExcludeAll" type="button" class="secondary" data-icon="○" data-cutout-i18n="excludeAll" title="暂时排除所有图片，但不删除">全部排除</button>
+                  </div>
+                  <div class="cutoutBatchActionGroup" role="group" aria-label="批量选择">
+                    <button id="cutoutSelectAll" type="button" class="secondary" data-icon="☑" data-cutout-i18n="selectAll" title="选择全部缩略图用于批量操作">全选</button>
+                    <button id="cutoutInvertSelection" type="button" class="secondary" data-icon="⇄" data-cutout-i18n="invertSelection" title="反转当前缩略图选择">反选</button>
+                    <button id="cutoutExcludeSelected" type="button" class="secondary" data-icon="⊘" data-cutout-i18n="excludeSelected" title="从处理与导出中排除选中图片">排除所选</button>
+                  </div>
+                  <div class="cutoutBatchActionGroup cutoutBatchDangerGroup" role="group" aria-label="恢复与删除">
+                    <button id="cutoutRetryFailed" type="button" class="secondary" data-icon="↻" data-cutout-i18n="retryFailed" title="重新处理失败的图片">重试失败</button>
+                    <button id="cutoutDeleteSelected" type="button" class="secondary cutoutBatchDanger" data-icon="⌫" data-cutout-i18n="deleteSelected" title="永久移除选中的批次图片">删除所选</button>
+                  </div>
                 </div>
               </header>
               <div id="cutoutQueue" class="cutoutQueue" role="listbox" aria-label="批量图片" aria-multiselectable="true"></div>
@@ -422,7 +535,11 @@
             <h2 id="organizerTitle" data-organizer-i18n="title">帧工作集</h2>
             <p id="organizerSubtitle" data-organizer-i18n="subtitle">重排、减帧与相似度诊断</p>
           </div>
-          <button id="organizerClose" class="organizerClose" type="button" aria-label="关闭">×</button>
+          <div class="workbenchHeaderActions">
+            <button id="organizerCopyLink" class="workbenchLink" type="button" data-organizer-i18n="copyLink">复制链接</button>
+            <button id="organizerHome" class="workbenchHome" type="button" data-organizer-i18n="home">← 首页</button>
+            <button id="organizerClose" class="organizerClose" type="button" aria-label="关闭">×</button>
+          </div>
         </header>
         <section id="organizerImportSetup" class="organizerImportSetup" aria-labelledby="organizerImportSetupTitle" hidden>
           <div class="organizerImportIntro">
@@ -432,27 +549,27 @@
           </div>
           <label>
             <span data-organizer-i18n="importProject">保存到</span>
-            <select id="organizerProjectSelect"></select>
+            <select id="organizerProjectSelect" name="project" autocomplete="off"></select>
           </label>
           <label id="organizerProjectNameField">
             <span data-organizer-i18n="importProjectName">新项目名称</span>
-            <input id="organizerProjectName" type="text" value="动画项目" maxlength="80" />
+            <input id="organizerProjectName" name="project-name" type="text" value="动画项目" maxlength="80" autocomplete="off" />
           </label>
           <label>
             <span data-organizer-i18n="importProfileName">角色名称</span>
-            <input id="organizerProfileName" type="text" value="character" maxlength="80" />
+            <input id="organizerProfileName" name="profile-name" type="text" value="character" maxlength="80" autocomplete="off" spellcheck="false" />
           </label>
           <label>
             <span data-organizer-i18n="importAnimationName">动画名称</span>
-            <input id="organizerAnimationName" type="text" value="idle" maxlength="80" />
+            <input id="organizerAnimationName" name="animation-name" type="text" value="idle" maxlength="80" autocomplete="off" spellcheck="false" />
           </label>
           <label>
             <span data-organizer-i18n="importFps">播放 FPS</span>
-            <input id="organizerImportFps" type="number" min="1" max="120" step="1" value="12" inputmode="numeric" />
+            <input id="organizerImportFps" name="fps" type="number" min="1" max="120" step="1" value="12" inputmode="numeric" autocomplete="off" />
           </label>
           <label>
             <span data-organizer-i18n="importType">类型</span>
-            <select id="organizerAnimationType">
+            <select id="organizerAnimationType" name="animation-type" autocomplete="off">
               <option value="actor" data-organizer-i18n="importTypeActor">角色</option>
               <option value="boss" data-organizer-i18n="importTypeBoss">Boss</option>
               <option value="vfx" data-organizer-i18n="importTypeVfx">特效</option>
@@ -464,10 +581,14 @@
           <div class="organizerToolbarRow organizerToolbarPrimary">
             <div class="organizerToolGroup organizerSourceTools" role="group" aria-label="导入来源">
               <span data-organizer-i18n="sourceTools">来源</span>
-              <button id="organizerImport" type="button" data-organizer-i18n="import">导入图片</button>
-              <input id="organizerFileInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
-              <button id="organizerImportVideo" type="button" class="organizerVideoButton" data-organizer-i18n="importVideo">导入视频</button>
-              <input id="organizerVideoInput" type="file" accept="video/mp4,video/webm,video/quicktime,video/x-m4v" hidden />
+              <span class="organizerFilePicker">
+                <span id="organizerImport" class="organizerPickerFace" aria-hidden="true" data-organizer-i18n="import">导入图片</span>
+                <input id="organizerFileInput" name="images" type="file" accept="image/png,image/jpeg,image/webp" multiple aria-label="导入图片" />
+              </span>
+              <span class="organizerFilePicker">
+                <span id="organizerImportVideo" class="organizerPickerFace organizerVideoButton" aria-hidden="true" data-organizer-i18n="importVideo">导入视频</span>
+                <input id="organizerVideoInput" name="video" type="file" accept="video/mp4,video/webm,video/quicktime,video/x-m4v" aria-label="导入视频" />
+              </span>
             </div>
             <div class="organizerToolGroup organizerEditTools" role="group" aria-label="帧编辑">
               <span data-organizer-i18n="editTools">编辑</span>
@@ -680,11 +801,16 @@
                 <button id="organizerViewEdited" type="button" class="secondary active" data-organizer-i18n="edited">编辑结果</button>
               </div>
             </div>
-            <canvas id="organizerPreview" width="520" height="520"></canvas>
-            <label class="organizerSpeed">
-              <span data-organizer-i18n="speed">预览速度</span>
-              <input id="organizerSpeed" type="range" min="40" max="600" step="10" value="480" />
-            </label>
+            <div class="organizerPreviewStage">
+              <canvas id="organizerPreview" width="520" height="520"></canvas>
+              <output id="organizerPreviewFrame" class="organizerPreviewFrame" aria-live="off">第 - / 0 帧</output>
+              <label class="organizerSpeed">
+                <span data-organizer-i18n="speed">预览速度</span>
+                <b aria-hidden="true">−</b>
+                <input id="organizerSpeed" type="range" min="40" max="600" step="10" value="480" />
+                <b aria-hidden="true">+</b>
+              </label>
+            </div>
             <div class="organizerStatusRow">
               <div id="organizerStatus" class="organizerStatus" aria-live="polite">等待操作</div>
               <button id="organizerUndoDelete" type="button" class="secondary" data-organizer-i18n="undoDelete" hidden>撤销删除</button>
@@ -698,6 +824,7 @@
         </div>
       </div>
     </section>
+    <script src="/image_pixel_budget.js"></script>
     <script src="/batch_cutout_product_core.js"></script>
     <script src="/batch_cutout_protection_core.js"></script>
     <script src="/batch_cutout_reference_recovery_core.js"></script>
@@ -705,9 +832,11 @@
     <script src="/batch_cutout_core.js"></script>
     <script src="/batch_zip.js"></script>
     <script src="/batch_cutout_output_core.js"></script>
+    <script src="/batch_cutout_session_core.js"></script>
     <script src="/batch_cutout_worker_client.js"></script>
     <script src="/cutout_quality_core.js"></script>
     <script src="/cutout_tracking_core.js"></script>
+    <script src="/cutout_local_tracking_core.js"></script>
     <script src="/batch_cutout.js"></script>
     <script src="/frame_organizer_core.js"></script>
     <script src="/frame_organizer.js"></script>
