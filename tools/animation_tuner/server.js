@@ -9,6 +9,24 @@ const { EMPTY_MANIFEST, EMPTY_TUNING, createProjectStore, reslash } = require(".
 const { importAnimation, reorganizeAnimation } = require("../frame_organizer");
 const { deleteAnimation } = require("../animation_mutations");
 const { checkForUpdates, performUpdate } = require("../updater");
+const { createProjectInspection } = require("../project_inspection");
+const { createHttpUtilities } = require("./server_http");
+const { createProjectPersistence } = require("./server_project_persistence");
+const { createProjectValidation } = require("./server_project_validation");
+const { createProjectView } = require("./server_project_view");
+const { createProjectRoutes } = require("./server_project_routes");
+const { createMediaRoutes } = require("./server_media_routes");
+const { createStaticHandler } = require("./server_static");
+const { createServerIoOperations } = require("./server_io_operations");
+const {
+  decodeDataUrl,
+  imageExtensionFromMime,
+  isInside,
+  normalizeManifest: normalizeManifestInput,
+  normalizeTuningScaleValues,
+  safeResolve,
+  sanitizeSegment,
+} = require("./server_validation");
 
 const ROOT = path.resolve(process.env.XSXB_ROOT || path.resolve(__dirname, "..", ".."));
 const PUBLIC = path.join(__dirname, "public");
@@ -19,7 +37,6 @@ let restartScheduled = false;
 const DEFAULT_BODY_LIMIT = 2 * 1024 * 1024;
 const SAVE_BODY_LIMIT = 64 * 1024 * 1024;
 const MEDIA_BODY_LIMIT = 96 * 1024 * 1024;
-const projectWriteQueues = new Map();
 const MEDIA_ROUTES = new Set([
   "/api/attachment-assets",
   "/api/frame-attachment-image",
@@ -28,11 +45,7 @@ const MEDIA_ROUTES = new Set([
   "/api/replace-frame",
   "/api/reorganize-animation",
 ]);
-const WORKBENCH_ROUTES = new Set([
-  "/tools/cutout",
-  "/tools/import",
-  "/tools/organizer",
-]);
+const WORKBENCH_ROUTES = new Set(["/tools/cutout", "/tools/import", "/tools/organizer"]);
 
 const DEFAULT_SUPPORTS = [
   "character_transform",
@@ -42,344 +55,151 @@ const DEFAULT_SUPPORTS = [
   "frame_boxes",
   "reference_frame",
 ];
-const GDSCRIPT_SCAN_LIMIT = 250;
-const GDSCRIPT_SKIP_DIRS = new Set([
-  ".git",
-  ".godot",
-  "addons",
-  "node_modules",
-  "_external_vfx",
-]);
-const SCENE_SKIP_DIRS = new Set([
-  ...GDSCRIPT_SKIP_DIRS,
-  ".import",
-]);
+
+const { HttpError, readJsonBody, send, validateWriteRequest } = createHttpUtilities({
+  port: PORT,
+  mediaRoutes: MEDIA_ROUTES,
+  defaultBodyLimit: DEFAULT_BODY_LIMIT,
+  saveBodyLimit: SAVE_BODY_LIMIT,
+  mediaBodyLimit: MEDIA_BODY_LIMIT,
+});
+const serveStatic = createStaticHandler({
+  publicRoot: PUBLIC,
+  workbenchRoutes: WORKBENCH_ROUTES,
+  safeResolve,
+  send,
+});
+const {
+  withProjectWrite,
+  syncGodotProjectAsync,
+  syncFrameAudioAsync,
+  projectDataRevision,
+  createFilesystemSnapshot,
+  rollbackFilesystemSnapshot,
+  saveTransactionPaths,
+} = createServerIoOperations({
+  root: ROOT,
+  projectStore,
+  fs,
+  os,
+  path,
+  crypto,
+  Worker,
+});
+
+const {
+  saveTuningPayload,
+  saveFrameImageAttachments,
+  saveAttachmentAssets,
+  saveFrameAudioBindings,
+  saveFrameAttachmentImage,
+  replaceFrameImage,
+  replaceAnimationImages,
+} = createProjectPersistence({
+  fs,
+  path,
+  crypto,
+  root: ROOT,
+  projectStore,
+  decodeDataUrl,
+  imageExtensionFromMime,
+  isInside,
+  safeResolve,
+  reslash,
+  getPngSize,
+  normalizeTuningScaleValues,
+  withFrameAttachmentHash,
+  HttpError,
+});
+const {
+  relativeProjectPath,
+  listSceneFiles,
+  validateGdscriptTypeInference,
+  manifestHasRuntimeAnimations,
+  validateRuntimeSceneUsage,
+  validateRuntimeBindingReaders,
+  validateGameLocalBindingKeys,
+} = createProjectValidation({
+  fs,
+  path,
+  projectStore,
+  reslash,
+  createProjectInspection,
+});
+const { syncGodotRuntimeProjectId, configResponse, projectsResponse } = createProjectView({
+  root: ROOT,
+  projectStore,
+  projectFromRequest,
+  emptyTuning: EMPTY_TUNING,
+  tuningForClient,
+  readManifest,
+  readTuningFile,
+  buildGroups,
+  validateProject,
+  profileForClient,
+  listSceneFiles,
+  readFrameAudioBindings,
+  readFrameImageAttachments,
+  readAttachmentAssets,
+  projectDataRevision,
+  fs,
+  path,
+  relativeProjectPath,
+});
+
+const { handleProjectRoute } = createProjectRoutes({
+  send,
+  readJsonBody,
+  withProjectWrite,
+  projectStore,
+  requiredProjectFromRequest,
+  projectDataRevision,
+  createFilesystemSnapshot,
+  managedProjectPaths,
+  clearProjectContent,
+  rollbackFilesystemSnapshot,
+  projectsResponse,
+  fs,
+});
+
+const { handleMediaRoute } = createMediaRoutes({
+  send,
+  readJsonBody,
+  withProjectWrite,
+  projectStore,
+  projectFromRequest,
+  requiredProjectFromRequest,
+  projectDataRevision,
+  createFilesystemSnapshot,
+  managedProjectPaths,
+  rollbackFilesystemSnapshot,
+  fs,
+  path,
+  root: ROOT,
+  decodeDataUrl,
+  saveFrameAudioBindings,
+  saveFrameAttachmentImage,
+  saveAttachmentAssets,
+  replaceFrameImage,
+  replaceAnimationImages,
+  deleteAnimation,
+  importAnimation,
+  reorganizeAnimation,
+  syncGodotProjectAsync,
+  syncFrameAudioAsync,
+  syncGodotRuntimeProjectId,
+  godotMirrorPath,
+  validateProject,
+});
 
 function ensureDataFiles() {
   projectStore.readRegistry();
 }
 
-function send(res, status, body, contentType = "application/json") {
-  if (res.destroyed || res.writableEnded) return false;
-  const data = Buffer.isBuffer(body)
-    ? body
-    : contentType === "application/json"
-      ? Buffer.from(JSON.stringify(body, null, 2))
-      : Buffer.from(String(body));
-  try {
-    if (!res.headersSent) {
-      res.writeHead(status, {
-        "content-type": contentType,
-        "cache-control": "no-store",
-      });
-    }
-    res.end(data);
-    return true;
-  } catch (error) {
-    console.error("Failed to send HTTP response:", error);
-    if (!res.destroyed) res.destroy();
-    return false;
-  }
-}
-
-class HttpError extends Error {
-  /**
-   * Creates an HTTP-safe application error.
-   * @param {number} status HTTP status.
-   * @param {string} message User-facing error message.
-   */
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
-
-/**
- * Returns the maximum accepted JSON request size for one API route.
- * @param {string} pathname Request path.
- * @returns {number} Limit in bytes.
- */
-function requestBodyLimit(pathname) {
-  if (MEDIA_ROUTES.has(pathname)) return MEDIA_BODY_LIMIT;
-  if (pathname === "/api/save" || pathname === "/api/frame-audio") return SAVE_BODY_LIMIT;
-  return DEFAULT_BODY_LIMIT;
-}
-
-/**
- * Rejects browser cross-origin writes while preserving CLI access without Origin.
- * @param {http.IncomingMessage} req HTTP request.
- * @returns {void}
- */
-function validateWriteRequest(req) {
-  const contentType = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
-  if (contentType !== "application/json") {
-    throw new HttpError(415, "Expected Content-Type: application/json.");
-  }
-  const origin = String(req.headers.origin || "").trim();
-  if (!origin) return;
-  const allowedOrigins = new Set([
-    `http://127.0.0.1:${PORT}`,
-    `http://localhost:${PORT}`,
-  ]);
-  if (!allowedOrigins.has(origin)) throw new HttpError(403, "Cross-origin local API writes are not allowed.");
-}
-
-/**
- * Reads one bounded UTF-8 request body.
- * @param {http.IncomingMessage} req HTTP request.
- * @param {number} limit Maximum body size in bytes.
- * @returns {Promise<string>} Request body.
- */
-function readBody(req, limit) {
-  return new Promise((resolve, reject) => {
-    const declaredLength = Number(req.headers["content-length"] || 0);
-    if (Number.isFinite(declaredLength) && declaredLength > limit) {
-      req.resume();
-      reject(new HttpError(413, `Request body exceeds the ${Math.round(limit / 1024 / 1024)} MB limit.`));
-      return;
-    }
-    const chunks = [];
-    let received = 0;
-    let settled = false;
-    req.on("data", (chunk) => {
-      if (settled) return;
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      received += buffer.length;
-      if (received > limit) {
-        settled = true;
-        chunks.length = 0;
-        req.resume();
-        reject(new HttpError(413, `Request body exceeds the ${Math.round(limit / 1024 / 1024)} MB limit.`));
-        return;
-      }
-      chunks.push(buffer);
-    });
-    req.on("end", () => {
-      if (!settled) resolve(Buffer.concat(chunks, received).toString("utf8"));
-    });
-    req.on("error", (error) => {
-      if (!settled) reject(error);
-    });
-  });
-}
-
-/**
- * Serializes filesystem mutations for one project without blocking unrelated projects.
- * @template T
- * @param {string} projectId Stable project identifier.
- * @param {()=>Promise<T>|T} operation Mutation to execute.
- * @returns {Promise<T>} Operation result.
- */
-function withProjectWrite(projectId, operation) {
-  const key = String(projectId || "__registry__");
-  const previous = projectWriteQueues.get(key) || Promise.resolve();
-  const current = previous.catch(() => undefined).then(operation);
-  projectWriteQueues.set(key, current);
-  return current.finally(() => {
-    if (projectWriteQueues.get(key) === current) projectWriteQueues.delete(key);
-  });
-}
-
-/**
- * Runs blocking Godot synchronization in a worker thread.
- * @param {"syncProject"|"syncAudio"} action Worker action.
- * @param {object} project Project record.
- * @param {object} [options] Serializable action options.
- * @returns {Promise<object>} Synchronization result.
- */
-function runServerIoWorker(action, project, options = {}) {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(path.join(__dirname, "server_io_worker.js"), {
-      workerData: { action, root: ROOT, project, options },
-    });
-    let settled = false;
-    const finish = (callback, value) => {
-      if (settled) return;
-      settled = true;
-      callback(value);
-    };
-    worker.once("message", (message) => {
-      if (message?.ok) finish(resolve, message.result);
-      else finish(reject, new Error(message?.error || "Background filesystem operation failed."));
-    });
-    worker.once("error", (error) => finish(reject, error));
-    worker.once("exit", (code) => {
-      if (code !== 0) finish(reject, new Error(`Background filesystem worker exited with code ${code}.`));
-    });
-  });
-}
-
-/**
- * Synchronizes all Godot outputs without blocking unrelated HTTP requests.
- * @param {object} project Project record.
- * @param {object} [options] Synchronization inputs.
- * @returns {Promise<object>} Synchronization summary.
- */
-function syncGodotProjectAsync(project, options = {}) {
-  return runServerIoWorker("syncProject", project, options);
-}
-
-/**
- * Synchronizes frame audio without blocking the HTTP event loop.
- * @param {object} project Project record.
- * @param {object[]} bindings Audio bindings.
- * @returns {Promise<object>} Synchronization summary.
- */
-function syncFrameAudioAsync(project, bindings) {
-  return runServerIoWorker("syncAudio", project, { bindings });
-}
-
-/**
- * Computes an optimistic concurrency token from all persisted project JSON.
- * @param {object} project Project record.
- * @returns {string} SHA-256 revision token.
- */
-function projectDataRevision(project) {
-  projectStore.ensureProjectFiles(project);
-  const paths = projectStore.projectPaths(project);
-  const files = [
-    paths.manifest,
-    paths.tuning,
-    paths.frameAudio,
-    paths.frameImageAttachments,
-    paths.attachmentAssets,
-  ];
-  const hash = crypto.createHash("sha256");
-  for (const filePath of files) {
-    hash.update(path.basename(filePath));
-    hash.update(fs.readFileSync(filePath));
-  }
-  return hash.digest("hex");
-}
-
-/**
- * Captures paths in a temporary directory for transactional rollback.
- * @param {string[]} inputPaths Files or directories to preserve.
- * @returns {Promise<{restore:()=>Promise<void>,dispose:()=>Promise<void>}>} Snapshot controls.
- */
-async function createFilesystemSnapshot(inputPaths) {
-  const snapshotRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "xsxb-save-"));
-  const entries = [];
-  const targets = [...new Set(inputPaths.filter(Boolean).map((entry) => path.resolve(entry)))];
-  for (let index = 0; index < targets.length; index += 1) {
-    const targetPath = targets[index];
-    const snapshotPath = path.join(snapshotRoot, String(index));
-    const existed = await fs.promises.access(targetPath).then(() => true).catch(() => false);
-    if (existed) await fs.promises.cp(targetPath, snapshotPath, { recursive: true });
-    entries.push({ existed, snapshotPath, targetPath });
-  }
-  let disposed = false;
-  return {
-    async restore() {
-      for (const entry of entries) {
-        await fs.promises.rm(entry.targetPath, { recursive: true, force: true });
-        if (entry.existed) {
-          await fs.promises.mkdir(path.dirname(entry.targetPath), { recursive: true });
-          await fs.promises.cp(entry.snapshotPath, entry.targetPath, { recursive: true });
-        }
-      }
-    },
-    async dispose() {
-      if (disposed) return;
-      disposed = true;
-      await fs.promises.rm(snapshotRoot, { recursive: true, force: true });
-    },
-  };
-}
-
-/**
- * Restores and disposes a filesystem transaction while retaining both failures.
- * @param {{restore:()=>Promise<void>,dispose:()=>Promise<void>}} transaction Snapshot controls.
- * @param {Error} cause Mutation failure.
- * @param {string} message Aggregate rollback failure message.
- * @returns {Promise<never>} Always rejects with the mutation or aggregate failure.
- */
-async function rollbackFilesystemSnapshot(transaction, cause, message) {
-  try {
-    await transaction.restore();
-  } catch (rollbackError) {
-    await transaction.dispose();
-    throw new AggregateError([cause, rollbackError], message);
-  }
-  await transaction.dispose();
-  throw cause;
-}
-
-/**
- * Lists files that may be changed while updating the embedded runtime project id.
- * @param {object} project Project record.
- * @returns {string[]} Matching GDScript paths.
- */
-function runtimeProjectIdFiles(project) {
-  const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
-  const matches = [];
-  if (!projectRoot || !fs.existsSync(projectRoot)) return matches;
-  const walk = (directory) => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const fullPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        if (!GDSCRIPT_SKIP_DIRS.has(entry.name)) walk(fullPath);
-      } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === ".gd") {
-        const text = fs.readFileSync(fullPath, "utf8");
-        if (/const\s+XSXB_PROJECT_ID\s*:\s*String\s*=/.test(text)) matches.push(fullPath);
-      }
-    }
-  };
-  walk(projectRoot);
-  return matches;
-}
-
-/**
- * Returns all paths touched by a full Save synchronization.
- * @param {object} project Project record.
- * @returns {string[]} Transaction paths.
- */
-function saveTransactionPaths(project) {
-  const paths = projectStore.projectPaths(project);
-  const godotOutput = project?.projectRoot
-    ? path.join(path.resolve(project.projectRoot), "xsxb_frame_tuner")
-    : "";
-  return [
-    paths.tuning,
-    paths.frameAudio,
-    paths.frameImageAttachments,
-    godotOutput,
-    ...runtimeProjectIdFiles(project),
-  ];
-}
-
-/**
- * Parses one bounded JSON request body.
- * @param {http.IncomingMessage} req HTTP request.
- * @param {string} pathname Request path.
- * @returns {Promise<object>} Parsed JSON object.
- */
-async function readJsonBody(req, pathname) {
-  const body = await readBody(req, requestBodyLimit(pathname));
-  try {
-    const payload = JSON.parse(body || "{}");
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      throw new HttpError(400, "Expected a JSON object.");
-    }
-    return payload;
-  } catch (error) {
-    if (error instanceof HttpError) throw error;
-    throw new HttpError(400, `Invalid JSON request: ${error.message}`);
-  }
-}
-
-function safeResolve(base, requested) {
-  const full = path.resolve(base, String(requested || ""));
-  return full === base || full.startsWith(`${base}${path.sep}`) ? full : null;
-}
-
-function isInside(childPath, parentPath) {
-  const relative = path.relative(parentPath, childPath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
 function round(value) {
-  return Number(value || 0).toFixed(4).replace(/\.?0+$/, "");
+  return Number(value || 0)
+    .toFixed(4)
+    .replace(/\.?0+$/, "");
 }
 
 function vector(value, fallback = { x: 0, y: 0 }) {
@@ -415,25 +235,6 @@ function getPngSize(filePath) {
   }
 }
 
-function sanitizeSegment(value, fallback = "asset") {
-  const text = String(value || fallback)
-    .trim()
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
-    .replace(/\s+/g, "_")
-    .replace(/\.\./g, "_")
-    .replace(/^_+|_+$/g, "");
-  return text && !/^\.+$/.test(text) ? text : fallback;
-}
-
-function decodeDataUrl(dataUrl) {
-  const match = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/i.exec(String(dataUrl || ""));
-  if (!match) return null;
-  return {
-    mime: String(match[1] || "").toLowerCase(),
-    buffer: match[2] ? Buffer.from(match[3], "base64") : Buffer.from(decodeURIComponent(match[3] || ""), "utf8"),
-  };
-}
-
 function contentHash(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
@@ -460,36 +261,19 @@ function withFrameAttachmentHash(project, attachment) {
   return next;
 }
 
-function imageExtensionFromMime(mime, name) {
-  const ext = path.extname(String(name || "")).toLowerCase();
-  if ([".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(ext)) return ext;
-  if (mime === "image/png") return ".png";
-  if (mime === "image/jpeg" || mime === "image/jpg") return ".jpg";
-  if (mime === "image/webp") return ".webp";
-  if (mime === "image/gif") return ".gif";
-  return "";
-}
-
 function normalizeManifest(raw) {
-  const profiles = Array.isArray(raw?.profiles) ? raw.profiles : [];
-  return {
-    schemaVersion: Number(raw?.schemaVersion || 1),
-    profiles: profiles.map((profile) => ({
-      id: String(profile.id || profile.name || "profile"),
-      label: String(profile.label || profile.id || profile.name || "Profile"),
-      kind: String(profile.kind || "actor"),
-      bodyScale: Math.max(0.001, Number(profile.bodyScale ?? 1)),
-      runtimeScale: Math.max(0.001, Number(profile.runtimeScale ?? 1)),
-      supports: Array.isArray(profile.supports) ? profile.supports : DEFAULT_SUPPORTS,
-      animations: Array.isArray(profile.animations) ? profile.animations : [],
-    })),
-  };
+  return normalizeManifestInput(raw, DEFAULT_SUPPORTS);
 }
 
 function projectFromRequest(projectId, options = {}) {
   let registry = projectStore.readRegistry();
   const requestedId = projectId ? projectStore.slug(projectId) : "";
-  if (options.activate && requestedId && registry.projects.some((entry) => entry.id === requestedId) && registry.activeProjectId !== requestedId) {
+  if (
+    options.activate &&
+    requestedId &&
+    registry.projects.some((entry) => entry.id === requestedId) &&
+    registry.activeProjectId !== requestedId
+  ) {
     registry.activeProjectId = requestedId;
     registry = projectStore.writeRegistry(registry);
   }
@@ -585,9 +369,16 @@ function readTuningFile(project) {
     schemaVersion: Number(raw.schemaVersion || 1),
     values: raw.values && typeof raw.values === "object" ? raw.values : {},
     scene_settings: raw.scene_settings && typeof raw.scene_settings === "object" ? raw.scene_settings : {},
-    frame_visual_overrides: raw.frame_visual_overrides && typeof raw.frame_visual_overrides === "object" ? raw.frame_visual_overrides : {},
-    frame_playback_overrides: raw.frame_playback_overrides && typeof raw.frame_playback_overrides === "object" ? raw.frame_playback_overrides : {},
-    frame_box_overrides: raw.frame_box_overrides && typeof raw.frame_box_overrides === "object" ? raw.frame_box_overrides : {},
+    frame_visual_overrides:
+      raw.frame_visual_overrides && typeof raw.frame_visual_overrides === "object"
+        ? raw.frame_visual_overrides
+        : {},
+    frame_playback_overrides:
+      raw.frame_playback_overrides && typeof raw.frame_playback_overrides === "object"
+        ? raw.frame_playback_overrides
+        : {},
+    frame_box_overrides:
+      raw.frame_box_overrides && typeof raw.frame_box_overrides === "object" ? raw.frame_box_overrides : {},
   };
 }
 
@@ -608,7 +399,9 @@ function readFrameImageAttachments(project) {
   projectStore.ensureProjectFiles(project);
   const raw = projectStore.readJson(projectStore.projectPaths(project).frameImageAttachments, []);
   return Array.isArray(raw)
-    ? raw.filter((entry) => entry && typeof entry === "object").map((entry) => withFrameAttachmentHash(project, entry))
+    ? raw
+        .filter((entry) => entry && typeof entry === "object")
+        .map((entry) => withFrameAttachmentHash(project, entry))
     : [];
 }
 
@@ -620,9 +413,7 @@ function readFrameImageAttachments(project) {
 function readAttachmentAssets(project) {
   projectStore.ensureProjectFiles(project);
   const raw = projectStore.readJson(projectStore.projectPaths(project).attachmentAssets, []);
-  return Array.isArray(raw)
-    ? raw.filter((entry) => entry && typeof entry === "object" && entry.path)
-    : [];
+  return Array.isArray(raw) ? raw.filter((entry) => entry && typeof entry === "object" && entry.path) : [];
 }
 
 function tuningForClient(tuningFile) {
@@ -674,9 +465,8 @@ function buildGroups(manifest, tuningFile) {
         .filter((frame) => frame.path);
       if (!frames.length) continue;
       const characterBaseScale = profile.bodyScale * profile.runtimeScale;
-      const characterBaseScaleVector = tuningFile.values[`${characterKeyBase}.visual_scale`]
-        ?? profile.defaultScaleVector
-        ?? null;
+      const characterBaseScaleVector =
+        tuningFile.values[`${characterKeyBase}.visual_scale`] ?? profile.defaultScaleVector ?? null;
       groups.push({
         name: groupName,
         animationId,
@@ -701,8 +491,11 @@ function buildGroups(manifest, tuningFile) {
         characterRotation: `${characterKeyBase}.rotation`,
         characterBaseScale,
         characterBaseScaleVector,
-        characterBaseOffset: tuningFile.values[`${characterKeyBase}.offset`] ?? profile.defaultOffset ?? { x: 0, y: 0 },
-        characterBaseRotation: Number(tuningFile.values[`${characterKeyBase}.rotation`] ?? profile.defaultRotation ?? 0),
+        characterBaseOffset: tuningFile.values[`${characterKeyBase}.offset`] ??
+          profile.defaultOffset ?? { x: 0, y: 0 },
+        characterBaseRotation: Number(
+          tuningFile.values[`${characterKeyBase}.rotation`] ?? profile.defaultRotation ?? 0,
+        ),
         characterBaseSource: profile.runtimeScale !== 1 ? "bodyScale * runtimeScale" : "bodyScale",
         runtimeScale: profile.runtimeScale,
         bodyScale: profile.bodyScale,
@@ -711,7 +504,9 @@ function buildGroups(manifest, tuningFile) {
         offset: `${keyBase}.offset`,
         rotation: `${keyBase}.rotation`,
         defaultScale,
-        defaultScaleVector: animation.defaultScaleVector ? scaleVector(animation.defaultScaleVector, defaultScale) : null,
+        defaultScaleVector: animation.defaultScaleVector
+          ? scaleVector(animation.defaultScaleVector, defaultScale)
+          : null,
         defaultOffset: vector(animation.defaultOffset),
         defaultRotation: Number(animation.defaultRotation || 0),
         baseScale: tuningFile.values[`${keyBase}.visual_size`] ?? defaultScale,
@@ -730,13 +525,17 @@ function validateManifest(manifest) {
     for (const animation of Array.isArray(profile?.animations) ? profile.animations : []) {
       const anchorMode = String(animation.anchorMode || "canvas_bottom_center");
       if (String(profile.kind || "actor").toLowerCase() === "actor" && anchorMode === "canvas_left_bottom") {
-        warnings.push(`${profile.id}/${animation.id || animation.name}: actor animation uses canvas_left_bottom; use canvas_bottom_center so the character enters tuner/game at the foot-center origin.`);
+        warnings.push(
+          `${profile.id}/${animation.id || animation.name}: actor animation uses canvas_left_bottom; use canvas_bottom_center so the character enters tuner/game at the foot-center origin.`,
+        );
       }
       for (const [index, frame] of (animation.frames || []).entries()) {
         const relPath = reslash(frame.path || "");
         const fullPath = safeResolve(ROOT, relPath);
         if (!relPath || !fullPath || !fs.existsSync(fullPath)) {
-          warnings.push(`${profile.id}/${animation.id || animation.name}: missing frame ${index + 1}: ${relPath || "(empty)"}`);
+          warnings.push(
+            `${profile.id}/${animation.id || animation.name}: missing frame ${index + 1}: ${relPath || "(empty)"}`,
+          );
         }
       }
     }
@@ -758,800 +557,39 @@ function validateCharacterScaleValues(project, manifest) {
     if (vector && typeof vector === "object") {
       const x = Number(vector.x);
       const y = Number(vector.y);
-      if (Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) <= 0.0001 && Number.isFinite(scale) && Math.abs(x - scale) > 0.0001) {
-        warnings.push(`${profile.id}: uniform character visual_scale (${x}) overrides visual_size (${scale}); remove visual_scale or make it match visual_size.`);
+      if (
+        Number.isFinite(x) &&
+        Number.isFinite(y) &&
+        Math.abs(x - y) <= 0.0001 &&
+        Number.isFinite(scale) &&
+        Math.abs(x - scale) > 0.0001
+      ) {
+        warnings.push(
+          `${profile.id}: uniform character visual_scale (${x}) overrides visual_size (${scale}); remove visual_scale or make it match visual_size.`,
+        );
       }
     }
     const firstFrame = (profile.animations || []).flatMap((animation) => animation.frames || [])[0];
     const frameHeight = Number(firstFrame?.height || 0);
     if (frameHeight >= 512 && Number.isFinite(scale) && scale >= 0.75) {
-      warnings.push(`${profile.id}: imported actor uses a large source canvas (${frameHeight}px high) with character visual_size ${scale}; initialize it from the scene actor/viewport height instead of 1:1 pixels.`);
-    }
-  }
-  return warnings;
-}
-
-function relativeProjectPath(filePath, projectRoot) {
-  return reslash(path.relative(projectRoot, filePath));
-}
-
-function isGeneratedTunerScene(scenePath) {
-  const normalized = reslash(String(scenePath || ""));
-  return normalized.startsWith("xsxb_frame_tuner/runtime/");
-}
-
-function listSceneFiles(projectRoot) {
-  const root = projectRoot ? path.resolve(String(projectRoot)) : "";
-  const scenes = [];
-  if (!root || !fs.existsSync(root) || !fs.statSync(root).isDirectory()) return scenes;
-
-  const walk = (dir) => {
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!SCENE_SKIP_DIRS.has(entry.name)) walk(fullPath);
-        continue;
-      }
-      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".tscn") continue;
-      const scenePath = relativeProjectPath(fullPath, root);
-      if (isGeneratedTunerScene(scenePath)) continue;
-      scenes.push({
-        id: `res://${scenePath}`,
-        label: path.basename(entry.name, ".tscn"),
-        path: scenePath,
-      });
-    }
-  };
-
-  walk(root);
-  return scenes.sort((left, right) => left.id.localeCompare(right.id));
-}
-
-function gdscriptTypeWarning(filePath, projectRoot, lineNumber, message, line) {
-  return `${relativeProjectPath(filePath, projectRoot)}:${lineNumber}: ${message}: ${line.trim()}`;
-}
-
-function gdscriptTextureInferenceWarning(filePath, projectRoot, lineNumber, line) {
-  const match = line.match(/^\s*var\s+([A-Za-z_]\w*)\s*:=\s*(.+)$/);
-  if (!match) return "";
-  const variableName = match[1];
-  const rhs = match[2];
-  if (/\sas\s+[A-Za-z_]\w*/.test(rhs)) return "";
-  const riskyRhs = /\b(load|preload)\s*\(/.test(rhs)
-    || /\bResourceLoader\.load\s*\(/.test(rhs)
-    || /\.get_frame_texture\s*\(/.test(rhs)
-    || /_load[A-Za-z0-9_]*texture\s*\(/i.test(rhs);
-  if (!riskyRhs) return "";
-  const typeHint = /texture/i.test(variableName) ? "Texture2D" : "explicit type";
-  return gdscriptTypeWarning(
-    filePath,
-    projectRoot,
-    lineNumber,
-    `Godot may not infer this variable type; use "var ${variableName}: ${typeHint} = ..."`,
-    line
-  );
-}
-
-function gdscriptTextureFunctionWarning(filePath, projectRoot, lineNumber, line) {
-  const match = line.match(/^\s*func\s+(_load[A-Za-z0-9_]*texture)\s*\([^)]*\)\s*:\s*(?:#.*)?$/i);
-  if (!match) return "";
-  return gdscriptTypeWarning(
-    filePath,
-    projectRoot,
-    lineNumber,
-    `texture loader has no return type; use "func ${match[1]}(...) -> Texture2D:"`,
-    line
-  );
-}
-
-function gdscriptBoxDrivenVisualWarning(filePath, projectRoot, lines, lineNumber, line) {
-  const trimmed = line.trim();
-  const visualPositionAssignment = /(?:sprite|visual|image|frame)[A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*\.(?:position|global_position|offset)\s*=/.test(trimmed);
-  if (!visualPositionAssignment) return "";
-
-  const context = lines
-    .slice(Math.max(0, lineNumber - 4), Math.min(lines.length, lineNumber + 3))
-    .join("\n");
-  const hasBoxOffset = /\b(?:collision|hit|hurt)?box(?:es)?\b/i.test(context)
-    || /\bcollision_offset\b/i.test(context)
-    || /\b(?:collision|hit|hurt)_offset\b/i.test(context);
-  if (!hasBoxOffset) return "";
-
-  return gdscriptTypeWarning(
-    filePath,
-    projectRoot,
-    lineNumber,
-    "Runtime visual alignment must not use collision/hit/hurt box offsets; use XSXB character/group/frame visual transforms only",
-    line
-  );
-}
-
-function validateGdscriptTypeInference(projectRoot) {
-  const warnings = [];
-  if (!projectRoot) return warnings;
-  const root = path.resolve(String(projectRoot));
-  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return warnings;
-
-  const walk = (dir) => {
-    if (warnings.length >= GDSCRIPT_SCAN_LIMIT) return;
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (warnings.length >= GDSCRIPT_SCAN_LIMIT) return;
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!GDSCRIPT_SKIP_DIRS.has(entry.name)) walk(fullPath);
-        continue;
-      }
-      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".gd") continue;
-      let lines = [];
-      try {
-        lines = fs.readFileSync(fullPath, "utf8").split(/\r?\n/);
-      } catch {
-        continue;
-      }
-      lines.forEach((line, index) => {
-        if (warnings.length >= GDSCRIPT_SCAN_LIMIT) return;
-        const textureWarning = gdscriptTextureInferenceWarning(fullPath, root, index + 1, line);
-        if (textureWarning) warnings.push(textureWarning);
-        const functionWarning = gdscriptTextureFunctionWarning(fullPath, root, index + 1, line);
-        if (functionWarning) warnings.push(functionWarning);
-        const boxDrivenVisualWarning = gdscriptBoxDrivenVisualWarning(fullPath, root, lines, index + 1, line);
-        if (boxDrivenVisualWarning) warnings.push(boxDrivenVisualWarning);
-      });
-    }
-  };
-
-  walk(root);
-  if (warnings.length >= GDSCRIPT_SCAN_LIMIT) {
-    warnings.push(`GDScript type scan stopped after ${GDSCRIPT_SCAN_LIMIT} warnings.`);
-  }
-  return warnings;
-}
-
-function manifestHasRuntimeAnimations(manifest) {
-  return (Array.isArray(manifest?.profiles) ? manifest.profiles : [])
-    .some((profile) => Array.isArray(profile?.animations) && profile.animations.length > 0);
-}
-
-function collectRuntimeActorScripts(projectRoot) {
-  const scriptTexts = new Map();
-  const runtimeScripts = new Set(["xsxb_frame_tuner/runtime/xsxb_frame_actor.gd"]);
-
-  const walk = (dir) => {
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!GDSCRIPT_SKIP_DIRS.has(entry.name)) walk(fullPath);
-        continue;
-      }
-      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".gd") continue;
-      try {
-        scriptTexts.set(relativeProjectPath(fullPath, projectRoot), fs.readFileSync(fullPath, "utf8"));
-      } catch {
-        // Ignore unreadable scripts during validation; other checks report missing runtime support.
-      }
-    }
-  };
-
-  walk(projectRoot);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const [relPath, text] of scriptTexts.entries()) {
-      if (runtimeScripts.has(relPath)) continue;
-      const extendsMatch = text.match(/extends\s+"res:\/\/([^"]+\.gd)"/);
-      if (!extendsMatch) continue;
-      if (!runtimeScripts.has(reslash(extendsMatch[1]))) continue;
-      runtimeScripts.add(relPath);
-      changed = true;
-    }
-  }
-  return runtimeScripts;
-}
-
-function validateRuntimeSceneUsage(project, manifest) {
-  const warnings = [];
-  if (!manifestHasRuntimeAnimations(manifest)) return warnings;
-  const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
-  if (!projectRoot || !fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) return warnings;
-
-  const runtimeScripts = collectRuntimeActorScripts(projectRoot);
-  let sceneUsesRuntime = false;
-
-  const walk = (dir) => {
-    if (sceneUsesRuntime) return;
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (sceneUsesRuntime) return;
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!SCENE_SKIP_DIRS.has(entry.name)) walk(fullPath);
-        continue;
-      }
-      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".tscn") continue;
-      const relScene = relativeProjectPath(fullPath, projectRoot);
-      if (isGeneratedTunerScene(relScene)) continue;
-      let text = "";
-      try {
-        text = fs.readFileSync(fullPath, "utf8");
-      } catch {
-        continue;
-      }
-      if (/res:\/\/xsxb_frame_tuner\/runtime\/xsxb_frame_actor\.tscn/.test(text)) {
-        sceneUsesRuntime = true;
-        return;
-      }
-      for (const scriptRel of runtimeScripts) {
-        if (text.includes(`res://${scriptRel}`)) {
-          sceneUsesRuntime = true;
-          return;
-        }
-      }
-    }
-  };
-
-  walk(projectRoot);
-  if (!sceneUsesRuntime) {
-    warnings.push("Imported XSXB animations are synced, but no gameplay scene appears to instantiate xsxb_frame_actor.tscn or a script extending xsxb_frame_actor.gd. The generated runtime test scene can play the data, but the actual game scene will not change until a gameplay node uses the XSXB runtime.");
-  }
-  return warnings;
-}
-
-function validateRuntimeBindingReaders(project, manifest) {
-  const warnings = [];
-  const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
-  if (!projectRoot || !fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) return warnings;
-
-  const paths = projectStore.projectPaths(project);
-  const frameAudioBindings = projectStore.readJson(paths.frameAudio, []);
-  const frameImageAttachments = projectStore.readJson(paths.frameImageAttachments, []);
-  const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
-  const frameBoxOverrides = tuning?.frame_box_overrides && typeof tuning.frame_box_overrides === "object"
-    ? tuning.frame_box_overrides
-    : {};
-  const sceneSettings = tuning?.scene_settings && typeof tuning.scene_settings === "object"
-    ? tuning.scene_settings
-    : {};
-  const hasRuntimeAnimations = manifestHasRuntimeAnimations(manifest);
-  const needsFrameAudio = hasRuntimeAnimations || (Array.isArray(frameAudioBindings) && frameAudioBindings.length > 0);
-  const needsFrameImageAttachments = hasRuntimeAnimations || (Array.isArray(frameImageAttachments) && frameImageAttachments.length > 0);
-  const needsFramePlayback = hasRuntimeAnimations;
-  const needsFrameBoxes = Object.keys(frameBoxOverrides).length > 0;
-  const needsSceneScale = hasRuntimeAnimations || Object.keys(sceneSettings).length > 0;
-  if (!needsFrameAudio && !needsFrameImageAttachments && !needsFramePlayback && !needsFrameBoxes && !needsSceneScale) return warnings;
-
-  const found = {
-    frameAudioBindings: false,
-    frameAudioPlayback: false,
-    frameAudioAdvancePlayback: false,
-    frameAudioFrameVisitTrigger: false,
-    frameImageAttachments: false,
-    framePlaybackOverrides: false,
-    groupPlayback: false,
-    playbackIdempotent: false,
-    sceneSettings: false,
-    sceneScaleInterface: false,
-    sceneScaleApplied: false,
-    sceneScaleAppliedToBoxes: false,
-    frameBoxOverrides: false,
-    runtimeHitboxInterface: false,
-    runtimeHurtboxInterface: false,
-    runtimeAppliesHurtbox: false,
-    runtimeSourceFacing: false,
-    hardcodedGameplayBodyCollision: false,
-    gameplayBodyCollisionUsesRuntime: false,
-    gameplayBodyCollisionGroundAnchored: false,
-    hardcodedGameplayAttackRange: false,
-    gameplayAttackUsesRuntimeHitbox: false,
-    animationDurationInterface: false,
-    startRunState: false,
-    startRunTransitionsToRun: false,
-  };
-
-  const walk = (dir) => {
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!GDSCRIPT_SKIP_DIRS.has(entry.name)) walk(fullPath);
-        continue;
-      }
-      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".gd") continue;
-      let text = "";
-      try {
-        text = fs.readFileSync(fullPath, "utf8");
-      } catch {
-        continue;
-      }
-      if (/frame_audio_bindings\.json|frame_audio_bindings/i.test(text)) found.frameAudioBindings = true;
-      if (/AudioStream|AudioStreamPlayer|\.play\s*\(/.test(text)) found.frameAudioPlayback = true;
-      if (/while\s+_frame_clock\s*>=\s*_current_frame_duration\s*\(\s*\)[\s\S]{0,900}_play_current_frame_audio\s*\(\s*\)/.test(text)
-        || /while\s+_frame_clock\s*>=\s*_current_frame_duration\s*\(\s*\)[\s\S]{0,900}_play_frame_audio\s*\(/.test(text)) found.frameAudioAdvancePlayback = true;
-      if (/_frame_visit_serial/.test(text) && /trigger_key/.test(text) && /_last_audio_key/.test(text)) found.frameAudioFrameVisitTrigger = true;
-      if (/frame_image_attachments\.json|frame_image_attachments/i.test(text)) found.frameImageAttachments = true;
-      if (/frame_playback_overrides/i.test(text)) found.framePlaybackOverrides = true;
-      if (/__group|group_playback/i.test(text)) found.groupPlayback = true;
-      if (/func\s+play_frame_animation\s*\([^)]*animation_name/.test(text)
-        && /_current_animation\s*==\s*animation_name/.test(text)
-        && /\brestart\b/.test(text)) found.playbackIdempotent = true;
-      if (/scene_settings/i.test(text)) found.sceneSettings = true;
-      if (/func\s+scene_scale\s*\(/.test(text)) found.sceneScaleInterface = true;
-      if (/_character_scale\s*\(\s*\)\s*\*\s*scene_scale\s*\(\s*\)|scene_scale\s*\(\s*\)\s*\*\s*_character_scale\s*\(\s*\)/.test(text)) found.sceneScaleApplied = true;
-      if (/_box_actor_size\s*\([^)]*runtime_scale/.test(text) && /_box_actor_position\s*\([^)]*runtime_scale/.test(text)) found.sceneScaleAppliedToBoxes = true;
-      if (/frame_box_overrides/i.test(text)) found.frameBoxOverrides = true;
-      if (/current_hitbox_enabled|current_hitbox_size|current_hitbox_position/.test(text)) found.runtimeHitboxInterface = true;
-      if (/current_hurtbox_enabled|current_hurtbox_size|current_hurtbox_position/.test(text)) found.runtimeHurtboxInterface = true;
-      if (/func\s+_apply_frame_hurtbox\s*\(/.test(text)) found.runtimeAppliesHurtbox = true;
-      if (/source_faces_left|func\s+render_facing\s*\(/.test(text)) found.runtimeSourceFacing = true;
-      const hasGameplayMovementCollision = /BodyCollision|movement_collision_shape|movement_rectangle_shape/i.test(text);
-      if (hasGameplayMovementCollision && /RectangleShape2D\.new\s*\(\s*\)/.test(text) && /\.size\s*=/.test(text)) found.hardcodedGameplayBodyCollision = true;
-      if (hasGameplayMovementCollision && /current_collision_box_size|current_collision_box_position|current_grounded_collision_box_position/.test(text)) found.gameplayBodyCollisionUsesRuntime = true;
-      if (hasGameplayMovementCollision && /current_grounded_collision_box_position|-\s*size\.y\s*\*\s*0\.5|-\s*_body_shape\.size\.y\s*\*\s*0\.5|-\s*runtime_shape\.size\.y\s*\*\s*0\.5|-\s*movement_rectangle_shape\.size\.y\s*\*\s*0\.5/.test(text)) found.gameplayBodyCollisionGroundAnchored = true;
-      if (/ATTACK_RANGE|ATTACK_HEIGHT|AIR_ATTACK_RANGE|AIR_ATTACK_HEIGHT/.test(text)) found.hardcodedGameplayAttackRange = true;
-      if (/current_hitbox_size|current_hitbox_position|current_hitbox_enabled/.test(text) && /current_hurtbox_size|current_hurtbox_position|current_hurtbox_enabled|_runtime_hurt_rect/.test(text)) found.gameplayAttackUsesRuntimeHitbox = true;
-      if (/func\s+(?:current_)?animation_duration\s*\(|animation_finished\s*\./.test(text)) found.animationDurationInterface = true;
-      if (/ActionState\.START_RUN/.test(text) && /_enter_start_run/.test(text) && /_enter_run/.test(text)) found.startRunState = true;
-      if (/finished_state\s*==\s*ActionState\.START_RUN/.test(text)) found.startRunTransitionsToRun = true;
-    }
-  };
-
-  walk(projectRoot);
-
-  if (needsFrameAudio && !found.frameAudioBindings) {
-    warnings.push("Runtime must support XSXB frame audio, but no GDScript appears to read frame_audio_bindings.json.");
-  } else if (needsFrameAudio && !found.frameAudioPlayback) {
-    warnings.push("Runtime reads frame audio bindings, but no GDScript AudioStream/AudioStreamPlayer playback path was found.");
-  } else if (needsFrameAudio && !found.frameAudioAdvancePlayback) {
-    warnings.push("Runtime frame audio only appears to play during final frame rendering; very short frame durations can skip bound SFX frames.");
-  } else if (needsFrameAudio && !found.frameAudioFrameVisitTrigger) {
-    warnings.push("Runtime frame audio de-duplication appears keyed only by frame key; looped one-frame or repeated same-frame SFX can be blocked instead of triggering on frame entry.");
-  }
-  if (needsFrameImageAttachments && !found.frameImageAttachments) {
-    warnings.push("Runtime must support XSXB frame image attachments, but no GDScript appears to read frame_image_attachments.json.");
-  }
-  if (needsFramePlayback && !found.framePlaybackOverrides) {
-    warnings.push("Runtime must support XSXB frame playback overrides, but no GDScript appears to read frame_playback_overrides.");
-  } else if (needsFramePlayback && !found.groupPlayback) {
-    warnings.push("Runtime reads frame playback overrides, but no GDScript appears to handle <profile>/<animation>:__group timing.");
-  } else if (needsFramePlayback && !found.animationDurationInterface) {
-    warnings.push("Runtime reads group timing, but no animation_duration/current_animation_duration interface was found for gameplay action timers.");
-  } else if (needsFramePlayback && !found.playbackIdempotent) {
-    warnings.push("Runtime play_frame_animation appears to restart the same animation on every call; repeated gameplay calls can make an animation look like one frame.");
-  }
-  if (needsFrameBoxes && !found.frameBoxOverrides) {
-    warnings.push("Runtime must support XSXB frame boxes, but no GDScript appears to read frame_box_overrides.");
-  } else if (needsFrameBoxes && needsSceneScale && !found.sceneScaleAppliedToBoxes) {
-    warnings.push("Runtime reads frame boxes, but box size/position does not appear to use the same scene_scale() runtime scale as the sprite.");
-  } else if (needsFrameBoxes && (!found.runtimeHitboxInterface || !found.runtimeHurtboxInterface || !found.runtimeAppliesHurtbox)) {
-    warnings.push("Runtime frame boxes are incomplete: gameplay must be able to query hitbox and hurtbox, and runtime must apply hurtbox with the same transform as collisionbox/hitbox.");
-  }
-  if (needsSceneScale && !found.sceneSettings) {
-    warnings.push("Runtime must support XSXB scene scale, but no GDScript appears to read scene_settings.");
-  } else if (needsSceneScale && !found.sceneScaleInterface) {
-    warnings.push("Runtime reads scene_settings, but no scene_scale() interface was found for gameplay movement scaling.");
-  } else if (needsSceneScale && !found.sceneScaleApplied) {
-    warnings.push("Runtime scene scale exists, but visual scale does not appear to multiply character scale by scene_scale().");
-  }
-  if (hasRuntimeAnimations && !found.runtimeSourceFacing) {
-    warnings.push("Runtime has no source_faces_left/render_facing interface; imported art facing left can make gameplay directions render backwards.");
-  }
-  if (needsFrameBoxes && found.hardcodedGameplayBodyCollision && !found.gameplayBodyCollisionUsesRuntime) {
-    warnings.push("Gameplay creates its own movement collision rectangle but does not sync it from xsxb_frame_actor current_collision_box_*; tuner box and scene scale changes will not affect in-game movement collision.");
-  } else if (needsFrameBoxes && found.hardcodedGameplayBodyCollision && found.gameplayBodyCollisionUsesRuntime && !found.gameplayBodyCollisionGroundAnchored) {
-    warnings.push("Gameplay movement collision sync appears to use the runtime collisionbox Y position directly; grounded movement should anchor the collision bottom at the actor origin so visual Y offsets are not cancelled by floor collision.");
-  }
-  if (needsFrameBoxes && found.hardcodedGameplayAttackRange && !found.gameplayAttackUsesRuntimeHitbox) {
-    warnings.push("Gameplay still appears to use fixed attack range/height without intersecting xsxb_frame_actor hitbox against target hurtbox; tuner hitbox changes will not affect combat.");
-  }
-  if (hasRuntimeAnimations && found.startRunState && !found.startRunTransitionsToRun) {
-    warnings.push("Runtime START_RUN state appears not to transition into RUN after the start animation; holding a direction can leave movement locked.");
-  }
-
-  return warnings;
-}
-
-function validateGameLocalBindingKeys(project) {
-  const warnings = [];
-  const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
-  const projectId = String(project?.id || "");
-  if (!projectRoot || !projectId || !fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) return warnings;
-
-  const files = [
-    ["frame_audio_bindings.json", "frame audio"],
-    ["frame_image_attachments.json", "frame image attachment"],
-  ];
-  for (const [fileName, label] of files) {
-    const filePath = path.join(projectRoot, "xsxb_frame_tuner", "data", "projects", projectId, fileName);
-    if (!fs.existsSync(filePath)) continue;
-    const entries = projectStore.readJson(filePath, []);
-    if (!Array.isArray(entries)) continue;
-    for (const entry of entries) {
-      const key = String(entry?.key || entry?.frameKey || "");
-      if (!key) continue;
-      if (key.split(":").length <= 2) continue;
-      warnings.push(`Game-local ${label} binding key "${key}" is source-heavy; Save sync must write stable <profile>/<animation>:<frame> keys.`);
-      break;
+      warnings.push(
+        `${profile.id}: imported actor uses a large source canvas (${frameHeight}px high) with character visual_size ${scale}; initialize it from the scene actor/viewport height instead of 1:1 pixels.`,
+      );
     }
   }
   return warnings;
 }
 
 function validateProject(project, manifest) {
+  const inspection = createProjectInspection(project?.projectRoot);
   return [
     ...validateManifest(manifest),
     ...validateCharacterScaleValues(project, manifest),
-    ...validateGdscriptTypeInference(project?.projectRoot),
-    ...validateRuntimeBindingReaders(project, manifest),
-    ...validateRuntimeSceneUsage(project, manifest),
+    ...validateGdscriptTypeInference(project?.projectRoot, inspection),
+    ...validateRuntimeBindingReaders(project, manifest, inspection),
+    ...validateRuntimeSceneUsage(project, manifest, inspection),
     ...validateGameLocalBindingKeys(project),
   ];
-}
-
-function syncGodotRuntimeProjectId(project) {
-  const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
-  const projectId = String(project?.id || "");
-  const changed = [];
-  if (!projectRoot || !projectId || !fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) return changed;
-
-  const walk = (dir) => {
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!GDSCRIPT_SKIP_DIRS.has(entry.name)) walk(fullPath);
-        continue;
-      }
-      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".gd") continue;
-      let text = "";
-      try {
-        text = fs.readFileSync(fullPath, "utf8");
-      } catch {
-        continue;
-      }
-      const next = text.replace(
-        /(const\s+XSXB_PROJECT_ID\s*:\s*String\s*=\s*)"([^"]*)"/g,
-        `$1"${projectId}"`
-      );
-      if (next === text) continue;
-      fs.writeFileSync(fullPath, next);
-      changed.push(relativeProjectPath(fullPath, projectRoot));
-    }
-  };
-
-  walk(projectRoot);
-  return changed;
-}
-
-function configResponse(projectId) {
-  const { registry, project } = projectFromRequest(projectId, { activate: true });
-  if (!project) {
-    return {
-      root: ROOT,
-      workspaceRoot: path.join(ROOT, "workspace"),
-      workspaceAllRoot: path.join(ROOT, "workspace"),
-      projectRoot: "",
-      activeProjectId: "",
-      activeProject: null,
-      projects: [],
-      scenes: [],
-      profiles: [],
-      frameAudioBindings: [],
-      frameImageAttachments: [],
-      attachmentAssets: [],
-      dataRevision: "",
-      tuning: tuningForClient(EMPTY_TUNING),
-      tuningDefaults: {},
-      bossTuning: {},
-      act2StatueBossTuning: {},
-      act2StatueBossDefaults: {},
-      huangXianTuning: {},
-      huangXianDefaults: {},
-      huangXianManifest: {},
-      soulTuning: {},
-      soulDefaults: {},
-      soulManifest: {},
-      yechengPropTuning: {},
-      yechengPropDefaults: {},
-      warnings: ["当前 tuner 没有项目。点击“导入动画”可从图片序列或视频创建本地项目。"],
-      references: {
-        playerCanonicalIdleHeight: 0,
-        playerSpriteCenterX: 0,
-        playerSpriteFootY: 0,
-        playerFloorTopOffsetY: 0,
-        bossFloorTopOffsetY: 0,
-      },
-      groups: [],
-    };
-  }
-  const manifest = readManifest(project);
-  const tuningFile = readTuningFile(project);
-  const groups = buildGroups(manifest, tuningFile);
-  const warnings = validateProject(project, manifest);
-  if (!groups.length) {
-    warnings.unshift("当前项目没有动画组。点击“导入动画”可导入 PNG 序列或本地视频。");
-  }
-  const projectClient = projectStore.projectForClient(project);
-  return {
-    root: ROOT,
-    workspaceRoot: projectStore.projectWorkspaceDir(project),
-    workspaceAllRoot: path.join(ROOT, "workspace"),
-    projectRoot: project.projectRoot,
-    activeProjectId: project.id,
-    activeProject: projectClient,
-    projects: registry.projects.map(projectStore.projectForClient),
-    scenes: listSceneFiles(project.projectRoot),
-    profiles: manifest.profiles.map(profileForClient),
-    frameAudioBindings: readFrameAudioBindings(project),
-    frameImageAttachments: readFrameImageAttachments(project),
-    attachmentAssets: readAttachmentAssets(project),
-    dataRevision: projectDataRevision(project),
-    tuning: tuningForClient(tuningFile),
-    tuningDefaults: {},
-    bossTuning: {},
-    act2StatueBossTuning: {},
-    act2StatueBossDefaults: {},
-    huangXianTuning: {},
-    huangXianDefaults: {},
-    huangXianManifest: {},
-    soulTuning: {},
-    soulDefaults: {},
-    soulManifest: {},
-    yechengPropTuning: {},
-    yechengPropDefaults: {},
-    warnings,
-    references: {
-      playerCanonicalIdleHeight: 0,
-      playerSpriteCenterX: 0,
-      playerSpriteFootY: 0,
-      playerFloorTopOffsetY: 0,
-      bossFloorTopOffsetY: 0,
-    },
-    groups,
-  };
-}
-
-function normalizeTuningScaleValues(values) {
-  const next = values && typeof values === "object" ? values : {};
-  for (const key of Object.keys(next)) {
-    if (!/\.character\.visual_scale$/.test(key)) continue;
-    const vector = next[key];
-    if (!vector || typeof vector !== "object") continue;
-    const x = Number(vector.x);
-    const y = Number(vector.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x - y) > 0.0001) continue;
-    const scaleKey = key.replace(/\.visual_scale$/, ".visual_size");
-    const scale = Number(next[scaleKey]);
-    if (Number.isFinite(scale) && scale > 0) delete next[key];
-  }
-  return next;
-}
-
-function saveTuningPayload(payload, project) {
-  const next = {
-    schemaVersion: 1,
-    values: normalizeTuningScaleValues(payload.values),
-    scene_settings: payload.scene_settings && typeof payload.scene_settings === "object" ? payload.scene_settings : {},
-    frame_visual_overrides: payload.frame_visual_overrides && typeof payload.frame_visual_overrides === "object" ? payload.frame_visual_overrides : {},
-    frame_playback_overrides: payload.frame_playback_overrides && typeof payload.frame_playback_overrides === "object" ? payload.frame_playback_overrides : {},
-    frame_box_overrides: payload.frame_box_overrides && typeof payload.frame_box_overrides === "object" ? payload.frame_box_overrides : {},
-  };
-  projectStore.writeJson(projectStore.projectPaths(project).tuning, next);
-}
-
-function saveFrameImageAttachments(payload, project) {
-  const attachments = Array.isArray(payload)
-    ? payload.filter((entry) => entry && typeof entry === "object").map((entry) => withFrameAttachmentHash(project, entry))
-    : [];
-  projectStore.writeJson(projectStore.projectPaths(project).frameImageAttachments, attachments);
-  return attachments;
-}
-
-/**
- * Persists reusable attachment assets independently from frame instances.
- * @param {unknown} payload Asset records.
- * @param {object} project Project record.
- * @returns {object[]} Saved assets.
- */
-function saveAttachmentAssets(payload, project) {
-  const assets = Array.isArray(payload)
-    ? payload.filter((entry) => entry && typeof entry === "object" && entry.path).map((entry) => ({
-        id: String(entry.id || entry.assetHash || crypto.randomUUID()),
-        name: String(entry.name || "image"),
-        path: String(entry.path),
-        assetHash: String(entry.assetHash || ""),
-        type: String(entry.type || "image/png"),
-        width: Number(entry.width || 0),
-        height: Number(entry.height || 0),
-        groupKey: String(entry.groupKey || ""),
-      }))
-    : [];
-  projectStore.writeJson(projectStore.projectPaths(project).attachmentAssets, assets);
-  return assets;
-}
-
-function saveFrameAudioBindings(payload, project) {
-  const bindings = Array.isArray(payload)
-    ? payload.filter((entry) => entry && typeof entry === "object")
-    : Object.entries(payload || {}).map(([key, value]) => ({
-      key,
-      ...(value && typeof value === "object" ? value : {}),
-    })).filter((entry) => entry && typeof entry === "object");
-  const usableBindings = bindings.filter((entry) => entry.data || entry.path || entry.file);
-  projectStore.writeJson(projectStore.projectPaths(project).frameAudio, usableBindings);
-  return usableBindings;
-}
-
-function saveFrameAttachmentImage(payload, project) {
-  const decoded = decodeDataUrl(payload.data);
-  if (!decoded?.buffer?.length || !decoded.mime.startsWith("image/")) {
-    throw new Error("Expected an image data URL.");
-  }
-  const ext = imageExtensionFromMime(decoded.mime, payload.name);
-  if (!ext) throw new Error("Unsupported image type.");
-  const hash = contentHash(decoded.buffer);
-  const fileName = `${hash}${ext}`;
-  const workspaceDir = projectStore.projectWorkspaceDir(project);
-  const fullPath = path.join(workspaceDir, "attachments", fileName);
-  if (!isInside(fullPath, workspaceDir)) throw new Error("Attachment image must stay under the active project workspace.");
-  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  if (!fs.existsSync(fullPath)) fs.writeFileSync(fullPath, decoded.buffer);
-  const relPath = reslash(path.relative(ROOT, fullPath));
-  const pngSize = ext === ".png" ? getPngSize(fullPath) : {};
-  return {
-    path: relPath,
-    assetHash: hash,
-    name: String(payload.name || fileName),
-    type: decoded.mime,
-    width: Number(payload.width || pngSize.width || 0),
-    height: Number(payload.height || pngSize.height || 0),
-  };
-}
-
-function replaceFrameImage(payload, project) {
-  const relPath = reslash(payload.path || "");
-  const fullPath = safeResolve(ROOT, relPath);
-  const workspaceDir = projectStore.projectWorkspaceDir(project);
-  if (!fullPath || !isInside(fullPath, workspaceDir) || path.extname(fullPath).toLowerCase() !== ".png") {
-    throw new Error("Frame replacement path must be a PNG under the active project workspace.");
-  }
-  const match = /^data:image\/png;base64,(.+)$/i.exec(String(payload.data || ""));
-  if (!match) throw new Error("Expected a PNG data URL.");
-  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  fs.writeFileSync(fullPath, Buffer.from(match[1], "base64"));
-  return { path: relPath, ...getPngSize(fullPath) };
-}
-
-/**
- * Atomically replaces an ordered animation frame batch.
- * Every target and PNG payload is validated before temporary files are staged.
- * If a commit fails, already replaced files are restored from their original bytes.
- * @param {Array<{path:string}>} frames Ordered target frame descriptors.
- * @param {Array<{data:string}>} files Ordered PNG payloads.
- * @param {object} project Active project descriptor.
- * @returns {{
- *   frames:Array<{path:string,width:number,height:number}>,
- *   rollback:()=>void
- * }}
- */
-function replaceAnimationImages(frames, files, project) {
-  if (!frames.length || frames.length !== files.length) {
-    throw new HttpError(400, `Expected exactly ${frames.length} PNG files`);
-  }
-  const workspaceDir = projectStore.projectWorkspaceDir(project);
-  const seenTargets = new Set();
-  const replacements = frames.map((frame, index) => {
-    const relPath = reslash(frame?.path || "");
-    const fullPath = safeResolve(ROOT, relPath);
-    if (
-      !fullPath
-      || !isInside(fullPath, workspaceDir)
-      || path.extname(fullPath).toLowerCase() !== ".png"
-    ) {
-      throw new Error("Frame replacement path must be a PNG under the active project workspace.");
-    }
-    const targetKey = process.platform === "darwin" || process.platform === "win32"
-      ? fullPath.toLowerCase()
-      : fullPath;
-    if (seenTargets.has(targetKey)) throw new Error(`Duplicate frame replacement path: ${relPath}`);
-    seenTargets.add(targetKey);
-    const match = /^data:image\/png;base64,(.+)$/i.exec(String(files[index]?.data || ""));
-    if (!match) throw new Error(`Expected a PNG data URL for frame ${index + 1}.`);
-    const bytes = Buffer.from(match[1], "base64");
-    if (bytes.length < 24 || bytes.toString("ascii", 1, 4) !== "PNG") {
-      throw new Error(`Invalid PNG data for frame ${index + 1}.`);
-    }
-    return {
-      relPath,
-      fullPath,
-      bytes,
-      original: fs.existsSync(fullPath) ? fs.readFileSync(fullPath) : null,
-      tempPath: `${fullPath}.cutout-${process.pid}-${Date.now()}-${index}`,
-    };
-  });
-  try {
-    for (const replacement of replacements) {
-      fs.mkdirSync(path.dirname(replacement.fullPath), { recursive: true });
-      fs.writeFileSync(replacement.tempPath, replacement.bytes);
-    }
-    const committed = [];
-    try {
-      for (const replacement of replacements) {
-        fs.renameSync(replacement.tempPath, replacement.fullPath);
-        committed.push(replacement);
-      }
-    } catch (error) {
-      for (const replacement of committed.reverse()) {
-        if (replacement.original !== null) {
-          fs.writeFileSync(replacement.fullPath, replacement.original);
-        } else {
-          fs.rmSync(replacement.fullPath, { force: true });
-        }
-      }
-      throw error;
-    }
-  } finally {
-    for (const replacement of replacements) {
-      fs.rmSync(replacement.tempPath, { force: true });
-    }
-  }
-  let rolledBack = false;
-  return {
-    frames: replacements.map((replacement) => ({
-      path: replacement.relPath,
-      ...getPngSize(replacement.fullPath),
-    })),
-    rollback() {
-      if (rolledBack) return;
-      for (const replacement of [...replacements].reverse()) {
-        if (replacement.original !== null) {
-          fs.writeFileSync(replacement.fullPath, replacement.original);
-        } else {
-          fs.rmSync(replacement.fullPath, { force: true });
-        }
-      }
-      rolledBack = true;
-    },
-  };
-}
-
-function projectsResponse() {
-  const registry = projectStore.readRegistry();
-  return {
-    activeProjectId: registry.activeProjectId,
-    projects: registry.projects.map(projectStore.projectForClient),
-  };
 }
 
 function scheduleServerRestart() {
@@ -1578,19 +616,6 @@ function scheduleServerRestart() {
   timer.unref();
 }
 
-function serveStatic(req, res, pathname) {
-  const requestPath = pathname === "/" || WORKBENCH_ROUTES.has(pathname)
-    ? "index.html"
-    : pathname.slice(1);
-  const full = safeResolve(PUBLIC, requestPath);
-  if (!full || !fs.existsSync(full) || fs.statSync(full).isDirectory()) {
-    return send(res, 404, "Not found", "text/plain");
-  }
-  const ext = path.extname(full).toLowerCase();
-  const type = ext === ".js" ? "application/javascript" : ext === ".css" ? "text/css" : "text/html";
-  return send(res, 200, fs.readFileSync(full), type);
-}
-
 ensureDataFiles();
 
 const server = http.createServer(async (req, res) => {
@@ -1598,7 +623,11 @@ const server = http.createServer(async (req, res) => {
     const parsed = new URL(req.url, "http://127.0.0.1");
     if (req.method === "POST") validateWriteRequest(req);
     if (req.method === "GET" && parsed.pathname === "/api/update-status") {
-      return send(res, 200, { ...await checkForUpdates(ROOT), token: UPDATE_TOKEN, restarting: restartScheduled });
+      return send(res, 200, {
+        ...(await checkForUpdates(ROOT)),
+        token: UPDATE_TOKEN,
+        restarting: restartScheduled,
+      });
     }
     if (req.method === "POST" && parsed.pathname === "/api/update") {
       if (req.headers["x-xsxb-update-token"] !== UPDATE_TOKEN) {
@@ -1611,90 +640,7 @@ const server = http.createServer(async (req, res) => {
       scheduleServerRestart();
       return;
     }
-    if (req.method === "GET" && parsed.pathname === "/api/projects") {
-      return send(res, 200, projectsResponse());
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/projects") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      return await withProjectWrite("__registry__", () => {
-        const registry = projectStore.addProject(payload);
-        return send(res, 200, {
-          ok: true,
-          activeProjectId: registry.activeProjectId,
-          projects: registry.projects.map(projectStore.projectForClient),
-        });
-      });
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/projects/active") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      return await withProjectWrite("__registry__", () => {
-        const registry = projectStore.setActiveProject(payload.projectId);
-        return send(res, 200, {
-          ok: true,
-          activeProjectId: registry.activeProjectId,
-          projects: registry.projects.map(projectStore.projectForClient),
-        });
-      });
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/projects/clear") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = requiredProjectFromRequest(payload.projectId);
-      return await withProjectWrite(project.id, async () => {
-        const currentRevision = projectDataRevision(project);
-        if (payload.baseRevision && payload.baseRevision !== currentRevision) {
-          return send(res, 409, {
-            error: "Project data changed in another window. Reload before clearing it.",
-            code: "revision_conflict",
-            dataRevision: currentRevision,
-          });
-        }
-        const transaction = await createFilesystemSnapshot(managedProjectPaths(project));
-        try {
-          const godotSync = await clearProjectContent(project);
-          const dataRevision = projectDataRevision(project);
-          await transaction.dispose();
-          return send(res, 200, { ok: true, projectId: project.id, dataRevision, godotSync });
-        } catch (error) {
-          return rollbackFilesystemSnapshot(transaction, error, "Project clear failed and rollback was incomplete.");
-        }
-      });
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/projects/delete") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      const initial = requiredProjectFromRequest(payload.projectId);
-      return await withProjectWrite(initial.project.id, () => withProjectWrite("__registry__", async () => {
-        const { registry, project } = requiredProjectFromRequest(payload.projectId);
-        const currentRevision = projectDataRevision(project);
-        if (payload.baseRevision && payload.baseRevision !== currentRevision) {
-          return send(res, 409, {
-            error: "Project data changed in another window. Reload before deleting it.",
-            code: "revision_conflict",
-            dataRevision: currentRevision,
-          });
-        }
-        const transaction = await createFilesystemSnapshot([
-          projectStore.path,
-          ...managedProjectPaths(project),
-        ]);
-        try {
-          for (const targetPath of managedProjectPaths(project)) {
-            await fs.promises.rm(targetPath, { recursive: true, force: true });
-          }
-          registry.projects = registry.projects.filter((entry) => entry.id !== project.id);
-          registry.activeProjectId = registry.projects[0]?.id || "";
-          const nextRegistry = projectStore.writeRegistry(registry);
-          await transaction.dispose();
-          return send(res, 200, {
-            ok: true,
-            deletedProjectId: project.id,
-            activeProjectId: nextRegistry.activeProjectId,
-            projects: nextRegistry.projects.map(projectStore.projectForClient),
-          });
-        } catch (error) {
-          return rollbackFilesystemSnapshot(transaction, error, "Project deletion failed and rollback was incomplete.");
-        }
-      }));
-    }
+    if (await handleProjectRoute(req, res, parsed)) return;
     if (req.method === "GET" && parsed.pathname === "/api/config") {
       return send(res, 200, configResponse(parsed.searchParams.get("project")));
     }
@@ -1706,7 +652,8 @@ const server = http.createServer(async (req, res) => {
         const baseRevision = String(payload.baseRevision || "");
         if (baseRevision && baseRevision !== currentRevision) {
           return send(res, 409, {
-            error: "Project data changed in another window. Reload before saving to avoid overwriting newer work.",
+            error:
+              "Project data changed in another window. Reload before saving to avoid overwriting newer work.",
             code: "revision_conflict",
             dataRevision: currentRevision,
           });
@@ -1715,12 +662,25 @@ const server = http.createServer(async (req, res) => {
         try {
           saveTuningPayload(payload, project);
           let frameAudioBindings = null;
-          if (Array.isArray(payload.frame_audio_bindings) || Array.isArray(payload.frameAudioBindings) || payload.frameAudioBindings) {
-            frameAudioBindings = saveFrameAudioBindings(payload.frame_audio_bindings || payload.frameAudioBindings, project);
+          if (
+            Array.isArray(payload.frame_audio_bindings) ||
+            Array.isArray(payload.frameAudioBindings) ||
+            payload.frameAudioBindings
+          ) {
+            frameAudioBindings = saveFrameAudioBindings(
+              payload.frame_audio_bindings || payload.frameAudioBindings,
+              project,
+            );
           }
           let frameImageAttachments = null;
-          if (Array.isArray(payload.frame_image_attachments) || Array.isArray(payload.frameImageAttachments)) {
-            frameImageAttachments = saveFrameImageAttachments(payload.frame_image_attachments || payload.frameImageAttachments, project);
+          if (
+            Array.isArray(payload.frame_image_attachments) ||
+            Array.isArray(payload.frameImageAttachments)
+          ) {
+            frameImageAttachments = saveFrameImageAttachments(
+              payload.frame_image_attachments || payload.frameImageAttachments,
+              project,
+            );
           }
           const godotSync = await syncGodotProjectAsync(project, {
             ...(frameAudioBindings ? { frameAudioBindings } : {}),
@@ -1752,252 +712,7 @@ const server = http.createServer(async (req, res) => {
         }
       });
     }
-    if (req.method === "POST" && parsed.pathname === "/api/frame-audio") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      return await withProjectWrite(project.id, async () => {
-        const bindings = Array.isArray(payload.frameAudioBindings)
-          ? payload.frameAudioBindings
-          : Object.entries(payload.frameAudioBindings || {}).map(([key, value]) => ({
-            key,
-            ...(value && typeof value === "object" ? value : {}),
-          }));
-        const paths = projectStore.projectPaths(project);
-        const transaction = await createFilesystemSnapshot([
-          paths.frameAudio,
-          project?.projectRoot ? path.join(path.resolve(project.projectRoot), "xsxb_frame_tuner") : "",
-        ]);
-        try {
-          saveFrameAudioBindings(bindings, project);
-          const godotAudioSync = await syncFrameAudioAsync(project, bindings);
-          await transaction.dispose();
-          return send(res, 200, {
-            ok: true,
-            frameAudioCount: bindings.length,
-            godotAudioSync,
-            dataRevision: projectDataRevision(project),
-          });
-        } catch (error) {
-          return rollbackFilesystemSnapshot(transaction, error, "Frame audio sync failed and rollback was incomplete.");
-        }
-      });
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/frame-attachment-image") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      return await withProjectWrite(project.id, () => send(res, 200, {
-        ok: true,
-        image: saveFrameAttachmentImage(payload, project),
-        dataRevision: projectDataRevision(project),
-      }));
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/attachment-assets") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      return await withProjectWrite(project.id, () => send(res, 200, {
-        ok: true,
-        assets: saveAttachmentAssets(payload.assets, project),
-        dataRevision: projectDataRevision(project),
-      }));
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/replace-frame") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      return await withProjectWrite(project.id, () => send(res, 200, {
-        ok: true,
-        frame: replaceFrameImage(payload, project),
-      }));
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/replace-animation") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      const frames = Array.isArray(payload.frames) ? payload.frames : [];
-      const files = Array.isArray(payload.files) ? payload.files : [];
-      return await withProjectWrite(project.id, async () => {
-        const godotOutput = project?.projectRoot
-          ? path.join(path.resolve(project.projectRoot), "xsxb_frame_tuner")
-          : "";
-        const transaction = await createFilesystemSnapshot([godotOutput]);
-        const replacement = replaceAnimationImages(frames, files, project);
-        try {
-          const godotSync = await syncGodotProjectAsync(project);
-          await transaction.dispose();
-          return send(res, 200, { ok: true, frames: replacement.frames, godotSync });
-        } catch (error) {
-          try {
-            replacement.rollback();
-            await transaction.restore();
-          } catch (rollbackError) {
-            await transaction.dispose();
-            throw new AggregateError(
-              [error, rollbackError],
-              "Godot synchronization failed and animation rollback was incomplete.",
-            );
-          }
-          await transaction.dispose();
-          throw error;
-        }
-      });
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/delete-animation") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = requiredProjectFromRequest(payload.projectId);
-      return await withProjectWrite(project.id, async () => {
-        const currentRevision = projectDataRevision(project);
-        if (payload.baseRevision && payload.baseRevision !== currentRevision) {
-          return send(res, 409, {
-            error: "Project data changed in another window. Reload before deleting the animation.",
-            code: "revision_conflict",
-            dataRevision: currentRevision,
-          });
-        }
-        const transaction = await createFilesystemSnapshot(managedProjectPaths(project));
-        try {
-          const deleted = deleteAnimation({
-            root: ROOT,
-            projectStore,
-            project,
-            profileId: String(payload.profileId || ""),
-            animationId: String(payload.animationId || ""),
-          });
-          const externalDirectory = godotMirrorPath(project, deleted.removedDirectory);
-          if (externalDirectory) {
-            await fs.promises.rm(externalDirectory, { recursive: true, force: true });
-          }
-          const godotSync = await syncGodotProjectAsync(project, {
-            manifest: deleted.manifest,
-            tuning: deleted.tuning,
-            frameAudioBindings: deleted.frameAudioBindings,
-            frameImageAttachments: deleted.frameImageAttachments,
-          });
-          const dataRevision = projectDataRevision(project);
-          await transaction.dispose();
-          return send(res, 200, {
-            ok: true,
-            removedFrames: deleted.removedFrames,
-            dataRevision,
-            godotSync,
-          });
-        } catch (error) {
-          return rollbackFilesystemSnapshot(transaction, error, "Animation deletion failed and rollback was incomplete.");
-        }
-      });
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/import-animation") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      const items = Array.isArray(payload.items) ? payload.items : [];
-      const profileLabel = String(payload.profileLabel || "").trim();
-      const animationName = String(payload.animationName || "").trim();
-      const projectLabel = String(payload.projectLabel || "").trim();
-      if (!items.length) throw new Error("Import at least one animation frame.");
-      if (!profileLabel || !animationName) throw new Error("Profile and animation names are required.");
-      if (!payload.projectId && !projectLabel) throw new Error("A project name is required when creating a local project.");
-      const hasInvalidPng = items.some((item) => {
-        const decoded = decodeDataUrl(item?.data);
-        return decoded?.mime !== "image/png"
-          || decoded.buffer.length < 24
-          || decoded.buffer.toString("ascii", 1, 4) !== "PNG"
-          || decoded.buffer.readUInt32BE(16) < 1
-          || decoded.buffer.readUInt32BE(20) < 1;
-      });
-      if (hasInvalidPng) {
-        throw new Error("Every imported frame must contain PNG image data.");
-      }
-      const requestedProjectId = payload.projectId ? projectStore.slug(payload.projectId) : "";
-      return await withProjectWrite(requestedProjectId || "__registry__", async () => {
-        let registry = projectStore.readRegistry();
-        let project = requestedProjectId
-          ? registry.projects.find((entry) => entry.id === requestedProjectId)
-          : null;
-        if (requestedProjectId && !project) throw new Error(`Project not found: ${payload.projectId}`);
-        if (!project) {
-          registry = projectStore.addProject({
-            label: projectLabel,
-          });
-          project = projectStore.resolveProject(registry, registry.activeProjectId);
-        } else if (registry.activeProjectId !== project.id) {
-          registry = projectStore.setActiveProject(project.id);
-          project = projectStore.resolveProject(registry, project.id);
-        }
-        const imported = importAnimation({
-          root: ROOT,
-          projectStore,
-          project,
-          profileId: projectStore.slug(payload.profileId || profileLabel, "character"),
-          profileLabel,
-          profileKind: String(payload.profileKind || "actor"),
-          animationId: projectStore.slug(payload.animationId || animationName, "animation"),
-          animationName,
-          animationType: String(payload.animationType || "actor"),
-          anchorMode: String(payload.anchorMode || "canvas_bottom_center"),
-          fps: Number(payload.fps || 12),
-          items,
-        });
-        const godotSync = await syncGodotProjectAsync(project, {
-          manifest: imported.manifest,
-          tuning: imported.tuning,
-        });
-        const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
-        return send(res, 200, {
-          ok: true,
-          activeProjectId: project.id,
-          profileId: imported.profileId,
-          animationId: imported.animationId,
-          frameCount: imported.frameCount,
-          godotSync,
-          runtimeProjectIdFiles,
-          warnings: validateProject(project, imported.manifest),
-        });
-      });
-    }
-    if (req.method === "POST" && parsed.pathname === "/api/reorganize-animation") {
-      const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = requiredProjectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      return await withProjectWrite(project.id, async () => {
-        const currentRevision = projectDataRevision(project);
-        if (payload.baseRevision && payload.baseRevision !== currentRevision) {
-          return send(res, 409, {
-            error: "Project data changed in another window. Reload before deleting frames.",
-            code: "revision_conflict",
-            dataRevision: currentRevision,
-          });
-        }
-        const transaction = await createFilesystemSnapshot(managedProjectPaths(project));
-        try {
-          const organized = reorganizeAnimation({
-            root: ROOT,
-            projectStore,
-            project,
-            profileId: String(payload.profileId || ""),
-            animationId: String(payload.animationId || ""),
-            items: payload.items,
-          });
-          const externalDirectory = godotMirrorPath(project, organized.targetDir);
-          if (externalDirectory) {
-            await fs.promises.rm(externalDirectory, { recursive: true, force: true });
-          }
-          const godotSync = await syncGodotProjectAsync(project, {
-            manifest: organized.manifest,
-            tuning: organized.tuning,
-            frameAudioBindings: organized.frameAudioBindings,
-            frameImageAttachments: organized.frameImageAttachments,
-          });
-          const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
-          const dataRevision = projectDataRevision(project);
-          await transaction.dispose();
-          return send(res, 200, {
-            ok: true,
-            frameCount: organized.frameCount,
-            dataRevision,
-            godotSync,
-            runtimeProjectIdFiles,
-            warnings: validateProject(project, organized.manifest),
-          });
-        } catch (error) {
-          return rollbackFilesystemSnapshot(transaction, error, "Frame deletion failed and rollback was incomplete.");
-        }
-      });
-    }
+    if (await handleMediaRoute(req, res, parsed)) return;
     if (req.method === "GET" && parsed.pathname === "/asset") {
       const relPath = parsed.searchParams.get("path");
       const full = safeResolve(ROOT, relPath);

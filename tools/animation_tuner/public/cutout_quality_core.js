@@ -2,7 +2,7 @@
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.CutoutQualityCore = api;
-}(typeof globalThis !== "undefined" ? globalThis : this, () => {
+})(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 
   /**
@@ -61,12 +61,8 @@
     let maximumX = -1;
     let maximumY = -1;
     let residualBackgroundPixels = 0;
-    const backgroundColors = Array.isArray(options.backgroundColors)
-      ? options.backgroundColors
-      : [];
-    const backgroundThresholdSquared = (
-      Math.max(0, Number(options.backgroundTolerance ?? 12)) * 5.1
-    ) ** 2;
+    const backgroundColors = Array.isArray(options.backgroundColors) ? options.backgroundColors : [];
+    const backgroundThresholdSquared = (Math.max(0, Number(options.backgroundTolerance ?? 12)) * 5.1) ** 2;
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const pixel = y * width + x;
@@ -84,13 +80,15 @@
         minimumY = Math.min(minimumY, y);
         maximumX = Math.max(maximumX, x);
         maximumY = Math.max(maximumY, y);
-        if (backgroundColors.some((color) => {
+        for (const color of backgroundColors) {
           const deltaR = data[offset] - Number(color?.r || 0);
           const deltaG = data[offset + 1] - Number(color?.g || 0);
           const deltaB = data[offset + 2] - Number(color?.b || 0);
-          return deltaR * deltaR + deltaG * deltaG + deltaB * deltaB
-            <= backgroundThresholdSquared;
-        })) residualBackgroundPixels += 1;
+          if (deltaR * deltaR + deltaG * deltaG + deltaB * deltaB <= backgroundThresholdSquared) {
+            residualBackgroundPixels += 1;
+            break;
+          }
+        }
       }
     }
     let edgePixels = 0;
@@ -101,33 +99,27 @@
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const pixel = y * width + x;
-        if (!visible[pixel]) continue;
-        const edge = (
-          x === 0
-          || x + 1 === width
-          || y === 0
-          || y + 1 === height
-          || !visible[pixel - 1]
-          || !visible[pixel + 1]
-          || !visible[pixel - width]
-          || !visible[pixel + width]
-        );
-        if (!edge) continue;
-        edgePixels += 1;
-        if (x === 0 || x + 1 === width || y === 0 || y + 1 === height) clippedEdgePixels += 1;
-        if (data[pixel * 4 + 3] < 250) softEdgePixels += 1;
-      }
-    }
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        const pixel = y * width + x;
-        if (visible[pixel]) continue;
-        const touchesSubject = (
-          (x > 0 && visible[pixel - 1])
-          || (x + 1 < width && visible[pixel + 1])
-          || (y > 0 && visible[pixel - width])
-          || (y + 1 < height && visible[pixel + width])
-        );
+        if (visible[pixel]) {
+          const edge =
+            x === 0 ||
+            x + 1 === width ||
+            y === 0 ||
+            y + 1 === height ||
+            !visible[pixel - 1] ||
+            !visible[pixel + 1] ||
+            !visible[pixel - width] ||
+            !visible[pixel + width];
+          if (!edge) continue;
+          edgePixels += 1;
+          if (x === 0 || x + 1 === width || y === 0 || y + 1 === height) clippedEdgePixels += 1;
+          if (data[pixel * 4 + 3] < 250) softEdgePixels += 1;
+          continue;
+        }
+        const touchesSubject =
+          (x > 0 && visible[pixel - 1]) ||
+          (x + 1 < width && visible[pixel + 1]) ||
+          (y > 0 && visible[pixel - width]) ||
+          (y + 1 < height && visible[pixel + width]);
         if (!touchesSubject) continue;
         transparentEdgePixels += 1;
         const offset = pixel * 4;
@@ -150,16 +142,25 @@
         const pixel = queue[head++];
         componentSize += 1;
         const x = pixel % width;
-        const neighbors = [
-          x > 0 ? pixel - 1 : -1,
-          x + 1 < width ? pixel + 1 : -1,
-          pixel >= width ? pixel - width : -1,
-          pixel + width < pixelCount ? pixel + width : -1,
-        ];
-        for (const neighbor of neighbors) {
-          if (neighbor < 0 || !visible[neighbor] || visitedVisible[neighbor]) continue;
-          visitedVisible[neighbor] = 1;
-          queue[tail++] = neighbor;
+        const left = pixel - 1;
+        const right = pixel + 1;
+        const up = pixel - width;
+        const down = pixel + width;
+        if (x > 0 && visible[left] && !visitedVisible[left]) {
+          visitedVisible[left] = 1;
+          queue[tail++] = left;
+        }
+        if (x + 1 < width && visible[right] && !visitedVisible[right]) {
+          visitedVisible[right] = 1;
+          queue[tail++] = right;
+        }
+        if (up >= 0 && visible[up] && !visitedVisible[up]) {
+          visitedVisible[up] = 1;
+          queue[tail++] = up;
+        }
+        if (down < pixelCount && visible[down] && !visitedVisible[down]) {
+          visitedVisible[down] = 1;
+          queue[tail++] = down;
         }
       }
       componentSizes.push(componentSize);
@@ -215,18 +216,18 @@
       holePixels,
       holeRatio: visiblePixels ? holePixels / visiblePixels : 0,
       clippedEdgeRatio: edgePixels ? clippedEdgePixels / edgePixels : 0,
-      transparentRgbRatio: transparentEdgePixels
-        ? transparentRgbPixels / transparentEdgePixels
-        : 0,
+      transparentRgbRatio: transparentEdgePixels ? transparentRgbPixels / transparentEdgePixels : 0,
       residualBackgroundRatio: visiblePixels ? residualBackgroundPixels / visiblePixels : 0,
       coverage: alphaArea / pixelCount,
       center: alphaArea > 0 ? { x: weightedX / alphaArea, y: weightedY / alphaArea } : null,
-      bounds: visiblePixels ? {
-        x: minimumX,
-        y: minimumY,
-        width: maximumX - minimumX + 1,
-        height: maximumY - minimumY + 1,
-      } : null,
+      bounds: visiblePixels
+        ? {
+            x: minimumX,
+            y: minimumY,
+            width: maximumX - minimumX + 1,
+            height: maximumY - minimumY + 1,
+          }
+        : null,
     };
   }
 
@@ -309,7 +310,11 @@
         return result;
       }
       const structuralChecks = [
-        [metric.componentCount > 1 && metric.secondaryComponentRatio > settings.splitRatio, "split", "critical"],
+        [
+          metric.componentCount > 1 && metric.secondaryComponentRatio > settings.splitRatio,
+          "split",
+          "critical",
+        ],
         [metric.holeRatio > settings.holeRatio, "holes", "warning"],
         [metric.clippedEdgeRatio > settings.clippedEdgeRatio, "clipped", "warning"],
         [metric.transparentRgbRatio > settings.transparentRgbRatio, "transparent-rgb", "warning"],
@@ -325,9 +330,7 @@
       const previous = nearestQualityMetric(metrics, index, -1, settings.circular);
       const next = nearestQualityMetric(metrics, index, 1, settings.circular);
       if (!previous || !next) return result;
-      const expectedArea = Math.sqrt(
-        Math.max(1, previous.alphaArea) * Math.max(1, next.alphaArea),
-      );
+      const expectedArea = Math.sqrt(Math.max(1, previous.alphaArea) * Math.max(1, next.alphaArea));
       const areaDeviation = Math.min(
         Math.abs(Math.log(Math.max(1, metric.alphaArea) / Math.max(1, previous.alphaArea))),
         Math.abs(Math.log(Math.max(1, metric.alphaArea) / Math.max(1, next.alphaArea))),
@@ -335,23 +338,15 @@
       result.details.areaDeviation = areaDeviation;
       if (areaDeviation > settings.areaWarning) {
         result.codes.push("area");
-        result.score = Math.max(
-          result.score,
-          clamp(areaDeviation / settings.areaCritical, 0, 1) * 100,
-        );
+        result.score = Math.max(result.score, clamp(areaDeviation / settings.areaCritical, 0, 1) * 100);
         result.severity = areaDeviation > settings.areaCritical ? "critical" : "warning";
       }
       const subjectScale = Math.max(12, Math.sqrt(expectedArea));
-      const positionDeviation = Math.min(
-        Math.hypot(
-          metric.center.x - previous.center.x,
-          metric.center.y - previous.center.y,
-        ),
-        Math.hypot(
-          metric.center.x - next.center.x,
-          metric.center.y - next.center.y,
-        ),
-      ) / subjectScale;
+      const positionDeviation =
+        Math.min(
+          Math.hypot(metric.center.x - previous.center.x, metric.center.y - previous.center.y),
+          Math.hypot(metric.center.x - next.center.x, metric.center.y - next.center.y),
+        ) / subjectScale;
       result.details.positionDeviation = positionDeviation;
       if (positionDeviation > settings.positionWarning) {
         result.codes.push("position");
@@ -367,18 +362,11 @@
         metric.softEdgeRatio - next.softEdgeRatio,
       );
       result.details.softEdgeDeviation = softEdgeDeviation;
-      if (
-        metric.softEdgeRatio > settings.softEdgeMinimum
-        && softEdgeDeviation > settings.softEdgeDelta
-      ) {
+      if (metric.softEdgeRatio > settings.softEdgeMinimum && softEdgeDeviation > settings.softEdgeDelta) {
         result.codes.push("soft-edge");
         result.score = Math.max(
           result.score,
-          clamp(
-            softEdgeDeviation / Math.max(settings.softEdgeDelta * 2, 0.01),
-            0,
-            1,
-          ) * 100,
+          clamp(softEdgeDeviation / Math.max(settings.softEdgeDelta * 2, 0.01), 0, 1) * 100,
         );
         if (result.severity === "ok") result.severity = "warning";
       }
@@ -390,4 +378,4 @@
     analyzeCutoutQualitySequence,
     createCutoutQualityMetrics,
   };
-}));
+});

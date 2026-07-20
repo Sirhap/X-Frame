@@ -34,6 +34,7 @@
     "automaticCutoutActivated",
     "pendingAutomaticPropagation",
   ]);
+  const MAX_EDIT_HISTORY = 100;
 
   /**
    * Clones logical session values without copying Canvas or ImageData instances.
@@ -74,6 +75,40 @@
   }
 
   /**
+   * Captures one image's complete user-editable state.
+   * @param {object} item Cutout session item.
+   * @returns {object} Independent logical snapshot.
+   */
+  function captureItemState(item) {
+    return Object.fromEntries(PROPAGATION_FIELDS.map((field) => [field, cloneSessionValue(item?.[field])]));
+  }
+
+  /**
+   * Restores one image's complete user-editable state and invalidates derived pixels.
+   * @param {object} item Cutout session item.
+   * @param {object} snapshot Previously captured logical state.
+   * @returns {void}
+   */
+  function restoreItemState(item, snapshot) {
+    if (!item || !snapshot) return;
+    for (const field of PROPAGATION_FIELDS) item[field] = cloneSessionValue(snapshot[field]);
+    resetItemProcessing(item);
+  }
+
+  /**
+   * Starts one reversible user edit and clears the stale redo branch.
+   * @param {object} item Cutout session item.
+   * @returns {void}
+   */
+  function recordItemEdit(item) {
+    if (!item) return;
+    if (!Array.isArray(item.editUndo)) item.editUndo = [];
+    item.editUndo.push(captureItemState(item));
+    if (item.editUndo.length > MAX_EDIT_HISTORY) item.editUndo.shift();
+    item.editRedo = [];
+  }
+
+  /**
    * Ensures the DOM adapter exposes every required processing control.
    * @param {object} elements Cutout DOM adapter.
    * @returns {void}
@@ -81,7 +116,6 @@
    */
   function assertControls(elements) {
     const required = [
-      "cutoutAutoColor",
       "cutoutColor",
       "cutoutConnected",
       "cutoutPerceptual",
@@ -100,7 +134,6 @@
   function captureProcessingParameters(elements) {
     assertControls(elements);
     const parameters = {
-      autoColor: Boolean(elements.cutoutAutoColor.checked),
       backgroundColor: String(elements.cutoutColor.value || "#ffffff"),
       connected: Boolean(elements.cutoutConnected.checked),
       perceptual: Boolean(elements.cutoutPerceptual.checked),
@@ -122,9 +155,7 @@
   function applyProcessingParameters(elements, parameters, adapter = {}) {
     if (!parameters) return;
     assertControls(elements);
-    elements.cutoutAutoColor.checked = Boolean(parameters.autoColor);
     elements.cutoutColor.value = String(parameters.backgroundColor || "#ffffff");
-    elements.cutoutColor.disabled = elements.cutoutAutoColor.checked;
     elements.cutoutConnected.checked = Boolean(parameters.connected);
     elements.cutoutPerceptual.checked = Boolean(parameters.perceptual);
     elements.cutoutDespillMode.value = String(parameters.despillMode || "general");
@@ -194,33 +225,163 @@
   }
 
   /**
+   * Finds the nearest target pixel that still matches one propagated background color.
+   * Color distance is evaluated before spatial distance so a moved sprite cannot leave
+   * the mapped seed on foreground pixels and silently produce an empty connected mask.
+   * @param {{width:number,height:number,data:ArrayLike<number>}|null} imageData Target source pixels.
+   * @param {{r:number,g:number,b:number}|null} color Propagated background sample.
+   * @param {{x:number,y:number}} predictedPoint Canvas-scaled source position.
+   * @param {number} tolerance Maximum normalized RGB distance accepted as background.
+   * @returns {{x:number,y:number}|null} Reacquired target seed, or null when no color match exists.
+   */
+  function reacquireAutomaticSeed(imageData, color, predictedPoint, tolerance) {
+    const width = Math.trunc(Number(imageData?.width));
+    const height = Math.trunc(Number(imageData?.height));
+    if (!imageData?.data || width <= 0 || height <= 0 || !color) return null;
+    const maximumColorDistance = Math.max(0, Number(tolerance) || 0);
+    let bestPoint = null;
+    let bestColorDistance = Number.POSITIVE_INFINITY;
+    let bestSpatialDistance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < width * height; index += 1) {
+      const offset = index * 4;
+      if ((imageData.data[offset + 3] || 0) === 0) continue;
+      const redDelta = Number(imageData.data[offset]) - Number(color.r);
+      const greenDelta = Number(imageData.data[offset + 1]) - Number(color.g);
+      const blueDelta = Number(imageData.data[offset + 2]) - Number(color.b);
+      const colorDistance = (Math.hypot(redDelta, greenDelta, blueDelta) / Math.sqrt(3 * 255 * 255)) * 100;
+      if (colorDistance > maximumColorDistance) continue;
+      const x = index % width;
+      const y = Math.floor(index / width);
+      const spatialDistance = (x - predictedPoint.x) ** 2 + (y - predictedPoint.y) ** 2;
+      if (
+        colorDistance < bestColorDistance ||
+        (colorDistance === bestColorDistance && spatialDistance < bestSpatialDistance)
+      ) {
+        bestColorDistance = colorDistance;
+        bestSpatialDistance = spatialDistance;
+        bestPoint = { x, y };
+      }
+    }
+    return bestPoint;
+  }
+
+  /**
+   * Reacquires source background seed points in a target image's canvas space.
+   * @param {object} sourceItem Source session item.
+   * @param {object} targetItem Target session item.
+   * @returns {Array<{x:number,y:number}>} Independent target-space seed points.
+   */
+  function mapAutomaticSeedPoints(sourceItem, targetItem) {
+    const sourceWidth = Number(sourceItem?.sourceImageData?.width || sourceItem?.sourceCanvas?.width);
+    const sourceHeight = Number(sourceItem?.sourceImageData?.height || sourceItem?.sourceCanvas?.height);
+    const targetWidth = Number(targetItem?.sourceImageData?.width || targetItem?.sourceCanvas?.width);
+    const targetHeight = Number(targetItem?.sourceImageData?.height || targetItem?.sourceCanvas?.height);
+    if (
+      sourceWidth <= 0 ||
+      sourceHeight <= 0 ||
+      targetWidth <= 0 ||
+      targetHeight <= 0 ||
+      !Array.isArray(sourceItem?.seedPoints)
+    )
+      return [];
+    const tolerance = Math.max(
+      1,
+      Number(sourceItem.processingParameters?.tolerance || 0) +
+        Number(sourceItem.processingParameters?.edgeBoost || 0) * 0.12,
+    );
+    return sourceItem.seedPoints.flatMap((point, index) => {
+      if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return [];
+      const predictedPoint = {
+        x: Math.max(0, Math.min(targetWidth - 1, (point.x * targetWidth) / sourceWidth)),
+        y: Math.max(0, Math.min(targetHeight - 1, (point.y * targetHeight) / sourceHeight)),
+      };
+      const targetPoint = reacquireAutomaticSeed(
+        targetItem?.sourceImageData || null,
+        sourceItem.backgroundSamples?.[index] || sourceItem.backgroundSamples?.[0] || null,
+        predictedPoint,
+        tolerance,
+      );
+      return [targetPoint || predictedPoint];
+    });
+  }
+
+  /**
+   * Samples target-frame background colors at propagated seed points.
+   * Video decoding can shift a nominally solid background by a few RGB values
+   * between frames, so retaining the source-frame colors would make a narrow
+   * tolerance remove only the frame where the user sampled the background.
+   *
+   * @param {object} sourceItem Source session item.
+   * @param {object} targetItem Target session item.
+   * @param {Array<{x:number,y:number}>} seedPoints Mapped target-space seed points.
+   * @returns {Array<{r:number,g:number,b:number,a:number}>} Per-target background colors.
+   */
+  function sampleMappedBackgroundColors(sourceItem, targetItem, seedPoints) {
+    const sourceColors = Array.isArray(sourceItem?.backgroundSamples) ? sourceItem.backgroundSamples : [];
+    const imageData = targetItem?.sourceImageData;
+    const width = Math.trunc(Number(imageData?.width));
+    const height = Math.trunc(Number(imageData?.height));
+    if (!imageData?.data || width <= 0 || height <= 0 || !seedPoints.length) {
+      return cloneSessionValue(sourceColors);
+    }
+    return sourceColors.map((sourceColor, index) => {
+      const point = seedPoints[index];
+      if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) {
+        return cloneSessionValue(sourceColor);
+      }
+      const x = Math.max(0, Math.min(width - 1, Math.round(point.x)));
+      const y = Math.max(0, Math.min(height - 1, Math.round(point.y)));
+      const offset = (y * width + x) * 4;
+      const alpha = Number(imageData.data[offset + 3] || 0);
+      if (!alpha) return cloneSessionValue(sourceColor);
+      return {
+        r: Number(imageData.data[offset]),
+        g: Number(imageData.data[offset + 1]),
+        b: Number(imageData.data[offset + 2]),
+        a: alpha,
+      };
+    });
+  }
+
+  /**
+   * Copies the complete automatic background-removal stage to one target item.
+   * Local repairs are intentionally preserved so callers can compose automatic
+   * processing with a subsequently propagated repair in the same transaction.
+   * @param {object} targetItem Target session item.
+   * @param {object} sourceItem Source session item.
+   * @param {{mapSeedPoints?:boolean}} [options] Per-image propagation behavior.
+   * @returns {void}
+   */
+  function copyAutomaticProcessingState(targetItem, sourceItem, options = {}) {
+    if (!targetItem || !sourceItem?.processingParameters) {
+      throw new TypeError("Automatic processing copy requires source parameters and a target item.");
+    }
+    targetItem.processingParameters = cloneSessionValue(sourceItem.processingParameters);
+    targetItem.seedPoints = options.mapSeedPoints ? mapAutomaticSeedPoints(sourceItem, targetItem) : [];
+    targetItem.backgroundSamples = options.mapSeedPoints
+      ? sampleMappedBackgroundColors(sourceItem, targetItem, targetItem.seedPoints)
+      : cloneSessionValue(sourceItem.backgroundSamples || []);
+    targetItem.automaticCutoutActivated = true;
+    targetItem.processingActivated = true;
+    targetItem.pendingAutomaticPropagation = false;
+    resetItemProcessing(targetItem);
+  }
+
+  /**
    * Copies one source image's automatic-cutout settings to every session item.
-   * Manual background colors are copied; automatic mode keeps per-image detection.
+   * Manual FramePacker reference colors are copied to every target image.
    * @param {object[]} items Session items.
    * @param {object} sourceItem Selected source item.
+   * @param {{publishedCanvases?:object[],mapSeedPoints?:boolean}} [options] Transaction and per-image seed behavior.
    * @returns {number} Number of updated items.
    */
-  function propagateAutomaticProcessing(items, sourceItem) {
+  function propagateAutomaticProcessing(items, sourceItem, options = {}) {
     if (!sourceItem?.processingParameters) {
       throw new TypeError("Automatic propagation requires a source parameter snapshot.");
     }
-    beginPropagation(items, sourceItem);
-    const sourceParameters = sourceItem.processingParameters;
-    const useAutomaticColor = Boolean(sourceParameters.autoColor);
-    const sourceSamples = (sourceItem.backgroundSamples || []).map((color) => ({ ...color }));
+    beginPropagation(items, sourceItem, options);
     for (const item of items || []) {
-      item.processingParameters = { ...sourceParameters };
-      item.automaticCutoutActivated = true;
-      item.processingActivated = true;
-      item.pendingAutomaticPropagation = false;
-      if (!useAutomaticColor) {
-        item.backgroundSamples = sourceSamples.map((color) => ({ ...color }));
-        item.seedPoints = [];
-      } else if (item !== sourceItem) {
-        item.backgroundSamples = [];
-        item.seedPoints = [];
-      }
-      resetItemProcessing(item);
+      copyAutomaticProcessingState(item, sourceItem, options);
     }
     return Array.isArray(items) ? items.length : 0;
   }
@@ -229,13 +390,18 @@
    * Starts a reversible apply-to-all transaction on the source item.
    * @param {object[]} items Session items.
    * @param {object} sourceItem Selected source item.
+   * @param {{publishedCanvases?:object[]}} [options] Host canvases visible before propagation.
    * @returns {void}
    */
-  function beginPropagation(items, sourceItem) {
+  function beginPropagation(items, sourceItem, options = {}) {
     if (!sourceItem) throw new TypeError("Propagation requires a source item.");
     sourceItem.propagationUndo = {
       snapshot: captureItems(items),
       repairCount: sourceItem.repairs?.length || 0,
+      editUndoCount: sourceItem.editUndo?.length || 0,
+      publishedCanvases: Array.isArray(options.publishedCanvases)
+        ? Array.from(options.publishedCanvases)
+        : null,
     };
     sourceItem.propagationRedo = null;
   }
@@ -248,11 +414,17 @@
    */
   function undoPropagation(items, sourceItem) {
     const transaction = sourceItem?.propagationUndo;
-    if (!transaction || (sourceItem.repairs?.length || 0) > transaction.repairCount) return false;
+    const hasNewerRepair = (sourceItem?.repairs?.length || 0) > transaction?.repairCount;
+    const hasNewerItemEdit = (sourceItem?.editUndo?.length || 0) > transaction?.editUndoCount;
+    if (!transaction || hasNewerRepair || hasNewerItemEdit) return false;
     const redoSnapshot = captureItems(items);
+    const redoPublishedCanvases = Array.from(items || [], (item) => item.publishedCanvas || null);
     restoreItems(transaction.snapshot);
     sourceItem.propagationUndo = null;
-    sourceItem.propagationRedo = { snapshot: redoSnapshot };
+    sourceItem.propagationRedo = {
+      snapshot: redoSnapshot,
+      publishedCanvases: redoPublishedCanvases,
+    };
     return true;
   }
 
@@ -270,6 +442,8 @@
     sourceItem.propagationUndo = {
       snapshot: undoSnapshot,
       repairCount: sourceItem.repairs?.length || 0,
+      editUndoCount: sourceItem.editUndo?.length || 0,
+      publishedCanvases: Array.from(items || [], (item) => item.publishedCanvas || null),
     };
     sourceItem.propagationRedo = null;
     return true;
@@ -282,7 +456,21 @@
    * @returns {{changed:boolean,live:boolean}} Undo result and live-publish requirement.
    */
   function undoEdit(items, sourceItem) {
-    if (undoPropagation(items, sourceItem)) return { changed: true, live: true };
+    const publishedCanvases = sourceItem?.propagationUndo?.publishedCanvases;
+    if (undoPropagation(items, sourceItem)) {
+      return {
+        changed: true,
+        live: true,
+        ...(publishedCanvases ? { publishedCanvases } : {}),
+      };
+    }
+    const snapshot = sourceItem?.editUndo?.pop();
+    if (snapshot) {
+      if (!Array.isArray(sourceItem.editRedo)) sourceItem.editRedo = [];
+      sourceItem.editRedo.push(captureItemState(sourceItem));
+      restoreItemState(sourceItem, snapshot);
+      return { changed: true, live: false };
+    }
     const repair = sourceItem?.repairs?.pop();
     if (!repair) return { changed: false, live: false };
     sourceItem.undoneRepairs.push(repair);
@@ -297,22 +485,35 @@
    * @returns {{changed:boolean,live:boolean}} Redo result and live-publish requirement.
    */
   function redoEdit(items, sourceItem) {
+    const snapshot = sourceItem?.editRedo?.pop();
+    if (snapshot) {
+      if (!Array.isArray(sourceItem.editUndo)) sourceItem.editUndo = [];
+      sourceItem.editUndo.push(captureItemState(sourceItem));
+      restoreItemState(sourceItem, snapshot);
+      return { changed: true, live: false };
+    }
     const repair = sourceItem?.undoneRepairs?.pop();
     if (repair) {
       sourceItem.repairs.push(repair);
       resetItemProcessing(sourceItem);
       return { changed: true, live: Boolean(sourceItem.propagationRedo) };
     }
-    return redoPropagation(items, sourceItem)
-      ? { changed: true, live: true }
-      : { changed: false, live: false };
+    const publishedCanvases = sourceItem?.propagationRedo?.publishedCanvases;
+    if (!redoPropagation(items, sourceItem)) return { changed: false, live: false };
+    return {
+      changed: true,
+      live: true,
+      ...(publishedCanvases ? { publishedCanvases } : {}),
+    };
   }
 
   return Object.freeze({
     applyProcessingParameters,
     beginPropagation,
     captureProcessingParameters,
+    copyAutomaticProcessingState,
     createProcessingOptions,
+    recordItemEdit,
     propagateAutomaticProcessing,
     redoEdit,
     redoPropagation,

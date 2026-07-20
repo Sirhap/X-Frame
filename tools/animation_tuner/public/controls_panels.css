@@ -1,0 +1,89 @@
+.hasUnsavedChanges button.save {
+  box-shadow:
+    var(--hard-shadow),
+    0 0 0 4px rgba(255, 212, 61, 0.28);
+}
+
+.panel {
+  border-top: 3px solid var(--line);
+  padding-top: 10px;
+  margin-top: 12px;
+}
+
+.panel summary {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel summary::after {
+  content: "+";
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  color: var(--control-ink);
+  background: var(--control-bg);
+  box-shadow: 2px 2px 0 var(--line);
+  font: 900 14px/1 var(--data-font);
+}
+
+.panel[open] summary::after {
+  content: "-";
+  color: #05070a;
+  background: var(--accent-2);
+}
+
+.buttonRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.projectActions {
+  grid-template-columns: minmax(0, 1fr) 54px;
+  margin: -4px 0 8px;
+}
+
+.projectDangerActions {
+  margin: 0 0 12px;
+}
+
+.dangerAction {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.dangerAction:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+
+.importAnimationButton {
+  min-height: 52px;
+  background: var(--accent-3);
+  color: #05070a;
+  font-weight: 950;
+  box-shadow: 4px 4px 0 var(--line);
+}
+
+.projectRefreshButton {
+  min-height: 52px;
+  padding: 0;
+  font: 950 24px/1 var(--data-font);
+}
+
+.wide {
+  width: 100%;
+  margin-top: 8px;
+}

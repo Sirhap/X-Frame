@@ -1,6 +1,6 @@
 "use strict";
 
-const { defineConfig } = require("@playwright/test");
+const { defineConfig, devices } = require("@playwright/test");
 
 module.exports = defineConfig({
   testDir: "./tools/tests/e2e",
@@ -10,11 +10,20 @@ module.exports = defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "node tools/animation_tuner/server.js",
+    command: "node tools/tests/e2e/start_server.js",
     env: { ...process.env, PORT: "5189" },
     reuseExistingServer: false,
     timeout: 10000,
     url: "http://127.0.0.1:5189",
   },
+  projects: [
+    { name: "chromium", use: { browserName: "chromium" } },
+    { name: "webkit", grep: /@cross-browser/, use: { browserName: "webkit" } },
+    {
+      name: "mobile-touch",
+      grep: /@touch/,
+      use: { ...devices["iPhone 13"], browserName: "chromium" },
+    },
+  ],
   workers: 1,
 });

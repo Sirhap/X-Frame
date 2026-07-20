@@ -1,11 +1,15 @@
 "use strict";
 
 const { expect, test } = require("@playwright/test");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3n0AAAAASUVORK5CYII=",
   "base64",
 );
+const WIDE_IMAGE_PATH = path.resolve(__dirname, "../../../docs/screenshot.png");
+const WIDE_IMAGE_PNG = fs.readFileSync(WIDE_IMAGE_PATH);
 
 /**
  * Waits for the batch queue and the tray expansion transition to finish.
@@ -19,6 +23,58 @@ async function expandStableBatchTray(page) {
   await expect
     .poll(() => batchTray.evaluate((element) => element.scrollHeight - element.clientHeight))
     .toBeLessThanOrEqual(1);
+}
+
+/**
+ * Opens the single-image repair workbench with one full-size image and two navigation frames.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @returns {Promise<void>}
+ */
+async function openRepairWorkbench(page) {
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: WIDE_IMAGE_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await page.locator(".organizerFrameCutout").first().click();
+  await expect(page.locator("#cutoutModal")).toBeVisible();
+  await expect(page).toHaveURL(/\/tools\/import/);
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  await expect(page.locator("#organizerModal")).toHaveAttribute("inert", "");
+  await expect(page.locator("#organizerModal")).toHaveAttribute("aria-hidden", "true");
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
+}
+
+/**
+ * Selects a repair tool and waits until its result canvas is ready for a gesture.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @param {string} selector Repair-tool selector.
+ * @returns {Promise<void>}
+ */
+async function selectRepairTool(page, selector) {
+  const button = page.locator(selector);
+  await expect(button).toBeEnabled();
+  await button.click();
+  await expect(button).toHaveClass(/active/);
+  await expect(button).toBeEnabled();
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
+}
+
+/**
+ * Drags horizontally across the center of the editable preview.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @returns {Promise<void>}
+ */
+async function dragAcrossPreview(page) {
+  const canvasBox = await page.locator("#cutoutResult").boundingBox();
+  const y = canvasBox.y + canvasBox.height / 2;
+  const startX = canvasBox.x + canvasBox.width * 0.45;
+  const endX = canvasBox.x + canvasBox.width * 0.65;
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  await page.mouse.move(endX, y, { steps: 8 });
+  await page.mouse.up();
 }
 
 test("desktop selection is linkable and browser history restores it", async ({ page }) => {
@@ -44,12 +100,12 @@ test("the original editor is the default and the home hub opens on demand", asyn
   await page.goto("/");
   await expect(page.locator("#homeHub")).toBeHidden();
   await expect(page.locator("#stage")).toBeVisible();
-  await expect(page.locator("#filmstrip .thumb")).not.toHaveCount(0);
+  await expect(page.locator("#filmstrip")).toBeVisible();
   await expect(page.locator("#homeHubOpen")).toHaveAttribute("aria-pressed", "false");
   await page.locator("#homeHubOpen").click();
   await expect(page.locator("#homeHub")).toBeVisible();
-  await expect(page.locator("#homeAnimationCount")).not.toHaveText("0");
-  await expect(page.locator("#homeFrameCount")).not.toHaveText("0");
+  await expect(page.locator("#homeAnimationCount")).toBeVisible();
+  await expect(page.locator("#homeFrameCount")).toBeVisible();
   const [homeHubBox, filmstripBox] = await Promise.all([
     page.locator("#homeHub").boundingBox(),
     page.locator("#filmstrip").boundingBox(),
@@ -59,10 +115,16 @@ test("the original editor is the default and the home hub opens on demand", asyn
   expect(homeHubBox.y + homeHubBox.height).toBeLessThanOrEqual(filmstripBox.y);
   await page.locator("#homeHubContinue").click();
   await expect(page.locator("#homeHub")).toBeHidden();
+  await page.locator("#homeHubOpen").click();
+  await page.locator('[data-home-tool="import"]').click();
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  await page.locator("#organizerHome").click();
+  await expect(page.locator("#homeHub")).toBeHidden();
+  await expect(page.locator("#stage")).toBeVisible();
   await page.reload();
   await expect(page.locator("#homeHub")).toBeHidden();
   await expect(page.locator("#stage")).toBeVisible();
-  await expect(page.locator("#filmstrip .thumb")).not.toHaveCount(0);
+  await expect(page.locator("#filmstrip")).toBeVisible();
 });
 
 test("tool paths refresh, update titles, and return home", async ({ page }) => {
@@ -134,6 +196,10 @@ test("single-image cutout keeps parameters local until apply-all", async ({ page
   expect(previousBox.y + previousBox.height / 2).toBeGreaterThan(canvasBox.y);
   expect(previousBox.y + previousBox.height / 2).toBeLessThan(canvasBox.y + canvasBox.height);
 
+  await page.locator("#cutoutColor").evaluate((input) => {
+    input.value = "#00ff00";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   await page.locator("#cutoutTolerance").evaluate((input) => {
     input.value = "37";
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -146,8 +212,10 @@ test("single-image cutout keeps parameters local until apply-all", async ({ page
   await page.locator("#cutoutPrevious").click();
   await expect(page.locator("#cutoutTolerance")).toHaveValue("37");
 
-  const organizerThumbnail = page.locator(".organizerFrame img").first();
-  const originalThumbnail = await organizerThumbnail.getAttribute("src");
+  const organizerThumbnails = page.locator(".organizerFrame img");
+  const originalThumbnails = await organizerThumbnails.evaluateAll((images) =>
+    images.map((image) => image.getAttribute("src")),
+  );
   await page.locator("#cutoutRepairBatch").evaluate((button) => {
     window.__cutoutApplyProgress = [];
     new MutationObserver(() => window.__cutoutApplyProgress.push(button.textContent)).observe(button, {
@@ -158,14 +226,215 @@ test("single-image cutout keeps parameters local until apply-all", async ({ page
   await page.locator("#cutoutRepairBatch").click();
   await expect(page.locator("#cutoutStatus")).toContainText("当前参数应用到 3 张图片");
   await expect.poll(() => page.evaluate(() => window.__cutoutApplyProgress)).toContain("正在应用 3 / 3…");
-  await expect.poll(() => organizerThumbnail.getAttribute("src")).not.toBe(originalThumbnail);
+  await expect
+    .poll(async () => {
+      const current = await organizerThumbnails.evaluateAll((images) =>
+        images.map((image) => image.getAttribute("src")),
+      );
+      return current.every((source, index) => source !== originalThumbnails[index]);
+    })
+    .toBe(true);
   await page.locator("#cutoutRepairUndo").click();
-  await expect.poll(() => organizerThumbnail.getAttribute("src")).toBe(originalThumbnail);
+  await expect
+    .poll(() => organizerThumbnails.evaluateAll((images) => images.map((image) => image.getAttribute("src"))))
+    .toEqual(originalThumbnails);
   await page.locator("#cutoutRepairRedo").click();
-  await expect.poll(() => organizerThumbnail.getAttribute("src")).not.toBe(originalThumbnail);
+  await expect
+    .poll(async () => {
+      const current = await organizerThumbnails.evaluateAll((images) =>
+        images.map((image) => image.getAttribute("src")),
+      );
+      return current.every((source, index) => source !== originalThumbnails[index]);
+    })
+    .toBe(true);
   await page.locator("#cutoutNext").click();
   await expect(page.locator("#cutoutTolerance")).toHaveValue("37");
   await expect(page.locator("#cutoutViewResult")).toHaveClass(/active/);
+});
+
+test("single-image navigation remains clickable while a repair tool is active", async ({ page }) => {
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: WIDE_IMAGE_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await page.locator(".organizerFrameCutout").first().click();
+  await expect(page.locator("#cutoutModal")).toBeVisible();
+  await page.locator("#cutoutRepairBrush").click();
+  await expect(page.locator("#cutoutViewResult")).toHaveClass(/active/);
+  await expect(page.locator("#cutoutRepairBrush")).toBeEnabled();
+  await expect(page.locator("#cutoutNext")).toBeEnabled();
+
+  const nextBox = await page.locator("#cutoutNext").boundingBox();
+  const edgePoint = {
+    x: nextBox.x + nextBox.width / 2,
+    y: nextBox.y + nextBox.height / 2,
+  };
+  await expect
+    .poll(() => page.evaluate((point) => document.elementFromPoint(point.x, point.y)?.id, edgePoint))
+    .toBe("cutoutNext");
+
+  await page.mouse.click(edgePoint.x, edgePoint.y);
+
+  await expect(page.locator("#cutoutFrameNumber")).toHaveValue("2");
+  await expect(page.locator("#cutoutStatus")).toContainText("图片 2/3");
+});
+
+test("single-image clear region applies to every other image", async ({ page }) => {
+  await openRepairWorkbench(page);
+  await selectRepairTool(page, "#cutoutRepairClear");
+  await dragAcrossPreview(page);
+  await expect(page.locator("#cutoutStatus")).toContainText("已添加局部修正");
+
+  await page.locator("#cutoutRepairBatch").click();
+
+  await expect(page.locator("#cutoutStatus")).toContainText("已按画布位置应用到 2 张图片");
+  await expect(page.locator("#cutoutStatus")).toContainText("未能处理 0 张");
+});
+
+test("brush-family and region repair tools keep edits after a horizontal release", async ({ page }) => {
+  await openRepairWorkbench(page);
+  await expect(page.locator("#cutoutBatchTray")).toBeHidden();
+  for (const selector of [
+    "#cutoutRepairSource",
+    "#cutoutRepairEraser",
+    "#cutoutRepairClear",
+    "#cutoutRepairRestore",
+  ]) {
+    await selectRepairTool(page, selector);
+    if (selector === "#cutoutRepairRestore") {
+      await expect(page.locator("#cutoutSelectionHint")).toContainText("所有像素");
+    }
+    await dragAcrossPreview(page);
+    await expect(page.locator("#cutoutStatus")).toContainText("已添加局部修正");
+    await expect(page.locator("#cutoutRepairUndo")).toBeEnabled();
+  }
+
+  await selectRepairTool(page, "#cutoutRepairProtect");
+  await dragAcrossPreview(page);
+  await expect(page.locator("#cutoutStatus")).toContainText(/已提取|已智能识别保护范围|未提取到保护色/);
+  await expect(page.locator("#cutoutProtectionPreview")).toBeVisible();
+  await expect(page.locator(".cutoutProtectionPreviewLegend")).toContainText("黄色");
+  await expect(page.locator("#cutoutProtectionPreviewStatus")).toContainText(/保护|识别/);
+  await expect(page.locator("#cutoutRepairUndo")).toBeEnabled();
+
+  await selectRepairTool(page, "#cutoutRepairBrush");
+  await expect(page.locator("#cutoutProtectionPreview")).toBeHidden();
+
+  await selectRepairTool(page, "#cutoutRepairProtect");
+  await expect(page.locator("#cutoutProtectionPreviewStatus")).toContainText(/保护|识别/);
+  await page.locator("#cutoutRepairReset").click();
+  await expect(page.locator("#cutoutProtectionPreviewStatus")).toContainText("拖动框选保护区域");
+});
+
+test("background sampling follows the visible result after a local fill", async ({ page }) => {
+  await openRepairWorkbench(page);
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
+  const canvasBox = await page.locator("#cutoutResult").boundingBox();
+  const samplePoint = {
+    x: canvasBox.x + canvasBox.width / 2,
+    y: canvasBox.y + canvasBox.height / 2,
+  };
+
+  await page.locator("#cutoutRepairAutomaticQuick").click();
+  await expect(page.locator("#cutoutRepairAutomatic")).toHaveClass(/active/);
+  await expect(page.locator("#cutoutBackgroundHint")).toContainText("取样中");
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
+  await page.mouse.click(samplePoint.x, samplePoint.y);
+  await expect(page.locator("#cutoutStatus")).toContainText("已添加背景样本");
+  await expect(page.locator("#cutoutRepairAutomaticQuick")).toHaveClass(/active/);
+  await expect(page.locator("#cutoutBackgroundHint")).toContainText("取样中");
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
+
+  await page.locator("#cutoutAreaColor").evaluate((input) => {
+    input.value = "#00ff00";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await selectRepairTool(page, "#cutoutRepairFill");
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
+  await page.mouse.click(samplePoint.x, samplePoint.y);
+  await expect(page.locator("#cutoutStatus")).toContainText("已添加局部修正", { timeout: 15000 });
+
+  await page.locator("#cutoutRepairAutomaticQuick").click();
+  await expect(page.locator("#cutoutBackgroundHint")).toContainText("取样中");
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
+  await page.mouse.click(samplePoint.x, samplePoint.y);
+
+  await expect(page.locator("#cutoutStatus")).toContainText("当前结果色 #00ff00");
+  await expect(page.locator("#cutoutColor")).toHaveValue("#00ff00");
+  await expect(page.locator("#cutoutBackgroundColors button").first()).toHaveAttribute(
+    "aria-label",
+    /#00ff00/,
+  );
+});
+
+test("switching from background sampling to a repair tool cancels sampling mode", async ({ page }) => {
+  await openRepairWorkbench(page);
+  await page.locator("#cutoutRepairAutomaticQuick").click();
+  await expect(page.locator("#cutoutRepairAutomaticQuick")).toHaveClass(/active/);
+  await selectRepairTool(page, "#cutoutRepairBrush");
+  await expect(page.locator("#cutoutRepairAutomaticQuick")).not.toHaveClass(/active/);
+  await expect(page.locator("#cutoutBackgroundHint")).toContainText("先点");
+});
+
+test("a fast brush stroke keeps its endpoint and commits on release", async ({ page }) => {
+  await openRepairWorkbench(page);
+  await selectRepairTool(page, "#cutoutRepairBrush");
+  const canvasBox = await page.locator("#cutoutResult").boundingBox();
+  const y = canvasBox.y + canvasBox.height * 0.5;
+  const startX = canvasBox.x + canvasBox.width * 0.2;
+  const endX = canvasBox.x + canvasBox.width * 0.8;
+
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  await page.mouse.move(endX, y, { steps: 1 });
+  await page.mouse.up();
+
+  await expect(page.locator("#cutoutFrameNumber")).toHaveValue("1");
+  await expect(page.locator("#cutoutStatus")).toContainText("已添加局部修正");
+  await expect(page.locator("#cutoutRepairUndo")).toBeEnabled();
+});
+
+test("a cancelled brush pointer commits the collected stroke", async ({ page }) => {
+  await openRepairWorkbench(page);
+  await selectRepairTool(page, "#cutoutRepairBrush");
+  await page.evaluate(() => {
+    document.querySelector("#cutoutResult").addEventListener(
+      "pointerdown",
+      (event) => {
+        window.__repairPointerId = event.pointerId;
+      },
+      { once: true },
+    );
+  });
+  const canvasBox = await page.locator("#cutoutResult").boundingBox();
+  const y = canvasBox.y + canvasBox.height * 0.5;
+  const startX = canvasBox.x + canvasBox.width * 0.3;
+  const endX = canvasBox.x + canvasBox.width * 0.7;
+
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  await page.mouse.move(endX, y, { steps: 2 });
+  const pointerId = await page.evaluate(() => window.__repairPointerId);
+  await page.evaluate(
+    ({ pointerId: activePointerId, clientX, clientY }) => {
+      document.querySelector("#cutoutResult").dispatchEvent(
+        new PointerEvent("pointercancel", {
+          bubbles: true,
+          pointerId: activePointerId,
+          pointerType: "mouse",
+          isPrimary: true,
+          clientX,
+          clientY,
+        }),
+      );
+    },
+    { pointerId, clientX: endX, clientY: y },
+  );
+
+  await expect(page.locator("#cutoutStatus")).toContainText("已添加局部修正");
+  await expect(page.locator("#cutoutRepairUndo")).toBeEnabled();
 });
 
 test("organizer confirms before discarding an imported workset", async ({ page }) => {
@@ -198,6 +467,7 @@ test("cutout reports mixed-file skips and confirms destructive clearing", async 
 
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
   await expect(page.locator("#cutoutStatus")).toContainText("跳过 1");
+  await expect(page.locator("#cutoutBatchTray")).toBeVisible();
   await expect(page.locator("#cutoutBatchTrayToggle")).toHaveAttribute("aria-label", "展开批次图片栏");
 
   await page.locator("#cutoutClear").click();
@@ -274,6 +544,7 @@ test("area tools expose and synchronize the transparent color shortcut", async (
   await expect(page.locator("#cutoutActiveToolTitle")).toHaveText("区域补色");
   await detailedTransparent.click();
   await expect(quickTransparent).toHaveAttribute("aria-pressed", "false");
+  await expect(detailedTransparent).toHaveAttribute("aria-pressed", "false");
 });
 
 test("cutout parameters follow the regular post-processing advanced layout", async ({ page }) => {
@@ -334,13 +605,20 @@ test("mobile cutout keeps preview first and supports keyboard repair", async ({ 
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
-  await page.locator("#cutoutOpen").click();
+  await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles({
+    name: "mobile-frame.png",
+    mimeType: "image/png",
+    buffer: WIDE_IMAGE_PNG,
+  });
   const sourceRestore = page.getByRole("button", { name: "原图恢复笔" });
   await expect(sourceRestore).toBeVisible();
   await sourceRestore.click();
   await expect(page.locator("#cutoutActiveToolTitle")).toHaveText("原图恢复笔");
-  await page.getByRole("button", { name: "自动抠图" }).click();
+  await page.getByRole("button", { name: "背景清除" }).click();
+  await expect(page.locator("#cutoutStatus")).toContainText("请在画布上点击");
+  await sourceRestore.click();
+  await expect(page.locator("#cutoutActiveToolTitle")).toHaveText("原图恢复笔");
   const preview = page.locator(".cutoutPreview");
   const controls = page.locator(".cutoutControls");
   await expect(preview).toBeVisible();
@@ -348,28 +626,24 @@ test("mobile cutout keeps preview first and supports keyboard repair", async ({ 
   expect(previewBox.y).toBeLessThan(controlsBox.y);
   expect(previewBox.y).toBeLessThan(844);
 
-  const loadGroup = page.getByRole("button", { name: "载入当前组" });
-  if (await loadGroup.isEnabled()) {
-    await loadGroup.click();
-    await page.locator("#cutoutResult").focus();
-    await page.keyboard.press("ArrowRight");
-    await page.keyboard.press("Enter");
-    await expect(page.locator("#cutoutStatus")).toContainText("自动抠图");
+  await page.locator("#cutoutResult").focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#cutoutStatus")).toContainText("已添加局部修正");
 
-    await expandStableBatchTray(page);
-    const [compareBox, batchTrayBox, batchTrayMetrics] = await Promise.all([
-      page.locator(".cutoutCompare").boundingBox(),
-      page.locator(".cutoutBatchTray").boundingBox(),
-      page.locator(".cutoutBatchTray").evaluate((element) => ({
-        clientHeight: element.clientHeight,
-        scrollHeight: element.scrollHeight,
-      })),
-    ]);
-    expect(compareBox).not.toBeNull();
-    expect(batchTrayBox).not.toBeNull();
-    expect(compareBox.y + compareBox.height).toBeLessThanOrEqual(batchTrayBox.y);
-    expect(batchTrayMetrics.scrollHeight).toBeLessThanOrEqual(batchTrayMetrics.clientHeight + 1);
-  }
+  await expandStableBatchTray(page);
+  const [compareBox, batchTrayBox, batchTrayMetrics] = await Promise.all([
+    page.locator(".cutoutCompare").boundingBox(),
+    page.locator(".cutoutBatchTray").boundingBox(),
+    page.locator(".cutoutBatchTray").evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    })),
+  ]);
+  expect(compareBox).not.toBeNull();
+  expect(batchTrayBox).not.toBeNull();
+  expect(compareBox.y + compareBox.height).toBeLessThanOrEqual(batchTrayBox.y);
+  expect(batchTrayMetrics.scrollHeight).toBeLessThanOrEqual(batchTrayMetrics.clientHeight + 1);
   expect(errors).toEqual([]);
 });
 
@@ -391,12 +665,12 @@ test("mobile editor presents the operation workspace before the parameter sideba
 
 test("desktop cutout fixes the main workspace and anchors zoom to the canvas", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 700 });
-  await page.goto("/");
-  await page.locator("#cutoutOpen").click();
-
-  const loadGroup = page.getByRole("button", { name: "载入当前组" });
-  test.skip(!(await loadGroup.isEnabled()), "No animation group is available for cutout layout verification");
-  await loadGroup.click();
+  await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: WIDE_IMAGE_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
   await expandStableBatchTray(page);
 
   const preview = page.locator(".cutoutPreview");

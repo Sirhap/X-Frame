@@ -2,7 +2,7 @@
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.FrameOrganizerCore = api;
-}(typeof globalThis !== "undefined" ? globalThis : this, () => {
+})(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 
   /**
@@ -175,9 +175,16 @@
    */
   function detectStableBackground(signatures) {
     if (!Array.isArray(signatures) || signatures.length < 2) return null;
-    const indexes = signatures.length <= 5
-      ? Array.from({ length: signatures.length }, (_, index) => index)
-      : [0, Math.floor(signatures.length * 0.25), Math.floor(signatures.length * 0.5), Math.floor(signatures.length * 0.75), signatures.length - 1];
+    const indexes =
+      signatures.length <= 5
+        ? Array.from({ length: signatures.length }, (_, index) => index)
+        : [
+            0,
+            Math.floor(signatures.length * 0.25),
+            Math.floor(signatures.length * 0.5),
+            Math.floor(signatures.length * 0.75),
+            signatures.length - 1,
+          ];
     const corners = [];
     for (const index of indexes) {
       const signature = normalizeSignature(signatures[index]);
@@ -227,7 +234,8 @@
       }
       const hsv = rgbToHsv(signature.data[offset], signature.data[offset + 1], signature.data[offset + 2]);
       if (descriptor.type === "color") {
-        if (hsv.s >= BACKGROUND_SATURATION && hueDistance(hsv.h, descriptor.hue) < BACKGROUND_HUE_TOLERANCE) mask[pixel] = 1;
+        if (hsv.s >= BACKGROUND_SATURATION && hueDistance(hsv.h, descriptor.hue) < BACKGROUND_HUE_TOLERANCE)
+          mask[pixel] = 1;
       } else if (hsv.s < BACKGROUND_SATURATION && Math.abs(alpha - descriptor.alpha) < 100) {
         mask[pixel] = 1;
       }
@@ -263,17 +271,26 @@
   function signatureSimilarity(left, right, background = null, leftMask = null, rightMask = null) {
     const leftSignature = normalizeSignature(left);
     const rightSignature = normalizeSignature(right);
-    if (!leftSignature || !rightSignature || leftSignature.data.length !== rightSignature.data.length) return 0;
+    if (!leftSignature || !rightSignature || leftSignature.data.length !== rightSignature.data.length)
+      return 0;
     const useBackground = background?.enabled;
-    const resolvedLeftMask = useBackground ? (leftMask ?? createBackgroundMask(leftSignature, background)) : null;
-    const resolvedRightMask = useBackground ? (rightMask ?? createBackgroundMask(rightSignature, background)) : null;
+    const resolvedLeftMask = useBackground
+      ? (leftMask ?? createBackgroundMask(leftSignature, background))
+      : null;
+    const resolvedRightMask = useBackground
+      ? (rightMask ?? createBackgroundMask(rightSignature, background))
+      : null;
     let squaredError = 0;
     let comparedPixels = 0;
     for (let offset = 0, pixel = 0; offset < leftSignature.data.length; offset += 4, pixel += 1) {
-      if ((resolvedLeftMask?.[pixel]) || (resolvedRightMask?.[pixel])) continue;
+      if (resolvedLeftMask?.[pixel] || resolvedRightMask?.[pixel]) continue;
       const leftAlphaByte = leftSignature.data[offset + 3];
       const rightAlphaByte = rightSignature.data[offset + 3];
-      if (useBackground && (leftAlphaByte < BACKGROUND_ALPHA_THRESHOLD || rightAlphaByte < BACKGROUND_ALPHA_THRESHOLD)) continue;
+      if (
+        useBackground &&
+        (leftAlphaByte < BACKGROUND_ALPHA_THRESHOLD || rightAlphaByte < BACKGROUND_ALPHA_THRESHOLD)
+      )
+        continue;
       const leftWeight = smoothstep(0, 40, leftAlphaByte);
       const rightWeight = smoothstep(0, 40, rightAlphaByte);
       if (!useBackground && leftWeight === 0 && rightWeight === 0) continue;
@@ -281,12 +298,14 @@
       const leftAlpha = leftAlphaByte / 255;
       const rightAlpha = rightAlphaByte / 255;
       const redDifference = leftSignature.data[offset] * leftAlpha - rightSignature.data[offset] * rightAlpha;
-      const greenDifference = leftSignature.data[offset + 1] * leftAlpha - rightSignature.data[offset + 1] * rightAlpha;
-      const blueDifference = leftSignature.data[offset + 2] * leftAlpha - rightSignature.data[offset + 2] * rightAlpha;
+      const greenDifference =
+        leftSignature.data[offset + 1] * leftAlpha - rightSignature.data[offset + 1] * rightAlpha;
+      const blueDifference =
+        leftSignature.data[offset + 2] * leftAlpha - rightSignature.data[offset + 2] * rightAlpha;
       const alphaWeightDifference = leftWeight - rightWeight;
-      squaredError += leftWeight * rightWeight * (
-        (redDifference ** 2 + greenDifference ** 2 + blueDifference ** 2) / 3
-      ) + alphaWeightDifference ** 2 * 255 ** 2 * 0.25;
+      squaredError +=
+        leftWeight * rightWeight * ((redDifference ** 2 + greenDifference ** 2 + blueDifference ** 2) / 3) +
+        alphaWeightDifference ** 2 * 255 ** 2 * 0.25;
     }
     if (!comparedPixels) return 100;
     return (1 - Math.sqrt(squaredError / comparedPixels) / 255) * 100;
@@ -302,10 +321,54 @@
     const masks = new Map();
     const maskFor = (signature) => {
       if (!background) return null;
-      if (!masks.has(signature)) masks.set(signature, createBackgroundMask(normalizeSignature(signature), background));
+      if (!masks.has(signature))
+        masks.set(signature, createBackgroundMask(normalizeSignature(signature), background));
       return masks.get(signature);
     };
     return (left, right) => signatureSimilarity(left, right, background, maskFor(left), maskFor(right));
+  }
+
+  /**
+   * Creates a reusable, ordered sequence comparison context.
+   * Background detection and per-frame masks are prepared once; calculated frame-pair
+   * similarities are memoized by their two indexes. Reuse one context only while its
+   * ordered source signatures remain unchanged.
+   * @param {Array<object|Uint8Array|Uint8ClampedArray>} signatures Ordered frame samples.
+   * @returns {{compareIndexes:(leftIndex:number,rightIndex:number)=>number,getComparisonCount:()=>number}}
+   */
+  function createSequenceAnalysisContext(signatures) {
+    const source = Array.isArray(signatures) ? signatures : [];
+    const compare = createSequenceComparator(source);
+    const pairSimilarities = new Map();
+    let comparisonCount = 0;
+    const isValidIndex = (index) => Number.isInteger(index) && index >= 0 && index < source.length;
+    return {
+      /**
+       * Compares two frame indexes and reuses an already calculated unordered pair.
+       * @param {number} leftIndex Left frame index.
+       * @param {number} rightIndex Right frame index.
+       * @returns {number} Similarity in the range 0-100.
+       */
+      compareIndexes(leftIndex, rightIndex) {
+        if (!isValidIndex(leftIndex) || !isValidIndex(rightIndex)) return 0;
+        if (leftIndex === rightIndex) return 100;
+        const first = Math.min(leftIndex, rightIndex);
+        const second = Math.max(leftIndex, rightIndex);
+        const key = `${first}:${second}`;
+        if (pairSimilarities.has(key)) return pairSimilarities.get(key);
+        const similarity = compare(source[first], source[second]);
+        pairSimilarities.set(key, similarity);
+        comparisonCount += 1;
+        return similarity;
+      },
+      /**
+       * Returns how many unique frame pairs required pixel-level comparison.
+       * @returns {number}
+       */
+      getComparisonCount() {
+        return comparisonCount;
+      },
+    };
   }
 
   /**
@@ -313,20 +376,21 @@
    * This avoids deleting a whole slow transition merely because adjacent frames are similar.
    * @param {Uint8Array[]} signatures Ordered signatures.
    * @param {number} threshold Similarity threshold in the range 0-100.
+   * @param {{compareIndexes:(leftIndex:number,rightIndex:number)=>number}} [context] Reusable ordered comparison context.
    * @returns {{matches:Array<{index:number,matchIndex:number,similarity:number,anchorSimilarity:number}>,autoAdjustedThreshold:number|null}}
    */
-  function analyzeDuplicateFrames(signatures, threshold) {
+  function analyzeDuplicateFrames(signatures, threshold, context = null) {
     const requestedThreshold = clamp(threshold, 0, 100);
     if (!Array.isArray(signatures) || signatures.length < 3) {
       return { matches: [], autoAdjustedThreshold: null };
     }
-    const compare = createSequenceComparator(signatures);
+    const compare = context?.compareIndexes || createSequenceAnalysisContext(signatures).compareIndexes;
     const matches = [];
     const comparisons = [];
     let anchorIndex = 0;
     for (let index = 1; index < signatures.length; index += 1) {
-      const similarity = compare(signatures[index - 1], signatures[index]);
-      const anchorSimilarity = compare(signatures[anchorIndex], signatures[index]);
+      const similarity = compare(index - 1, index);
+      const anchorSimilarity = compare(anchorIndex, index);
       comparisons.push({ index, matchIndex: anchorIndex, similarity, anchorSimilarity });
       if (similarity >= requestedThreshold && anchorSimilarity >= requestedThreshold) {
         matches.push({ index, matchIndex: anchorIndex, similarity, anchorSimilarity });
@@ -362,19 +426,20 @@
    * Runs three-frame jump analysis using bridge similarity minus the weaker neighbor transition.
    * @param {Uint8Array[]} signatures Ordered signatures.
    * @param {number} threshold Sensitivity expressed as similarity in the range 0-100.
+   * @param {{compareIndexes:(leftIndex:number,rightIndex:number)=>number}} [context] Reusable ordered comparison context.
    * @returns {{matches:Array<{index:number,previousSimilarity:number,nextSimilarity:number,bridgeSimilarity:number,score:number}>,autoAdjustedThreshold:number|null}}
    */
-  function analyzeJumpFrames(signatures, threshold) {
+  function analyzeJumpFrames(signatures, threshold, context = null) {
     const requestedThreshold = clamp(threshold, 0, 100);
     if (!Array.isArray(signatures) || signatures.length < 3) {
       return { matches: [], autoAdjustedThreshold: null };
     }
-    const compare = createSequenceComparator(signatures);
+    const compare = context?.compareIndexes || createSequenceAnalysisContext(signatures).compareIndexes;
     const comparisons = [];
     for (let index = 1; index < signatures.length - 1; index += 1) {
-      const previousSimilarity = compare(signatures[index - 1], signatures[index]);
-      const nextSimilarity = compare(signatures[index], signatures[index + 1]);
-      const bridgeSimilarity = compare(signatures[index - 1], signatures[index + 1]);
+      const previousSimilarity = compare(index - 1, index);
+      const nextSimilarity = compare(index, index + 1);
+      const bridgeSimilarity = compare(index - 1, index + 1);
       const score = bridgeSimilarity - Math.min(previousSimilarity, nextSimilarity);
       if (score > 0) {
         comparisons.push({
@@ -448,7 +513,8 @@
     const compare = createSequenceComparator(signatures);
     for (let left = 0; left < total - 1; left += 1) {
       for (let right = left + 1; right < total; right += 1) {
-        matrix[similarityMatrixIndex(left, right, total)] = compare(signatures[left], signatures[right]) / 100;
+        matrix[similarityMatrixIndex(left, right, total)] =
+          compare(signatures[left], signatures[right]) / 100;
       }
     }
     return matrix;
@@ -489,8 +555,9 @@
       while (hull.length >= 2) {
         const first = hull[hull.length - 2];
         const second = hull[hull.length - 1];
-        const cross = (second.period - first.period) * (autocorrelation[period] - first.value)
-          - (period - first.period) * (second.value - first.value);
+        const cross =
+          (second.period - first.period) * (autocorrelation[period] - first.value) -
+          (period - first.period) * (second.value - first.value);
         if (cross > 0) break;
         hull.pop();
       }
@@ -503,22 +570,21 @@
       const left = hull[segment];
       const right = hull[Math.min(segment + 1, hull.length - 1)];
       const width = right.period - left.period;
-      baseline[period] = width > 0
-        ? left.value + ((right.value - left.value) * (period - left.period)) / width
-        : left.value;
+      baseline[period] =
+        width > 0 ? left.value + ((right.value - left.value) * (period - left.period)) / width : left.value;
     }
     const peaks = [];
     for (let period = minimumPeriod; period <= maximumPeriod; period += 1) {
-      const normalized = baseline[period] > 0
-        ? autocorrelation[period] / baseline[period]
-        : 0;
+      const normalized = baseline[period] > 0 ? autocorrelation[period] / baseline[period] : 0;
       if (normalized <= 1) continue;
-      const previous = period > minimumPeriod
-        ? autocorrelation[period - 1] / Math.max(Number.EPSILON, baseline[period - 1])
-        : -Infinity;
-      const next = period < maximumPeriod
-        ? autocorrelation[period + 1] / Math.max(Number.EPSILON, baseline[period + 1])
-        : -Infinity;
+      const previous =
+        period > minimumPeriod
+          ? autocorrelation[period - 1] / Math.max(Number.EPSILON, baseline[period - 1])
+          : -Infinity;
+      const next =
+        period < maximumPeriod
+          ? autocorrelation[period + 1] / Math.max(Number.EPSILON, baseline[period + 1])
+          : -Infinity;
       if (normalized >= previous && normalized >= next) {
         peaks.push({ period, acfScore: autocorrelation[period] });
       }
@@ -550,14 +616,9 @@
   function scoreLoopCandidates(matrix, total, options = {}) {
     if (total < 4) return [];
     const minimumPeriod = Math.max(2, Math.round(options.minPeriod ?? 2));
-    const maximumPeriod = Math.min(
-      total - 1,
-      Math.round(options.maxPeriod ?? Math.floor((2 * total) / 3)),
-    );
+    const maximumPeriod = Math.min(total - 1, Math.round(options.maxPeriod ?? Math.floor((2 * total) / 3)));
     const startFrame = Math.max(0, Math.round(options.startFrame ?? 0));
-    const preference = ["short", "long"].includes(options.preference)
-      ? options.preference
-      : "auto";
+    const preference = ["short", "long"].includes(options.preference) ? options.preference : "auto";
     const boundaryFactor = clamp(options.boundaryFactor ?? 0.85, 0, 1);
     if (maximumPeriod < minimumPeriod) return [];
     const autocorrelation = calculateAutocorrelation(matrix, total, Math.min(maximumPeriod + 1, total - 1));
@@ -593,12 +654,7 @@
       if (end < bestStart) return;
       const coverage = period / total;
       const score = acfScore * smoothness;
-      const rankScore = score * loopPreferenceWeight(
-        period,
-        minimumPeriod,
-        maximumPeriod,
-        preference,
-      );
+      const rankScore = score * loopPreferenceWeight(period, minimumPeriod, maximumPeriod, preference);
       candidates.push({
         id: `loop-${period}-${bestStart}-${end}`,
         start: bestStart,
@@ -615,9 +671,7 @@
         rankScore,
       });
     });
-    return candidates
-      .sort((left, right) => right.rankScore - left.rankScore)
-      .slice(0, 6);
+    return candidates.sort((left, right) => right.rankScore - left.rankScore).slice(0, 6);
   }
 
   /**
@@ -648,7 +702,8 @@
     for (let left = 0; left < total - 1; left += 1) {
       if (callbacks.isCancelled?.()) return [];
       for (let right = left + 1; right < total; right += 1) {
-        matrix[similarityMatrixIndex(left, right, total)] = compare(signatures[left], signatures[right]) / 100;
+        matrix[similarityMatrixIndex(left, right, total)] =
+          compare(signatures[left], signatures[right]) / 100;
       }
       callbacks.onProgress?.(total + left + 1, progressTotal);
       if (left % 4 === 3) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -665,6 +720,7 @@
     analyzeJumpFrames,
     calculateAutocorrelation,
     createBackgroundMask,
+    createSequenceAnalysisContext,
     createSignature,
     createSimilarityMatrix,
     detectStableBackground,
@@ -677,4 +733,4 @@
     signatureSimilarity,
     REFERENCE_SAMPLE_SIZE,
   };
-}));
+});

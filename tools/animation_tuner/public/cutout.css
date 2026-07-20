@@ -1,0 +1,10 @@
+/**
+ * Compatibility stylesheet for consumers that still load /cutout.css.
+ * Keep imports in the same order as the explicit links in index.html.
+ */
+@import url("./cutout_shell.css");
+@import url("./cutout_settings.css");
+@import url("./cutout_repair.css");
+@import url("./cutout_queue.css");
+@import url("./cutout_preview.css");
+@import url("./cutout_batch.css");

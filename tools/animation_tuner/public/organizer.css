@@ -1,0 +1,9 @@
+/**
+ * Compatibility stylesheet for consumers that still load /organizer.css.
+ * Keep imports in the same order as the explicit links in index.html.
+ */
+@import url("./organizer_shell.css");
+@import url("./organizer_loop.css");
+@import url("./organizer_video.css");
+@import url("./organizer_workspace.css");
+@import url("./organizer_cutout_responsive.css");

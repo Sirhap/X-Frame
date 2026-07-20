@@ -1,4 +1,5 @@
 const fs = require("node:fs");
+const path = require("node:path");
 const zlib = require("node:zlib");
 
 function clamp(value, min, max) {
@@ -126,6 +127,25 @@ function parsePng(filePath) {
   return { ...info, idat: Buffer.concat(idat) };
 }
 
+/**
+ * Creates a cache for immutable PNG alpha-bound measurements during one import operation.
+ * @returns {Map<string, object|null>} File-identity keyed bounds cache.
+ */
+function createOpaqueBoundsCache() {
+  return new Map();
+}
+
+/**
+ * Builds a cache key that changes whenever the source PNG changes on disk.
+ * @param {string} filePath PNG file path.
+ * @returns {string} Stable identity for one file version.
+ */
+function opaqueBoundsCacheKey(filePath) {
+  const resolved = path.resolve(String(filePath));
+  const stat = fs.statSync(resolved);
+  return `${resolved}:${stat.size}:${stat.mtimeMs}`;
+}
+
 function channelsForColorType(colorType) {
   if (colorType === 0 || colorType === 3) return 1;
   if (colorType === 2) return 3;
@@ -159,24 +179,42 @@ function unfilter(raw, width, height, rowBytes, bytesPerPixel) {
   return result;
 }
 
-function opaqueBoundsForPng(filePath) {
+function opaqueBoundsForPng(filePath, cache = null) {
+  const hasCache = cache instanceof Map;
+  const cacheKey = hasCache ? opaqueBoundsCacheKey(filePath) : "";
+  if (hasCache && cache.has(cacheKey)) return cache.get(cacheKey);
   const png = parsePng(filePath);
-  if (!png?.width || !png?.height) return null;
+  if (!png?.width || !png?.height) {
+    if (hasCache) cache.set(cacheKey, null);
+    return null;
+  }
   const fallback = fullBounds(png.width, png.height);
-  if (!png.idat?.length || png.interlace !== 0) return { ...fallback, canvasWidth: png.width, canvasHeight: png.height };
+  if (!png.idat?.length || png.interlace !== 0) {
+    const bounds = { ...fallback, canvasWidth: png.width, canvasHeight: png.height };
+    if (hasCache) cache.set(cacheKey, bounds);
+    return bounds;
+  }
   const channels = channelsForColorType(png.colorType);
   const sampleBytes = png.bitDepth === 16 ? 2 : png.bitDepth === 8 ? 1 : 0;
-  if (!channels || !sampleBytes) return { ...fallback, canvasWidth: png.width, canvasHeight: png.height };
+  if (!channels || !sampleBytes) {
+    const bounds = { ...fallback, canvasWidth: png.width, canvasHeight: png.height };
+    if (hasCache) cache.set(cacheKey, bounds);
+    return bounds;
+  }
   const pixelBytes = channels * sampleBytes;
   const rowBytes = png.width * pixelBytes;
   let decoded;
   try {
     decoded = unfilter(zlib.inflateSync(png.idat), png.width, png.height, rowBytes, Math.max(1, pixelBytes));
   } catch {
-    return { ...fallback, canvasWidth: png.width, canvasHeight: png.height };
+    const bounds = { ...fallback, canvasWidth: png.width, canvasHeight: png.height };
+    if (hasCache) cache.set(cacheKey, bounds);
+    return bounds;
   }
   if (png.colorType !== 4 && png.colorType !== 6) {
-    return { ...fallback, canvasWidth: png.width, canvasHeight: png.height };
+    const bounds = { ...fallback, canvasWidth: png.width, canvasHeight: png.height };
+    if (hasCache) cache.set(cacheKey, bounds);
+    return bounds;
   }
 
   const alphaOffset = png.colorType === 6 ? 3 * sampleBytes : sampleBytes;
@@ -201,7 +239,11 @@ function opaqueBoundsForPng(filePath) {
       rows[y] += 1;
     }
   }
-  if (maxX < minX || maxY < minY) return { ...fallback, canvasWidth: png.width, canvasHeight: png.height };
+  if (maxX < minX || maxY < minY) {
+    const bounds = { ...fallback, canvasWidth: png.width, canvasHeight: png.height };
+    if (hasCache) cache.set(cacheKey, bounds);
+    return bounds;
+  }
   const xSpan = trimmedSpan(columns, minX, maxX);
   const ySpan = trimmedSpan(rows, minY, maxY);
   const bodyXSpan = denseColumnSpan(columns, xSpan.min, xSpan.max);
@@ -229,7 +271,7 @@ function opaqueBoundsForPng(filePath) {
         height: Math.max(1, bodyMaxY - bodyMinY + 1),
       }
     : null;
-  return {
+  const bounds = {
     x: xSpan.min,
     y: ySpan.min,
     width: Math.max(1, xSpan.max - xSpan.min + 1),
@@ -238,6 +280,8 @@ function opaqueBoundsForPng(filePath) {
     canvasHeight: png.height,
     body,
   };
+  if (hasCache) cache.set(cacheKey, bounds);
+  return bounds;
 }
 
 function animationLooksAttack(animationId, animationName = "") {
@@ -258,11 +302,11 @@ function hitboxEnabledByDefault(frameIndex, frameCount, animationId, animationNa
   return end >= 0.25 && start <= 0.85;
 }
 
-function groupCanvasForFrameFiles(frameFiles) {
+function groupCanvasForFrameFiles(frameFiles, cache = null) {
   const counts = new Map();
   let first = null;
   for (const filePath of frameFiles || []) {
-    const bounds = opaqueBoundsForPng(filePath);
+    const bounds = opaqueBoundsForPng(filePath, cache);
     if (!bounds?.canvasWidth || !bounds?.canvasHeight) continue;
     const canvas = { width: bounds.canvasWidth, height: bounds.canvasHeight };
     if (!first) first = canvas;
@@ -318,7 +362,7 @@ function normalizeBox(boxName, box) {
 function estimateFrameBoxes(filePath, options = {}) {
   const type = String(options.type || "actor").toLowerCase();
   if (/(vfx|effect|overlay)/.test(type)) return {};
-  const bounds = opaqueBoundsForPng(filePath);
+  const bounds = opaqueBoundsForPng(filePath, options.boundsCache || null);
   if (!bounds) return {};
   const anchor = anchorForFrame(bounds, options.anchorMode || "canvas_bottom_center", {
     width: options.groupCanvasWidth,
@@ -392,7 +436,8 @@ function upsertEstimatedFrameBoxes(tuning, profileId, animation, frameFiles, opt
     ? tuning.frame_box_overrides
     : {};
   if (options.replace) clearAnimationBoxOverrides(tuning, profileId, animation.id);
-  const groupCanvas = groupCanvasForFrameFiles(frameFiles);
+  const boundsCache = createOpaqueBoundsCache();
+  const groupCanvas = groupCanvasForFrameFiles(frameFiles, boundsCache);
   frameFiles.forEach((filePath, frameIndex) => {
     const key = frameBoxKey(profileId, animation.id, frameIndex);
     if (tuning.frame_box_overrides[key] && !options.replace) return;
@@ -405,6 +450,7 @@ function upsertEstimatedFrameBoxes(tuning, profileId, animation, frameFiles, opt
       frameCount: frameFiles.length,
       groupCanvasWidth: groupCanvas?.width,
       groupCanvasHeight: groupCanvas?.height,
+      boundsCache,
     });
     if (Object.keys(boxes).length) tuning.frame_box_overrides[key] = boxes;
   });
@@ -413,6 +459,7 @@ function upsertEstimatedFrameBoxes(tuning, profileId, animation, frameFiles, opt
 module.exports = {
   animationLooksAttack,
   clearAnimationBoxOverrides,
+  createOpaqueBoundsCache,
   estimateFrameBoxes,
   frameBoxKey,
   groupCanvasForFrameFiles,

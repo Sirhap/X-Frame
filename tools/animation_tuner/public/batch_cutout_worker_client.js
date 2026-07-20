@@ -35,6 +35,19 @@
   }
 
   /**
+   * Schedules recovery work without requiring queueMicrotask support.
+   * @param {()=>void} callback Deferred callback.
+   * @returns {void}
+   */
+  function scheduleMicrotask(callback) {
+    if (typeof root.queueMicrotask === "function") {
+      root.queueMicrotask(callback);
+      return;
+    }
+    Promise.resolve().then(callback);
+  }
+
+  /**
    * Converts unknown failures into stable Error instances.
    * @param {unknown} value Error-like value.
    * @param {string} fallbackMessage Fallback message.
@@ -46,13 +59,44 @@
   }
 
   /**
-   * Copies and validates one RGBA source before transferring it.
+   * Creates a distinguishable Worker transport failure with browser diagnostics.
+   * @param {unknown} value Worker ErrorEvent, MessageEvent, or thrown value.
+   * @param {string} fallbackMessage Fallback message.
+   * @returns {Error & {code:string,filename:string,lineno:number,colno:number}} Transport error.
+   */
+  function createTransportError(value, fallbackMessage) {
+    const source = value && typeof value === "object" ? value : {};
+    const underlyingError = source.error instanceof Error ? source.error : null;
+    const filename = typeof source.filename === "string" ? source.filename : "";
+    const lineno = Number.isFinite(source.lineno) ? Number(source.lineno) : 0;
+    const colno = Number.isFinite(source.colno) ? Number(source.colno) : 0;
+    const reportedMessage =
+      source.message || underlyingError?.message || (typeof value === "string" ? value : "");
+    const baseMessage =
+      reportedMessage || `${String(fallbackMessage).replace(/\.$/, "")} after one automatic retry.`;
+    const locationParts = filename ? [filename] : [];
+    if (locationParts.length > 0 && lineno > 0) locationParts.push(String(lineno));
+    if (locationParts.length > 1 && colno > 0) locationParts.push(String(colno));
+    const error = new Error(
+      locationParts.length > 0 ? `${baseMessage} (${locationParts.join(":")})` : baseMessage,
+    );
+    error.name = "CutoutWorkerTransportError";
+    error.code = "CUTOUT_WORKER_TRANSPORT_ERROR";
+    error.filename = filename;
+    error.lineno = lineno;
+    error.colno = colno;
+    if (underlyingError) error.cause = underlyingError;
+    return error;
+  }
+
+  /**
+   * Validates one RGBA source without allocating another pixel buffer.
    * @param {Uint8ClampedArray|Uint8Array} source RGBA pixels.
    * @param {number} width Image width.
    * @param {number} height Image height.
-   * @returns {Uint8ClampedArray} Transferable copy.
+   * @returns {void}
    */
-  function copySourcePixels(source, width, height) {
+  function validateSourcePixels(source, width, height) {
     if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
       throw new RangeError("Cutout dimensions must be positive integers.");
     }
@@ -63,7 +107,18 @@
     if (!Number.isSafeInteger(expectedLength) || source.length !== expectedLength) {
       throw new RangeError(`Expected ${expectedLength} RGBA values, received ${source.length}.`);
     }
-    return new Uint8ClampedArray(source);
+  }
+
+  /**
+   * Deep-copies serializable request metadata at the process boundary.
+   * @param {object} processingOptions Product options.
+   * @param {object[]} repairs Repair list.
+   * @returns {{processingOptions:object,repairs:object[]}} Immutable request metadata snapshot.
+   */
+  function copyRequestMetadata(processingOptions, repairs) {
+    const metadata = { processingOptions, repairs };
+    if (typeof root.structuredClone === "function") return root.structuredClone(metadata);
+    return JSON.parse(JSON.stringify(metadata));
   }
 
   /**
@@ -143,15 +198,28 @@
 
     /**
      * Rejects every in-flight request after a shared Worker failure.
+     * @param {object} failedWorker Worker instance that emitted the failure.
      * @param {unknown} error Worker error.
      * @returns {void}
      */
-    function failWorker(error) {
-      const normalized = normalizeError(error, "Cutout Worker failed.");
-      const activeIds = Array.from(tasks.keys());
-      terminateWorker(worker);
-      worker = null;
-      activeIds.forEach((id) => settle(id, "reject", normalized));
+    function failWorker(failedWorker, error) {
+      if (worker === failedWorker) worker = null;
+      terminateWorker(failedWorker);
+      const transportError = createTransportError(error, "Cutout Worker failed.");
+      const affectedTasks = Array.from(tasks.entries()).filter(([, task]) => task.worker === failedWorker);
+      affectedTasks.forEach(([id, task]) => {
+        task.worker = null;
+        if (task.transportRetryCount >= 1) {
+          settle(id, "reject", transportError);
+          return;
+        }
+        task.transportRetryCount += 1;
+      });
+      scheduleMicrotask(() => {
+        affectedTasks.forEach(([id, task]) => {
+          if (tasks.get(id) === task && task.worker === null) postTask(id, task);
+        });
+      });
     }
 
     /**
@@ -161,10 +229,12 @@
     function ensureWorker() {
       if (worker) return worker;
       worker = new WorkerConstructor(workerUrl);
+      const configuredWorker = worker;
       worker.onmessage = (event) => {
         const message = event.data || {};
         const id = Number(message.id);
-        if (!tasks.has(id)) return;
+        const task = tasks.get(id);
+        if (!task || task.worker !== configuredWorker) return;
         if (!message.ok) {
           settle(id, "reject", new Error(message.error || "Cutout Worker failed."));
           return;
@@ -175,14 +245,54 @@
           settle(id, "reject", normalizeError(error, "Cutout Worker returned an invalid result."));
         }
       };
-      worker.onerror = (event) => failWorker(event);
-      worker.onmessageerror = () => failWorker(new Error("Cutout Worker response could not be decoded."));
+      worker.onerror = (event) => failWorker(configuredWorker, event);
+      worker.onmessageerror = (event) =>
+        failWorker(configuredWorker, event || "Cutout Worker response could not be decoded.");
       return worker;
     }
 
     /**
+     * Posts one task using a transferable copy of its request snapshot.
+     * @param {number} id Request id.
+     * @param {object} task Tracked task.
+     * @returns {void}
+     */
+    function postTask(id, task) {
+      let activeWorker;
+      try {
+        activeWorker = ensureWorker();
+        task.worker = activeWorker;
+        const transferableSource = new Uint8ClampedArray(task.request.source);
+        activeWorker.postMessage(
+          {
+            id,
+            sourceBuffer: transferableSource.buffer,
+            width: task.request.width,
+            height: task.request.height,
+            options: task.request.processingOptions,
+            repairs: task.request.repairs,
+          },
+          [transferableSource.buffer],
+        );
+      } catch (error) {
+        if (activeWorker) {
+          failWorker(activeWorker, error);
+          return;
+        }
+        if (task.transportRetryCount < 1) {
+          task.transportRetryCount += 1;
+          scheduleMicrotask(() => {
+            if (tasks.get(id) === task) postTask(id, task);
+          });
+          return;
+        }
+        settle(id, "reject", createTransportError(error, "Cutout Worker could not be created."));
+      }
+    }
+
+    /**
      * Runs the explicitly enabled synchronous compatibility path.
-     * @param {Uint8ClampedArray} source Copied pixels.
+     * @param {Uint8ClampedArray} source Snapshotted pixels.
      * @param {number} width Image width.
      * @param {number} height Image height.
      * @param {object} processingOptions Product options.
@@ -206,36 +316,43 @@
      * @returns {Promise<object>} Cutout result.
      */
     function process(source, width, height, processingOptions = {}, repairs = []) {
-      let transferableSource;
+      const normalizedRepairs = Array.isArray(repairs) ? repairs : [];
+      let request;
       try {
-        transferableSource = copySourcePixels(source, width, height);
+        validateSourcePixels(source, width, height);
+        const metadata = copyRequestMetadata(processingOptions || {}, normalizedRepairs);
+        request = {
+          source: new Uint8ClampedArray(source),
+          width,
+          height,
+          processingOptions: metadata.processingOptions,
+          repairs: metadata.repairs,
+        };
       } catch (error) {
         return Promise.reject(normalizeError(error, "Invalid cutout request."));
       }
-      const normalizedRepairs = Array.isArray(repairs) ? repairs : [];
       if (typeof WorkerConstructor !== "function") {
         return Promise.resolve().then(() =>
-          runSynchronously(transferableSource, width, height, processingOptions || {}, normalizedRepairs),
+          runSynchronously(
+            request.source,
+            request.width,
+            request.height,
+            request.processingOptions,
+            request.repairs,
+          ),
         );
       }
       return new Promise((resolve, reject) => {
         const id = ++requestId;
-        tasks.set(id, { resolve, reject });
-        try {
-          ensureWorker().postMessage(
-            {
-              id,
-              sourceBuffer: transferableSource.buffer,
-              width,
-              height,
-              options: processingOptions || {},
-              repairs: normalizedRepairs,
-            },
-            [transferableSource.buffer],
-          );
-        } catch (error) {
-          settle(id, "reject", normalizeError(error, "Cutout Worker request failed."));
-        }
+        const task = {
+          resolve,
+          reject,
+          request,
+          transportRetryCount: 0,
+          worker: null,
+        };
+        tasks.set(id, task);
+        postTask(id, task);
       });
     }
 

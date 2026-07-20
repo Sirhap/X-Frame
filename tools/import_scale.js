@@ -1,6 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const { opaqueBoundsForPng } = require("./box_estimator");
+const { createOpaqueBoundsCache, opaqueBoundsForPng } = require("./box_estimator");
 
 const SKIP_DIRS = new Set([
   ".git",
@@ -38,6 +38,7 @@ function estimateSourceActorHeight(samples) {
   const allHeights = [];
   const uprightHeights = [];
   const perAnimationCounts = new Map();
+  const boundsCache = createOpaqueBoundsCache();
   for (const sample of samples || []) {
     const filePath = sample?.filePath;
     if (!filePath || !fs.existsSync(filePath)) continue;
@@ -45,7 +46,7 @@ function estimateSourceActorHeight(samples) {
     const count = perAnimationCounts.get(animationKey) || 0;
     if (count >= 4) continue;
     perAnimationCounts.set(animationKey, count + 1);
-    const bounds = opaqueBoundsForPng(filePath);
+    const bounds = opaqueBoundsForPng(filePath, boundsCache);
     const height = Number(bounds?.body?.height || bounds?.height || bounds?.canvasHeight || 0);
     if (!Number.isFinite(height) || height < 16) continue;
     allHeights.push(height);

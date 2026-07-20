@@ -4,7 +4,7 @@
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.BatchCutoutProtectionCore = api;
-}(typeof globalThis !== "undefined" ? globalThis : this, () => {
+})(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 
   /**
@@ -24,10 +24,7 @@
    * }}
    */
   function createProtectionSelector(dependencies) {
-    const {
-      rgbToReferenceYcbcr,
-      srgbToLinear,
-    } = dependencies || {};
+    const { rgbToReferenceYcbcr, srgbToLinear } = dependencies || {};
     [
       ["rgbToReferenceYcbcr", rgbToReferenceYcbcr],
       ["srgbToLinear", srgbToLinear],
@@ -58,7 +55,7 @@
      * @param {number} height Image height.
      * @param {{x1:number,y1:number,x2:number,y2:number}} rectangle Coarse rectangle.
      * @param {{backgroundColors?:Array<object>,boundaryStrength?:number,padding?:number}} options Detection options.
-    * @returns {{mask:Uint8Array,count:number,bounds:object|null,coverage:number}}
+     * @returns {{mask:Uint8Array,count:number,bounds:object|null,coverage:number}}
      */
     function createProtectedRegionMask(data, previewData, width, height, rectangle, options = {}) {
       if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
@@ -82,13 +79,9 @@
       const regionArea = Math.max(0, endX - startX + 1) * Math.max(0, endY - startY + 1);
       if (!regionArea) return empty;
       const providedBackgrounds = Array.isArray(options.backgroundColors)
-        ? options.backgroundColors.filter((color) => (
-          [color?.r, color?.g, color?.b].every(Number.isFinite)
-        ))
+        ? options.backgroundColors.filter((color) => [color?.r, color?.g, color?.b].every(Number.isFinite))
         : [];
-      const backgrounds = providedBackgrounds.length
-        ? providedBackgrounds
-        : [{ r: 0, g: 255, b: 0 }];
+      const backgrounds = providedBackgrounds.length ? providedBackgrounds : [{ r: 0, g: 255, b: 0 }];
       const boundaryStrength = clamp(options.boundaryStrength ?? 55, 0, 100);
       const distanceThreshold = 5 + boundaryStrength * 0.27;
       const padding = Math.round(clamp(options.padding ?? 2, 0, 8));
@@ -103,11 +96,14 @@
         const offset = index * 4;
         let nearest = Number.POSITIVE_INFINITY;
         for (const background of backgrounds) {
-          nearest = Math.min(nearest, Math.hypot(
-            data[offset] - Number(background.r || 0),
-            data[offset + 1] - Number(background.g || 0),
-            data[offset + 2] - Number(background.b || 0),
-          ) / 4.416729559);
+          nearest = Math.min(
+            nearest,
+            Math.hypot(
+              data[offset] - Number(background.r || 0),
+              data[offset + 1] - Number(background.g || 0),
+              data[offset + 2] - Number(background.b || 0),
+            ) / 4.416729559,
+          );
         }
         distanceKnown[index] = 1;
         distanceCache[index] = nearest;
@@ -177,7 +173,9 @@
           ? component.hasStrongSeed
           : component.indices.length >= fallbackComponentSize;
         if (!keepComponent) continue;
-        component.indices.forEach((index) => { mask[index] = 1; });
+        component.indices.forEach((index) => {
+          mask[index] = 1;
+        });
       }
       for (let iteration = 0; iteration < padding; iteration += 1) {
         const expanded = new Uint8Array(mask);
@@ -189,8 +187,8 @@
               const offset = nextIndex * 4;
               const previewAlpha = previewData ? previewData[offset + 3] : 0;
               if (
-                data[offset + 3]
-                && (normalizedDistance(nextIndex) >= distanceThreshold * 0.35 || previewAlpha)
+                data[offset + 3] &&
+                (normalizedDistance(nextIndex) >= distanceThreshold * 0.35 || previewAlpha)
               ) {
                 expanded[nextIndex] = 1;
               }
@@ -215,11 +213,11 @@
           }
           detectedBounds = detectedBounds
             ? {
-              x1: Math.min(detectedBounds.x1, x),
-              y1: Math.min(detectedBounds.y1, y),
-              x2: Math.max(detectedBounds.x2, x),
-              y2: Math.max(detectedBounds.y2, y),
-            }
+                x1: Math.min(detectedBounds.x1, x),
+                y1: Math.min(detectedBounds.y1, y),
+                x2: Math.max(detectedBounds.x2, x),
+                y2: Math.max(detectedBounds.y2, y),
+              }
             : { x1: x, y1: y, x2: x, y2: y };
         }
       }
@@ -267,11 +265,8 @@
      * @returns {boolean}
      */
     function referenceProtectionMatches(background, candidate, red, green, blue) {
-      const directDistanceSquared = (
-        (red - candidate.r) ** 2
-        + (green - candidate.g) ** 2
-        + (blue - candidate.b) ** 2
-      );
+      const directDistanceSquared =
+        (red - candidate.r) ** 2 + (green - candidate.g) ** 2 + (blue - candidate.b) ** 2;
       const pixel = referenceProtectionDescriptor(red, green, blue);
       if (pixel.achromatic) {
         if (!candidate.achromatic) return false;
@@ -292,33 +287,30 @@
         const axis = backgroundLinear.map((channel, index) => channel - candidateLinear[index]);
         const axisLengthSquared = axis.reduce((sum, channel) => sum + channel * channel, 0);
         if (axisLengthSquared < 0.0001) return false;
-        const projection = pixelLinear.reduce((sum, channel, index) => (
-          sum + (channel - candidateLinear[index]) * axis[index]
-        ), 0) / axisLengthSquared;
+        const projection =
+          pixelLinear.reduce(
+            (sum, channel, index) => sum + (channel - candidateLinear[index]) * axis[index],
+            0,
+          ) / axisLengthSquared;
         return projection <= 0.1 && directDistanceSquared < 301;
       }
       const directionDot = pixel.dirCb * candidate.dirCb + pixel.dirCr * candidate.dirCr;
       if (directionDot < 0.9) return false;
       if (
-        directionDot >= 0.97
-        && Math.abs(pixel.y - candidate.y) <= 5
-        && Math.abs(pixel.chroma - candidate.chroma) <= 8
+        directionDot >= 0.97 &&
+        Math.abs(pixel.y - candidate.y) <= 5 &&
+        Math.abs(pixel.chroma - candidate.chroma) <= 8
       ) {
         return true;
       }
-      const crossAxis = background.chroma * (
-        background.dirCb * candidate.dirCr - background.dirCr * candidate.dirCb
-      );
+      const crossAxis =
+        background.chroma * (background.dirCb * candidate.dirCr - background.dirCr * candidate.dirCb);
       if (Math.abs(crossAxis) < 1) return false;
-      const chromaPosition = pixel.chroma * (
-        pixel.dirCb * candidate.dirCr - pixel.dirCr * candidate.dirCb
-      ) / crossAxis;
+      const chromaPosition =
+        (pixel.chroma * (pixel.dirCb * candidate.dirCr - pixel.dirCr * candidate.dirCb)) / crossAxis;
       if (pixel.chroma > candidate.chroma * 1.3) return false;
       const lightnessAxis = background.y - candidate.y;
-      if (
-        Math.abs(lightnessAxis) > 2
-        && chromaPosition + 0.2 < (pixel.y - candidate.y) / lightnessAxis
-      ) {
+      if (Math.abs(lightnessAxis) > 2 && chromaPosition + 0.2 < (pixel.y - candidate.y) / lightnessAxis) {
         return false;
       }
       return chromaPosition <= 0.1;
@@ -334,37 +326,38 @@
      * @param {Array<{r:number,g:number,b:number}|number[]>} protectedColors Protected colors.
      * @returns {Uint8Array|null}
      */
-    function createReferenceProtectionMask(
-      source,
-      width,
-      height,
-      backgroundColor,
-      protectedColors,
-    ) {
+    function createReferenceProtectionMask(source, width, height, backgroundColor, protectedColors) {
       if (!Array.isArray(protectedColors) || !protectedColors.length) return null;
       const background = referenceProtectionDescriptor(
         backgroundColor.r,
         backgroundColor.g,
         backgroundColor.b,
       );
-      const descriptors = protectedColors.slice(0, 32).map((color) => (
-        referenceProtectionDescriptor(
-          Array.isArray(color) ? color[0] : color.r,
-          Array.isArray(color) ? color[1] : color.g,
-          Array.isArray(color) ? color[2] : color.b,
-        )
-      ));
+      const descriptors = protectedColors
+        .slice(0, 32)
+        .map((color) =>
+          referenceProtectionDescriptor(
+            Array.isArray(color) ? color[0] : color.r,
+            Array.isArray(color) ? color[1] : color.g,
+            Array.isArray(color) ? color[2] : color.b,
+          ),
+        );
       const protectedMask = new Uint8Array(width * height);
       for (let pixel = 0; pixel < protectedMask.length; pixel += 1) {
         const offset = pixel * 4;
         if (!source[offset + 3]) continue;
-        if (descriptors.some((descriptor) => referenceProtectionMatches(
-          background,
-          descriptor,
-          source[offset],
-          source[offset + 1],
-          source[offset + 2],
-        ))) protectedMask[pixel] = 1;
+        if (
+          descriptors.some((descriptor) =>
+            referenceProtectionMatches(
+              background,
+              descriptor,
+              source[offset],
+              source[offset + 1],
+              source[offset + 2],
+            ),
+          )
+        )
+          protectedMask[pixel] = 1;
       }
       return protectedMask;
     }
@@ -395,9 +388,7 @@
       );
       const maximumColors = Math.max(1, Math.min(32, Math.trunc(options.maximumColors || 32)));
       const coverageThreshold = Math.max(0, Math.min(100, Math.trunc(options.coverageThreshold ?? 95)));
-      const step = pixelCount >= 5001
-        ? Math.max(1, Math.ceil(Math.sqrt(pixelCount / 5000)))
-        : 1;
+      const step = pixelCount >= 5001 ? Math.max(1, Math.ceil(Math.sqrt(pixelCount / 5000))) : 1;
       const bucketCounts = new Uint32Array(4096);
       const samples = [];
       const centerX = width > 1 ? (width - 1) * 0.5 : 0;
@@ -423,12 +414,32 @@
       if (!samples.length) {
         return { colors: [], count: 0, coverage: 100, status: 0, sampleCount: 0 };
       }
+      const sampleCoverageCache = new WeakMap();
+
+      /**
+       * Computes each candidate's sample membership once so medoid scoring and
+       * greedy coverage reuse the reference predicate without changing its order.
+       * @param {ReturnType<referenceProtectionDescriptor>} descriptor Candidate descriptor.
+       * @returns {{matches:Uint8Array,count:number}} Matching sample facts.
+       */
+      const sampleCoverageFor = (descriptor) => {
+        const cached = sampleCoverageCache.get(descriptor);
+        if (cached) return cached;
+        const matches = new Uint8Array(samples.length);
+        let count = 0;
+        for (let index = 0; index < samples.length; index += 1) {
+          const sample = samples[index];
+          if (!referenceProtectionMatches(background, descriptor, sample.r, sample.g, sample.b)) continue;
+          matches[index] = 1;
+          count += 1;
+        }
+        const facts = { matches, count };
+        sampleCoverageCache.set(descriptor, facts);
+        return facts;
+      };
       for (const sample of samples) {
         sample.weight = bucketCounts[sample.bucket] / samples.length;
-        if (
-          !sample.achromatic
-          && sample.dirCb * background.dirCb + sample.dirCr * background.dirCr >= 0.9
-        ) {
+        if (!sample.achromatic && sample.dirCb * background.dirCb + sample.dirCr * background.dirCr >= 0.9) {
           sample.weight *= 0.1;
         }
       }
@@ -442,11 +453,12 @@
       for (let index = 1; index <= samples.length; index += 1) {
         const previous = samples[index - 1];
         const current = samples[index];
-        const sameDirection = current && (
-          (previous.achromatic && current.achromatic)
-          || (!previous.achromatic && !current.achromatic
-            && previous.dirCb * current.dirCb + previous.dirCr * current.dirCr >= 0.9)
-        );
+        const sameDirection =
+          current &&
+          ((previous.achromatic && current.achromatic) ||
+            (!previous.achromatic &&
+              !current.achromatic &&
+              previous.dirCb * current.dirCb + previous.dirCr * current.dirCr >= 0.9));
         if (sameDirection) continue;
         groups.push(samples.slice(groupStart, index));
         groupStart = index;
@@ -455,21 +467,27 @@
       for (const group of groups) {
         const selected = [];
         if (group.length < 5) {
-          const representative = [...group].sort((left, right) => (
-            right.weight - left.weight || left.y - right.y || right.radiusSquared - left.radiusSquared
-          ))[0];
-          selected.push([...group]
-            .filter((sample) => sample.bucket === representative.bucket)
-            .sort((left, right) => left.r - right.r || left.g - right.g || left.b - right.b)[0]);
+          const representative = [...group].sort(
+            (left, right) =>
+              right.weight - left.weight || left.y - right.y || right.radiusSquared - left.radiusSquared,
+          )[0];
+          selected.push(
+            [...group]
+              .filter((sample) => sample.bucket === representative.bucket)
+              .sort((left, right) => left.r - right.r || left.g - right.g || left.b - right.b)[0],
+          );
         } else {
           const weights = group.map((sample) => sample.weight);
           if (Math.max(...weights) < Math.min(...weights) * 3) {
-            const byLightness = [...group].sort((left, right) => (
-              left.y - right.y || right.radiusSquared - left.radiusSquared
-            ));
+            const byLightness = [...group].sort(
+              (left, right) => left.y - right.y || right.radiusSquared - left.radiusSquared,
+            );
             const neighborhood = Math.max(1, Math.trunc(group.length / 6));
             for (const quantile of [0.25, 0.5, 0.75]) {
-              const center = Math.min(group.length - 1, Math.max(0, Math.trunc((group.length - 1) * quantile)));
+              const center = Math.min(
+                group.length - 1,
+                Math.max(0, Math.trunc((group.length - 1) * quantile)),
+              );
               const start = Math.max(0, center - neighborhood);
               const end = Math.min(group.length - 1, center + neighborhood);
               let representative = byLightness[center];
@@ -479,26 +497,20 @@
               selected.push(representative);
             }
           } else {
-            const byWeight = [...group].sort((left, right) => (
-              right.weight - left.weight || left.y - right.y || right.radiusSquared - left.radiusSquared
-            ));
+            const byWeight = [...group].sort(
+              (left, right) =>
+                right.weight - left.weight || left.y - right.y || right.radiusSquared - left.radiusSquared,
+            );
             selected.push(byWeight[0]);
             const separated = byWeight.find((sample) => Math.abs(sample.y - byWeight[0].y) >= 15);
             if (separated) selected.push(separated);
           }
         }
-        const globalCoverage = (candidate) => samples.reduce((count, sample) => (
-          count + (referenceProtectionMatches(
-            background,
-            candidate,
-            sample.r,
-            sample.g,
-            sample.b,
-          ) ? 1 : 0)
-        ), 0);
-        let bestCoverage = selected.reduce((maximum, candidate) => (
-          Math.max(maximum, globalCoverage(candidate))
-        ), 0);
+        const globalCoverage = (candidate) => sampleCoverageFor(candidate).count;
+        let bestCoverage = selected.reduce(
+          (maximum, candidate) => Math.max(maximum, globalCoverage(candidate)),
+          0,
+        );
         let bestRadiusSquared = Number.POSITIVE_INFINITY;
         let medoid = null;
         for (const sample of group) {
@@ -507,10 +519,10 @@
             .filter((candidate) => globalCoverage(candidate) === bestCoverage)
             .every((candidate) => Math.abs(candidate.y - sample.y) >= 15);
           if (
-            coverage > bestCoverage
-            || (coverage === bestCoverage
-              && separatedFromBest
-              && (!medoid || sample.radiusSquared < bestRadiusSquared))
+            coverage > bestCoverage ||
+            (coverage === bestCoverage &&
+              separatedFromBest &&
+              (!medoid || sample.radiusSquared < bestRadiusSquared))
           ) {
             medoid = sample;
             bestCoverage = coverage;
@@ -519,9 +531,10 @@
         }
         if (medoid) selected.unshift(medoid);
         for (const sample of selected) {
-          const alignedWithBackground = !sample.achromatic
-            && sample.chroma >= 3
-            && sample.dirCb * background.dirCb + sample.dirCr * background.dirCr >= 0.9;
+          const alignedWithBackground =
+            !sample.achromatic &&
+            sample.chroma >= 3 &&
+            sample.dirCb * background.dirCb + sample.dirCr * background.dirCr >= 0.9;
           candidates.push({
             ...sample,
             descriptor: sample,
@@ -535,12 +548,12 @@
       const fullWidth = Math.trunc(options.fullWidth || 0);
       const fullHeight = Math.trunc(options.fullHeight || 0);
       if (
-        fullOriginalData
-        && fullPreviewData
-        && fullWidth > 0
-        && fullHeight > 0
-        && fullOriginalData.length === fullWidth * fullHeight * 4
-        && fullPreviewData.length === fullOriginalData.length
+        fullOriginalData &&
+        fullPreviewData &&
+        fullWidth > 0 &&
+        fullHeight > 0 &&
+        fullOriginalData.length === fullWidth * fullHeight * 4 &&
+        fullPreviewData.length === fullOriginalData.length
       ) {
         let partialPixels = 0;
         for (let offset = 3; offset < fullPreviewData.length; offset += 4) {
@@ -555,13 +568,16 @@
               const offset = (y * fullWidth + x) * 4;
               const alpha = fullPreviewData[offset + 3];
               if (alpha === 0 || alpha === 255) continue;
-              if (referenceProtectionMatches(
-                background,
-                candidate.descriptor,
-                fullOriginalData[offset],
-                fullOriginalData[offset + 1],
-                fullOriginalData[offset + 2],
-              )) matches += 1;
+              if (
+                referenceProtectionMatches(
+                  background,
+                  candidate.descriptor,
+                  fullOriginalData[offset],
+                  fullOriginalData[offset + 1],
+                  fullOriginalData[offset + 2],
+                )
+              )
+                matches += 1;
             }
           }
           candidate.fullCoverage = (matches * fullStep * fullStep) / (fullWidth * fullHeight);
@@ -574,18 +590,14 @@
           }
         } else {
           const retained = new Set(
-            [...visibleCandidates]
-              .sort((left, right) => right.fullCoverage - left.fullCoverage)
-              .slice(0, 2),
+            [...visibleCandidates].sort((left, right) => right.fullCoverage - left.fullCoverage).slice(0, 2),
           );
           for (const candidate of visibleCandidates) {
             if (!retained.has(candidate)) candidate.excluded = true;
           }
         }
       }
-      const existingColors = Array.isArray(options.existingColors)
-        ? options.existingColors.slice(0, 32)
-        : [];
+      const existingColors = Array.isArray(options.existingColors) ? options.existingColors.slice(0, 32) : [];
       const existingDescriptors = existingColors.map((color) => {
         const red = Array.isArray(color) ? color[0] : color.r;
         const green = Array.isArray(color) ? color[1] : color.g;
@@ -596,37 +608,28 @@
       let coveredCount = 0;
       for (let index = 0; index < samples.length; index += 1) {
         const sample = samples[index];
-        if (existingDescriptors.some((descriptor) => referenceProtectionMatches(
-          background,
-          descriptor,
-          sample.r,
-          sample.g,
-          sample.b,
-        ))) {
+        if (
+          existingDescriptors.some((descriptor) =>
+            referenceProtectionMatches(background, descriptor, sample.r, sample.g, sample.b),
+          )
+        ) {
           covered[index] = 1;
           coveredCount += 1;
         }
       }
       const selectedColors = [];
       while (
-        selectedColors.length < maximumColors
-        && coveredCount * 100 < samples.length * coverageThreshold
+        selectedColors.length < maximumColors &&
+        coveredCount * 100 < samples.length * coverageThreshold
       ) {
         let bestCandidate = null;
         let bestCoverage = 0;
         for (const candidate of candidates) {
           if (candidate.excluded) continue;
+          const matches = sampleCoverageFor(candidate.descriptor).matches;
           let candidateCoverage = 0;
           for (let index = 0; index < samples.length; index += 1) {
-            if (covered[index]) continue;
-            const sample = samples[index];
-            if (referenceProtectionMatches(
-              background,
-              candidate.descriptor,
-              sample.r,
-              sample.g,
-              sample.b,
-            )) candidateCoverage += 1;
+            if (!covered[index] && matches[index]) candidateCoverage += 1;
           }
           if (candidateCoverage > bestCoverage) {
             bestCandidate = candidate;
@@ -640,16 +643,9 @@
           b: bestCandidate.b,
           count: bestCoverage,
         });
+        const matches = sampleCoverageFor(bestCandidate.descriptor).matches;
         for (let index = 0; index < samples.length; index += 1) {
-          if (covered[index]) continue;
-          const sample = samples[index];
-          if (referenceProtectionMatches(
-            background,
-            bestCandidate.descriptor,
-            sample.r,
-            sample.g,
-            sample.b,
-          )) {
+          if (!covered[index] && matches[index]) {
             covered[index] = 1;
             coveredCount += 1;
           }
@@ -657,9 +653,7 @@
         bestCandidate.excluded = true;
       }
       const coverage = Math.trunc((coveredCount * 100) / samples.length);
-      const status = coverage >= coverageThreshold
-        ? 0
-        : (selectedColors.length < maximumColors ? 2 : 1);
+      const status = coverage >= coverageThreshold ? 0 : selectedColors.length < maximumColors ? 2 : 1;
       return {
         colors: selectedColors,
         count: selectedColors.length,
@@ -694,9 +688,7 @@
       if (previewData && previewData.length !== data.length) {
         throw new RangeError("Protected-color preview length does not match its source.");
       }
-      const regionPreviewData = previewData
-        ? new Uint8ClampedArray(regionWidth * regionHeight * 4)
-        : null;
+      const regionPreviewData = previewData ? new Uint8ClampedArray(regionWidth * regionHeight * 4) : null;
       let targetOffset = 0;
       for (let y = startY; y <= endY; y += 1) {
         const sourceOffset = (y * width + startX) * 4;
@@ -708,25 +700,17 @@
         targetOffset += regionWidth * 4;
       }
       const excludeColors = Array.isArray(options.excludeColors) ? options.excludeColors : [];
-      const backgroundColor = excludeColors[0]
-        || options.backgroundColor
-        || { r: 0, g: 255, b: 0 };
-      return selectReferenceProtectedColors(
-        regionData,
-        regionWidth,
-        regionHeight,
-        backgroundColor,
-        {
-          coverageThreshold: Math.round(clamp(options.coverage ?? 0.95, 0, 1) * 100),
-          maximumColors: options.maximumColors,
-          existingColors: options.existingColors,
-          previewData: regionPreviewData,
-          fullOriginalData: data,
-          fullPreviewData: previewData,
-          fullWidth: width,
-          fullHeight: height,
-        },
-      );
+      const backgroundColor = excludeColors[0] || options.backgroundColor || { r: 0, g: 255, b: 0 };
+      return selectReferenceProtectedColors(regionData, regionWidth, regionHeight, backgroundColor, {
+        coverageThreshold: Math.round(clamp(options.coverage ?? 0.95, 0, 1) * 100),
+        maximumColors: options.maximumColors,
+        existingColors: options.existingColors,
+        previewData: regionPreviewData,
+        fullOriginalData: data,
+        fullPreviewData: previewData,
+        fullWidth: width,
+        fullHeight: height,
+      });
     }
 
     /**
@@ -756,4 +740,4 @@
   return {
     createProtectionSelector,
   };
-}));
+});

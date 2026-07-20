@@ -1,12 +1,16 @@
 "use strict";
 
 importScripts(
+  "batch_cutout_color_core.js",
+  "batch_cutout_connectivity_core.js",
   "batch_cutout_product_core.js",
   "batch_cutout_protection_core.js",
   "batch_cutout_reference_recovery_core.js",
   "batch_cutout_reference_replace_core.js",
+  "batch_cutout_reference_input.js",
   "batch_cutout_core.js",
   "cutout_quality_core.js",
+  "cutout_tracking_geometry_core.js",
   "cutout_tracking_core.js",
 );
 

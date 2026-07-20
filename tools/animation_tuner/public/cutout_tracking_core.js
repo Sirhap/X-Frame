@@ -1,9 +1,20 @@
 (function attachCutoutTrackingCore(root, factory) {
-  const api = factory();
+  const geometryCore =
+    typeof module === "object" && module.exports
+      ? require("./cutout_tracking_geometry_core")
+      : root?.CutoutTrackingGeometryCore;
+  const api = factory(geometryCore);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.CutoutTrackingCore = api;
-}(typeof globalThis !== "undefined" ? globalThis : this, () => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (geometryCore) => {
   "use strict";
+
+  if (!geometryCore?.mapPoint || !geometryCore?.mapCanvasPoint) {
+    throw new Error("CutoutTrackingGeometryCore is required.");
+  }
+
+  const { mapCanvasBrushStroke, mapCanvasPoint, mapCanvasRectangle, mapBrushStroke, mapPoint, mapRectangle } =
+    geometryCore;
 
   const REFERENCE_PI = 3.141593;
   const REFERENCE_FOUR_PI = 12.566371;
@@ -66,10 +77,9 @@
       }
     }
     const trace = covarianceXX + covarianceYY;
-    const discriminant = Math.sqrt(Math.max(
-      0,
-      trace * trace - 4 * (covarianceXX * covarianceYY - covarianceXY * covarianceXY),
-    ));
+    const discriminant = Math.sqrt(
+      Math.max(0, trace * trace - 4 * (covarianceXX * covarianceYY - covarianceXY * covarianceXY)),
+    );
     const previousUx = Number(previousFrame?.ux);
     const previousUy = Number(previousFrame?.uy);
     const hasPreviousDirection = Number.isFinite(previousUx) && Number.isFinite(previousUy);
@@ -205,6 +215,122 @@
   }
 
   /**
+   * Builds a descriptor directly from one connected component without allocating a full-frame mask.
+   * Component pixels are intentionally retained in traversal order; tracking only consumes the
+   * resulting geometric facts and does not expose this temporary representation.
+   * @param {{pixels:number[],area:number,sumX:number,sumY:number,minimumX:number,maximumX:number,minimumY:number,maximumY:number,perimeter:number}} component Connected alpha component.
+   * @param {number} width Image width.
+   * @param {number} height Image height.
+   * @returns {object|null} Shape descriptor.
+   */
+  function describeConnectedComponent(component, width, height) {
+    const area = Number(component?.area || 0);
+    if (area < 16) return null;
+    const centerX = Number(component.sumX || 0) / area;
+    const centerY = Number(component.sumY || 0) / area;
+    let covarianceXX = 0;
+    let covarianceXY = 0;
+    let covarianceYY = 0;
+    for (const index of component.pixels) {
+      const x = index % width;
+      const y = Math.floor(index / width);
+      const deltaX = x - centerX;
+      const deltaY = y - centerY;
+      covarianceXX += deltaX * deltaX;
+      covarianceXY += deltaX * deltaY;
+      covarianceYY += deltaY * deltaY;
+    }
+    const trace = covarianceXX + covarianceYY;
+    if (trace <= 0) return null;
+    const discriminant = Math.sqrt(
+      Math.max(0, trace * trace - 4 * (covarianceXX * covarianceYY - covarianceXY * covarianceXY)),
+    );
+    const widthSpan = component.maximumX - component.minimumX;
+    const heightSpan = component.maximumY - component.minimumY;
+    let ux;
+    let uy;
+    let isotropic = false;
+    if (discriminant < trace * 0.15) {
+      if (!(widthSpan > 0) || !(heightSpan > 0)) return null;
+      const horizontal = widthSpan >= heightSpan;
+      ux = horizontal ? 1 : 0;
+      uy = horizontal ? 0 : 1;
+      const vx = -uy;
+      const vy = ux;
+      return {
+        width,
+        height,
+        area,
+        perimeter: component.perimeter,
+        compactness: (component.perimeter * component.perimeter) / (REFERENCE_FOUR_PI * area),
+        aspectRatio: (horizontal ? widthSpan : heightSpan) / (horizontal ? heightSpan : widthSpan),
+        center: { x: centerX, y: centerY },
+        angle: Math.atan2(uy, ux),
+        majorAxis: { x: ux, y: uy },
+        minorAxis: { x: vx, y: vy },
+        majorLength: horizontal ? widthSpan : heightSpan,
+        minorLength: horizontal ? heightSpan : widthSpan,
+        isotropic: true,
+      };
+    }
+    const largestEigenvalue = (trace + discriminant) * 0.5;
+    const firstX = covarianceXY;
+    const firstY = largestEigenvalue - covarianceXX;
+    const secondX = largestEigenvalue - covarianceYY;
+    const secondY = covarianceXY;
+    const firstLength = Math.hypot(firstX, firstY);
+    const secondLength = Math.hypot(secondX, secondY);
+    if (firstLength >= secondLength && firstLength > Number.EPSILON) {
+      ux = firstX / firstLength;
+      uy = firstY / firstLength;
+    } else if (secondLength > Number.EPSILON) {
+      ux = secondX / secondLength;
+      uy = secondY / secondLength;
+    } else {
+      return null;
+    }
+    if (ux < 0 || (ux === 0 && uy < 0)) {
+      ux = -ux;
+      uy = -uy;
+    }
+    const vx = -uy;
+    const vy = ux;
+    let minimumMajor = Infinity;
+    let maximumMajor = -Infinity;
+    let minimumMinor = Infinity;
+    let maximumMinor = -Infinity;
+    for (const index of component.pixels) {
+      const x = index % width;
+      const y = Math.floor(index / width);
+      const deltaX = x - centerX;
+      const deltaY = y - centerY;
+      const major = deltaX * ux + deltaY * uy;
+      const minor = deltaX * vx + deltaY * vy;
+      minimumMajor = Math.min(minimumMajor, major);
+      maximumMajor = Math.max(maximumMajor, major);
+      minimumMinor = Math.min(minimumMinor, minor);
+      maximumMinor = Math.max(maximumMinor, minor);
+    }
+    const majorLength = maximumMajor - minimumMajor;
+    const minorLength = maximumMinor - minimumMinor;
+    return {
+      width,
+      height,
+      area,
+      perimeter: component.perimeter,
+      compactness: (component.perimeter * component.perimeter) / (REFERENCE_FOUR_PI * area),
+      aspectRatio: majorLength / minorLength,
+      center: { x: centerX, y: centerY },
+      angle: Math.atan2(uy, ux),
+      majorAxis: { x: ux, y: uy },
+      minorAxis: { x: vx, y: vy },
+      majorLength,
+      minorLength,
+      isotropic,
+    };
+  }
+
+  /**
    * Applies the reference `fp_kernel_11` shape gates to precomputed statistics.
    * @param {{area:number,majorLength:number,minorLength:number,compactness?:number|null,perimeter?:number|null}} candidate Candidate statistics.
    * @param {{area:number,pcaMajor:number,pcaMinor:number,compactness?:number|null}|null} seed Seed statistics.
@@ -237,9 +363,8 @@
       ratioC: null,
       layerPassed: [false, null, null],
       candArea: candidateArea,
-      candPerimeter: candidatePerimeter > 0
-        ? Math.sqrt(candidateCompactness * 4 * REFERENCE_PI * candidateArea)
-        : null,
+      candPerimeter:
+        candidatePerimeter > 0 ? Math.sqrt(candidateCompactness * 4 * REFERENCE_PI * candidateArea) : null,
       candCompactness: candidatePerimeter > 0 ? candidateCompactness : null,
     };
     if (candidateArea < 3 || candidatePerimeter <= 0) return result;
@@ -324,18 +449,19 @@
       }
     }
     const frame = area >= 3 ? computeReferenceLocalFrame(mask, width, height) : null;
-    const compactness = area > 0 && perimeter > 0
-      ? (perimeter * perimeter) / (REFERENCE_FOUR_PI * area)
-      : 0;
-    return compareReferenceShapeStats({
-      area,
-      majorLength: frame?.majorLen || 0,
-      minorLength: frame?.minorLen || 0,
-      compactness,
-      perimeter,
-      sumX,
-      sumY,
-    }, seed);
+    const compactness = area > 0 && perimeter > 0 ? (perimeter * perimeter) / (REFERENCE_FOUR_PI * area) : 0;
+    return compareReferenceShapeStats(
+      {
+        area,
+        majorLength: frame?.majorLen || 0,
+        minorLength: frame?.minorLen || 0,
+        compactness,
+        perimeter,
+        sumX,
+        sumY,
+      },
+      seed,
+    );
   }
 
   /**
@@ -389,6 +515,11 @@
       let area = 0;
       let sumX = 0;
       let sumY = 0;
+      let minimumX = width;
+      let maximumX = -1;
+      let minimumY = height;
+      let maximumY = -1;
+      let perimeter = 0;
       const component = [];
       queue[0] = start;
       visited[start] = 1;
@@ -401,6 +532,10 @@
         const y = Math.floor(index / width);
         sumX += x;
         sumY += y;
+        minimumX = Math.min(minimumX, x);
+        maximumX = Math.max(maximumX, x);
+        minimumY = Math.min(minimumY, y);
+        maximumY = Math.max(maximumY, y);
         const neighbors = [
           x > 0 ? index - 1 : -1,
           x + 1 < width ? index + 1 : -1,
@@ -408,36 +543,33 @@
           y + 1 < height ? index + width : -1,
         ];
         for (const neighbor of neighbors) {
-          if (
-            neighbor < 0
-            || visited[neighbor]
-            || data[neighbor * 4 + 3] <= alphaThreshold
-          ) {
+          if (neighbor < 0 || data[neighbor * 4 + 3] <= alphaThreshold) {
+            perimeter += 1;
             continue;
           }
+          if (visited[neighbor]) continue;
           visited[neighbor] = 1;
           queue[tail] = neighbor;
           tail += 1;
         }
       }
       if (area < minimumArea) continue;
-      components.push({ pixels: component, area, sumX, sumY });
+      components.push({
+        pixels: component,
+        area,
+        sumX,
+        sumY,
+        minimumX,
+        maximumX,
+        minimumY,
+        maximumY,
+        perimeter,
+      });
     }
     return components
       .sort((left, right) => right.area - left.area)
       .slice(0, maximumCandidates)
-      .map((component) => {
-        const visible = new Uint8Array(pixelCount);
-        component.pixels.forEach((index) => { visible[index] = 1; });
-        return describeVisiblePixels(
-          visible,
-          width,
-          height,
-          component.area,
-          component.sumX,
-          component.sumY,
-        );
-      })
+      .map((component) => describeConnectedComponent(component, width, height))
       .filter(Boolean);
   }
 
@@ -467,20 +599,18 @@
     const areaRatio = target.area / source.area;
     const aspectRatio = target.aspectRatio / source.aspectRatio;
     const compactnessRatio = target.compactness / source.compactness;
-    const accepted = (
-      referenceMatch.passed
-      && areaRatio >= Number(options.areaMinimum ?? 0)
-      && areaRatio <= Number(options.areaMaximum ?? Number.POSITIVE_INFINITY)
-      && aspectRatio >= Number(options.aspectMinimum ?? 0)
-      && aspectRatio <= Number(options.aspectMaximum ?? Number.POSITIVE_INFINITY)
-      && compactnessRatio >= Number(options.compactnessMinimum ?? 0)
-      && compactnessRatio <= Number(options.compactnessMaximum ?? Number.POSITIVE_INFINITY)
-    );
-    const logarithmicError = (
-      Math.abs(Math.log(Math.max(0.001, areaRatio)))
-      + Math.abs(Math.log(Math.max(0.001, aspectRatio)))
-      + Math.abs(Math.log(Math.max(0.001, compactnessRatio))) * 0.5
-    );
+    const accepted =
+      referenceMatch.passed &&
+      areaRatio >= Number(options.areaMinimum ?? 0) &&
+      areaRatio <= Number(options.areaMaximum ?? Number.POSITIVE_INFINITY) &&
+      aspectRatio >= Number(options.aspectMinimum ?? 0) &&
+      aspectRatio <= Number(options.aspectMaximum ?? Number.POSITIVE_INFINITY) &&
+      compactnessRatio >= Number(options.compactnessMinimum ?? 0) &&
+      compactnessRatio <= Number(options.compactnessMaximum ?? Number.POSITIVE_INFINITY);
+    const logarithmicError =
+      Math.abs(Math.log(Math.max(0.001, areaRatio))) +
+      Math.abs(Math.log(Math.max(0.001, aspectRatio))) +
+      Math.abs(Math.log(Math.max(0.001, compactnessRatio))) * 0.5;
     return {
       accepted,
       score: clamp(1 - logarithmicError / 2.5, 0, 1),
@@ -514,10 +644,13 @@
   function predictTrackingCenter(state, steps = 1) {
     const deltas = Array.isArray(state?.recentDeltas) ? state.recentDeltas.slice(-3) : [];
     if (!deltas.length) return { ...state.lastSuccessCenter };
-    const average = deltas.reduce((sum, delta) => ({
-      x: sum.x + delta.x,
-      y: sum.y + delta.y,
-    }), { x: 0, y: 0 });
+    const average = deltas.reduce(
+      (sum, delta) => ({
+        x: sum.x + delta.x,
+        y: sum.y + delta.y,
+      }),
+      { x: 0, y: 0 },
+    );
     return {
       x: state.lastSuccessCenter.x + (average.x / deltas.length) * steps,
       y: state.lastSuccessCenter.y + (average.y / deltas.length) * steps,
@@ -545,10 +678,8 @@
       aligned.angle = Number(reference.angle || 0);
       return aligned;
     }
-    const directionDot = (
-      aligned.majorAxis.x * reference.majorAxis.x
-      + aligned.majorAxis.y * reference.majorAxis.y
-    );
+    const directionDot =
+      aligned.majorAxis.x * reference.majorAxis.x + aligned.majorAxis.y * reference.majorAxis.y;
     if (directionDot >= 0) return aligned;
     aligned.majorAxis.x *= -1;
     aligned.majorAxis.y *= -1;
@@ -568,15 +699,16 @@
    */
   function isPlausibleReacquisition(comparison, sourceComparison) {
     const candidates = [comparison, sourceComparison];
-    return candidates.some((result) => (
-      result.score >= 0.24
-      && result.areaRatio >= 0.35
-      && result.areaRatio <= 2.85
-      && result.aspectRatio >= 0.25
-      && result.aspectRatio <= 4
-      && result.compactnessRatio >= 0.2
-      && result.compactnessRatio <= 5
-    ));
+    return candidates.some(
+      (result) =>
+        result.score >= 0.24 &&
+        result.areaRatio >= 0.35 &&
+        result.areaRatio <= 2.85 &&
+        result.aspectRatio >= 0.25 &&
+        result.aspectRatio <= 4 &&
+        result.compactnessRatio >= 0.2 &&
+        result.compactnessRatio <= 5,
+    );
   }
 
   /**
@@ -607,17 +739,12 @@
       if (motionDistance > searchRadius) continue;
       const motionScore = clamp(1 - motionDistance / searchRadius, 0, 1);
       const sourceComparison = compareShapeDescriptors(sourceDescriptor, candidate);
-      const accepted = comparison.accepted || (
-        reacquisitionLevel >= 1 && sourceComparison.accepted
-      ) || (
-        reacquisitionLevel >= 2 && isPlausibleReacquisition(comparison, sourceComparison)
-      );
+      const accepted =
+        comparison.accepted ||
+        (reacquisitionLevel >= 1 && sourceComparison.accepted) ||
+        (reacquisitionLevel >= 2 && isPlausibleReacquisition(comparison, sourceComparison));
       if (!accepted) continue;
-      const score = (
-        comparison.score * 0.4
-        + sourceComparison.score * 0.25
-        + motionScore * 0.35
-      );
+      const score = comparison.score * 0.4 + sourceComparison.score * 0.25 + motionScore * 0.35;
       if (!best || score > best.score) {
         best = {
           candidate,
@@ -672,19 +799,14 @@
     const centerX = Math.round(center?.x);
     const centerY = Math.round(center?.y);
     const hasAlpha = targetColor.a != null && (targetColor.a & 255) < 255;
-    const targetAlpha = hasAlpha ? (targetColor.a & 255) : 0;
+    const targetAlpha = hasAlpha ? targetColor.a & 255 : 0;
     const colorDistanceSquared = (pixel) => {
       const offset = pixel * 4;
       const deltaRed = data[offset] - (targetColor.r & 255);
       const deltaGreen = data[offset + 1] - (targetColor.g & 255);
       const deltaBlue = data[offset + 2] - (targetColor.b & 255);
       const deltaAlpha = hasAlpha ? data[offset + 3] - targetAlpha : 0;
-      return (
-        deltaRed * deltaRed
-        + deltaGreen * deltaGreen
-        + deltaBlue * deltaBlue
-        + deltaAlpha * deltaAlpha
-      );
+      return deltaRed * deltaRed + deltaGreen * deltaGreen + deltaBlue * deltaBlue + deltaAlpha * deltaAlpha;
     };
     if (centerX >= 0 && centerX < width && centerY >= 0 && centerY < height) {
       const centerIndex = centerY * width + centerX;
@@ -717,8 +839,8 @@
         const pixel = y * width + x;
         const candidateDistance = colorDistanceSquared(pixel);
         if (
-          candidateDistance > bestColorDistance
-          || (candidateDistance === bestColorDistance && spatialDistance >= bestSpatialDistance)
+          candidateDistance > bestColorDistance ||
+          (candidateDistance === bestColorDistance && spatialDistance >= bestSpatialDistance)
         ) {
           continue;
         }
@@ -748,158 +870,13 @@
    * @returns {{r:number,g:number,b:number}}
    */
   function sampleMatchingColor(data, width, height, targetColor, center, radius = 15) {
-    const match = findReferenceNearestColorInRadius(
-      data,
-      width,
-      height,
-      targetColor,
-      center,
-      radius,
-    );
+    const match = findReferenceNearestColorInRadius(data, width, height, targetColor, center, radius);
     if (!match) return { ...targetColor };
     return {
       r: match.newSeedColor[0],
       g: match.newSeedColor[1],
       b: match.newSeedColor[2],
       ...(targetColor.a == null ? {} : { a: match.newSeedColor[3] }),
-    };
-  }
-
-  /**
-   * Maps a point through normalized PCA-local coordinates.
-   * @param {{x:number,y:number}} point Source point.
-   * @param {object} source Source descriptor.
-   * @param {object} target Target descriptor.
-   * @returns {{x:number,y:number}}
-   */
-  function mapPoint(point, source, target) {
-    const deltaX = point.x - source.center.x;
-    const deltaY = point.y - source.center.y;
-    const localMajor = (
-      deltaX * source.majorAxis.x + deltaY * source.majorAxis.y
-    ) / source.majorLength;
-    const localMinor = (
-      deltaX * source.minorAxis.x + deltaY * source.minorAxis.y
-    ) / source.minorLength;
-    return {
-      x: target.center.x
-        + localMajor * target.majorLength * target.majorAxis.x
-        + localMinor * target.minorLength * target.minorAxis.x,
-      y: target.center.y
-        + localMajor * target.majorLength * target.majorAxis.y
-        + localMinor * target.minorLength * target.minorAxis.y,
-    };
-  }
-
-  /**
-   * Maps an axis-aligned repair rectangle between two subject descriptors.
-   * @param {{x1:number,y1:number,x2:number,y2:number}} rectangle Source rectangle.
-   * @param {object} source Source descriptor.
-   * @param {object} target Target descriptor.
-   * @returns {{x1:number,y1:number,x2:number,y2:number}}
-   */
-  function mapRectangle(rectangle, source, target) {
-    const corners = [
-      { x: rectangle.x1, y: rectangle.y1 },
-      { x: rectangle.x2, y: rectangle.y1 },
-      { x: rectangle.x2, y: rectangle.y2 },
-      { x: rectangle.x1, y: rectangle.y2 },
-    ].map((point) => mapPoint(point, source, target));
-    return {
-      x1: clamp(Math.min(...corners.map((point) => point.x)), 0, target.width),
-      y1: clamp(Math.min(...corners.map((point) => point.y)), 0, target.height),
-      x2: clamp(Math.max(...corners.map((point) => point.x)), 0, target.width),
-      y2: clamp(Math.max(...corners.map((point) => point.y)), 0, target.height),
-    };
-  }
-
-  /**
-   * Maps a serialized brush or eraser stroke between two subject descriptors.
-   * The scalar brush size follows the geometric mean of the PCA-axis scales so
-   * area remains stable when the target subject changes size anisotropically.
-   * @param {{points:Array<{x:number,y:number}>,size:number}} stroke Source stroke.
-   * @param {object} source Source descriptor.
-   * @param {object} target Target descriptor.
-   * @returns {{points:Array<{x:number,y:number}>,size:number}}
-   */
-  function mapBrushStroke(stroke, source, target) {
-    const points = Array.isArray(stroke?.points)
-      ? stroke.points
-        .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y))
-        .map((point) => {
-          const mapped = mapPoint(point, source, target);
-          return {
-            x: clamp(mapped.x, 0, Math.max(0, target.width - 1)),
-            y: clamp(mapped.y, 0, Math.max(0, target.height - 1)),
-          };
-        })
-      : [];
-    const majorScale = target.majorLength / Math.max(source.majorLength, 0.000001);
-    const minorScale = target.minorLength / Math.max(source.minorLength, 0.000001);
-    const sizeScale = Math.sqrt(Math.max(0, majorScale * minorScale));
-    return {
-      points,
-      size: Math.max(0.5, Number(stroke?.size || 1) * sizeScale),
-    };
-  }
-
-  /**
-   * Maps one pixel coordinate between source canvases without subject tracking.
-   * This is the deterministic propagation model used by isolated single-frame editing.
-   * @param {{x:number,y:number}} point Source-canvas point.
-   * @param {{width:number,height:number}} source Source canvas dimensions.
-   * @param {{width:number,height:number}} target Target canvas dimensions.
-   * @returns {{x:number,y:number}} Proportionally mapped target-canvas point.
-   */
-  function mapCanvasPoint(point, source, target) {
-    const sourceWidth = Math.max(1, Number(source?.width || 1));
-    const sourceHeight = Math.max(1, Number(source?.height || 1));
-    const targetWidth = Math.max(1, Number(target?.width || 1));
-    const targetHeight = Math.max(1, Number(target?.height || 1));
-    return {
-      x: clamp(Number(point?.x || 0) * targetWidth / sourceWidth, 0, targetWidth - 1),
-      y: clamp(Number(point?.y || 0) * targetHeight / sourceHeight, 0, targetHeight - 1),
-    };
-  }
-
-  /**
-   * Maps an axis-aligned selection between canvases by normalized coordinates.
-   * @param {{x1:number,y1:number,x2:number,y2:number}} rectangle Source rectangle.
-   * @param {{width:number,height:number}} source Source canvas dimensions.
-   * @param {{width:number,height:number}} target Target canvas dimensions.
-   * @returns {{x1:number,y1:number,x2:number,y2:number}} Target rectangle.
-   */
-  function mapCanvasRectangle(rectangle, source, target) {
-    const first = mapCanvasPoint({ x: rectangle.x1, y: rectangle.y1 }, source, target);
-    const second = mapCanvasPoint({ x: rectangle.x2, y: rectangle.y2 }, source, target);
-    return {
-      x1: Math.min(first.x, second.x),
-      y1: Math.min(first.y, second.y),
-      x2: Math.max(first.x, second.x),
-      y2: Math.max(first.y, second.y),
-    };
-  }
-
-  /**
-   * Maps a brush stroke or point repair between canvases by normalized coordinates.
-   * @param {{points:Array<{x:number,y:number}>,size?:number}} stroke Source stroke.
-   * @param {{width:number,height:number}} source Source canvas dimensions.
-   * @param {{width:number,height:number}} target Target canvas dimensions.
-   * @returns {{points:Array<{x:number,y:number}>,size:number}} Target stroke geometry.
-   */
-  function mapCanvasBrushStroke(stroke, source, target) {
-    const points = Array.isArray(stroke?.points)
-      ? stroke.points
-        .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y))
-        .map((point) => mapCanvasPoint(point, source, target))
-      : [];
-    const widthScale = Math.max(1, Number(target?.width || 1))
-      / Math.max(1, Number(source?.width || 1));
-    const heightScale = Math.max(1, Number(target?.height || 1))
-      / Math.max(1, Number(source?.height || 1));
-    return {
-      points,
-      size: Math.max(0.5, Number(stroke?.size || 1) * Math.sqrt(widthScale * heightScale)),
     };
   }
 
@@ -924,4 +901,4 @@
     sampleMatchingColor,
     selectTrackedCandidate,
   };
-}));
+});

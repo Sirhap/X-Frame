@@ -2,7 +2,7 @@
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.BatchCutoutReferenceReplaceCore = api;
-}(typeof globalThis !== "undefined" ? globalThis : this, () => {
+})(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 
   /**
@@ -30,10 +30,7 @@
       throw new TypeError("applyReferenceReplacementPipeline dependency must be a function.");
     }
 
-    const {
-      connectedCandidateMask,
-      applyReferenceReplacementPipeline,
-    } = deps;
+    const { connectedCandidateMask, applyReferenceReplacementPipeline } = deps;
 
     /**
      * Builds the squared RGBA radius used by `fp_kernel_06` and `fp_kernel_10`.
@@ -55,17 +52,15 @@
      */
     function referenceRgbaMatches(source, pixel, referenceColor, thresholdSquared) {
       const offset = pixel * 4;
-      const referenceAlpha = referenceColor.a == null ? 255 : (referenceColor.a & 255);
+      const referenceAlpha = referenceColor.a == null ? 255 : referenceColor.a & 255;
       const deltaRed = source[offset] - (referenceColor.r & 255);
       const deltaGreen = source[offset + 1] - (referenceColor.g & 255);
       const deltaBlue = source[offset + 2] - (referenceColor.b & 255);
       const deltaAlpha = source[offset + 3] - referenceAlpha;
       return (
-        deltaRed * deltaRed
-        + deltaGreen * deltaGreen
-        + deltaBlue * deltaBlue
-        + deltaAlpha * deltaAlpha
-      ) <= thresholdSquared;
+        deltaRed * deltaRed + deltaGreen * deltaGreen + deltaBlue * deltaBlue + deltaAlpha * deltaAlpha <=
+        thresholdSquared
+      );
     }
 
     /**
@@ -101,9 +96,10 @@
       const visited = new Uint8Array(pixelCount);
       const stack = [seedIndex];
       visited[seedIndex] = 1;
-      const limit = Number.isFinite(maximumPixels) && maximumPixels > 0
-        ? Math.min(Math.trunc(maximumPixels), 0x7fffffff)
-        : 0;
+      const limit =
+        Number.isFinite(maximumPixels) && maximumPixels > 0
+          ? Math.min(Math.trunc(maximumPixels), 0x7fffffff)
+          : 0;
       let selectedPixels = 0;
       while (stack.length) {
         const current = stack.pop();
@@ -111,16 +107,16 @@
         let left = current % width;
         let right = left;
         while (
-          left > 0
-          && !visited[y * width + left - 1]
-          && referenceRgbaMatches(source, y * width + left - 1, referenceColor, thresholdSquared)
+          left > 0 &&
+          !visited[y * width + left - 1] &&
+          referenceRgbaMatches(source, y * width + left - 1, referenceColor, thresholdSquared)
         ) {
           left -= 1;
         }
         while (
-          right + 1 < width
-          && !visited[y * width + right + 1]
-          && referenceRgbaMatches(source, y * width + right + 1, referenceColor, thresholdSquared)
+          right + 1 < width &&
+          !visited[y * width + right + 1] &&
+          referenceRgbaMatches(source, y * width + right + 1, referenceColor, thresholdSquared)
         ) {
           right += 1;
         }
@@ -135,20 +131,14 @@
           }
           if (y > 0) {
             const above = index - width;
-            if (
-              !visited[above]
-              && referenceRgbaMatches(source, above, referenceColor, thresholdSquared)
-            ) {
+            if (!visited[above] && referenceRgbaMatches(source, above, referenceColor, thresholdSquared)) {
               visited[above] = 1;
               stack.push(above);
             }
           }
           if (y + 1 < height) {
             const below = index + width;
-            if (
-              !visited[below]
-              && referenceRgbaMatches(source, below, referenceColor, thresholdSquared)
-            ) {
+            if (!visited[below] && referenceRgbaMatches(source, below, referenceColor, thresholdSquared)) {
               visited[below] = 1;
               stack.push(below);
             }
@@ -270,15 +260,11 @@
       }
       const safeTolerance = Math.trunc(tolerance);
       const safeEdgeEnhance = Math.trunc(edgeEnhance || 0);
-      const effectiveTolerance = safeTolerance < 0
-        ? -1
-        : (Math.max(0, 100 - safeTolerance) * safeEdgeEnhance / 100 + safeTolerance);
-      const baseThresholdSquared = safeTolerance < 0
-        ? -1
-        : Math.trunc((safeTolerance * 5.1) ** 2 + 0.5);
-      const enhancedThresholdSquared = effectiveTolerance < 0
-        ? -1
-        : Math.trunc((effectiveTolerance * 5.1) ** 2 + 0.5);
+      const effectiveTolerance =
+        safeTolerance < 0 ? -1 : (Math.max(0, 100 - safeTolerance) * safeEdgeEnhance) / 100 + safeTolerance;
+      const baseThresholdSquared = safeTolerance < 0 ? -1 : Math.trunc((safeTolerance * 5.1) ** 2 + 0.5);
+      const enhancedThresholdSquared =
+        effectiveTolerance < 0 ? -1 : Math.trunc((effectiveTolerance * 5.1) ** 2 + 0.5);
       return expandReferenceCandidateMask(
         source,
         width,
@@ -301,15 +287,7 @@
      * @param {object} [options] Reference pipeline options.
      * @returns {Uint8ClampedArray}
      */
-    function applyReferenceColorReplace(
-      source,
-      width,
-      height,
-      seed,
-      fillColor,
-      tolerance,
-      options = {},
-    ) {
+    function applyReferenceColorReplace(source, width, height, seed, fillColor, tolerance, options = {}) {
       const pixelCount = width * height;
       if (width <= 0 || height <= 0 || !source || source.length !== pixelCount * 4) {
         throw new RangeError("Reference color-replace RGBA length does not match its dimensions.");
@@ -333,28 +311,27 @@
         r: referenceColor.r & 255,
         g: referenceColor.g & 255,
         b: referenceColor.b & 255,
-        a: referenceColor.a == null ? 255 : (referenceColor.a & 255),
+        a: referenceColor.a == null ? 255 : referenceColor.a & 255,
       };
       const replacement = {
         r: fillColor.r & 255,
         g: fillColor.g & 255,
         b: fillColor.b & 255,
-        a: fillColor.a == null ? 255 : (fillColor.a & 255),
+        a: fillColor.a == null ? 255 : fillColor.a & 255,
       };
       if (
-        reference.r === replacement.r
-        && reference.g === replacement.g
-        && reference.b === replacement.b
-        && reference.a === replacement.a
-      ) return output;
+        reference.r === replacement.r &&
+        reference.g === replacement.g &&
+        reference.b === replacement.b &&
+        reference.a === replacement.a
+      )
+        return output;
       const safeTolerance = Math.trunc(tolerance);
       const edgeEnhance = Math.trunc(options.edgeEnhance || 0);
-      const effectiveTolerance = safeTolerance < 0
-        ? -1
-        : (Math.max(0, 100 - safeTolerance) * edgeEnhance / 100 + safeTolerance);
-      const thresholdSquared = effectiveTolerance < 0
-        ? -1
-        : Math.trunc((effectiveTolerance * 5.1) ** 2 + 0.5);
+      const effectiveTolerance =
+        safeTolerance < 0 ? -1 : (Math.max(0, 100 - safeTolerance) * edgeEnhance) / 100 + safeTolerance;
+      const thresholdSquared =
+        effectiveTolerance < 0 ? -1 : Math.trunc((effectiveTolerance * 5.1) ** 2 + 0.5);
       const selectedMask = createReferenceColorCandidateMask(
         source,
         width,
@@ -391,15 +368,7 @@
      * }} [options] Kernel options.
      * @returns {Uint8ClampedArray}
      */
-    function applyReferenceFloodFillDespill(
-      source,
-      width,
-      height,
-      seed,
-      fillColor,
-      tolerance,
-      options = {},
-    ) {
+    function applyReferenceFloodFillDespill(source, width, height, seed, fillColor, tolerance, options = {}) {
       const pixelCount = width * height;
       if (width <= 0 || height <= 0 || !source || source.length !== pixelCount * 4) {
         throw new RangeError("Reference flood-fill RGBA length does not match its dimensions.");
@@ -423,19 +392,19 @@
         r: fillColor.r & 255,
         g: fillColor.g & 255,
         b: fillColor.b & 255,
-        a: fillColor.a == null ? 255 : (fillColor.a & 255),
+        a: fillColor.a == null ? 255 : fillColor.a & 255,
       };
       const reference = {
         r: referenceColor.r & 255,
         g: referenceColor.g & 255,
         b: referenceColor.b & 255,
-        a: referenceColor.a == null ? 255 : (referenceColor.a & 255),
+        a: referenceColor.a == null ? 255 : referenceColor.a & 255,
       };
       if (
-        replacement.r === reference.r
-        && replacement.g === reference.g
-        && replacement.b === reference.b
-        && replacement.a === reference.a
+        replacement.r === reference.r &&
+        replacement.g === reference.g &&
+        replacement.b === reference.b &&
+        replacement.a === reference.a
       ) {
         return output;
       }
@@ -479,4 +448,4 @@
   }
 
   return { createReferenceReplacementKernels };
-}));
+});

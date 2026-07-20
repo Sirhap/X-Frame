@@ -4,7 +4,7 @@
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.BatchCutoutReferenceRecoveryCore = api;
-}(typeof globalThis !== "undefined" ? globalThis : this, () => {
+})(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 
   /**
@@ -93,10 +93,11 @@
       const directionCr = referenceCr / referenceChroma;
       for (let pixel = 0; pixel < data.length / 4; pixel += 1) {
         if (
-          (operationMask && operationMask[pixel] !== 255)
-          || protectedMask?.[pixel]
-          || selectedMask?.[pixel]
-        ) continue;
+          (operationMask && operationMask[pixel] !== 255) ||
+          protectedMask?.[pixel] ||
+          selectedMask?.[pixel]
+        )
+          continue;
         const offset = pixel * 4;
         if (!data[offset + 3]) continue;
         const converted = rgbToReferenceYcbcr(data[offset], data[offset + 1], data[offset + 2]);
@@ -131,10 +132,11 @@
       despillReferenceColor,
       strength,
     ) {
-      const fallbackReference = despillReferenceColor
-        && (despillReferenceColor.r || despillReferenceColor.g || despillReferenceColor.b)
-        ? despillReferenceColor
-        : referenceColor;
+      const fallbackReference =
+        despillReferenceColor &&
+        (despillReferenceColor.r || despillReferenceColor.g || despillReferenceColor.b)
+          ? despillReferenceColor
+          : referenceColor;
       const replacementLinear = [
         referenceSrgbToLinear(replacementColor.r),
         referenceSrgbToLinear(replacementColor.g),
@@ -189,22 +191,15 @@
      * @param {boolean} includeAuxiliary Whether confidence data is required.
      * @returns {object}
      */
-    function recoverReferenceLinearAxis(
-      configuration,
-      red,
-      green,
-      blue,
-      alpha,
-      includeAuxiliary,
-    ) {
+    function recoverReferenceLinearAxis(configuration, red, green, blue, alpha, includeAuxiliary) {
       if (!alpha) return { valid: false };
       if (!configuration.hasLinearAxis) {
         const converted = rgbToReferenceYcbcr(red, green, blue);
         const centeredCb = converted.cb - 128;
         const centeredCr = converted.cr - 128;
         if (Math.hypot(centeredCb, centeredCr) < 3) return { valid: false };
-        const projection = centeredCb * configuration.referenceDirectionCb
-          + centeredCr * configuration.referenceDirectionCr;
+        const projection =
+          centeredCb * configuration.referenceDirectionCb + centeredCr * configuration.referenceDirectionCr;
         if (projection <= 0) return { valid: false };
         const removal = -configuration.strength * projection;
         const recovered = referenceYcbcrToRgb(
@@ -229,17 +224,12 @@
         referenceSrgbToLinear(green),
         referenceSrgbToLinear(blue),
       ];
-      const relative = pixelLinear.map(
-        (channel, index) => channel - configuration.replacementLinear[index],
-      );
-      const projection = relative.reduce(
-        (sum, channel, index) => sum + channel * configuration.axis[index],
-        0,
-      ) / configuration.axisLengthSquared;
+      const relative = pixelLinear.map((channel, index) => channel - configuration.replacementLinear[index]);
+      const projection =
+        relative.reduce((sum, channel, index) => sum + channel * configuration.axis[index], 0) /
+        configuration.axisLengthSquared;
       if (projection <= 0.01) return { valid: false };
-      const residual = relative.map(
-        (channel, index) => channel - projection * configuration.axis[index],
-      );
+      const residual = relative.map((channel, index) => channel - projection * configuration.axis[index]);
       const residualSquared = residual.reduce((sum, channel) => sum + channel * channel, 0);
       if (!(residualSquared < configuration.halfAxisLengthSquared)) return { valid: false };
       const confidence = 1 - residualSquared / configuration.halfAxisLengthSquared;
@@ -259,12 +249,12 @@
           referenceSrgbToLinear(recovered.g),
           referenceSrgbToLinear(recovered.b),
         ],
-        alpha: (
-          configuration.strength
-            * magnitude
-            * (configuration.replacementAlphaByte - configuration.referenceAlphaByte)
-          + alpha
-        ) / 255,
+        alpha:
+          (configuration.strength *
+            magnitude *
+            (configuration.replacementAlphaByte - configuration.referenceAlphaByte) +
+            alpha) /
+          255,
         confidence: includeAuxiliary ? confidence : 0,
         magnitude: includeAuxiliary ? magnitude : 0,
       };
@@ -280,36 +270,21 @@
      * @param {boolean} includeAuxiliary Whether confidence data is required.
      * @returns {object}
      */
-    function recoverReferenceComposite(
-      configuration,
-      red,
-      green,
-      blue,
-      alpha,
-      includeAuxiliary,
-    ) {
+    function recoverReferenceComposite(configuration, red, green, blue, alpha, includeAuxiliary) {
       if (!alpha) return { valid: false };
       const converted = rgbToReferenceYcbcr(red, green, blue);
       const centeredCb = converted.cb - 128;
       const centeredCr = converted.cr - 128;
       const chroma = Math.hypot(centeredCb, centeredCr);
       const chromaRatio = chroma / configuration.referenceChroma;
-      const chromaConfidence = chromaRatio <= 0.05
-        ? 0
-        : chromaRatio >= 0.2
-          ? 1
-          : (chromaRatio - 0.05) / 0.15;
-      const directionProjection = centeredCb * configuration.referenceDirectionCb
-        + centeredCr * configuration.referenceDirectionCr;
+      const chromaConfidence = chromaRatio <= 0.05 ? 0 : chromaRatio >= 0.2 ? 1 : (chromaRatio - 0.05) / 0.15;
+      const directionProjection =
+        centeredCb * configuration.referenceDirectionCb + centeredCr * configuration.referenceDirectionCr;
       if (chroma < 3 || directionProjection <= 0) {
         if (chroma < 3) return { valid: false };
         return {
           valid: true,
-          linear: [
-            referenceSrgbToLinear(red),
-            referenceSrgbToLinear(green),
-            referenceSrgbToLinear(blue),
-          ],
+          linear: [referenceSrgbToLinear(red), referenceSrgbToLinear(green), referenceSrgbToLinear(blue)],
           alpha: alpha / 255,
           confidence: includeAuxiliary ? chromaConfidence : 0,
           ratio: 0,
@@ -318,8 +293,7 @@
       }
       const ratio = clamp(directionProjection / configuration.referenceChroma, 0, 0.95);
       const reconstructionAmount = configuration.strength * ratio;
-      const reconstructedAlpha = 1
-        - ratio * configuration.strength * (1 - configuration.replacementAlpha);
+      const reconstructedAlpha = 1 - ratio * configuration.strength * (1 - configuration.replacementAlpha);
       const pixelLinear = [
         referenceSrgbToLinear(red),
         referenceSrgbToLinear(green),
@@ -328,28 +302,22 @@
       const recovered = [0, 0, 0];
       if (reconstructedAlpha > 0.02) {
         for (let channel = 0; channel < 3; channel += 1) {
-          recovered[channel] = (
-            reconstructionAmount * (
-              configuration.replacementAlpha * configuration.replacementLinear[channel]
-              - configuration.referenceLinear[channel]
-            )
-            + pixelLinear[channel]
-          ) / reconstructedAlpha;
+          recovered[channel] =
+            (reconstructionAmount *
+              (configuration.replacementAlpha * configuration.replacementLinear[channel] -
+                configuration.referenceLinear[channel]) +
+              pixelLinear[channel]) /
+            reconstructedAlpha;
         }
       }
-      const negativeMagnitude = recovered.reduce(
-        (sum, channel) => sum + (channel < 0 ? -channel : 0),
-        0,
-      );
+      const negativeMagnitude = recovered.reduce((sum, channel) => sum + (channel < 0 ? -channel : 0), 0);
       const gamutConfidence = negativeMagnitude >= 0.1 ? 0 : 1 - negativeMagnitude / 0.1;
       const saturationPenalty = ratio > 0.6 ? Math.min(1, (ratio - 0.6) / 0.35) : 0;
       return {
         valid: true,
         linear: recovered,
         alpha: reconstructedAlpha,
-        confidence: includeAuxiliary
-          ? chromaConfidence * gamutConfidence * (1 - saturationPenalty * 0.5)
-          : 0,
+        confidence: includeAuxiliary ? chromaConfidence * gamutConfidence * (1 - saturationPenalty * 0.5) : 0,
         ratio: includeAuxiliary ? ratio : 0,
         fallback: 0,
       };
@@ -389,11 +357,8 @@
         strength,
       );
       for (let pixel = 0; pixel < selectedMask.length; pixel += 1) {
-        if (
-          selectedMask[pixel]
-          || protectedMask?.[pixel]
-          || (operationMask && operationMask[pixel] !== 255)
-        ) continue;
+        if (selectedMask[pixel] || protectedMask?.[pixel] || (operationMask && operationMask[pixel] !== 255))
+          continue;
         const offset = pixel * 4;
         let recovered;
         if ((mode | 0) === 1) {
@@ -430,53 +395,44 @@
           else if (compositeRecovery.confidence < 0.1) recovered = linearRecovery;
           else {
             const inverseRatio = 1 - compositeRecovery.ratio;
-            const ratioWeight = inverseRatio <= 0.15
-              ? 0
-              : inverseRatio >= 0.4
-                ? 1
-                : (inverseRatio - 0.15) * 4;
+            const ratioWeight =
+              inverseRatio <= 0.15 ? 0 : inverseRatio >= 0.4 ? 1 : (inverseRatio - 0.15) * 4;
             const magnitudeDelta = linearRecovery.magnitude - compositeRecovery.ratio;
-            const deltaWeight = Math.abs(magnitudeDelta) <= 0.25
-              ? 1
-              : Math.abs(magnitudeDelta) >= 0.6
-                ? 0
-                : 1 - (Math.abs(magnitudeDelta) - 0.25) / 0.35;
-            const adjustedLinearConfidence = linearRecovery.confidence
-              + (1 - ratioWeight) * 0.15;
-            const confidenceSum = compositeRecovery.confidence
-              + adjustedLinearConfidence
-              + 0.000001;
+            const deltaWeight =
+              Math.abs(magnitudeDelta) <= 0.25
+                ? 1
+                : Math.abs(magnitudeDelta) >= 0.6
+                  ? 0
+                  : 1 - (Math.abs(magnitudeDelta) - 0.25) / 0.35;
+            const adjustedLinearConfidence = linearRecovery.confidence + (1 - ratioWeight) * 0.15;
+            const confidenceSum = compositeRecovery.confidence + adjustedLinearConfidence + 0.000001;
             const linearShare = adjustedLinearConfidence / confidenceSum;
             let directionGate = 0;
             if (compositeRecovery.fallback > 0 && magnitudeDelta > 0) directionGate = 1;
             else if (magnitudeDelta > 0.3) {
               directionGate = magnitudeDelta >= 0.5 ? 1 : (magnitudeDelta - 0.3) / 0.2;
             }
-            const preliminaryWeight = (
-              linearShare * (deltaWeight * 0.5 + 0.5)
-              + (compositeRecovery.confidence <= linearRecovery.confidence ? 1 : 0)
-                * (deltaWeight * -0.5 + 0.5)
-            );
+            const preliminaryWeight =
+              linearShare * (deltaWeight * 0.5 + 0.5) +
+              (compositeRecovery.confidence <= linearRecovery.confidence ? 1 : 0) *
+                (deltaWeight * -0.5 + 0.5);
             const suppression = compositeRecovery.confidence * ratioWeight * directionGate;
             const linearWeight = preliminaryWeight * (1 - suppression);
             const compositeWeight = 1 - linearWeight;
-            const linear = linearRecovery.linear.map((channel, index) => (
-              linearWeight * channel + compositeWeight * compositeRecovery.linear[index]
-            ));
+            const linear = linearRecovery.linear.map(
+              (channel, index) => linearWeight * channel + compositeWeight * compositeRecovery.linear[index],
+            );
             let recoveredAlpha;
             if (suppression > 0.5) recoveredAlpha = compositeRecovery.alpha;
             else {
-              const alphaWeight = ((1 - ratioWeight) * (1 - linearShare) + linearShare)
-                * (1 - suppression);
+              const alphaWeight = ((1 - ratioWeight) * (1 - linearShare) + linearShare) * (1 - suppression);
               if (deltaWeight > 0.5) {
-                recoveredAlpha = alphaWeight * linearRecovery.alpha
-                  + (1 - alphaWeight) * compositeRecovery.alpha;
+                recoveredAlpha =
+                  alphaWeight * linearRecovery.alpha + (1 - alphaWeight) * compositeRecovery.alpha;
               } else {
-                const selectedAlpha = alphaWeight >= 0.5
-                  ? linearRecovery.alpha
-                  : compositeRecovery.alpha;
-                recoveredAlpha = selectedAlpha * 0.6
-                  + Math.min(linearRecovery.alpha, compositeRecovery.alpha) * 0.4;
+                const selectedAlpha = alphaWeight >= 0.5 ? linearRecovery.alpha : compositeRecovery.alpha;
+                recoveredAlpha =
+                  selectedAlpha * 0.6 + Math.min(linearRecovery.alpha, compositeRecovery.alpha) * 0.4;
               }
             }
             recovered = { valid: true, linear, alpha: recoveredAlpha };
@@ -540,11 +496,12 @@
         const x = pixel % width;
         const y = Math.floor(pixel / width);
         if (
-          (x > 0 && !selectedMask[pixel - 1])
-          || (x + 1 < width && !selectedMask[pixel + 1])
-          || (y > 0 && !selectedMask[pixel - width])
-          || (y + 1 < height && !selectedMask[pixel + width])
-        ) frontier[pixel] = 1;
+          (x > 0 && !selectedMask[pixel - 1]) ||
+          (x + 1 < width && !selectedMask[pixel + 1]) ||
+          (y > 0 && !selectedMask[pixel - width]) ||
+          (y + 1 < height && !selectedMask[pixel + width])
+        )
+          frontier[pixel] = 1;
       }
       const referenceLinear = [
         referenceSrgbToLinear(referenceColor.r),
@@ -556,13 +513,8 @@
         referenceSrgbToLinear(replacementColor.g),
         referenceSrgbToLinear(replacementColor.b),
       ];
-      const linearAxis = referenceLinear.map(
-        (channel, index) => channel - replacementLinear[index],
-      );
-      const linearAxisLengthSquared = linearAxis.reduce(
-        (sum, channel) => sum + channel * channel,
-        0,
-      );
+      const linearAxis = referenceLinear.map((channel, index) => channel - replacementLinear[index]);
+      const linearAxisLengthSquared = linearAxis.reduce((sum, channel) => sum + channel * channel, 0);
       const halfLinearAxisLengthSquared = linearAxisLengthSquared * 0.5;
       const replacementYcbcr = rgbToReferenceYcbcr(
         replacementColor.r,
@@ -587,12 +539,7 @@
             if (!offsetX && !offsetY) continue;
             const neighborX = x + offsetX;
             const neighborY = y + offsetY;
-            if (
-              neighborX < 0
-              || neighborX >= width
-              || neighborY < 0
-              || neighborY >= height
-            ) continue;
+            if (neighborX < 0 || neighborX >= width || neighborY < 0 || neighborY >= height) continue;
             const neighbor = neighborY * width + neighborX;
             if (!visited[neighbor]) continue;
             const alpha = data[neighbor * 4 + 3];
@@ -616,9 +563,7 @@
           alpha = Math.max(alpha, minimumAlpha);
           const neighborAlpha = minimumVisitedNeighborAlpha(pixel);
           if (neighborAlpha >= 241) {
-            const recovered = Math.trunc(
-              (layer / safeRadius) * (255 - neighborAlpha) + neighborAlpha + 0.5,
-            );
+            const recovered = Math.trunc((layer / safeRadius) * (255 - neighborAlpha) + neighborAlpha + 0.5);
             alpha = Math.max(alpha, recovered);
           }
         }
@@ -630,11 +575,8 @@
       const expandedThreshold = Math.min(260100, threshold * 4);
       const thresholdRange = expandedThreshold - threshold;
       if (modeNumber === 0 && thresholdRange <= 0) return;
-      if (
-        modeNumber !== 0
-        && referenceColor.a === replacementColor.a
-        && linearAxisLengthSquared < 0.0001
-      ) return;
+      if (modeNumber !== 0 && referenceColor.a === replacementColor.a && linearAxisLengthSquared < 0.0001)
+        return;
 
       for (let layer = 1; layer <= safeRadius; layer += 1) {
         const next = new Uint8Array(pixelCount);
@@ -669,27 +611,34 @@
             const redDelta = edgeSource[offset] - referenceColor.r;
             const greenDelta = edgeSource[offset + 1] - referenceColor.g;
             const blueDelta = edgeSource[offset + 2] - referenceColor.b;
-            const distanceSquared = redDelta * redDelta
-              + greenDelta * greenDelta
-              + blueDelta * blueDelta;
+            const distanceSquared = redDelta * redDelta + greenDelta * greenDelta + blueDelta * blueDelta;
             if (distanceSquared > expandedThreshold) {
               if (edgeSource[offset + 3] !== 255) layerChanged = true;
               continue;
             }
-            const toleranceWeight = distanceSquared > threshold
-              ? 1 - (distanceSquared - threshold) / thresholdRange
-              : 1;
-            const influence = toleranceWeight
-              * (1 - (layer - 0.5) / safeRadius)
-              * toleranceWeight;
-            data[offset] = clamp(Math.trunc(edgeSource[offset]
-              + (replacementColor.r - referenceColor.r) * influence + 0.5), 0, 255);
-            data[offset + 1] = clamp(Math.trunc(edgeSource[offset + 1]
-              + (replacementColor.g - referenceColor.g) * influence + 0.5), 0, 255);
-            data[offset + 2] = clamp(Math.trunc(edgeSource[offset + 2]
-              + (replacementColor.b - referenceColor.b) * influence + 0.5), 0, 255);
-            data[offset + 3] = clamp(Math.trunc(edgeSource[offset + 3]
-              + alphaDelta * influence + 0.5), 0, 255);
+            const toleranceWeight =
+              distanceSquared > threshold ? 1 - (distanceSquared - threshold) / thresholdRange : 1;
+            const influence = toleranceWeight * (1 - (layer - 0.5) / safeRadius) * toleranceWeight;
+            data[offset] = clamp(
+              Math.trunc(edgeSource[offset] + (replacementColor.r - referenceColor.r) * influence + 0.5),
+              0,
+              255,
+            );
+            data[offset + 1] = clamp(
+              Math.trunc(edgeSource[offset + 1] + (replacementColor.g - referenceColor.g) * influence + 0.5),
+              0,
+              255,
+            );
+            data[offset + 2] = clamp(
+              Math.trunc(edgeSource[offset + 2] + (replacementColor.b - referenceColor.b) * influence + 0.5),
+              0,
+              255,
+            );
+            data[offset + 3] = clamp(
+              Math.trunc(edgeSource[offset + 3] + alphaDelta * influence + 0.5),
+              0,
+              255,
+            );
             layerChanged = true;
             continue;
           }
@@ -709,20 +658,15 @@
             referenceSrgbToLinear(edgeSource[offset + 1]),
             referenceSrgbToLinear(edgeSource[offset + 2]),
           ];
-          const relative = pixelLinear.map(
-            (channel, index) => channel - replacementLinear[index],
-          );
-          const projection = relative.reduce(
-            (sum, channel, index) => sum + channel * linearAxis[index],
-            0,
-          ) / linearAxisLengthSquared;
+          const relative = pixelLinear.map((channel, index) => channel - replacementLinear[index]);
+          const projection =
+            relative.reduce((sum, channel, index) => sum + channel * linearAxis[index], 0) /
+            linearAxisLengthSquared;
           let confidence = 0;
           if (projection > 0.01) {
             if (modeNumber === 2) confidence = 1;
             else {
-              const residual = relative.map(
-                (channel, index) => channel - projection * linearAxis[index],
-              );
+              const residual = relative.map((channel, index) => channel - projection * linearAxis[index]);
               const residualSquared = residual.reduce((sum, channel) => sum + channel * channel, 0);
               if (residualSquared < halfLinearAxisLengthSquared) {
                 confidence = 1 - residualSquared / halfLinearAxisLengthSquared;
@@ -750,9 +694,8 @@
             data[offset] = recovered.r;
             data[offset + 1] = recovered.g;
             data[offset + 2] = recovered.b;
-            const alphaCandidate = projection < 0.3
-              ? 255
-              : edgeSource[offset + 3] + colorInfluence * alphaDelta;
+            const alphaCandidate =
+              projection < 0.3 ? 255 : edgeSource[offset + 3] + colorInfluence * alphaDelta;
             data[offset + 3] = constrainLayerAlpha(pixel, alphaCandidate, layer);
           } else {
             let taper = 1;
@@ -822,11 +765,8 @@
       );
       const output = new Uint8ClampedArray(source);
       for (let pixel = 0; pixel < width * height; pixel += 1) {
-        if (
-          !selectedMask[pixel]
-          || (operationMask && operationMask[pixel] !== 255)
-          || protectedMask?.[pixel]
-        ) continue;
+        if (!selectedMask[pixel] || (operationMask && operationMask[pixel] !== 255) || protectedMask?.[pixel])
+          continue;
         const offset = pixel * 4;
         output[offset] = replacementColor.r;
         output[offset + 1] = replacementColor.g;
@@ -896,4 +836,4 @@
   }
 
   return { createReferenceRecoveryPipeline };
-}));
+});

@@ -2,7 +2,7 @@
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.CutoutLocalTrackingCore = api;
-}(typeof globalThis !== "undefined" ? globalThis : this, () => {
+})(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 
   /**
@@ -43,11 +43,7 @@
   function createLocalAnchor(data, width, height, point, options = {}) {
     if (!data || data.length !== width * height * 4 || width <= 0 || height <= 0) return null;
     if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return null;
-    const radius = Math.round(clamp(
-      options.radius ?? Math.round(Math.min(width, height) * 0.0125),
-      5,
-      14,
-    ));
+    const radius = Math.round(clamp(options.radius ?? Math.round(Math.min(width, height) * 0.0125), 5, 14));
     const size = radius * 2 + 1;
     const pixels = new Uint8ClampedArray(size * size * 4);
     const valid = new Uint8Array(size * size);
@@ -83,14 +79,7 @@
    * @param {number} sampleStep Patch sampling step.
    * @returns {number} Normalized error where lower is better.
    */
-  function localAnchorError(
-    anchor,
-    targetData,
-    targetWidth,
-    targetHeight,
-    candidate,
-    sampleStep,
-  ) {
+  function localAnchorError(anchor, targetData, targetWidth, targetHeight, candidate, sampleStep) {
     const scaleX = targetWidth / Math.max(1, anchor.sourceWidth);
     const scaleY = targetHeight / Math.max(1, anchor.sourceHeight);
     let weightedError = 0;
@@ -116,11 +105,10 @@
         const alphaError = Math.abs(sourceAlpha - targetAlpha) / 255;
         const colorVisible = Math.max(sourceAlpha, targetAlpha) > 24;
         const colorError = colorVisible
-          ? (
-            Math.abs(anchor.data[sourceOffset] - targetData[targetOffset])
-            + Math.abs(anchor.data[sourceOffset + 1] - targetData[targetOffset + 1])
-            + Math.abs(anchor.data[sourceOffset + 2] - targetData[targetOffset + 2])
-          ) / 765
+          ? (Math.abs(anchor.data[sourceOffset] - targetData[targetOffset]) +
+              Math.abs(anchor.data[sourceOffset + 1] - targetData[targetOffset + 1]) +
+              Math.abs(anchor.data[sourceOffset + 2] - targetData[targetOffset + 2])) /
+            765
           : 0;
         const alphaWeight = colorVisible ? 0.62 : 1;
         const colorWeight = colorVisible ? 0.38 : 0;
@@ -141,21 +129,12 @@
    * @param {{searchRadius?:number,maximumError?:number,minimumMargin?:number}} [options] Search gates.
    * @returns {{point:{x:number,y:number},matched:boolean,error:number,confidence:number,margin:number,searchRadius:number}|null}
    */
-  function trackLocalAnchor(
-    anchor,
-    targetData,
-    targetWidth,
-    targetHeight,
-    predictedPoint,
-    options = {},
-  ) {
+  function trackLocalAnchor(anchor, targetData, targetWidth, targetHeight, predictedPoint, options = {}) {
     if (!anchor || !targetData || targetData.length !== targetWidth * targetHeight * 4) return null;
     if (!Number.isFinite(predictedPoint?.x) || !Number.isFinite(predictedPoint?.y)) return null;
-    const searchRadius = Math.round(clamp(
-      options.searchRadius ?? Math.min(targetWidth, targetHeight) * 0.1,
-      24,
-      96,
-    ));
+    const searchRadius = Math.round(
+      clamp(options.searchRadius ?? Math.min(targetWidth, targetHeight) * 0.1, 24, 96),
+    );
     const maximumError = clamp(options.maximumError ?? 0.34, 0.05, 1);
     const minimumMargin = clamp(options.minimumMargin ?? 0.008, 0, 0.25);
     const centerPatchIndex = (anchor.radius * anchor.size + anchor.radius) * 4;
@@ -177,8 +156,7 @@
         { x, y },
         sampleStep,
       );
-      const spatialPenalty = Math.hypot(x - predictedX, y - predictedY)
-        / Math.max(1, searchRadius) * 0.045;
+      const spatialPenalty = (Math.hypot(x - predictedX, y - predictedY) / Math.max(1, searchRadius)) * 0.045;
       candidates.push({ x, y, error: textureError + spatialPenalty });
     };
     for (let y = Math.round(predictedY - searchRadius); y <= predictedY + searchRadius; y += coarseStep) {
@@ -197,29 +175,22 @@
         if (targetOffset < 0) continue;
         const targetTransparent = targetData[targetOffset + 3] <= 24;
         if (sourceTransparent !== targetTransparent) continue;
-        const textureError = localAnchorError(
-          anchor,
-          targetData,
-          targetWidth,
-          targetHeight,
-          { x, y },
-          1,
-        );
-        const spatialPenalty = Math.hypot(x - predictedX, y - predictedY)
-          / Math.max(1, searchRadius) * 0.045;
+        const textureError = localAnchorError(anchor, targetData, targetWidth, targetHeight, { x, y }, 1);
+        const spatialPenalty =
+          (Math.hypot(x - predictedX, y - predictedY) / Math.max(1, searchRadius)) * 0.045;
         refined.push({ x, y, error: textureError + spatialPenalty });
       }
     }
     refined.sort((left, right) => left.error - right.error);
     const best = refined[0] || coarseBest;
     const ambiguityDistance = Math.max(3, anchor.radius * 0.75);
-    const alternate = candidates.find((candidate) => (
-      Math.hypot(candidate.x - best.x, candidate.y - best.y) >= ambiguityDistance
-    ));
-    const margin = alternate ? Math.max(0, alternate.error - best.error) : 1;
-    const matched = best.error <= maximumError && (
-      margin >= minimumMargin || best.error <= Math.min(0.08, maximumError * 0.35)
+    const alternate = candidates.find(
+      (candidate) => Math.hypot(candidate.x - best.x, candidate.y - best.y) >= ambiguityDistance,
     );
+    const margin = alternate ? Math.max(0, alternate.error - best.error) : 1;
+    const matched =
+      best.error <= maximumError &&
+      (margin >= minimumMargin || best.error <= Math.min(0.08, maximumError * 0.35));
     return {
       point: { x: best.x, y: best.y },
       matched,
@@ -262,8 +233,7 @@
         data[offset + 1] - sampled.g,
         data[offset + 2] - sampled.b,
       );
-      return Math.abs(alpha - Number(sampled.a ?? 255)) <= alphaTolerance
-        && colorDistance <= tolerance;
+      return Math.abs(alpha - Number(sampled.a ?? 255)) <= alphaTolerance && colorDistance <= tolerance;
     };
     const visited = new Uint8Array(width * height);
     const queue = new Int32Array(width * height);
@@ -339,29 +309,18 @@
    * @param {{tolerance?:number,searchRadius?:number}} [options] Matching options.
    * @returns {{point:{x:number,y:number},region:ReturnType<typeof measureConnectedRegion>,score:number,confidence:number}|null}
    */
-  function findMatchingTransparentRegion(
-    data,
-    width,
-    height,
-    sourceRegion,
-    predictedPoint,
-    options = {},
-  ) {
+  function findMatchingTransparentRegion(data, width, height, sourceRegion, predictedPoint, options = {}) {
     if (!data || data.length !== width * height * 4 || !sourceRegion?.count) return null;
     if (sourceRegion.touchesBoundary || sourceRegion.truncated) return null;
     const alphaThreshold = Math.max(16, Math.round(clamp(options.tolerance ?? 18, 0, 100) * 2.55));
-    const searchRadius = clamp(
-      options.searchRadius ?? Math.min(width, height) * 0.2,
-      48,
-      180,
-    );
+    const searchRadius = clamp(options.searchRadius ?? Math.min(width, height) * 0.2, 48, 180);
     const predictedX = clamp(predictedPoint?.x, 0, width - 1);
     const predictedY = clamp(predictedPoint?.y, 0, height - 1);
     const sourceImageArea = Math.max(
       1,
       Number(sourceRegion.imageWidth || width) * Number(sourceRegion.imageHeight || height),
     );
-    const expectedCount = sourceRegion.count * (width * height) / sourceImageArea;
+    const expectedCount = (sourceRegion.count * (width * height)) / sourceImageArea;
     const sourceBoundsWidth = Math.max(1, sourceRegion.bounds.x2 - sourceRegion.bounds.x1 + 1);
     const sourceBoundsHeight = Math.max(1, sourceRegion.bounds.y2 - sourceRegion.bounds.y1 + 1);
     const sourceAspect = sourceBoundsWidth / sourceBoundsHeight;
@@ -409,11 +368,7 @@
           y + 1 < height ? index + width : -1,
         ];
         for (const neighbor of neighbors) {
-          if (
-            neighbor < 0
-            || visited[neighbor]
-            || data[neighbor * 4 + 3] > alphaThreshold
-          ) {
+          if (neighbor < 0 || visited[neighbor] || data[neighbor * 4 + 3] > alphaThreshold) {
             continue;
           }
           visited[neighbor] = 1;
@@ -424,12 +379,11 @@
       if (touchesBoundary || count < 4 || nearestDistance > searchRadius) continue;
       const areaRatio = count / Math.max(1, expectedCount);
       if (areaRatio < 0.05 || areaRatio > 12) continue;
-      const targetAspect = Math.max(1, maximumX - minimumX + 1)
-        / Math.max(1, maximumY - minimumY + 1);
+      const targetAspect = Math.max(1, maximumX - minimumX + 1) / Math.max(1, maximumY - minimumY + 1);
       const aspectError = Math.abs(Math.log(Math.max(0.001, targetAspect / sourceAspect)));
       if (aspectError > 2.5) continue;
       const areaError = Math.abs(Math.log(Math.max(0.001, areaRatio)));
-      const score = nearestDistance / searchRadius * 0.55 + areaError * 0.3 + aspectError * 0.15;
+      const score = (nearestDistance / searchRadius) * 0.55 + areaError * 0.3 + aspectError * 0.15;
       if (best && score >= best.score) continue;
       best = {
         point: nearestPoint,
@@ -477,4 +431,4 @@
     measureConnectedRegion,
     trackLocalAnchor,
   };
-}));
+});

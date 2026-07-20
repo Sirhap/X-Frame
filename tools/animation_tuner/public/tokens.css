@@ -1,0 +1,104 @@
+:root {
+  color-scheme: dark;
+  --canvas-bg: #000000;
+  --bg: #141922;
+  --panel: #1d222b;
+  --panel-2: #252b34;
+  --panel-3: #11151c;
+  --surface: #f7f3e8;
+  --surface-2: #fffaf0;
+  --line: #05070a;
+  --line-strong: #05070a;
+  --ink: #fff8ed;
+  --muted: #b9c0c8;
+  --control-bg: #fffaf0;
+  --control-ink: #11151c;
+  --control-muted: #4e5560;
+  --accent: #ff5a2d;
+  --accent-dark: #c63819;
+  --accent-2: #39d9ba;
+  --accent-3: #ffd43d;
+  --ok: #39d9ba;
+  --danger: #ff3d35;
+  --shadow: rgba(0, 0, 0, 0.62);
+  --hard-shadow: 5px 5px 0 #05070a;
+  --soft-shadow: 0 18px 36px rgba(0, 0, 0, 0.22);
+  --radius: 8px;
+  --ui-font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+  --data-font: "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+
+button,
+[role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: color-mix(in srgb, var(--accent-2) 28%, transparent);
+}
+
+.skipLink {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 3000;
+  padding: 9px 12px;
+  transform: translateY(-150%);
+  border: 3px solid var(--line);
+  border-radius: 7px;
+  background: var(--accent-2);
+  color: #06120f;
+  font-weight: 950;
+}
+
+.skipLink:focus-visible {
+  transform: translateY(0);
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 80% 6%, rgba(57, 217, 186, 0.16), transparent 24%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px) 0 0 / 34px 34px,
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 34px 34px,
+    var(--bg);
+  color: var(--ink);
+  font-family: var(--ui-font);
+}
+
+body.theme-light {
+  color-scheme: light;
+  --bg: #edf1f4;
+  --panel: #fffaf0;
+  --panel-2: #f5efe2;
+  --panel-3: #ffffff;
+  --surface: #fffaf0;
+  --surface-2: #ffffff;
+  --ink: #11151c;
+  --muted: #4e5560;
+  --control-bg: #ffffff;
+  --control-ink: #11151c;
+  --control-muted: #4e5560;
+  --shadow: rgba(5, 7, 10, 0.22);
+  --soft-shadow: 0 18px 32px rgba(5, 7, 10, 0.12);
+  background:
+    radial-gradient(circle at 83% 5%, rgba(57, 217, 186, 0.2), transparent 22%),
+    linear-gradient(90deg, rgba(5, 7, 10, 0.045) 1px, transparent 1px) 0 0 / 34px 34px,
+    linear-gradient(rgba(5, 7, 10, 0.035) 1px, transparent 1px) 0 0 / 34px 34px,
+    var(--bg);
+}
+
+body.theme-dark {
+  color-scheme: dark;
+}

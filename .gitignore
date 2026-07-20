@@ -37,3 +37,5 @@ audio/projects/*
 # Generated exports, screenshots, and local browser audit state.
 output/
 .playwright-cli/
+.codex-artifacts/
+reprocessed-frames/

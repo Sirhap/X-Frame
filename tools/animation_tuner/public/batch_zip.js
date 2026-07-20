@@ -4,7 +4,7 @@
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
   root.BatchZip = api;
-}(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
   const textEncoder = new TextEncoder();
@@ -20,7 +20,7 @@
     for (let index = 0; index < 256; index += 1) {
       let value = index;
       for (let bit = 0; bit < 8; bit += 1) {
-        value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+        value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
       }
       crcTable[index] = value >>> 0;
     }
@@ -138,9 +138,8 @@
       const name = String(entry.name || `file_${index + 1}`).replaceAll("\\", "/");
       const nameBytes = textEncoder.encode(name);
       const original = await toBytes(entry.data);
-      const compressed = options.compress === false
-        ? { method: 0, bytes: original }
-        : await compressEntry(original);
+      const compressed =
+        options.compress === false ? { method: 0, bytes: original } : await compressEntry(original);
       if (original.length > 0xffffffff || compressed.bytes.length > 0xffffffff) {
         throw new Error(`ZIP64 is required for ${name}.`);
       }
@@ -205,4 +204,4 @@
   }
 
   return { buildZip, crc32, toBytes };
-}));
+});
