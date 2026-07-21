@@ -19,7 +19,7 @@
     const {
       state,
       elements,
-      quality,
+      cutoutAnalysisExecutor,
       getCurrentAnimation,
       text,
       setStatus,
@@ -30,7 +30,7 @@
       renderPreview,
       previewSourcePoint,
       backgroundController,
-      core,
+      colorUtils,
       recordItemEdit,
       createRepairTrackingMetadata,
       schedulePreview,
@@ -41,7 +41,7 @@
     if (
       !state ||
       !elements ||
-      !quality ||
+      !cutoutAnalysisExecutor ||
       typeof getCurrentAnimation !== "function" ||
       typeof text !== "function" ||
       typeof setStatus !== "function" ||
@@ -52,7 +52,7 @@
       typeof renderPreview !== "function" ||
       typeof previewSourcePoint !== "function" ||
       !backgroundController ||
-      !core ||
+      !colorUtils ||
       typeof recordItemEdit !== "function" ||
       typeof createRepairTrackingMetadata !== "function" ||
       typeof schedulePreview !== "function"
@@ -68,14 +68,26 @@
 
     /**
      * Re-evaluates frame-to-frame quality after one result changes.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    function refreshQualityAnalysis() {
+    async function refreshQualityAnalysis() {
       const currentAnimation = getCurrentAnimation();
-      const analysis = quality.analyzeCutoutQualitySequence(
-        state.items.map((item) => item.qualityMetrics),
-        { circular: currentAnimation?.loop === true },
-      );
+      const metrics = state.items.map((item) => item.qualityMetrics);
+      let analysis;
+      try {
+        analysis = await cutoutAnalysisExecutor.analyzeQuality(metrics, {
+          circular: currentAnimation?.loop === true,
+        });
+      } catch (error) {
+        setStatus(error?.code || error?.message || "ENGINE_EXECUTION_FAILED", "error");
+        return;
+      }
+      if (
+        metrics.length !== state.items.length ||
+        metrics.some((metric, index) => metric !== state.items[index].qualityMetrics)
+      ) {
+        return;
+      }
       state.items.forEach((item, index) => {
         item.quality = analysis[index];
       });
@@ -221,7 +233,7 @@
       if (!color || !sourceColor) return;
       if (state.samplingProtectedColor) {
         const duplicate = item.protectedColors.some(
-          (protectedColor) => core.colorDistance(color.r, color.g, color.b, protectedColor) < 1,
+          (protectedColor) => colorUtils.colorDistance(color.r, color.g, color.b, protectedColor) < 1,
         );
         if (!duplicate) {
           recordItemEdit(item);
@@ -229,7 +241,7 @@
         }
         invalidateItem(item);
         state.samplingProtectedColor = false;
-        setStatus(text("protectedColorAdded", { color: core.rgbToHex(color) }), "success");
+        setStatus(text("protectedColorAdded", { color: colorUtils.rgbToHex(color) }), "success");
         renderPreview();
         return;
       }
@@ -261,12 +273,12 @@
           item.undoneRepairs = [];
         }
         state.previewMode = "result";
-        elements.cutoutColor.value = core.rgbToHex(color);
+        elements.cutoutColor.value = colorUtils.rgbToHex(color);
         item.processingActivated = true;
         item.automaticCutoutActivated = true;
         setStatus(
           text(clearsVisibleResultColor ? "backgroundResultCleared" : "backgroundAdded", {
-            color: core.rgbToHex(color),
+            color: colorUtils.rgbToHex(color),
           }),
           "success",
         );
@@ -277,7 +289,7 @@
       backgroundController.clearBackgroundSamples(item);
       backgroundController.promoteBackgroundSample(item, color, { x, y });
       invalidateItem(item);
-      elements.cutoutColor.value = core.rgbToHex(color);
+      elements.cutoutColor.value = colorUtils.rgbToHex(color);
       item.processingActivated = true;
       item.automaticCutoutActivated = true;
       schedulePreview({ recordHistory: false });

@@ -33,9 +33,18 @@ function createFixture() {
     previewPanY: 0,
     confirmationResolver: null,
   };
+  const confirmationCard = {
+    dataset: {},
+    removeAttribute(name) {
+      if (name === "data-tone") delete this.dataset.tone;
+    },
+  };
   const elements = {
     cutoutResult: { dataset: {}, setAttribute() {}, classList: classList() },
-    cutoutConfirmPanel: { hidden: true },
+    cutoutConfirmPanel: {
+      hidden: true,
+      querySelector: (selector) => (selector === ".cutoutConfirmCard" ? confirmationCard : null),
+    },
     cutoutModal: {
       hidden: false,
       classList: classList(),
@@ -57,9 +66,18 @@ function createFixture() {
     cutoutViewCaption: {},
     cutoutRepairTools: { dataset: {} },
     cutoutConfirmTitle: {},
-    cutoutConfirmApply: { focus() {} },
+    cutoutConfirmCancel: {
+      focus() {
+        documentRef.activeElement = this;
+      },
+    },
+    cutoutConfirmApply: {
+      focus() {
+        documentRef.activeElement = this;
+      },
+    },
     cutoutConfirmMessage: {},
-    cutoutConfirmDetails: { innerHTML: "", append() {} },
+    cutoutConfirmDetails: { hidden: false, innerHTML: "", append() {} },
     cutoutBatchTrayActions: {
       scrollWidth: 500,
       clientWidth: 100,
@@ -74,8 +92,14 @@ function createFixture() {
     cutoutProtectionTolerance: { value: "8" },
   };
   const app = {};
+  const returnFocus = {
+    isConnected: true,
+    focus() {
+      documentRef.activeElement = this;
+    },
+  };
   const documentRef = {
-    activeElement: null,
+    activeElement: returnFocus,
     title: "",
     querySelector: () => app,
     querySelectorAll: () => [],
@@ -105,7 +129,7 @@ function createFixture() {
     htmlElementConstructor: HTMLElementStub,
   };
   const controller = createController(dependencies);
-  return { controller, dependencies, state, elements, documentRef };
+  return { confirmationCard, controller, dependencies, state, elements, documentRef, returnFocus };
 }
 
 test("UI controller validates required dependencies", () => {
@@ -149,12 +173,27 @@ test("preview pan controller preserves viewport state and redraws", () => {
 });
 
 test("confirmation controller resolves the active promise", async () => {
-  const { controller, elements } = createFixture();
+  const { controller, elements, documentRef, returnFocus } = createFixture();
   const resultPromise = controller.requestConfirmation("message", [["count", 2]]);
   assert.equal(elements.cutoutConfirmPanel.hidden, false);
+  assert.equal(elements.cutoutConfirmDetails.hidden, false);
+  assert.equal(documentRef.activeElement, elements.cutoutConfirmApply);
   controller.resolveConfirmation(true);
   assert.equal(await resultPromise, true);
   assert.equal(elements.cutoutConfirmPanel.hidden, true);
+  assert.equal(documentRef.activeElement, returnFocus);
+});
+
+test("danger confirmation focuses cancellation and hides empty details", async () => {
+  const { confirmationCard, controller, elements, documentRef } = createFixture();
+  const resultPromise = controller.requestConfirmation("Delete batch?", [], { tone: "danger" });
+
+  assert.equal(confirmationCard.dataset.tone, "danger");
+  assert.equal(elements.cutoutConfirmDetails.hidden, true);
+  assert.equal(documentRef.activeElement, elements.cutoutConfirmCancel);
+  controller.resolveConfirmation(false);
+  assert.equal(await resultPromise, false);
+  assert.equal(confirmationCard.dataset.tone, undefined);
 });
 
 test("toolbar scrolling keeps wheel and keyboard behavior bounded", () => {

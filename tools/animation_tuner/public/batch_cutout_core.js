@@ -35,6 +35,7 @@
     referenceReplaceCore,
     connectivityCore,
     referenceInputCore,
+    root?.ProtectedWasmKernelBridge,
   );
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.BatchCutoutCore = api;
@@ -48,6 +49,7 @@
     referenceReplaceCore,
     connectivityCore,
     referenceInputCore,
+    protectedWasmKernelBridge,
   ) => {
     "use strict";
 
@@ -376,7 +378,7 @@
      * @param {{tolerance?:number,edgeRadius?:number,backgroundRadius?:number,mask?:Uint8Array|null}} options Kernel options.
      * @returns {Uint8ClampedArray}
      */
-    function applyReferenceEdgeColorRestore(
+    function applyDevelopmentReferenceEdgeColorRestore(
       source,
       width,
       height,
@@ -491,6 +493,43 @@
         output[offset + 2] = blue;
       }
       return output;
+    }
+
+    /**
+     * Routes protected edge restoration through WASM in production Workers.
+     * @param {Uint8ClampedArray|Uint8Array} source Source RGBA pixels.
+     * @param {number} width Image width.
+     * @param {number} height Image height.
+     * @param {object} correctColor Desired edge color.
+     * @param {object} contaminatedColor Contaminated edge color.
+     * @param {object} [options] Restoration options.
+     * @returns {Uint8ClampedArray} Restored pixels.
+     */
+    function applyReferenceEdgeColorRestore(
+      source,
+      width,
+      height,
+      correctColor,
+      contaminatedColor,
+      options = {},
+    ) {
+      return protectedWasmKernelBridge?.isReady?.()
+        ? protectedWasmKernelBridge.restoreEdges(
+            source,
+            width,
+            height,
+            correctColor,
+            contaminatedColor,
+            options,
+          )
+        : applyDevelopmentReferenceEdgeColorRestore(
+            source,
+            width,
+            height,
+            correctColor,
+            contaminatedColor,
+            options,
+          );
     }
 
     /**
@@ -663,7 +702,7 @@
           const connectedOperationMask = Uint8Array.from(connectedCandidates, (candidate) =>
             candidate ? 255 : 0,
           );
-          data = applyReferenceColorReplace(
+          data = protectedReferenceColorReplace(
             data,
             width,
             height,
@@ -673,7 +712,7 @@
             { ...pipelineOptions, mask: connectedOperationMask },
           );
         } else {
-          data = applyReferenceColorReplace(
+          data = protectedReferenceColorReplace(
             data,
             width,
             height,
@@ -952,10 +991,37 @@
       return { data, removedPixels, partialPixels };
     }
 
+    /**
+     * Routes a protected reference operation through an initialized WASM core.
+     * Development and explicit non-production tests retain the readable JavaScript implementation.
+     * @param {"applyReferenceColorReplace"|"applyReferenceFloodFillDespill"} operation Protected operation.
+     * @param {Function} developmentImplementation Readable development implementation.
+     * @param {unknown[]} args Product-kernel arguments.
+     * @returns {Uint8ClampedArray} Owned result pixels.
+     */
+    function runProtectedReferenceOperation(operation, developmentImplementation, args) {
+      if (protectedWasmKernelBridge?.isReady?.()) {
+        return protectedWasmKernelBridge[operation](...args);
+      }
+      return developmentImplementation(...args);
+    }
+
+    function protectedReferenceColorReplace(...args) {
+      return runProtectedReferenceOperation("applyReferenceColorReplace", applyReferenceColorReplace, args);
+    }
+
+    function protectedReferenceFloodFillDespill(...args) {
+      return runProtectedReferenceOperation(
+        "applyReferenceFloodFillDespill",
+        applyReferenceFloodFillDespill,
+        args,
+      );
+    }
+
     const productPipeline = productCore.createProductPipeline({
       applyCutout,
-      applyReferenceColorReplace,
-      applyReferenceFloodFillDespill,
+      applyReferenceColorReplace: protectedReferenceColorReplace,
+      applyReferenceFloodFillDespill: protectedReferenceFloodFillDespill,
       clamp,
       colorDistance,
       createProtectedRegionMask,
@@ -970,10 +1036,10 @@
       applyProductCutout: productPipeline.applyProductCutout,
       applyReferenceChromaKey,
       applyReferenceChromaKeyClean,
-      applyReferenceColorReplace,
+      applyReferenceColorReplace: protectedReferenceColorReplace,
       applyReferenceDespillPixel,
       applyReferenceEdgeColorRestore,
-      applyReferenceFloodFillDespill,
+      applyReferenceFloodFillDespill: protectedReferenceFloodFillDespill,
       chamfer345Distance,
       chamferDistanceToTransparent,
       colorDistance,

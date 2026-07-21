@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="/organizer_video.css" />
     <link rel="stylesheet" href="/organizer_workspace.css" />
     <link rel="stylesheet" href="/organizer_cutout_responsive.css" />
+    <link rel="stylesheet" href="/app_confirm.css" />
     <link rel="stylesheet" href="/responsive.css" />
   </head>
   <body>
@@ -98,7 +99,7 @@
           <input
             id="groupSearch"
             type="search"
-            placeholder="名称、类型、来源"
+            placeholder="名称、类型、来源…"
             data-i18n-placeholder="groupSearchPlaceholder"
             autocomplete="off"
           />
@@ -142,13 +143,28 @@
             <label class="number stepNumber"
               ><span data-i18n="scale">缩放</span
               ><span class="numberStepper"
-                ><button type="button" class="numberStep" data-step-target="baseScale" data-step-dir="-1">
+                ><button
+                  type="button"
+                  class="numberStep"
+                  data-step-target="baseScale"
+                  data-step-dir="-1"
+                  data-i18n-aria-label="decreaseValue"
+                  data-i18n-value="scale"
+                >
                   &lsaquo;</button
-                ><input id="baseScale" type="number" step="0.001" readonly /><button
+                ><input
+                  id="baseScale"
+                  type="number"
+                  step="0.001"
+                  readonly
+                  data-i18n-aria-label="scale"
+                /><button
                   type="button"
                   class="numberStep"
                   data-step-target="baseScale"
                   data-step-dir="1"
+                  data-i18n-aria-label="increaseValue"
+                  data-i18n-value="scale"
                 >
                   &rsaquo;
                 </button></span
@@ -157,13 +173,28 @@
             <label class="number stepNumber"
               ><span data-i18n="rotate">旋转</span
               ><span class="numberStepper"
-                ><button type="button" class="numberStep" data-step-target="baseRotation" data-step-dir="-1">
+                ><button
+                  type="button"
+                  class="numberStep"
+                  data-step-target="baseRotation"
+                  data-step-dir="-1"
+                  data-i18n-aria-label="decreaseValue"
+                  data-i18n-value="rotate"
+                >
                   &lsaquo;</button
-                ><input id="baseRotation" type="number" step="1" readonly /><button
+                ><input
+                  id="baseRotation"
+                  type="number"
+                  step="1"
+                  readonly
+                  data-i18n-aria-label="rotate"
+                /><button
                   type="button"
                   class="numberStep"
                   data-step-target="baseRotation"
                   data-step-dir="1"
+                  data-i18n-aria-label="increaseValue"
+                  data-i18n-value="rotate"
                 >
                   &rsaquo;
                 </button></span
@@ -172,13 +203,28 @@
             <label class="number stepNumber"
               ><span data-i18n="scaleX">缩放 X</span
               ><span class="numberStepper"
-                ><button type="button" class="numberStep" data-step-target="baseScaleX" data-step-dir="-1">
+                ><button
+                  type="button"
+                  class="numberStep"
+                  data-step-target="baseScaleX"
+                  data-step-dir="-1"
+                  data-i18n-aria-label="decreaseValue"
+                  data-i18n-value="scaleX"
+                >
                   &lsaquo;</button
-                ><input id="baseScaleX" type="number" step="0.001" readonly /><button
+                ><input
+                  id="baseScaleX"
+                  type="number"
+                  step="0.001"
+                  readonly
+                  data-i18n-aria-label="scaleX"
+                /><button
                   type="button"
                   class="numberStep"
                   data-step-target="baseScaleX"
                   data-step-dir="1"
+                  data-i18n-aria-label="increaseValue"
+                  data-i18n-value="scaleX"
                 >
                   &rsaquo;
                 </button></span
@@ -187,13 +233,28 @@
             <label class="number stepNumber"
               ><span data-i18n="scaleY">缩放 Y</span
               ><span class="numberStepper"
-                ><button type="button" class="numberStep" data-step-target="baseScaleY" data-step-dir="-1">
+                ><button
+                  type="button"
+                  class="numberStep"
+                  data-step-target="baseScaleY"
+                  data-step-dir="-1"
+                  data-i18n-aria-label="decreaseValue"
+                  data-i18n-value="scaleY"
+                >
                   &lsaquo;</button
-                ><input id="baseScaleY" type="number" step="0.001" readonly /><button
+                ><input
+                  id="baseScaleY"
+                  type="number"
+                  step="0.001"
+                  readonly
+                  data-i18n-aria-label="scaleY"
+                /><button
                   type="button"
                   class="numberStep"
                   data-step-target="baseScaleY"
                   data-step-dir="1"
+                  data-i18n-aria-label="increaseValue"
+                  data-i18n-value="scaleY"
                 >
                   &rsaquo;
                 </button></span
@@ -202,13 +263,22 @@
             <label class="number stepNumber"
               ><span data-i18n="offsetX">偏移 X</span
               ><span class="numberStepper"
-                ><button type="button" class="numberStep" data-step-target="baseX" data-step-dir="-1">
+                ><button
+                  type="button"
+                  class="numberStep"
+                  data-step-target="baseX"
+                  data-step-dir="-1"
+                  data-i18n-aria-label="decreaseValue"
+                  data-i18n-value="offsetX"
+                >
                   &lsaquo;</button
-                ><input id="baseX" type="number" step="1" readonly /><button
+                ><input id="baseX" type="number" step="1" readonly data-i18n-aria-label="offsetX" /><button
                   type="button"
                   class="numberStep"
                   data-step-target="baseX"
                   data-step-dir="1"
+                  data-i18n-aria-label="increaseValue"
+                  data-i18n-value="offsetX"
                 >
                   &rsaquo;
                 </button></span
@@ -217,13 +287,22 @@
             <label class="number stepNumber"
               ><span data-i18n="offsetY">偏移 Y</span
               ><span class="numberStepper"
-                ><button type="button" class="numberStep" data-step-target="baseY" data-step-dir="-1">
+                ><button
+                  type="button"
+                  class="numberStep"
+                  data-step-target="baseY"
+                  data-step-dir="-1"
+                  data-i18n-aria-label="decreaseValue"
+                  data-i18n-value="offsetY"
+                >
                   &lsaquo;</button
-                ><input id="baseY" type="number" step="1" readonly /><button
+                ><input id="baseY" type="number" step="1" readonly data-i18n-aria-label="offsetY" /><button
                   type="button"
                   class="numberStep"
                   data-step-target="baseY"
                   data-step-dir="1"
+                  data-i18n-aria-label="increaseValue"
+                  data-i18n-value="offsetY"
                 >
                   &rsaquo;
                 </button></span
@@ -1461,6 +1540,17 @@
                   清空批次
                 </button>
                 <button
+                  id="cutoutNewBatch"
+                  type="button"
+                  class="secondary cutoutFooterUtility cutoutNewBatch"
+                  data-icon="＋"
+                  data-cutout-i18n="newBatch"
+                  data-cutout-i18n-title="newBatch"
+                  title="开始一个新的批次"
+                >
+                  新建批次
+                </button>
+                <button
                   id="cutoutApplyGroup"
                   type="button"
                   class="secondary cutoutFooterApply"
@@ -1490,6 +1580,7 @@
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="cutoutConfirmTitle"
+          aria-describedby="cutoutConfirmMessage"
           hidden
         >
           <div class="cutoutConfirmCard">
@@ -1724,6 +1815,7 @@
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="organizerConfirmTitle"
+          aria-describedby="organizerConfirmMessage"
           hidden
         >
           <div class="organizerConfirmCard">
@@ -2050,7 +2142,13 @@
                 <span id="organizerSelection">选中 0 帧</span>
               </div>
               <div class="organizerTagTools">
-                <input id="organizerTag" type="text" placeholder="标记，例如：攻击有效帧" />
+                <input
+                  id="organizerTag"
+                  type="text"
+                  name="frame-tag"
+                  autocomplete="off"
+                  placeholder="标记，例如：攻击有效帧…"
+                />
                 <button id="organizerApplyTag" type="button" class="secondary" data-organizer-i18n="applyTag">
                   标记选中
                 </button>
@@ -2127,7 +2225,28 @@
         </div>
       </div>
     </section>
+    <section
+      id="appConfirmPanel"
+      class="appConfirmPanel"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="appConfirmTitle"
+      aria-describedby="appConfirmMessage"
+      hidden
+    >
+      <div id="appConfirmCard" class="appConfirmCard" data-tone="warning">
+        <span>CONFIRM / LOCAL ACTION</span>
+        <h2 id="appConfirmTitle">确认操作</h2>
+        <p id="appConfirmMessage"></p>
+        <dl id="appConfirmDetails" hidden></dl>
+        <div class="appConfirmActions">
+          <button id="appConfirmCancel" type="button" class="secondary">取消</button>
+          <button id="appConfirmAccept" type="button" class="appConfirmAccept">确认</button>
+        </div>
+      </div>
+    </section>
     <script src="/image_pixel_budget.js"></script>
+    <script src="/batch_cutout_public_color.js"></script>
     <script src="/batch_cutout_color_core.js"></script>
     <script src="/batch_cutout_connectivity_core.js"></script>
     <script src="/batch_cutout_product_core.js"></script>
@@ -2168,6 +2287,8 @@
     <script src="/batch_cutout.js"></script>
     <script src="/frame_organizer_core.js"></script>
     <script src="/frame_organizer_worker_client.js"></script>
+    <script src="/protected_artifact_loader.js"></script>
+    <script src="/protected_algorithm_runtime.js"></script>
     <script src="/frame_organizer_video.js"></script>
     <script src="/frame_organizer_image_import.js"></script>
     <script src="/frame_organizer_grid.js"></script>
@@ -2182,6 +2303,7 @@
     <script src="/app_frame_selection.js"></script>
     <script src="/app_reference_frame.js"></script>
     <script src="/app_i18n.js"></script>
+    <script src="/app_confirm_controller.js"></script>
     <script src="/app_utils.js"></script>
     <script src="/app_box_geometry.js"></script>
     <script src="/app_box_selection.js"></script>

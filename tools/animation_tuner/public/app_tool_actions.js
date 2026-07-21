@@ -30,7 +30,7 @@
       setDirty = () => {},
       setSelectedProjectId = () => {},
       fetchImpl = root?.fetch,
-      windowRef = root?.window || root || {},
+      confirm = async () => false,
       storage = resolveStorage(root),
       translate = (key) => key,
       status = () => {},
@@ -124,7 +124,14 @@
       const indexes = getSelectedFrameIndexes(group);
       if (!indexes.length) return false;
       if (indexes.length === group.frames.length) return clearCurrentAnimation();
-      if (!windowRef.confirm(translate("deleteFramesConfirm", { count: indexes.length }))) return false;
+      if (
+        !(await confirm(translate("deleteFramesConfirm", { count: indexes.length }), {
+          title: translate("deleteSelectedFrames"),
+          confirmLabel: translate("deleteSelectedFrames"),
+          tone: "danger",
+        }))
+      )
+        return false;
       const removedIndexes = new Set(indexes);
       const items = group.frames
         .map((frame, sourceIndex) => ({ frame, sourceIndex }))
@@ -156,12 +163,17 @@
       }
       const animationLabel = group.name || group.animationId;
       if (
-        !windowRef.confirm(
+        !(await confirm(
           translate("clearAnimationConfirm", {
             animation: animationLabel,
             count: group.frames.length,
           }),
-        )
+          {
+            title: translate("clearAnimation"),
+            confirmLabel: translate("clearAnimation"),
+            tone: "danger",
+          },
+        ))
       )
         return false;
       setFrameMutationPending(true);

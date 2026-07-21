@@ -112,7 +112,7 @@
   padding: 0;
   border-radius: 50%;
   background: var(--accent);
-  color: #fffaf0;
+  color: #05070a;
   font: 900 32px/1 var(--data-font);
   box-shadow: 4px 4px 0 var(--line);
 }
@@ -146,6 +146,7 @@
 .cutoutModal.singleEditSession .cutoutDropzone,
 .cutoutModal.singleEditSession .cutoutBatchTray,
 .cutoutModal.singleEditSession #cutoutClear,
+.cutoutModal.singleEditSession #cutoutNewBatch,
 .cutoutModal.singleEditSession #cutoutDownload {
   display: none;
 }

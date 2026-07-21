@@ -16,7 +16,9 @@
     const {
       state,
       elements,
-      core,
+      colorUtils,
+      selectionRepairExecutor,
+      createSelectionMask,
       text,
       processItem,
       selectedItem,
@@ -33,13 +35,15 @@
       refreshQualityAnalysis,
       scheduleBatchThumbnails,
       applyCurrentGroup,
-      tracking,
-      localTracking,
+      cutoutAnalysisExecutor,
     } = dependencies;
     if (
       !state ||
       !elements ||
-      !core ||
+      !colorUtils ||
+      !selectionRepairExecutor ||
+      !cutoutAnalysisExecutor ||
+      typeof createSelectionMask !== "function" ||
       typeof processItem !== "function" ||
       typeof selectedItem !== "function"
     ) {
@@ -67,18 +71,31 @@
       if (elements.cutoutProtectionType.value === "range") {
         const boundaryStrength = Number(elements.cutoutProtectionBoundary.value);
         const padding = Number(elements.cutoutProtectionPadding.value);
-        const region = core.createProtectedRegionMask(
-          item.sourceImageData.data,
-          previewData,
-          item.sourceImageData.width,
-          item.sourceImageData.height,
-          rectangle,
-          {
-            backgroundColors: selectedBackgroundColors(item),
-            boundaryStrength,
-            padding,
-          },
-        );
+        let region;
+        try {
+          region = await selectionRepairExecutor.analyze(
+            item.sourceImageData.data,
+            item.sourceImageData.width,
+            item.sourceImageData.height,
+            createSelectionMask(rectangle, item.sourceImageData.width, item.sourceImageData.height),
+            {
+              mode: "protect-range",
+              rectangle,
+              previewData,
+              options: {
+                backgroundColors: selectedBackgroundColors(item),
+                boundaryStrength,
+                padding,
+              },
+            },
+          );
+        } catch (error) {
+          setStatus(
+            text("failed", { message: error?.code || error?.message || "ENGINE_EXECUTION_FAILED" }),
+            "error",
+          );
+          return false;
+        }
         if (!region.count) {
           state.protectionPreview = {
             itemId: item.id,
@@ -127,25 +144,38 @@
         renderPreview();
         return true;
       }
-      const selection = core.selectProtectedColorsInRectangle(
-        item.sourceImageData.data,
-        item.sourceImageData.width,
-        item.sourceImageData.height,
-        rectangle,
-        {
-          maximumSamples: 5000,
-          maximumColors: Math.max(0, 32 - effectiveProtectedColors(item).length),
-          coverage: 0.95,
-          excludeColors: selectedBackgroundColors(item),
-          existingColors: effectiveProtectedColors(item),
-          previewData,
-        },
-      );
+      let selection;
+      try {
+        selection = await selectionRepairExecutor.analyze(
+          item.sourceImageData.data,
+          item.sourceImageData.width,
+          item.sourceImageData.height,
+          createSelectionMask(rectangle, item.sourceImageData.width, item.sourceImageData.height),
+          {
+            mode: "protect-color",
+            rectangle,
+            previewData,
+            options: {
+              maximumSamples: 5000,
+              maximumColors: Math.max(0, 32 - effectiveProtectedColors(item).length),
+              coverage: 0.95,
+              excludeColors: selectedBackgroundColors(item),
+              existingColors: effectiveProtectedColors(item),
+            },
+          },
+        );
+      } catch (error) {
+        setStatus(
+          text("failed", { message: error?.code || error?.message || "ENGINE_EXECUTION_FAILED" }),
+          "error",
+        );
+        return false;
+      }
       const colors = [];
       for (const color of selection.colors) {
         if (effectiveProtectedColors(item).length + colors.length >= 32) break;
         const duplicate = [...effectiveProtectedColors(item), ...colors].some(
-          (candidate) => core.colorDistance(color.r, color.g, color.b, candidate) < 2,
+          (candidate) => colorUtils.colorDistance(color.r, color.g, color.b, candidate) < 2,
         );
         if (!duplicate) colors.push({ r: color.r, g: color.g, b: color.b });
       }
@@ -274,28 +304,28 @@
         return;
       }
       const fallbackAnchorData = sourceItem.automaticImageData || sourceItem.resultImageData;
-      const sourceAnchor =
-        repair.localAnchor ||
-        localTracking.createLocalAnchor(
-          fallbackAnchorData?.data,
-          fallbackAnchorData?.width,
-          fallbackAnchorData?.height,
-          repairCenter,
-        );
+      let capturedContext = {};
+      if (fallbackAnchorData && (!repair.localAnchor || !repair.sourceRegion)) {
+        try {
+          capturedContext = await cutoutAnalysisExecutor.captureRepairContext(
+            fallbackAnchorData.data,
+            fallbackAnchorData.width,
+            fallbackAnchorData.height,
+            {
+              point: repairCenter,
+              includeRegion: isPointRepair && repair.scope !== "global",
+              regionOptions: { sourceColor: repair.sourceColor, tolerance: repair.tolerance },
+            },
+          );
+        } catch (error) {
+          setStatus(error?.code || error?.message || "ENGINE_EXECUTION_FAILED", "error");
+          return;
+        }
+      }
+      const sourceAnchor = repair.localAnchor || capturedContext.localAnchor || null;
       const sourceRegion =
         repair.sourceRegion ||
-        (isPointRepair && repair.scope !== "global" && fallbackAnchorData
-          ? localTracking.measureConnectedRegion(
-              fallbackAnchorData.data,
-              fallbackAnchorData.width,
-              fallbackAnchorData.height,
-              repairCenter,
-              {
-                sourceColor: repair.sourceColor,
-                tolerance: repair.tolerance,
-              },
-            )
-          : null);
+        (isPointRepair && repair.scope !== "global" ? capturedContext.sourceRegion || null : null);
       const trackTransparentRegion = Boolean(
         isPointRepair &&
           repair.scope !== "global" &&
@@ -312,7 +342,7 @@
       const repairId = repair.id || (repair.id = root.crypto?.randomUUID?.() || `repair_${Date.now()}`);
       const useCanvasMapping = state.sessionMode === "single";
       const propagateDirection = async (indices) => {
-        const trackingState = tracking.createTrackingState(sourceDescriptor);
+        let trackingState = null;
         let localAnchor = sourceAnchor;
         let localAnchorDescriptor = sourceDescriptor;
         let localFailureStreak = 0;
@@ -335,148 +365,68 @@
             skipped += 1;
             continue;
           }
-          const match = useCanvasMapping
-            ? {
-                candidate: item.shapeDescriptor || sourceDescriptor,
-                reacquisitionLevel: 0,
-              }
-            : tracking.selectTrackedCandidate(sourceDescriptor, item.shapeCandidates, trackingState);
-          if (!match) {
-            tracking.advanceTrackingState(trackingState, null);
-            localFailureStreak += 1;
+          const mapped = await cutoutAnalysisExecutor.mapRepairTarget(
+            item.resultImageData.data,
+            item.resultImageData.width,
+            item.resultImageData.height,
+            {
+              sourceDescriptor,
+              targetDescriptor: item.shapeDescriptor,
+              targetCandidates: item.shapeCandidates,
+              trackingState,
+              repair,
+              repairCenter,
+              useCanvasMapping,
+              isBrushRepair,
+              isPointRepair,
+              sourceImage: {
+                width: sourceItem.sourceImageData.width,
+                height: sourceItem.sourceImageData.height,
+              },
+              originalData: item.sourceImageData.data,
+              localAnchor,
+              localAnchorDescriptor,
+              sourceRegion,
+              trackTransparentRegion,
+              localFailureStreak,
+              backgroundColor: repair.backgroundColor || selectedBackgroundColor(sourceItem),
+            },
+          );
+          trackingState = mapped.trackingState;
+          localFailureStreak = mapped.localFailureStreak;
+          if (!mapped.accepted) {
             skipped += 1;
             continue;
           }
-          tracking.advanceTrackingState(trackingState, match.candidate);
-          const targetDescriptor = match.candidate;
-          const pointGeometry = isPointRepair
-            ? { ...repair, points: [{ x: repair.x, y: repair.y }] }
-            : repair;
-          let mappedGeometry =
-            useCanvasMapping && (isBrushRepair || isPointRepair)
-              ? tracking.mapCanvasBrushStroke(pointGeometry, sourceItem.sourceImageData, item.sourceImageData)
-              : useCanvasMapping
-                ? tracking.mapCanvasRectangle(repair, sourceItem.sourceImageData, item.sourceImageData)
-                : isBrushRepair || isPointRepair
-                  ? tracking.mapBrushStroke(pointGeometry, sourceDescriptor, targetDescriptor)
-                  : tracking.mapRectangle(repair, sourceDescriptor, targetDescriptor);
-          if ((isBrushRepair || isPointRepair) && !mappedGeometry.points.length) {
-            skipped += 1;
-            continue;
-          }
-          let mappedCenter = useCanvasMapping
-            ? tracking.mapCanvasPoint(repairCenter, sourceItem.sourceImageData, item.sourceImageData)
-            : isBrushRepair || isPointRepair
-              ? mappedGeometry.points.reduce(
-                  (center, point) => ({
-                    x: center.x + point.x / mappedGeometry.points.length,
-                    y: center.y + point.y / mappedGeometry.points.length,
-                  }),
-                  { x: 0, y: 0 },
-                )
-              : {
-                  x: (mappedGeometry.x1 + mappedGeometry.x2) / 2,
-                  y: (mappedGeometry.y1 + mappedGeometry.y2) / 2,
-                };
-          const localPrediction = useCanvasMapping
-            ? mappedCenter
-            : localAnchor && localAnchorDescriptor
-              ? tracking.mapPoint(localAnchor.point, localAnchorDescriptor, targetDescriptor)
-              : mappedCenter;
-          const transparentRegionMatch =
-            !useCanvasMapping && trackTransparentRegion
-              ? localTracking.findMatchingTransparentRegion(
-                  item.resultImageData.data,
-                  item.resultImageData.width,
-                  item.resultImageData.height,
-                  sourceRegion,
-                  localPrediction,
-                  {
-                    tolerance: repair.tolerance,
-                    searchRadius: Math.min(
-                      180,
-                      Math.max(72, targetDescriptor.minorLength * 0.75 + localFailureStreak * 20),
-                    ),
-                  },
-                )
-              : null;
-          const localMatch = useCanvasMapping
-            ? { matched: true, point: mappedCenter }
-            : transparentRegionMatch
-              ? { matched: true, point: transparentRegionMatch.point }
-              : localAnchor && !trackTransparentRegion
-                ? localTracking.trackLocalAnchor(
-                    localAnchor,
-                    item.resultImageData.data,
-                    item.resultImageData.width,
-                    item.resultImageData.height,
-                    localPrediction,
-                    {
-                      searchRadius: Math.min(
-                        96,
-                        Math.max(32, targetDescriptor.minorLength * 0.4 + localFailureStreak * 16),
-                      ),
-                    },
-                  )
-                : null;
-          if ((isPointRepair || match.reacquisitionLevel > 0) && !localMatch?.matched) {
-            localFailureStreak += 1;
-            skipped += 1;
-            continue;
-          }
-          if (localMatch?.matched) {
-            const offsetX = localMatch.point.x - mappedCenter.x;
-            const offsetY = localMatch.point.y - mappedCenter.y;
-            mappedGeometry =
-              isBrushRepair || isPointRepair
-                ? {
-                    ...mappedGeometry,
-                    points: mappedGeometry.points.map((point) => ({
-                      x: point.x + offsetX,
-                      y: point.y + offsetY,
-                    })),
-                  }
-                : {
-                    ...mappedGeometry,
-                    x1: mappedGeometry.x1 + offsetX,
-                    y1: mappedGeometry.y1 + offsetY,
-                    x2: mappedGeometry.x2 + offsetX,
-                    y2: mappedGeometry.y2 + offsetY,
-                  };
-            mappedCenter = { ...localMatch.point };
-            localAnchor = localTracking.createLocalAnchor(
-              item.resultImageData.data,
-              item.resultImageData.width,
-              item.resultImageData.height,
-              mappedCenter,
-            );
-            localAnchorDescriptor = targetDescriptor;
-            localFailureStreak = 0;
-          } else {
-            localFailureStreak += 1;
-          }
+          const { mappedGeometry, mappedCenter } = mapped;
+          localAnchor = mapped.localAnchor;
+          localAnchorDescriptor = mapped.localAnchorDescriptor;
           if (repair.mode === "protect-color") {
             item.repairs = (item.repairs || []).filter((candidate) => candidate.propagatedFrom !== repairId);
             const existingColors = effectiveProtectedColors(item);
-            const selection = core.selectProtectedColorsInRectangle(
+            const selection = await selectionRepairExecutor.analyze(
               item.sourceImageData.data,
               item.sourceImageData.width,
               item.sourceImageData.height,
-              mappedGeometry,
+              createSelectionMask(mappedGeometry, item.sourceImageData.width, item.sourceImageData.height),
               {
-                maximumSamples: 5000,
-                maximumColors: Math.max(0, 32 - existingColors.length),
-                coverage: 0.95,
-                excludeColors: selectedBackgroundColors(item),
-                existingColors,
+                mode: "protect-color",
+                rectangle: mappedGeometry,
                 previewData: item.automaticImageData?.data || item.resultImageData?.data || null,
+                options: {
+                  maximumSamples: 5000,
+                  maximumColors: Math.max(0, 32 - existingColors.length),
+                  coverage: 0.95,
+                  excludeColors: selectedBackgroundColors(item),
+                  existingColors,
+                },
               },
             );
             const colors = selection.colors
               .filter(
                 (color) =>
                   !existingColors.some(
-                    (candidate) => core.colorDistance(color.r, color.g, color.b, candidate) < 2,
+                    (candidate) => colorUtils.colorDistance(color.r, color.g, color.b, candidate) < 2,
                   ),
               )
               .slice(0, Math.max(0, 32 - existingColors.length))
@@ -497,65 +447,21 @@
             propagated += 1;
             continue;
           }
-          const backgroundColor = tracking.sampleMatchingColor(
-            item.sourceImageData.data,
-            item.sourceImageData.width,
-            item.sourceImageData.height,
-            repair.backgroundColor || selectedBackgroundColor(sourceItem),
-            mappedCenter,
-            15,
-          );
           item.repairs = (item.repairs || []).filter((candidate) => candidate.propagatedFrom !== repairId);
           const mappedRepairGeometry = isPointRepair
             ? { x: mappedCenter.x, y: mappedCenter.y }
             : mappedGeometry;
-          const sourceOffset =
-            (Math.max(0, Math.min(item.sourceImageData.height - 1, Math.round(mappedCenter.y))) *
-              item.sourceImageData.width +
-              Math.max(0, Math.min(item.sourceImageData.width - 1, Math.round(mappedCenter.x)))) *
-            4;
-          const targetSourceColor = isPointRepair
-            ? {
-                r: item.resultImageData.data[sourceOffset],
-                g: item.resultImageData.data[sourceOffset + 1],
-                b: item.resultImageData.data[sourceOffset + 2],
-                a: item.resultImageData.data[sourceOffset + 3],
-              }
-            : null;
-          let propagatedRegion = null;
-          if (isPointRepair && repair.scope !== "global") {
-            const regionLimit = sourceRegion
-              ? Math.max(sourceRegion.count * 6 + 1, sourceRegion.count + 257)
-              : Math.round(item.resultImageData.width * item.resultImageData.height * 0.08);
-            propagatedRegion =
-              transparentRegionMatch?.region ||
-              localTracking.measureConnectedRegion(
-                item.resultImageData.data,
-                item.resultImageData.width,
-                item.resultImageData.height,
-                mappedCenter,
-                {
-                  sourceColor: targetSourceColor,
-                  tolerance: repair.tolerance,
-                  maximumPixels: regionLimit,
-                },
-              );
-            if (!localTracking.compareConnectedRegions(sourceRegion, propagatedRegion).accepted) {
-              skipped += 1;
-              continue;
-            }
-          }
           item.repairs.push({
             ...repair,
             ...mappedRepairGeometry,
             id: root.crypto?.randomUUID?.() || `repair_${Date.now()}_${index}`,
             propagatedFrom: repairId,
-            backgroundColor,
+            backgroundColor: mapped.backgroundColor,
             ...(isPointRepair
               ? {
-                  sourceColor: targetSourceColor,
+                  sourceColor: mapped.targetSourceColor,
                   localAnchor,
-                  sourceRegion: propagatedRegion,
+                  sourceRegion: mapped.propagatedRegion,
                 }
               : {}),
           });

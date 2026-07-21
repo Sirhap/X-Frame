@@ -125,18 +125,17 @@
       return frame.thumbnails[cacheKey];
     }
 
-    /** @param {object} frame Organizer frame. @returns {HTMLDivElement} Reusable card. */
+    /** @param {object} frame Organizer frame. @returns {HTMLElement} Reusable card. */
     function createFrameCard(frame) {
-      const card = documentApi.createElement("div");
-      card.tabIndex = 0;
-      card.setAttribute("role", "button");
+      const card = documentApi.createElement("article");
       card.dataset.frameUid = frame.uid;
       card.innerHTML = `
+          <button type="button" class="organizerFrameSelect"></button>
           <span class="organizerFrameNumber"></span>
-          <img alt="">
+          <img alt="" width="156" height="156" loading="lazy">
           <span class="organizerFrameName"></span>
           <span class="organizerFrameTag"></span>
-          <input type="checkbox" aria-label="workset">
+          <label class="organizerFrameInclude"><input type="checkbox"><span aria-hidden="true">✓</span></label>
           <button type="button" class="organizerFrameCutout" aria-label="${text("editCutout")}" title="${text("editCutout")}">✎</button>
         `;
       card.querySelector("input").addEventListener("click", (event) => {
@@ -155,13 +154,7 @@
           dependencies.setStatus(text("failed", { message: error.message }), "error");
         });
       });
-      card.addEventListener("click", (event) => {
-        const index = state.frames.findIndex((entry) => entry.uid === card.dataset.frameUid);
-        if (index >= 0) selectFrame(index, event);
-      });
-      card.addEventListener("keydown", (event) => {
-        if (event.target !== card || (event.key !== "Enter" && event.key !== " ")) return;
-        event.preventDefault();
+      card.querySelector(".organizerFrameSelect").addEventListener("click", (event) => {
         const index = state.frames.findIndex((entry) => entry.uid === card.dataset.frameUid);
         if (index >= 0) selectFrame(index, event);
       });
@@ -180,7 +173,12 @@
         card.querySelector(".organizerFrameNumber").textContent = String(index + 1).padStart(3, "0");
         card.querySelector(".organizerFrameName").textContent = frame.name;
         card.querySelector(".organizerFrameTag").textContent = frame.tag;
-        card.querySelector("input").checked = frame.included;
+        const includeInput = card.querySelector("input");
+        includeInput.checked = frame.included;
+        includeInput.setAttribute("aria-label", text("includeFrame", { name: frame.name }));
+        const selectButton = card.querySelector(".organizerFrameSelect");
+        selectButton.setAttribute("aria-label", text("selectFrame", { name: frame.name }));
+        selectButton.setAttribute("aria-pressed", String(frame.selected));
         const image = card.querySelector("img");
         const thumbnail = frameThumbnail(frame);
         if (image.src !== thumbnail) image.src = thumbnail;

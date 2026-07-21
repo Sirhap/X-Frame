@@ -26,8 +26,7 @@
    *   elements:Record<string,HTMLElement>,
    *   state:Record<string,any>,
    *   text:(key:string,variables?:Record<string,string|number>)=>string,
-   *   core:{findLoopCandidatesAsync:Function},
-   *   workerClient:{createExecutor:(options:{fallback:Function})=>{analyze:Function,cancelAll:()=>void}},
+   *   workerClient:{createExecutor:()=>{analyze:Function,cancelAll:()=>void}},
    *   includedFrames:()=>object[],
    *   frameSignature:(frame:object)=>object,
    *   drawFrameToCanvas:(frame:object|null,canvas:HTMLCanvasElement)=>void,
@@ -43,16 +42,14 @@
    * @returns {{open:()=>void,close:()=>void,isOpen:()=>boolean,bindEvents:()=>void}}
    */
   function createController(dependencies) {
-    if (!dependencies?.elements || !dependencies.state || !dependencies.core) {
+    if (!dependencies?.elements || !dependencies.state || !dependencies.workerClient) {
       throw new TypeError("Frame organizer loop dependencies are required.");
     }
     const { elements, state, text } = dependencies;
     const documentApi = dependencies.document || root.document;
     const windowApi = dependencies.window || root.window;
     if (!documentApi || !windowApi) throw new Error("Loop finder browser APIs are required.");
-    const executor = dependencies.workerClient.createExecutor({
-      fallback: dependencies.core.findLoopCandidatesAsync,
-    });
+    const executor = dependencies.workerClient.createExecutor();
     const resultCache = new Map();
     let eventsBound = false;
 

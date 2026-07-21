@@ -102,7 +102,7 @@
 
 .cutoutQueueItem.qualityCritical .cutoutQueueAlert {
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-ink);
 }
 
 .cutoutQueueItem img {
@@ -129,7 +129,7 @@
   padding: 3px 5px;
   border-radius: 999px;
   background: var(--line);
-  color: var(--accent);
+  color: var(--accent-text);
   text-align: center;
   font: 950 11px/1 var(--data-font);
 }
@@ -144,6 +144,13 @@
   border: 2px solid var(--line);
   border-radius: 50%;
   box-shadow: 2px 2px 0 var(--line);
+}
+
+.cutoutQueueToggle::before,
+.cutoutQueueRemove::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
 }
 
 .cutoutQueueToggle {
@@ -163,7 +170,7 @@
   right: 7px;
   bottom: 7px;
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-ink);
   font-size: 15px;
 }
 

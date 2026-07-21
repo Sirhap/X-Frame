@@ -25,7 +25,7 @@
    *   getAdjustmentMode?:()=>string,
    *   elements?:{groupTimeMs?:object,groupTimeField?:object},
    *   canEditFramePlayback?:()=>boolean,
-   *   confirm?:(message:string)=>boolean,
+   *   confirm?:(message:string,options?:{tone?:string})=>boolean|Promise<boolean>,
    *   translate?:(key:string,variables?:object)=>string,
    *   pushUndo?:(label:string)=>void,
    *   syncFrameInputs?:()=>void,
@@ -382,9 +382,9 @@
 
     /**
      * Applies the group total-time input, resolving frame override conflicts.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    function applyGroupTimeFromInput() {
+    async function applyGroupTimeFromInput() {
       const currentGroup = getCurrentGroup();
       if (!currentGroup || !elements.groupTimeMs || !canEditFramePlayback() || usesAttachedPlaybackTiming()) {
         syncGroupTimeInputs();
@@ -400,7 +400,12 @@
         syncGroupTimeInputs();
         return;
       }
-      if (hasFrameTiming && !confirm(translate("groupTimeConflict"))) {
+      if (
+        hasFrameTiming &&
+        !(await confirm(translate("groupTimeConflict"), {
+          tone: "warning",
+        }))
+      ) {
         syncGroupTimeInputs();
         return;
       }

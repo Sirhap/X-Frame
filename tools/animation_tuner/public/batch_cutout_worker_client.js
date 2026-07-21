@@ -142,6 +142,22 @@
   }
 
   /**
+   * Deserializes a protected selection-analysis response.
+   * @param {object} message Worker response.
+   * @returns {object} Selection result with an owned mask when present.
+   */
+  function deserializeSelectionResult(message) {
+    const result = message.result && typeof message.result === "object" ? { ...message.result } : {};
+    if (message.maskBuffer !== undefined) {
+      if (!(message.maskBuffer instanceof ArrayBuffer)) {
+        throw new Error("Cutout Worker returned an invalid selection mask.");
+      }
+      result.mask = new Uint8Array(message.maskBuffer);
+    }
+    return result;
+  }
+
+  /**
    * Safely terminates a Worker-like object.
    * @param {object|null} worker Worker instance.
    * @returns {void}
@@ -240,7 +256,15 @@
           return;
         }
         try {
-          settle(id, "resolve", deserializeResult(message));
+          settle(
+            id,
+            "resolve",
+            task.request.operation === "selection-repair"
+              ? deserializeSelectionResult(message)
+              : ["quality-analysis", "repair-tracking"].includes(task.request.operation)
+                ? message.result
+                : deserializeResult(message),
+          );
         } catch (error) {
           settle(id, "reject", normalizeError(error, "Cutout Worker returned an invalid result."));
         }
@@ -263,16 +287,38 @@
         activeWorker = ensureWorker();
         task.worker = activeWorker;
         const transferableSource = new Uint8ClampedArray(task.request.source);
+        const transferableSelectionMask = task.request.selectionMask
+          ? new Uint8Array(task.request.selectionMask)
+          : null;
+        const transferablePreview = task.request.previewData
+          ? new Uint8ClampedArray(task.request.previewData)
+          : null;
+        const transferableAnalysisOriginal = task.request.analysisOriginalData
+          ? new Uint8ClampedArray(task.request.analysisOriginalData)
+          : null;
         activeWorker.postMessage(
           {
             id,
+            operation: task.request.operation,
             sourceBuffer: transferableSource.buffer,
             width: task.request.width,
             height: task.request.height,
             options: task.request.processingOptions,
             repairs: task.request.repairs,
+            cancellationId: task.request.cancellationId,
+            protocolVersion: task.request.protocolVersion,
+            selectionMaskBuffer: transferableSelectionMask?.buffer,
+            selectionParameters: task.request.selectionParameters,
+            analysisParameters: task.request.analysisParameters,
+            analysisOriginalBuffer: transferableAnalysisOriginal?.buffer,
+            previewBuffer: transferablePreview?.buffer,
           },
-          [transferableSource.buffer],
+          [
+            transferableSource.buffer,
+            ...(transferableSelectionMask ? [transferableSelectionMask.buffer] : []),
+            ...(transferablePreview ? [transferablePreview.buffer] : []),
+            ...(transferableAnalysisOriginal ? [transferableAnalysisOriginal.buffer] : []),
+          ],
         );
       } catch (error) {
         if (activeWorker) {
@@ -313,20 +359,24 @@
      * @param {number} height Image height.
      * @param {object} [processingOptions] Product options.
      * @param {object[]} [repairs] Serialized repairs.
+     * @param {{cancellationId?:string,protocolVersion?:number}} [requestContext] Runtime protocol metadata.
      * @returns {Promise<object>} Cutout result.
      */
-    function process(source, width, height, processingOptions = {}, repairs = []) {
+    function process(source, width, height, processingOptions = {}, repairs = [], requestContext = {}) {
       const normalizedRepairs = Array.isArray(repairs) ? repairs : [];
       let request;
       try {
         validateSourcePixels(source, width, height);
         const metadata = copyRequestMetadata(processingOptions || {}, normalizedRepairs);
         request = {
+          operation: "product-cutout",
           source: new Uint8ClampedArray(source),
           width,
           height,
           processingOptions: metadata.processingOptions,
           repairs: metadata.repairs,
+          cancellationId: String(requestContext.cancellationId || ""),
+          protocolVersion: Number(requestContext.protocolVersion || 1),
         };
       } catch (error) {
         return Promise.reject(normalizeError(error, "Invalid cutout request."));
@@ -357,6 +407,152 @@
     }
 
     /**
+     * Runs one protected selection analysis without exposing its kernels to UI code.
+     * @param {Uint8ClampedArray|Uint8Array} source Source pixels.
+     * @param {number} width Image width.
+     * @param {number} height Image height.
+     * @param {Uint8Array} mask Selection mask.
+     * @param {object} [parameters] Product-level selection parameters.
+     * @param {{cancellationId?:string,protocolVersion?:number}} [requestContext] Runtime metadata.
+     * @returns {Promise<object>} Selection analysis result.
+     */
+    function selectionRepair(source, width, height, mask, parameters = {}, requestContext = {}) {
+      let request;
+      try {
+        validateSourcePixels(source, width, height);
+        if (!(mask instanceof Uint8Array) || mask.length !== width * height) {
+          throw new RangeError("Selection mask dimensions do not match the source image.");
+        }
+        const previewData = parameters.previewData;
+        if (
+          previewData != null &&
+          !(previewData instanceof Uint8Array) &&
+          !(previewData instanceof Uint8ClampedArray)
+        ) {
+          throw new TypeError("Selection preview must contain RGBA bytes.");
+        }
+        if (previewData != null && previewData.length !== width * height * 4) {
+          throw new RangeError("Selection preview dimensions do not match the source image.");
+        }
+        const serializableParameters = { ...parameters };
+        delete serializableParameters.previewData;
+        const metadata = copyRequestMetadata(serializableParameters, []);
+        request = {
+          operation: "selection-repair",
+          source: new Uint8ClampedArray(source),
+          width,
+          height,
+          processingOptions: {},
+          repairs: [],
+          selectionMask: new Uint8Array(mask),
+          selectionParameters: metadata.processingOptions,
+          previewData: previewData ? new Uint8ClampedArray(previewData) : null,
+          cancellationId: String(requestContext.cancellationId || ""),
+          protocolVersion: Number(requestContext.protocolVersion || 1),
+        };
+      } catch (error) {
+        return Promise.reject(normalizeError(error, "Invalid selection repair request."));
+      }
+      if (typeof WorkerConstructor !== "function") {
+        return Promise.reject(new Error("This browser cannot run protected selection analysis."));
+      }
+      return new Promise((resolve, reject) => {
+        const id = ++requestId;
+        const task = { resolve, reject, request, transportRetryCount: 0, worker: null };
+        tasks.set(id, task);
+        postTask(id, task);
+      });
+    }
+
+    /**
+     * Posts a non-pixel-result analysis through the protected cutout Worker.
+     * @param {"quality-analysis"|"repair-tracking"} operation Product analysis operation.
+     * @param {Uint8ClampedArray} source Source bytes, or an empty array for metadata analysis.
+     * @param {number} width Source width.
+     * @param {number} height Source height.
+     * @param {object} parameters Serializable analysis parameters.
+     * @param {{cancellationId?:string,protocolVersion?:number}} requestContext Runtime metadata.
+     * @param {Uint8ClampedArray|null} [analysisOriginalData] Optional original pixels for tracking.
+     * @returns {Promise<object|Array<object>>} Analysis result.
+     */
+    function postAnalysis(
+      operation,
+      source,
+      width,
+      height,
+      parameters,
+      requestContext,
+      analysisOriginalData = null,
+    ) {
+      if (typeof WorkerConstructor !== "function") {
+        return Promise.reject(new Error("This browser cannot run protected cutout analysis."));
+      }
+      let analysisParameters;
+      try {
+        analysisParameters = copyRequestMetadata(parameters || {}, []).processingOptions;
+      } catch (error) {
+        return Promise.reject(normalizeError(error, "Invalid cutout analysis request."));
+      }
+      const request = {
+        operation,
+        source: new Uint8ClampedArray(source || 0),
+        width,
+        height,
+        processingOptions: {},
+        repairs: [],
+        analysisParameters,
+        analysisOriginalData,
+        cancellationId: String(requestContext?.cancellationId || ""),
+        protocolVersion: Number(requestContext?.protocolVersion || 1),
+      };
+      return new Promise((resolve, reject) => {
+        const id = ++requestId;
+        const task = { resolve, reject, request, transportRetryCount: 0, worker: null };
+        tasks.set(id, task);
+        postTask(id, task);
+      });
+    }
+
+    /** @returns {Promise<Array<object>>} Sequence quality result. */
+    function analyzeQuality(metrics, parameters = {}, requestContext = {}) {
+      return postAnalysis(
+        "quality-analysis",
+        new Uint8ClampedArray(),
+        0,
+        0,
+        { metrics, parameters },
+        requestContext,
+      );
+    }
+
+    /** @returns {Promise<object>} Repair tracking result. */
+    function analyzeRepairTracking(source, width, height, parameters = {}, requestContext = {}) {
+      try {
+        validateSourcePixels(source, width, height);
+      } catch (error) {
+        return Promise.reject(normalizeError(error, "Invalid repair tracking request."));
+      }
+      const { originalData, ...serializableParameters } = parameters;
+      if (
+        originalData != null &&
+        (!ArrayBuffer.isView(originalData) || originalData.length !== width * height * 4)
+      ) {
+        return Promise.reject(
+          new RangeError("Repair tracking original pixels do not match the target image."),
+        );
+      }
+      return postAnalysis(
+        "repair-tracking",
+        source,
+        width,
+        height,
+        serializableParameters,
+        requestContext,
+        originalData ? new Uint8ClampedArray(originalData) : null,
+      );
+    }
+
+    /**
      * Cancels all work and resets the reusable Worker.
      * @returns {void}
      */
@@ -369,8 +565,11 @@
 
     return Object.freeze({
       cancelAll,
+      analyzeQuality,
+      analyzeRepairTracking,
       dispose: cancelAll,
       process,
+      selectionRepair,
     });
   }
 

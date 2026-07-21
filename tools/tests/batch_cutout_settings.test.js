@@ -32,7 +32,7 @@ function createFixture() {
     selectedItem: () => item,
     hasQualityIssue: () => false,
     selectedBackgroundColor: () => ({ hex: "#000000" }),
-    core: {
+    colorUtils: {
       hexToRgb: (hex) => ({ hex }),
     },
     recordItemEdit: () => events.push("record"),

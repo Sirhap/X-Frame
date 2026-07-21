@@ -127,6 +127,37 @@ test("the original editor is the default and the home hub opens on demand", asyn
   await expect(page.locator("#filmstrip")).toBeVisible();
 });
 
+test("workbench controls expose specific accessible names without nested actions", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("spinbutton", { name: "缩放", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "减少缩放", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "增加缩放", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "添加图片", exact: true })).toBeVisible();
+
+  await page.locator('.languageButton[data-language="en"]').click();
+  await expect(page.getByRole("spinbutton", { name: "Scale", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Decrease Scale", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Increase Scale", exact: true })).toBeVisible();
+  await expect(page.locator("#save")).toHaveCSS("color", "rgb(5, 7, 10)");
+
+  await page.locator('.themeButton[data-theme="light"]').click();
+  await page.locator("#deleteProject").click();
+  await expect(page.locator("#appConfirmAccept")).toHaveCSS("background-color", "rgb(180, 35, 24)");
+  await expect(page.locator("#appConfirmAccept")).toHaveCSS("color", "rgb(255, 255, 255)");
+  await page.locator("#appConfirmCancel").click();
+
+  await page.goto("/tools/organizer");
+  const firstFrame = page.locator(".organizerFrame").first();
+  await expect(firstFrame.getByRole("button", { name: /Select frame/ })).toBeVisible();
+  await expect(firstFrame.getByRole("checkbox", { name: /Include .* in the workset/ })).toBeChecked();
+  await expect(firstFrame.locator("button button, button input")).toHaveCount(0);
+  await expect(firstFrame.locator("img")).toHaveAttribute("width", "156");
+  await expect(firstFrame.locator("img")).toHaveAttribute("height", "156");
+  await firstFrame.getByRole("button", { name: /Select frame/ }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".organizerFrameSelect").nth(1)).toBeFocused();
+});
+
 test("tool paths refresh, update titles, and return home", async ({ page }) => {
   await page.goto("/tools/import");
   await expect(page).toHaveURL(/\/tools\/import/);
@@ -448,9 +479,12 @@ test("organizer confirms before discarding an imported workset", async ({ page }
   await page.locator("#organizerHome").click();
   await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
   await expect(page.locator("#organizerConfirmTitle")).toHaveText("放弃工作集修改？");
-  await page.locator("#organizerConfirmCancel").click();
+  await expect(page.locator(".organizerConfirmCard")).toHaveAttribute("data-tone", "danger");
+  await expect(page.locator("#organizerConfirmCancel")).toBeFocused();
+  await page.locator("#organizerConfirmPanel").click({ position: { x: 5, y: 5 } });
   await expect(page.locator("#organizerModal")).toBeVisible();
   await expect(page).toHaveURL(/\/tools\/import/);
+  await expect(page.locator("#organizerHome")).toBeFocused();
 
   await page.locator("#organizerHome").click();
   await page.locator("#organizerConfirmAccept").click();
@@ -472,14 +506,18 @@ test("cutout reports mixed-file skips and confirms destructive clearing", async 
 
   await page.locator("#cutoutClear").click();
   await expect(page.locator("#cutoutConfirmTitle")).toHaveText("清空当前批次？");
-  await page.locator("#cutoutConfirmCancel").click();
+  await expect(page.locator(".cutoutConfirmCard")).toHaveAttribute("data-tone", "danger");
+  await expect(page.locator("#cutoutConfirmCancel")).toBeFocused();
+  await page.keyboard.press("Escape");
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
+  await expect(page.locator("#cutoutClear")).toBeFocused();
 
   await expandStableBatchTray(page);
   await page.locator("#cutoutDeleteSelected").click();
   await expect(page.locator("#cutoutConfirmTitle")).toHaveText("删除选中的图片？");
   await page.locator("#cutoutConfirmCancel").click();
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
+  await expect(page.locator("#cutoutDeleteSelected")).toBeFocused();
   await page.locator("#cutoutDeleteSelected").click();
   await page.locator("#cutoutConfirmApply").click();
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(0);
@@ -492,6 +530,34 @@ test("cutout reports mixed-file skips and confirms destructive clearing", async 
   await page.locator("#cutoutClear").click();
   await page.locator("#cutoutConfirmApply").click();
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(0);
+});
+
+test("cutout restores a closed batch and starts a new batch explicitly", async ({ page }) => {
+  await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles({
+    name: "frame.png",
+    mimeType: "image/png",
+    buffer: ONE_PIXEL_PNG,
+  });
+  await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
+
+  await page.locator("#cutoutClose").click();
+  await expect(page.locator("#cutoutModal")).toBeHidden();
+  await page.locator("#cutoutOpen").click();
+  await expect(page.locator("#cutoutModal")).toBeVisible();
+  await expect(page.locator("#cutoutStatus")).toHaveText("已恢复上次批次：1 张图片");
+  await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
+
+  await page.locator("#cutoutNewBatch").click();
+  await expect(page.locator("#cutoutConfirmTitle")).toHaveText("新建批次？");
+  await page.locator("#cutoutConfirmCancel").click();
+  await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
+
+  await page.locator("#cutoutNewBatch").click();
+  await page.locator("#cutoutConfirmApply").click();
+  await expect(page.locator(".cutoutQueueItem")).toHaveCount(0);
+  await expect(page.locator("#cutoutStatus")).toHaveText("等待图片");
+  await expect(page.locator("#cutoutNewBatch")).toBeDisabled();
 });
 
 test("cutout warns before refresh discards a local batch", async ({ page }) => {
@@ -513,24 +579,51 @@ test("cutout warns before refresh discards a local batch", async ({ page }) => {
   await expect(page.locator("#cutoutModal")).toBeVisible();
 });
 
-test("cutout worker resolves beside its client on tool routes", async ({ page }) => {
+test("@cross-browser protected runtime stays local and resolves its Worker", async ({ page }) => {
+  const processingRequests = [];
+  let captureProcessingTraffic = false;
+  page.on("request", (request) => {
+    if (!captureProcessingTraffic) return;
+    processingRequests.push({
+      method: request.method(),
+      pathname: new URL(request.url()).pathname,
+      postData: request.postData(),
+    });
+  });
   await page.goto("/tools/cutout");
-  const alpha = await page.evaluate(async () => {
-    const executor = window.BatchCutoutWorkerClient.createExecutor();
+  await page.waitForLoadState("networkidle");
+  captureProcessingTraffic = true;
+  const resultBytes = await page.evaluate(async () => {
+    const adapter = window.ProtectedAlgorithmRuntime.createProductionWorkerAdapter({
+      WorkerConstructor: window.Worker,
+      cutoutClient: window.BatchCutoutWorkerClient,
+      frameClient: window.FrameOrganizerWorkerClient,
+    });
+    const runtime = window.ProtectedAlgorithmRuntime.createRuntime({ adapter });
     try {
-      const result = await executor.process(
-        new Uint8ClampedArray([20, 40, 60, 255]),
-        1,
-        1,
-        { backgroundColor: { r: 255, g: 255, b: 255 }, tolerance: 0 },
-        [],
+      const result = await runtime.applyProductCutout(
+        { data: new Uint8ClampedArray([20, 40, 60, 255]), width: 1, height: 1 },
+        {
+          processingOptions: {
+            backgroundColor: { r: 255, g: 255, b: 255 },
+            tolerance: 0,
+          },
+          repairs: [],
+        },
+        "cross-browser-local-processing",
       );
-      return result.data[3];
+      return Array.from(result.data);
     } finally {
-      executor.dispose();
+      runtime.dispose();
     }
   });
-  expect(alpha).toBe(255);
+  expect(resultBytes).toEqual([20, 40, 60, 255]);
+  expect(processingRequests.length).toBeGreaterThan(0);
+  expect(processingRequests.some(({ pathname }) => pathname === "/batch_cutout_worker.js")).toBe(true);
+  expect(processingRequests.every(({ method, postData }) => method === "GET" && postData === null)).toBe(
+    true,
+  );
+  expect(processingRequests.some(({ pathname }) => pathname.startsWith("/api/"))).toBe(false);
 });
 
 test("area tools expose and synchronize the transparent color shortcut", async ({ page }) => {
@@ -644,6 +737,24 @@ test("mobile cutout keeps preview first and supports keyboard repair", async ({ 
   expect(batchTrayBox).not.toBeNull();
   expect(compareBox.y + compareBox.height).toBeLessThanOrEqual(batchTrayBox.y);
   expect(batchTrayMetrics.scrollHeight).toBeLessThanOrEqual(batchTrayMetrics.clientHeight + 1);
+  await page.locator("#cutoutClear").click();
+  const confirmationMetrics = await page.locator(".cutoutConfirmCard").evaluate((card) => {
+    const bounds = card.getBoundingClientRect();
+    return {
+      top: bounds.top,
+      bottom: bounds.bottom,
+      viewportHeight: window.innerHeight,
+      buttonHeights: Array.from(
+        card.querySelectorAll("button"),
+        (button) => button.getBoundingClientRect().height,
+      ),
+    };
+  });
+  expect(confirmationMetrics.top).toBeGreaterThanOrEqual(0);
+  expect(confirmationMetrics.bottom).toBeLessThanOrEqual(confirmationMetrics.viewportHeight);
+  expect(confirmationMetrics.buttonHeights.every((height) => height >= 48)).toBe(true);
+  await expect(page.locator("#cutoutConfirmCancel")).toBeFocused();
+  await page.keyboard.press("Escape");
   expect(errors).toEqual([]);
 });
 
@@ -705,4 +816,62 @@ test("desktop cutout fixes the main workspace and anchors zoom to the canvas", a
   await page.locator("#cutoutResult").hover();
   await page.mouse.wheel(0, 500);
   await expect.poll(() => preview.evaluate((element) => element.scrollTop)).toBe(0);
+});
+
+test("compact desktop cutout keeps footer actions inside a readable action grid", async ({ page }) => {
+  await page.setViewportSize({ width: 1299, height: 802 });
+  await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles({
+    name: "frame.png",
+    mimeType: "image/png",
+    buffer: ONE_PIXEL_PNG,
+  });
+  await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
+
+  const footer = page.locator(".cutoutFooter");
+  const actions = page.locator(".cutoutFooterActions");
+  const visibleButtons = page.locator(".cutoutFooterActions button:visible");
+  const [footerBox, actionsBox, statusBox, downloadBox, actionLayout, buttonMetrics] = await Promise.all([
+    footer.boundingBox(),
+    actions.boundingBox(),
+    page.locator("#cutoutStatus").boundingBox(),
+    page.locator("#cutoutDownload").boundingBox(),
+    actions.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        display: style.display,
+        columns: style.gridTemplateColumns.split(" ").filter(Boolean).length,
+      };
+    }),
+    visibleButtons.evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const box = button.getBoundingClientRect();
+        return {
+          height: box.height,
+          left: box.left,
+          right: box.right,
+          width: box.width,
+        };
+      }),
+    ),
+  ]);
+
+  expect(footerBox).not.toBeNull();
+  expect(actionsBox).not.toBeNull();
+  expect(statusBox).not.toBeNull();
+  expect(downloadBox).not.toBeNull();
+  expect(actionLayout).toEqual({ display: "grid", columns: 3 });
+  expect(actionsBox.x).toBeGreaterThanOrEqual(footerBox.x);
+  expect(actionsBox.x + actionsBox.width).toBeLessThanOrEqual(footerBox.x + footerBox.width + 1);
+  expect(statusBox.x).toBeGreaterThanOrEqual(footerBox.x);
+  expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(footerBox.x + footerBox.width + 1);
+  expect(downloadBox.x).toBeCloseTo(actionsBox.x, 1);
+  expect(downloadBox.x + downloadBox.width).toBeCloseTo(actionsBox.x + actionsBox.width, 1);
+  expect(buttonMetrics.length).toBeGreaterThanOrEqual(4);
+  for (const button of buttonMetrics) {
+    expect(button.width).toBeGreaterThanOrEqual(80);
+    expect(button.height).toBeGreaterThanOrEqual(34);
+    expect(button.left).toBeGreaterThanOrEqual(actionsBox.x);
+    expect(button.right).toBeLessThanOrEqual(actionsBox.x + actionsBox.width + 1);
+  }
 });

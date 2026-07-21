@@ -87,6 +87,15 @@ npm run check
 npm test
 ```
 
+生成静态托管使用的白名单生产目录：
+
+```powershell
+npm run build:production
+npm run audit:production
+```
+
+生产构建会生成内容哈希资源并拒绝 Source Map、文档、测试和未列入 manifest 的文件。授权边界与发布限制见 [`docs/production-asset-boundary.md`](docs/production-asset-boundary.md)。
+
 对已绑定的 Godot 项目还可以运行：
 
 ```powershell

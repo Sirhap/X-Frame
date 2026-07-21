@@ -35,7 +35,7 @@ function createFixture() {
     },
   };
   const state = { items: [], selectedIndex: 0 };
-  const core = {
+  const colorUtils = {
     hexToRgb: () => ({ r: 1, g: 2, b: 3 }),
     rgbToHex: ({ r, g, b }) => `#${r}${g}${b}`,
     colorDistance: () => 99,
@@ -51,7 +51,7 @@ function createFixture() {
   const controller = createController({
     state,
     elements: { cutoutColor: { value: "#010203" } },
-    core,
+    colorUtils,
     sessionCore,
     imagePixelBudget: {},
     imagePixelLimits: { maxPixelsPerImage: 10, maxTotalPixels: 20 },

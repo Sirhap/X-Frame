@@ -16,7 +16,7 @@ function createElements() {
   };
 }
 
-test("playback input controller preserves selected-frame mutation order", () => {
+test("playback input controller preserves selected-frame mutation order", async () => {
   const calls = [];
   const updates = [];
   const group = { uiId: "group-a" };
@@ -41,13 +41,38 @@ test("playback input controller preserves selected-frame mutation order", () => 
     minFrameDurationMs: 40,
   });
 
-  controller.updateSelectedPlaybackFromInputs();
+  await controller.updateSelectedPlaybackFromInputs();
 
   assert.deepEqual(updates, [
     { index: 0, value: { duration: 0.9, disabled: true } },
     { index: 1, value: { duration: 0.9, disabled: true } },
   ]);
   assert.deepEqual(calls, ["sync", "filmstrip", "hud", "draw"]);
+});
+
+test("playback input controller waits for conflict confirmation and restores cancelled input", async () => {
+  const elements = createElements();
+  const calls = [];
+  const controller = createController({
+    elements,
+    getCurrentGroup: () => ({ uiId: "group-a" }),
+    canEditFramePlayback: () => true,
+    selectedFrameIndexes: () => [0],
+    frameDurationMs: () => 40,
+    groupHasGroupTimeOverride: () => true,
+    confirm: async (message, options) => {
+      calls.push([message, options]);
+      return false;
+    },
+    translate: (key) => key,
+    syncFrameInputs: () => calls.push("sync"),
+    setFramePlayback: () => calls.push("mutated"),
+    minFrameDurationMs: 40,
+  });
+
+  await controller.updateSelectedPlaybackFromInputs();
+
+  assert.deepEqual(calls, [["frameTimeConflict", { tone: "warning" }], "sync"]);
 });
 
 test("playback input controller updates group FPS and root motion", () => {

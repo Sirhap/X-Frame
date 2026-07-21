@@ -16,7 +16,7 @@
    * @param {object} dependencies Helper dependencies supplied by the batch controller.
    * @param {object} dependencies.state Mutable batch state.
    * @param {Record<string,HTMLElement|null>} dependencies.elements Batch DOM elements.
-   * @param {object} dependencies.core Cutout core with color helpers.
+   * @param {object} dependencies.colorUtils Public display color helpers.
    * @param {object} dependencies.sessionCore Session option/edit helpers.
    * @param {object} dependencies.imagePixelBudget Image pixel-budget evaluator.
    * @param {{maxPixelsPerImage:number,maxTotalPixels:number}} dependencies.imagePixelLimits Pixel limits.
@@ -33,7 +33,7 @@
     const {
       state,
       elements,
-      core,
+      colorUtils,
       sessionCore,
       imagePixelBudget,
       imagePixelLimits,
@@ -48,7 +48,7 @@
     if (
       !state ||
       !elements ||
-      !core ||
+      !colorUtils ||
       !sessionCore ||
       !imagePixelBudget ||
       !imagePixelLimits ||
@@ -186,11 +186,11 @@
     function selectedBackgroundColor(item = selectedItem()) {
       if (item?.backgroundSamples?.length) {
         const color = item.backgroundSamples[0];
-        return { ...color, hex: core.rgbToHex(color) };
+        return { ...color, hex: colorUtils.rgbToHex(color) };
       }
       const parameters = item?.processingParameters || captureProcessingParameters();
-      const color = core.hexToRgb(parameters.backgroundColor || elements.cutoutColor.value);
-      return { ...color, a: 255, hex: core.rgbToHex(color) };
+      const color = colorUtils.hexToRgb(parameters.backgroundColor || elements.cutoutColor.value);
+      return { ...color, a: 255, hex: colorUtils.rgbToHex(color) };
     }
 
     /**
@@ -213,7 +213,7 @@
       const entries = [];
       const append = (container) => {
         for (const [index, color] of container.entries()) {
-          if (entries.some((entry) => core.colorDistance(color.r, color.g, color.b, entry.color) < 2))
+          if (entries.some((entry) => colorUtils.colorDistance(color.r, color.g, color.b, entry.color) < 2))
             continue;
           entries.push({ color, container, index });
           if (entries.length >= 32) return;

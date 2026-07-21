@@ -3,10 +3,10 @@
     typeof module === "object" && module.exports
       ? require("./cutout_tracking_geometry_core")
       : root?.CutoutTrackingGeometryCore;
-  const api = factory(geometryCore);
+  const api = factory(geometryCore, root?.ProtectedWasmKernelBridge);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.CutoutTrackingCore = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, (geometryCore) => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (geometryCore, protectedWasmKernelBridge) => {
   "use strict";
 
   if (!geometryCore?.mapPoint || !geometryCore?.mapCanvasPoint) {
@@ -38,7 +38,7 @@
    * @param {{ux:number,uy:number}|null} [previousFrame=null] Optional prior direction.
    * @returns {{ux:number,uy:number,vx:number,vy:number,cx:number,cy:number,majorLen:number,minorLen:number,isotropic?:boolean}|null}
    */
-  function computeReferenceLocalFrame(mask, width, height, previousFrame = null) {
+  function computeDevelopmentLocalFrame(mask, width, height, previousFrame = null) {
     const pixelCount = width * height;
     if (width <= 0 || height <= 0 || !mask || mask.length !== pixelCount) return null;
     let area = 0;
@@ -165,6 +165,20 @@
       majorLen: maximumMajor - minimumMajor,
       minorLen: maximumMinor - minimumMinor,
     };
+  }
+
+  /**
+   * Uses the protected PCA kernel after production Worker initialization.
+   * @param {Uint8Array|Uint8ClampedArray} mask Binary subject mask.
+   * @param {number} width Mask width.
+   * @param {number} height Mask height.
+   * @param {{ux:number,uy:number}|null} [previousFrame=null] Previous direction.
+   * @returns {object|null} Local PCA frame.
+   */
+  function computeReferenceLocalFrame(mask, width, height, previousFrame = null) {
+    return protectedWasmKernelBridge?.isReady?.()
+      ? protectedWasmKernelBridge.computeLocalFrame(mask, width, height, previousFrame)
+      : computeDevelopmentLocalFrame(mask, width, height, previousFrame);
   }
 
   /**
@@ -425,7 +439,7 @@
    * @param {{area:number,pcaMajor:number,pcaMinor:number,compactness?:number|null}|null} [seed=null] Seed statistics.
    * @returns {ReturnType<typeof compareReferenceShapeStats>}
    */
-  function checkReferenceShapeMatch(mask, width, height, seed = null) {
+  function checkDevelopmentShapeMatch(mask, width, height, seed = null) {
     const pixelCount = width * height;
     if (width <= 0 || height <= 0 || !mask || mask.length !== pixelCount) {
       return compareReferenceShapeStats({ area: 0, majorLength: 0, minorLength: 0 }, seed);
@@ -462,6 +476,20 @@
       },
       seed,
     );
+  }
+
+  /**
+   * Uses the protected layered shape gate after production Worker initialization.
+   * @param {Uint8Array|Uint8ClampedArray} mask Candidate mask.
+   * @param {number} width Mask width.
+   * @param {number} height Mask height.
+   * @param {object|null} [seed=null] Seed shape facts.
+   * @returns {object} Shape comparison result.
+   */
+  function checkReferenceShapeMatch(mask, width, height, seed = null) {
+    return protectedWasmKernelBridge?.isReady?.()
+      ? protectedWasmKernelBridge.checkShapeMatch(mask, width, height, seed)
+      : checkDevelopmentShapeMatch(mask, width, height, seed);
   }
 
   /**

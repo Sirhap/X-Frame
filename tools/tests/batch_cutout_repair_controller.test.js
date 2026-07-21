@@ -3,6 +3,10 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { createController } = require("../animation_tuner/public/batch_cutout_repair_controller");
+const colorUtils = require("../animation_tuner/public/batch_cutout_public_color");
+const tracking = require("../animation_tuner/public/cutout_tracking_core");
+const localTracking = require("../animation_tuner/public/cutout_local_tracking_core");
+const { analyzeDevelopmentRepairTracking } = require("../animation_tuner/public/protected_algorithm_runtime");
 
 /**
  * Creates the minimum repair-controller fixture used by focused workflow tests.
@@ -56,7 +60,14 @@ function createFixture(overrides = {}) {
   const dependencies = {
     state,
     elements,
-    core,
+    colorUtils,
+    selectionRepairExecutor: {
+      analyze: async (_source, _width, _height, _mask, parameters) =>
+        parameters.mode === "protect-range"
+          ? core.createProtectedRegionMask()
+          : core.selectProtectedColorsInRectangle(),
+    },
+    createSelectionMask: (_rectangle, width, height) => new Uint8Array(width * height).fill(1),
     text: (key) => key,
     processItem: async () => {},
     selectedItem: () => state.items[state.selectedIndex] || null,
@@ -96,10 +107,20 @@ function createFixture(overrides = {}) {
     refreshQualityAnalysis: () => {},
     scheduleBatchThumbnails: () => {},
     applyCurrentGroup: async () => {},
-    tracking: {
-      createTrackingState: () => ({}),
+    cutoutAnalysisExecutor: {
+      captureRepairContext: async (source, width, height, parameters) =>
+        analyzeDevelopmentRepairTracking(
+          { tracking, localTracking },
+          { data: source, width, height },
+          { ...parameters, kind: "capture" },
+        ),
+      mapRepairTarget: async (source, width, height, parameters) =>
+        analyzeDevelopmentRepairTracking(
+          { tracking, localTracking },
+          { data: source, width, height },
+          { ...parameters, kind: "map-target" },
+        ),
     },
-    localTracking: {},
     ...overrides.dependencies,
   };
   return { controller: createController(dependencies), state, item, statuses };

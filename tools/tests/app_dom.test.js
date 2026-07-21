@@ -30,6 +30,8 @@ test("createElements preserves the main workbench DOM contract", () => {
   assert.equal(elements.stage.selector, "#stage");
   assert.equal(elements.filmstrip.selector, "#filmstrip");
   assert.equal(elements.save.selector, "#save");
+  assert.equal(elements.appConfirmPanel.selector, "#appConfirmPanel");
+  assert.equal(elements.appConfirmAccept.selector, "#appConfirmAccept");
   assert.deepEqual(elements.languageButtons, [
     { selector: "[data-language]", index: 0 },
     { selector: "[data-language]", index: 1 },

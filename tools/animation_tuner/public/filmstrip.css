@@ -42,9 +42,9 @@
 }
 
 .attachmentAssetTray .assetImportButton {
-  width: 30px;
-  min-width: 30px;
-  min-height: 30px;
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
   background: var(--accent-2);
   color: #06120f;
@@ -106,7 +106,7 @@
 }
 
 .attachmentAssetCard button {
-  min-height: 28px;
+  min-height: 44px;
   padding: 4px;
   font-size: 8px;
   white-space: normal;
@@ -162,7 +162,7 @@
 }
 .thumb.reference .thumbLabel::after {
   content: " ref";
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .thumb.chained {
   background: var(--panel-2);
@@ -172,7 +172,7 @@
 }
 .thumb.overridden .thumbLabel::after {
   content: " *";
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .thumb.disabled {
   opacity: 0.42;

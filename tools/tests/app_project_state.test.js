@@ -55,3 +55,28 @@ test("markClean refreshes save controls without an injected UI callback", () => 
   assert.equal(save.disabled, false);
   assert.equal(save.textContent, "保存调参");
 });
+
+test("project refresh awaits the injected confirmation before discarding edits", async () => {
+  const state = { dirty: true, editRevision: 3, imageCache: new Map(), language: "zh" };
+  const events = [];
+  const controller = createController({
+    state,
+    elements: {},
+    messages: { zh: { projectRefreshConfirm: "确认刷新？" } },
+    documentRef: { body: { classList: { toggle() {} } } },
+    storage: null,
+    confirm: async (message, options) => {
+      events.push([message, options]);
+      return false;
+    },
+    resetProjectSession: () => events.push("reset"),
+    loadConfig: async () => events.push("load"),
+    resizeCanvas: () => events.push("resize"),
+  });
+
+  await controller.refreshActiveProject();
+
+  assert.deepEqual(events, [["确认刷新？", { tone: "warning" }]]);
+  assert.equal(state.dirty, true);
+  assert.equal(state.editRevision, 3);
+});

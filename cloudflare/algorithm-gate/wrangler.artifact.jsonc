@@ -1,0 +1,40 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "xsxb-algorithm-artifact",
+  "main": "artifact/src/index.mjs",
+  "compatibility_date": "2026-07-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ACTIVE_VERSIONS": "REPLACE_WITH_ACTIVE_VERSION",
+    "ALLOWED_ORIGINS": "[\"http://localhost:3000\",\"http://127.0.0.1:3000\",\"https://REPLACE_WITH_PRODUCTION_HOST\"]",
+    "R2_OBJECT_PREFIX": "protected-releases",
+    "REVOKED_VERSIONS": "",
+  },
+  "kv_namespaces": [
+    {
+      "binding": "GATE_STATE",
+      "id": "REPLACE_WITH_GATE_STATE_NAMESPACE_ID",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ALGORITHM_ARTIFACTS",
+      "bucket_name": "replace-with-private-r2-bucket",
+    },
+  ],
+  "ratelimits": [
+    {
+      "name": "ARTIFACT_RATE_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "limit": 30, "period": 60 },
+    },
+  ],
+  "secrets": {
+    "required": ["SESSION_SIGNING_KEY"],
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": false },
+    "traces": { "enabled": false },
+  },
+}

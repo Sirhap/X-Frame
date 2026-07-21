@@ -17,6 +17,7 @@
     "cutoutAddFiles",
     "cutoutLoadGroup",
     "cutoutClear",
+    "cutoutNewBatch",
     "cutoutColor",
     "cutoutTolerance",
     "cutoutToleranceValue",

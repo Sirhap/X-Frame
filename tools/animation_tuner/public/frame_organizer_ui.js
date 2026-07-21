@@ -92,17 +92,22 @@
     function resolveConfirmation(accepted) {
       if (elements.organizerConfirmPanel.hidden) return;
       elements.organizerConfirmPanel.hidden = true;
+      elements.organizerConfirmPanel.querySelector?.(".organizerConfirmCard")?.removeAttribute("data-tone");
       const resolver = state.confirmResolver;
       state.confirmResolver = null;
+      const returnFocus = state.confirmReturnFocus;
+      state.confirmReturnFocus = null;
       resolver?.(Boolean(accepted));
-      elements.organizerApply.focus();
+      if (returnFocus?.isConnected !== false && typeof returnFocus?.focus === "function") {
+        returnFocus.focus();
+      }
     }
 
     /**
      * Opens an application-styled confirmation layer.
      * @param {string} message Confirmation message.
      * @param {Array<[string,string|number]>} details Operation details.
-     * @param {{title?:string,confirmLabel?:string}} [options] Dialog labels.
+     * @param {{title?:string,confirmLabel?:string,tone?:"warning"|"danger"}} [options] Dialog labels and tone.
      * @returns {Promise<boolean>}
      */
     function requestConfirmation(message, details = [], options = {}) {
@@ -118,8 +123,14 @@
         description.textContent = String(value);
         elements.organizerConfirmDetails.append(term, description);
       });
+      elements.organizerConfirmDetails.hidden = details.length === 0;
+      const card = elements.organizerConfirmPanel.querySelector?.(".organizerConfirmCard");
+      if (card) card.dataset.tone = options.tone === "danger" ? "danger" : "warning";
+      state.confirmReturnFocus = documentApi.activeElement;
       elements.organizerConfirmPanel.hidden = false;
-      elements.organizerConfirmAccept.focus();
+      const initialControl =
+        options.tone === "danger" ? elements.organizerConfirmCancel : elements.organizerConfirmAccept;
+      initialControl.focus();
       return new Promise((resolve) => {
         state.confirmResolver = resolve;
       });
@@ -354,6 +365,9 @@
       });
       elements.organizerConfirmCancel.addEventListener("click", () => resolveConfirmation(false));
       elements.organizerConfirmAccept.addEventListener("click", () => resolveConfirmation(true));
+      elements.organizerConfirmPanel.addEventListener("click", (event) => {
+        if (event.target === elements.organizerConfirmPanel) resolveConfirmation(false);
+      });
       elements.organizerThreshold.addEventListener("input", () => {
         elements.organizerThresholdValue.textContent = elements.organizerThreshold.value;
       });
@@ -438,7 +452,9 @@
             const direction = event.key === "ArrowLeft" ? -1 : 1;
             const nextIndex = Math.max(0, Math.min(state.frames.length - 1, state.previewIndex + direction));
             selectFrame(nextIndex, event.shiftKey ? { shiftKey: true } : {});
-            elements.organizerGrid.children[nextIndex]?.focus({ preventScroll: true });
+            elements.organizerGrid.children[nextIndex]
+              ?.querySelector(".organizerFrameSelect")
+              ?.focus({ preventScroll: true });
             elements.organizerGrid.children[nextIndex]?.scrollIntoView({ block: "nearest" });
             return;
           }

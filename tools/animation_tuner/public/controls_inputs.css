@@ -350,9 +350,8 @@ button.save {
   margin-top: 16px;
   background: var(--accent);
   border-color: var(--line);
-  color: #fffaf0;
+  color: #05070a;
   font-weight: 950;
-  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
   box-shadow: var(--hard-shadow);
 }
 

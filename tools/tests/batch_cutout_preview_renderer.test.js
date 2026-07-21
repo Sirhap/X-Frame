@@ -59,7 +59,7 @@ function createFixture() {
     createDiagnosticCanvas() {
       return null;
     },
-    core: { rgbToHex: () => "#000000" },
+    colorUtils: { rgbToHex: () => "#000000" },
     backgroundController: { removeBackgroundSample: () => null },
     documentRef: { createElement: () => ({}) },
   });

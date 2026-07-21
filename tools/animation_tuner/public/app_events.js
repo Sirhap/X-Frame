@@ -203,6 +203,18 @@
     let bound = false;
 
     /**
+     * Runs an asynchronous playback edit and reports failures in the existing
+     * workbench status area instead of leaking an unhandled rejection.
+     * @param {()=>Promise<void>} operation Playback edit operation.
+     * @returns {void}
+     */
+    function runPlaybackEdit(operation) {
+      void operation().catch((error) =>
+        status(t("frameMutationFailed", { message: error?.message || String(error) })),
+      );
+    }
+
+    /**
      * Binds all workbench DOM and pointer listeners in their original order.
      * @returns {()=>void} Cleanup function (listeners are intentionally one-shot).
      */
@@ -320,11 +332,17 @@
         input.addEventListener("input", updateSelectedFromInputs);
       }
       armInputUndo(els.frameDuration, "frame duration");
-      els.frameDuration.addEventListener("input", updateSelectedPlaybackFromInputs);
+      els.frameDuration.addEventListener("input", () => {
+        runPlaybackEdit(() => updateSelectedPlaybackFromInputs());
+      });
       if (els.groupTimeMs) {
         armInputUndo(els.groupTimeMs, "group time");
-        els.groupTimeMs.addEventListener("input", applyGroupTimeFromInput);
-        els.groupTimeMs.addEventListener("change", applyGroupTimeFromInput);
+        els.groupTimeMs.addEventListener("input", () => {
+          runPlaybackEdit(() => applyGroupTimeFromInput());
+        });
+        els.groupTimeMs.addEventListener("change", () => {
+          runPlaybackEdit(() => applyGroupTimeFromInput());
+        });
       }
       if (els.frameAudioFile) {
         els.frameAudioFile.addEventListener("change", async () => {
@@ -365,10 +383,12 @@
       }
       els.frameDisabled.addEventListener("change", () => {
         pushUndo("toggle frame");
-        updateSelectedPlaybackFromInputs({
-          preserveDuration: groupHasGroupTimeOverride(),
-          changeDuration: false,
-        });
+        runPlaybackEdit(() =>
+          updateSelectedPlaybackFromInputs({
+            preserveDuration: groupHasGroupTimeOverride(),
+            changeDuration: false,
+          }),
+        );
       });
       els.frameReference.addEventListener("change", () => {
         setReferenceFrameEnabled(els.frameReference.checked);

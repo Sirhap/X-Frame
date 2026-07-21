@@ -1,5 +1,12 @@
 node_modules/
+target/
 coverage/
+dist/
+.dist-build-*/
+.dist-backup-*/
+.dist-restore-*/
+.dist-restore-backup-*/
+.protected-releases/
 playwright-report/
 test-results/
 npm-debug.log*
@@ -39,3 +46,8 @@ output/
 .playwright-cli/
 .codex-artifacts/
 reprocessed-frames/
+
+# Reproducible production output. Publish the directory as one immutable unit.
+dist/
+.dist-build-*/
+.dist-backup-*/

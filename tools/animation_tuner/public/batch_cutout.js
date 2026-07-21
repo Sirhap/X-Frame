@@ -16,14 +16,8 @@
   function createController(hooks = {}) {
     const imagePixelBudget = root.ImagePixelBudget;
     if (!imagePixelBudget) throw new Error("ImagePixelBudget is required.");
-    const core = root.BatchCutoutCore;
-    if (!core) throw new Error("BatchCutoutCore is required.");
-    const tracking = root.CutoutTrackingCore;
-    if (!tracking) throw new Error("CutoutTrackingCore is required.");
-    const localTracking = root.CutoutLocalTrackingCore;
-    if (!localTracking) throw new Error("CutoutLocalTrackingCore is required.");
-    const quality = root.CutoutQualityCore;
-    if (!quality) throw new Error("CutoutQualityCore is required.");
+    const colorUtils = root.BatchCutoutPublicColor;
+    if (!colorUtils) throw new Error("BatchCutoutPublicColor is required.");
     const batchZip = root.BatchZip;
     if (!batchZip) throw new Error("BatchZip is required.");
     const outputCore = root.BatchCutoutOutputCore;
@@ -36,11 +30,12 @@
     if (!repairReplayCore) throw new Error("BatchCutoutRepairReplayCore is required.");
     const backgroundController = root.BatchCutoutBackgroundController;
     if (!backgroundController) throw new Error("BatchCutoutBackgroundController is required.");
-    const workerClient = root.BatchCutoutWorkerClient;
-    if (!workerClient) throw new Error("BatchCutoutWorkerClient is required.");
-    const cutoutExecutor = workerClient.createExecutor({
-      syncProcess: core.applyProductCutout,
-    });
+    const protectedRuntimeModule = root.ProtectedAlgorithmRuntime;
+    if (!protectedRuntimeModule) throw new Error("ProtectedAlgorithmRuntime is required.");
+    const protectedRuntime = protectedRuntimeModule.getDefaultRuntime(root);
+    const cutoutExecutor = protectedRuntimeModule.createProductExecutor(protectedRuntime);
+    const selectionRepairExecutor = protectedRuntimeModule.createSelectionRepairExecutor(protectedRuntime);
+    const cutoutAnalysisExecutor = protectedRuntimeModule.createCutoutAnalysisExecutor(protectedRuntime);
     const resultArtifacts = resultCacheCore.createResultArtifactCache();
     const elements = runtimeSetup.collectElements(document);
     const state = runtimeSetup.createInitialState(hooks.getLanguage?.());
@@ -107,7 +102,7 @@
       }
       return processingHelpersController[method](...args);
     }
-    /** @returns {void} Refreshes sequence-level quality analysis. */
+    /** @returns {Promise<void>} Refreshes sequence-level quality analysis. */
     function refreshQualityAnalysis(...args) {
       return processingHelperCall("refreshQualityAnalysis", ...args);
     }
@@ -182,7 +177,7 @@
     const imageController = imageControllerModule.createController({
       state,
       elements,
-      core,
+      colorUtils,
       sessionCore,
       imagePixelBudget,
       imagePixelLimits: IMAGE_PIXEL_LIMITS,
@@ -228,7 +223,8 @@
       throw new Error("BatchCutoutProtectionPreview is required.");
     }
     const protectionPreviewController = protectionPreviewModule.createController({
-      core,
+      colorUtils,
+      selectionRepairExecutor,
       state,
       elements,
       text,
@@ -237,6 +233,7 @@
     });
     const {
       normalizeProtectionRectangle,
+      createSelectionMask,
       createColorProtectionPreview,
       syncProtectionPreview,
       drawProtectionPreview,
@@ -338,7 +335,7 @@
     processingHelpersController = processingHelpersModule.createController({
       state,
       elements,
-      quality,
+      cutoutAnalysisExecutor,
       getCurrentAnimation: () => hooks.getCurrentAnimation?.(),
       text,
       setStatus,
@@ -349,7 +346,7 @@
       renderPreview,
       previewSourcePoint,
       backgroundController,
-      core,
+      colorUtils,
       recordItemEdit,
       createRepairTrackingMetadata,
       schedulePreview,
@@ -407,7 +404,7 @@
       selectedItem,
       hasQualityIssue,
       selectedBackgroundColor,
-      core,
+      colorUtils,
       recordItemEdit,
       invalidateItem,
       renderPreview,
@@ -440,10 +437,7 @@
       createItem,
       processingOptions,
       repairReplayCore,
-      core,
       cutoutExecutor,
-      tracking,
-      quality,
       createThumbnailUrl,
       refreshQualityAnalysis,
       resultArtifacts,
@@ -487,7 +481,7 @@
       renderStatus,
       updateQueueCard,
       createDiagnosticCanvas,
-      core,
+      colorUtils,
       backgroundController,
       documentRef: document,
     });
@@ -516,31 +510,15 @@
     } = gestureController;
 
     /**
-     * Captures local appearance and optional connected-region topology before a repair mutates it.
+     * Creates a deferred tracking marker. Pixel-heavy context is captured by the
+     * protected runtime only when cross-frame propagation is requested.
      * @param {object} item Active queue item.
      * @param {{x:number,y:number}} point Repair anchor point.
      * @param {{includeRegion?:boolean,tolerance?:number,sourceColor?:object}} [options] Capture options.
-     * @returns {{localAnchor:object|null,sourceRegion?:object|null}}
+     * @returns {{localAnchor:null}} Deferred tracking marker.
      */
-    function createRepairTrackingMetadata(item, point, options = {}) {
-      const imageData = item?.resultImageData;
-      if (!imageData) return { localAnchor: null };
-      const localAnchor = localTracking.createLocalAnchor(
-        imageData.data,
-        imageData.width,
-        imageData.height,
-        point,
-      );
-      const sourceRegion = options.includeRegion
-        ? localTracking.measureConnectedRegion(imageData.data, imageData.width, imageData.height, point, {
-            sourceColor: options.sourceColor,
-            tolerance: options.tolerance,
-          })
-        : undefined;
-      return {
-        localAnchor,
-        ...(options.includeRegion ? { sourceRegion } : {}),
-      };
+    function createRepairTrackingMetadata(_item, _point, _options = {}) {
+      return { localAnchor: null };
     }
 
     const repairControllerModule = globalThis.BatchCutoutRepairController;
@@ -550,7 +528,9 @@
     const repairController = repairControllerModule.createController({
       state,
       elements,
-      core,
+      colorUtils,
+      selectionRepairExecutor,
+      createSelectionMask,
       text,
       processItem,
       selectedItem,
@@ -567,8 +547,7 @@
       refreshQualityAnalysis,
       scheduleBatchThumbnails,
       applyCurrentGroup,
-      tracking,
-      localTracking,
+      cutoutAnalysisExecutor,
     });
     const { applyProtectionSelection, propagateLatestRepair } = repairController;
 
@@ -657,7 +636,7 @@
       renderBackgroundSamples,
       renderProtectedColors,
       backgroundController,
-      core,
+      colorUtils,
       sessionCore,
       applyProcessingParametersToControls,
       syncProtectionPreview,

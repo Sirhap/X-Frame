@@ -174,7 +174,7 @@
   padding: 0;
   border-radius: 50%;
   background: var(--accent);
-  color: #fffaf0;
+  color: #05070a;
   font: 900 30px/1 var(--data-font);
   box-shadow: 4px 4px 0 var(--line);
 }
@@ -366,15 +366,20 @@
   display: grid;
   place-items: center;
   padding: 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
   background: rgba(5, 7, 10, 0.82);
   backdrop-filter: blur(7px);
 }
 
 .organizerConfirmCard {
   width: min(540px, 96%);
+  max-height: calc(100dvh - 48px);
   display: grid;
   gap: 12px;
   padding: 22px;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 4px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
@@ -385,6 +390,10 @@
   color: var(--accent-3);
   font: 950 9px/1 var(--data-font);
   letter-spacing: 0.16em;
+}
+
+.organizerConfirmCard[data-tone="danger"] > span {
+  color: var(--danger);
 }
 
 .organizerConfirmCard h3,
@@ -426,4 +435,32 @@
   display: grid;
   grid-template-columns: 120px 1fr;
   gap: 8px;
+}
+
+.organizerConfirmCard > div:last-child button {
+  min-height: 48px;
+}
+
+.organizerConfirmCard[data-tone="danger"] #organizerConfirmAccept {
+  background: var(--danger);
+  color: var(--danger-ink);
+}
+
+@media (max-width: 560px) {
+  .organizerConfirmPanel {
+    place-items: end center;
+    padding: 12px;
+  }
+
+  .organizerConfirmCard {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    padding: 18px;
+    border-width: 3px;
+    box-shadow: 6px 6px 0 var(--line);
+  }
+
+  .organizerConfirmCard > div:last-child {
+    grid-template-columns: 1fr;
+  }
 }

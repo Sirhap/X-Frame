@@ -77,7 +77,7 @@
     const bindFrameImageAttachmentFile = handlers.bindFrameImageAttachmentFile || (async () => {});
     const bindFrameAudioFile = handlers.bindFrameAudioFile || (async () => {});
     const removeFrameAudioFromCard = handlers.removeFrameAudioFromCard || (async () => {});
-    const adjustFrameDurationMs = handlers.adjustFrameDurationMs || (() => {});
+    const adjustFrameDurationMs = handlers.adjustFrameDurationMs || (async () => {});
     const imageFileFromList = handlers.imageFileFromList || (() => null);
     const audioFileFromList = handlers.audioFileFromList || (() => null);
     const overrideStore = handlers.overrideStore || (() => ({}));
@@ -349,7 +349,7 @@
     <span class="attachmentActions">
       <button type="button" class="attachmentAction" data-action="remove-attachment" title="${escapeHtml(translate("frameAttachmentRemove"))}" aria-label="${escapeHtml(translate("frameAttachmentRemove"))}">×</button>
     </span>
-    <img src="${assetUrl(attachment)}" alt="" width="${Math.max(1, Number(attachment.width || 1))}" height="${Math.max(1, Number(attachment.height || 1))}">
+    <img src="${assetUrl(attachment)}" alt="" width="${Math.max(1, Number(attachment.width || 1))}" height="${Math.max(1, Number(attachment.height || 1))}" loading="lazy">
     <span class="thumbLabel">${label}${index + 1}</span>`;
       card.querySelector('[data-action="remove-attachment"]').addEventListener("click", (event) => {
         event.preventDefault();
@@ -416,7 +416,7 @@
           : "";
         item.innerHTML = `
       ${audioBadge}
-      <img src="${assetUrl(frame)}" alt="" width="${Math.max(1, Number(frame.width || 1))}" height="${Math.max(1, Number(frame.height || 1))}">
+      <img src="${assetUrl(frame)}" alt="" width="${Math.max(1, Number(frame.width || 1))}" height="${Math.max(1, Number(frame.height || 1))}" loading="lazy">
       <span class="thumbLabel">${label}${index + 1}</span>
       <div class="thumbDuration">
         <button type="button" class="durationStep" data-delta="${-frameDurationStepMs}" ${canAdjustDuration ? "" : "disabled"} title="-${frameDurationStepMs}ms" aria-label="-${frameDurationStepMs}ms">-</button>
@@ -490,10 +490,14 @@
           await bindFrameAudioFile(file, index, group);
         });
         item.querySelectorAll(".durationStep").forEach((button) => {
-          button.addEventListener("click", (event) => {
+          button.addEventListener("click", async (event) => {
             event.preventDefault();
             event.stopPropagation();
-            adjustFrameDurationMs(index, Number(button.dataset.delta || 0));
+            try {
+              await adjustFrameDurationMs(index, Number(button.dataset.delta || 0));
+            } catch (error) {
+              handlers.status?.(translate("frameMutationFailed", { message: error.message }));
+            }
           });
         });
         item.addEventListener("click", async (event) => {

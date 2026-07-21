@@ -129,6 +129,61 @@ test("editor tuning, frame attachment, and audio survive save and reload", async
   await expect(page.locator("#baseX")).toHaveValue("1");
   await expect(page.locator(".attachmentThumb")).toHaveCount(1);
   await expect(page.locator(".thumb.primary")).toHaveClass(/hasSfx/);
+
+  await page.locator(".thumb.primary .frameSfxBadge").click();
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await expect(page.locator("#appConfirmCard")).toHaveAttribute("data-tone", "danger");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+  await expect(page.locator(".thumb.primary")).toHaveClass(/hasSfx/);
+
+  await page.locator(".thumb.primary .frameSfxBadge").click();
+  await page.locator("#appConfirmAccept").click();
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+  await expect(page.locator(".thumb.primary")).not.toHaveClass(/hasSfx/);
+});
+
+test("mobile frame deletion and animation clearing remain explicit and bounded", async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 390, height: 640 });
+  await importProject(request, "frame-delete", 3);
+  await page.goto("/");
+  await expect(page.locator(".thumb")).toHaveCount(3);
+
+  await page.locator(".deleteSelectedFrames").click();
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await expect(page.locator("#appConfirmCancel")).toBeFocused();
+  await expect(page.locator("#appConfirmAccept")).toHaveText("删除所选");
+  const dialogMetrics = await page.locator("#appConfirmCard").evaluate((card) => {
+    const bounds = card.getBoundingClientRect();
+    const buttonHeights = Array.from(
+      card.querySelectorAll("button"),
+      (button) => button.getBoundingClientRect().height,
+    );
+    return { top: bounds.top, bottom: bounds.bottom, viewportHeight: window.innerHeight, buttonHeights };
+  });
+  expect(dialogMetrics.top).toBeGreaterThanOrEqual(0);
+  expect(dialogMetrics.bottom).toBeLessThanOrEqual(dialogMetrics.viewportHeight);
+  expect(dialogMetrics.buttonHeights.every((height) => height >= 48)).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".thumb")).toHaveCount(3);
+
+  await page.locator(".deleteSelectedFrames").click();
+  await page.locator("#appConfirmAccept").click();
+  await expect(page.locator(".thumb")).toHaveCount(2);
+
+  await page.locator(".clearAnimation").click();
+  await expect(page.locator("#appConfirmCancel")).toBeFocused();
+  await expect(page.locator("#appConfirmAccept")).toHaveText("清空动画");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".thumb")).toHaveCount(2);
+
+  await page.locator(".clearAnimation").click();
+  await page.locator("#appConfirmAccept").click();
+  await expect(page.locator(".thumb")).toHaveCount(0);
+  await expect(page.locator("#groupSelect")).toBeDisabled();
 });
 
 test("organizer reorders data through the server and reloads the reduced animation", async ({
@@ -240,18 +295,34 @@ test("project switching, clearing, and deletion preserve explicit confirmation",
   const second = await importProject(request, "lifecycle-b");
   await page.goto("/");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
-  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.locator("#projectSelect").focus();
   await page.locator("#projectSelect").selectOption(first.activeProjectId);
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await expect(page.locator("#appConfirmMessage")).toContainText("未保存");
+  await expect(page.locator("#mainWorkbench")).toHaveAttribute("inert", "");
+  await expect(page.locator("#appConfirmAccept")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+  await expect(page.locator("#mainWorkbench")).not.toHaveAttribute("inert", "");
+  await expect(page.locator("#projectSelect")).toBeFocused();
   await expect(page.locator("#projectSelect")).toHaveValue(second.activeProjectId);
-  page.once("dialog", (dialog) => dialog.accept());
+
   await page.locator("#projectSelect").selectOption(first.activeProjectId);
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await page.locator("#appConfirmAccept").click();
   await expect(page.locator("#projectSelect")).toHaveValue(first.activeProjectId);
 
-  page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#clearProject").click();
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await expect(page.locator("#appConfirmCard")).toHaveAttribute("data-tone", "danger");
+  await expect(page.locator("#appConfirmMessage")).toContainText("清空项目");
+  await page.locator("#appConfirmAccept").click();
   await expect(page.locator("#groupSelect")).toBeDisabled();
-  page.once("dialog", (dialog) => dialog.accept());
+
   await page.locator("#deleteProject").click();
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await expect(page.locator("#appConfirmMessage")).toContainText("删除项目");
+  await page.locator("#appConfirmAccept").click();
   await expect(page.locator(`#projectSelect option[value="${first.activeProjectId}"]`)).toHaveCount(0);
 });
 

@@ -21,6 +21,7 @@
       messages = {},
       documentRef = root?.document || {},
       windowRef = root?.window || root || {},
+      confirm = (message) => windowRef.confirm?.(message) ?? true,
       storage = resolveStorage(root),
       projectLabel = (project) => project?.label || project?.name || project?.id || "",
       frameImageAttachmentClipboardItem = (attachment) => attachment,
@@ -110,6 +111,13 @@
       documentRef.querySelectorAll?.("[data-i18n-title]").forEach((node) => {
         node.title = t(node.dataset.i18nTitle);
         if (node.hasAttribute("aria-label")) node.setAttribute("aria-label", t(node.dataset.i18nTitle));
+      });
+      documentRef.querySelectorAll?.("[data-i18n-aria-label]").forEach((node) => {
+        const valueKey = node.dataset.i18nValue;
+        node.setAttribute(
+          "aria-label",
+          t(node.dataset.i18nAriaLabel, valueKey ? { value: t(valueKey) } : undefined),
+        );
       });
       if (elements.refreshProject)
         elements.refreshProject.setAttribute("aria-label", t("refreshAnimationList"));
@@ -267,7 +275,8 @@
      * @returns {Promise<void>} Resolves when the project has reloaded.
      */
     async function refreshActiveProject() {
-      if (readState("dirty", false) && !windowRef.confirm?.(t("projectRefreshConfirm"))) return;
+      if (readState("dirty", false) && !(await confirm(t("projectRefreshConfirm"), { tone: "warning" })))
+        return;
       resetProjectSession();
       state.dirty = false;
       state.editRevision = Number(readState("editRevision", 0)) + 1;

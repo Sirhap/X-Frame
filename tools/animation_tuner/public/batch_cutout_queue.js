@@ -187,7 +187,7 @@
         card.draggable = !state.busy;
         card.className = `cutoutQueueItem ${index === state.selectedIndex ? "active" : ""} ${state.selectedIds.has(item.id) ? "batchSelected" : ""} ${item.excluded ? "excluded" : ""}`;
         card.innerHTML = `
-          <img alt="">
+          <img alt="" width="120" height="44" loading="lazy">
           <span class="cutoutQueueName"></span>
           <b class="cutoutQueueIndex">${index + 1}</b>
           <em class="cutoutQueueAlert"></em>

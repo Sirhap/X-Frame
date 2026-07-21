@@ -135,7 +135,7 @@ body.theme-light h1 {
 }
 
 h2 {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;

@@ -17,17 +17,29 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - uses: dtolnay/rust-toolchain@1.85.1
+        with:
+          components: rustfmt
+          targets: wasm32-unknown-unknown
       - name: Install development tooling
         run: npm ci
+      - name: Verify protected Rust/WASM core
+        run: npm run check:protected-core
+      - name: Build and audit final production artifacts
+        run: |
+          npm run build:production
+          npm run audit:protected:final
       - name: Syntax and static checks
         run: npm run check
       - name: Unit and integration tests
         run: npm test
-      - name: Install Chromium
-        run: npx playwright install chromium
+      - name: Install browser matrix
+        run: npx playwright install chromium firefox webkit
       - name: Browser and mobile regressions
         run: npm run test:e2e
       - name: Coverage report
         run: npm run test:coverage
       - name: FramePacker regression baseline
         run: npm run perf:framepacker:check
+      - name: Protected WASM P95 baseline
+        run: npm run perf:protected-wasm:check

@@ -10,6 +10,7 @@ const { createController } = require("../animation_tuner/public/batch_cutout_ses
  */
 function createFixture() {
   const statuses = [];
+  const confirmations = [];
   const lifecycle = [];
   const state = {
     busy: false,
@@ -77,9 +78,12 @@ function createFixture() {
     selectedItem: () => state.items[state.selectedIndex] || null,
     renderQueue() {},
     setStatus: (message) => statuses.push(message),
-    requestConfirmation: async () => true,
+    requestConfirmation: async (message, _details, options) => {
+      confirmations.push({ message, options });
+      return true;
+    },
   });
-  return { controller, lifecycle, state, statuses };
+  return { controller, confirmations, lifecycle, state, statuses };
 }
 
 test("session controller validates required dependencies", () => {
@@ -94,6 +98,14 @@ test("session controller detects workset changes", () => {
   assert.equal(controller.hasWorksetChanges(), true);
 });
 
+test("session controller announces a restored standalone batch", () => {
+  const { controller, statuses } = createFixture();
+
+  controller.open({ syncRoute: false });
+
+  assert.deepEqual(statuses, ["batchResumed"]);
+});
+
 test("session controller clears the current batch after confirmation", async () => {
   const { controller, state } = createFixture();
 
@@ -102,6 +114,17 @@ test("session controller clears the current batch after confirmation", async () 
   assert.equal(state.items.length, 0);
   assert.equal(state.sourceKind, "");
   assert.equal(state.selectedIndex, 0);
+});
+
+test("session controller uses new-batch confirmation wording", async () => {
+  const { controller, confirmations } = createFixture();
+
+  await controller.clear({ mode: "new" });
+
+  assert.deepEqual(confirmations[0], {
+    message: "newBatchConfirm",
+    options: { title: "newBatchTitle", confirmLabel: "confirmNewBatch", tone: "danger" },
+  });
 });
 
 test("session controller resolves an isolated workset without replacing its host route", async () => {

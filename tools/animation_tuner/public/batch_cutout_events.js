@@ -76,7 +76,7 @@
       renderBackgroundSamples,
       renderProtectedColors,
       backgroundController,
-      core,
+      colorUtils,
       sessionCore,
       applyProcessingParametersToControls,
       syncProtectionPreview,
@@ -143,6 +143,14 @@
       elements.cutoutLoadGroup.addEventListener("click", loadCurrentGroup);
       elements.cutoutClear.addEventListener("click", () => {
         clear().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
+      });
+      elements.cutoutNewBatch.addEventListener("click", async () => {
+        try {
+          const cleared = await clear({ mode: "new" });
+          if (cleared) elements.cutoutAddFiles.focus();
+        } catch (error) {
+          setStatus(text("failed", { message: error.message }), "error");
+        }
       });
       elements.cutoutDownload.addEventListener("click", downloadAll);
       elements.cutoutApplyGroup.addEventListener("click", applyCurrentGroup);
@@ -258,6 +266,9 @@
       );
       elements.cutoutConfirmCancel.addEventListener("click", () => resolveConfirmation(false));
       elements.cutoutConfirmApply.addEventListener("click", () => resolveConfirmation(true));
+      elements.cutoutConfirmPanel.addEventListener("click", (event) => {
+        if (event.target === elements.cutoutConfirmPanel) resolveConfirmation(false);
+      });
       repairEvents.bind();
       /**
        * Toggles background sampling from either the source-settings button or the persistent toolbar shortcut.
@@ -538,7 +549,7 @@
           recordItemEdit(item);
           backgroundController.clearBackgroundSamples(item);
           item.backgroundSamples = [
-            backgroundController.normalizeColor(core.hexToRgb(elements.cutoutColor.value)),
+            backgroundController.normalizeColor(colorUtils.hexToRgb(elements.cutoutColor.value)),
           ];
           item.processingActivated = true;
           item.automaticCutoutActivated = true;

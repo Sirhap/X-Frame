@@ -9,7 +9,7 @@ test("processing helpers expose quality predicates and localized labels", () => 
   const controller = createController({
     state: { items: [], qualityOnly: false },
     elements: {},
-    quality: {},
+    cutoutAnalysisExecutor: {},
     getCurrentAnimation: () => null,
     text: (key) => ({ qualityEmpty: "Empty", qualityArea: "Area" })[key] || key,
     setStatus: () => {},
@@ -20,7 +20,7 @@ test("processing helpers expose quality predicates and localized labels", () => 
     renderPreview: () => {},
     previewSourcePoint: () => null,
     backgroundController: {},
-    core: {},
+    colorUtils: {},
     recordItemEdit: () => {},
     createRepairTrackingMetadata: () => ({}),
     schedulePreview: () => {},
@@ -67,7 +67,7 @@ test("background sampling stays active and reads original colors behind transpar
   const controller = createController({
     state,
     elements,
-    quality: { analyzeCutoutQualitySequence: () => [] },
+    cutoutAnalysisExecutor: { analyzeQuality: async () => [] },
     getCurrentAnimation: () => null,
     text: (key) => key,
     setStatus: () => {},
@@ -78,7 +78,7 @@ test("background sampling stays active and reads original colors behind transpar
     renderPreview: () => {},
     previewSourcePoint: (event) => ({ sourceX: event.sampleX, sourceY: 0 }),
     backgroundController,
-    core: {
+    colorUtils: {
       colorDistance: () => 99,
       rgbToHex: (color) =>
         `#${[color.r, color.g, color.b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`,

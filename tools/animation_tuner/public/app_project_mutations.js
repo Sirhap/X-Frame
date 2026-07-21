@@ -33,7 +33,7 @@
    *   getDirty?:()=>boolean,
    *   setDirty?:(value:boolean)=>void,
    *   setSelectedProjectId?:(value:string)=>void,
-   *   confirm?:(message:string)=>boolean,
+   *   confirm?:(message:string,options?:object)=>boolean|Promise<boolean>,
    *   fetchImpl?:typeof fetch,
    *   translate?:(key:string,variables?:object)=>string,
    *   projectLabel?:(project:object)=>string,
@@ -93,7 +93,12 @@
      */
     async function activateProject(projectId) {
       if (!projectId || projectId === getActiveProjectId()) return false;
-      if (getDirty() && !confirm(translate("projectSwitchConfirm"))) {
+      if (
+        getDirty() &&
+        !(await confirm(translate("projectSwitchConfirm"), {
+          tone: "warning",
+        }))
+      ) {
         renderProjectSelect();
         return false;
       }
@@ -121,7 +126,14 @@
       const project = getConfig()?.activeProject;
       if (!project?.id) return false;
       const label = projectLabel(project);
-      if (!confirm(translate("clearProjectConfirm", { project: label }))) return false;
+      if (
+        !(await confirm(translate("clearProjectConfirm", { project: label }), {
+          title: translate("clearProject"),
+          confirmLabel: translate("clearProject"),
+          tone: "danger",
+        }))
+      )
+        return false;
       setProjectMutationBusy(true);
       try {
         if (typeof fetchImpl !== "function") throw new Error("fetch is unavailable");
@@ -150,7 +162,14 @@
       const project = getConfig()?.activeProject;
       if (!project?.id) return false;
       const label = projectLabel(project);
-      if (!confirm(translate("deleteProjectConfirm", { project: label }))) return false;
+      if (
+        !(await confirm(translate("deleteProjectConfirm", { project: label }), {
+          title: translate("deleteProject"),
+          confirmLabel: translate("deleteProject"),
+          tone: "danger",
+        }))
+      )
+        return false;
       setProjectMutationBusy(true);
       try {
         if (typeof fetchImpl !== "function") throw new Error("fetch is unavailable");

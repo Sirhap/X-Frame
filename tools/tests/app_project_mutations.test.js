@@ -85,14 +85,19 @@ test("project activation honors dirty confirmation and reloads on success", asyn
   const fixture = createFixture();
   fixture.state.dirty = true;
   const cancelledEvents = [];
+  const confirmations = [];
   const cancelled = createFixture({
     getDirty: () => true,
-    confirm: () => false,
+    confirm: async (message, options) => {
+      confirmations.push([message, options]);
+      return false;
+    },
     renderProjectSelect: () => cancelledEvents.push("render-projects"),
   });
 
   assert.equal(await cancelled.controller.activateProject("project-b"), false);
   assert.deepEqual(cancelledEvents, ["render-projects"]);
+  assert.deepEqual(confirmations, [["projectSwitchConfirm:", { tone: "warning" }]]);
 
   fixture.state.dirty = false;
   assert.equal(await fixture.controller.activateProject("project-b"), true);

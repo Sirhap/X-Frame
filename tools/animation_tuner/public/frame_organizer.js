@@ -23,10 +23,15 @@
     const imagePixelBudget = root.ImagePixelBudget;
     if (!imagePixelBudget) throw new Error("ImagePixelBudget is required.");
     if (!textModule) throw new Error("FrameOrganizerText is required.");
-    const core = root.FrameOrganizerCore;
-    if (!core) throw new Error("FrameOrganizerCore is required.");
-    const loopWorkerClient = root.FrameOrganizerWorkerClient;
-    if (!loopWorkerClient) throw new Error("FrameOrganizerWorkerClient is required.");
+    const protectedRuntimeModule = root.ProtectedAlgorithmRuntime;
+    if (!protectedRuntimeModule) throw new Error("ProtectedAlgorithmRuntime is required.");
+    const protectedRuntime = protectedRuntimeModule.getDefaultRuntime(root);
+    const sequenceAnalysisExecutor = protectedRuntimeModule.createFrameAnalysisExecutor(protectedRuntime);
+    const frameAnalysisClient = {
+      createExecutor() {
+        return protectedRuntimeModule.createFrameAnalysisExecutor(protectedRuntime);
+      },
+    };
     const loopModule = root.FrameOrganizerLoop;
     if (!loopModule) throw new Error("FrameOrganizerLoop is required.");
     const videoModule = root.FrameOrganizerVideo;
@@ -253,8 +258,7 @@
       elements,
       state,
       text,
-      core,
-      workerClient: loopWorkerClient,
+      workerClient: frameAnalysisClient,
       includedFrames,
       frameSignature,
       drawFrameToCanvas,
@@ -375,7 +379,7 @@
      */
     function frameSignature(frame) {
       if (frame.signature) return frame.signature;
-      const sampleSize = core.REFERENCE_SAMPLE_SIZE || 256;
+      const sampleSize = 256;
       const canvas = document.createElement("canvas");
       canvas.width = sampleSize;
       canvas.height = sampleSize;
@@ -383,7 +387,7 @@
       context.clearRect(0, 0, sampleSize, sampleSize);
       context.drawImage(frame.editedCanvas, 0, 0, sampleSize, sampleSize);
       const imageData = context.getImageData(0, 0, sampleSize, sampleSize);
-      frame.signature = core.createSignature(imageData.data, imageData.width, imageData.height);
+      frame.signature = { data: imageData.data, width: imageData.width, height: imageData.height };
       return frame.signature;
     }
 
@@ -400,7 +404,7 @@
      * Returns the current workset's shared duplicate/jump analysis context.
      * Revisions make the context expire after a flip or any image-edit operation.
      * @param {Array<{frame:object,index:number}>} entries Included sequence entries.
-     * @returns {{signatures:Array<object>,context:{compareIndexes:(leftIndex:number,rightIndex:number)=>number}}}
+     * @returns {{signatures:Array<object>}} Cached signature workset.
      */
     function sequenceAnalysisContext(entries) {
       const key = analysisWorksetCacheKey(entries);
@@ -409,7 +413,6 @@
       sequenceAnalysisContextCache = {
         key,
         signatures,
-        context: core.createSequenceAnalysisContext(signatures),
       };
       return sequenceAnalysisContextCache;
     }
@@ -463,16 +466,22 @@
     /**
      * Runs jump or duplicate analysis against currently included frames.
      * @param {"jump"|"duplicate"} type Analysis type.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    function analyze(type) {
+    async function analyze(type) {
       const included = state.frames
         .map((frame, index) => ({ frame, index }))
         .filter((entry) => entry.frame.included);
-      const { signatures, context } = sequenceAnalysisContext(included);
+      const { signatures } = sequenceAnalysisContext(included);
       const threshold = Number(elements.organizerThreshold.value);
+      let result;
+      try {
+        result = await sequenceAnalysisExecutor.analyze(signatures, { operation: type, threshold });
+      } catch (error) {
+        setStatus(error?.code || error?.message || "ENGINE_EXECUTION_FAILED", "error");
+        return;
+      }
       if (type === "jump") {
-        const result = core.analyzeJumpFrames(signatures, threshold, context);
         const { matches } = result;
         selectIndexes(matches.map((match) => included[match.index].index));
         if (result.autoAdjustedThreshold != null) {
@@ -489,7 +498,6 @@
         );
         return;
       }
-      const result = core.analyzeDuplicateFrames(signatures, threshold, context);
       const { matches } = result;
       selectIndexes(matches.map((match) => included[match.index].index));
       if (result.autoAdjustedThreshold != null) {
@@ -630,6 +638,7 @@
         const confirmed = await uiController.requestConfirmation(text("discardConfirm"), [], {
           title: text("discardTitle"),
           confirmLabel: text("discardAccept"),
+          tone: "danger",
         });
         if (!confirmed) return false;
       }

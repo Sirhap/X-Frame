@@ -42,16 +42,22 @@
     const documentApi = documentRef;
 
     /**
-     * Clears the current batch.
-     * @returns {Promise<void>}
+     * Clears the current batch after an explicit confirmation.
+     * @param {{mode?:"clear"|"new"}} [options] Confirmation wording variant.
+     * @returns {Promise<boolean>} Whether the batch was cleared.
      */
-    async function clear() {
-      if (!state.items.length) return;
-      const confirmed = await requestConfirmation(text("clearConfirm"), [], {
-        title: text("clearTitle"),
-        confirmLabel: text("confirmClear"),
+    async function clear(options = {}) {
+      const newBatch = options.mode === "new";
+      if (!state.items.length) {
+        setStatus(text("ready"));
+        return true;
+      }
+      const confirmed = await requestConfirmation(text(newBatch ? "newBatchConfirm" : "clearConfirm"), [], {
+        title: text(newBatch ? "newBatchTitle" : "clearTitle"),
+        confirmLabel: text(newBatch ? "confirmNewBatch" : "confirmClear"),
+        tone: "danger",
       });
-      if (!confirmed) return;
+      if (!confirmed) return false;
       stopBatchPlayback();
       state.thumbnailJob += 1;
       resultArtifacts.clear();
@@ -74,6 +80,7 @@
       renderQueue();
       renderPreview();
       setStatus(text("ready"));
+      return true;
     }
 
     /**
@@ -86,6 +93,7 @@
       const confirmed = await requestConfirmation(text("deleteConfirm", { count: selectedCount }), [], {
         title: text("deleteTitle"),
         confirmLabel: text("confirmDelete"),
+        tone: "danger",
       });
       if (!confirmed) return;
       stopBatchPlayback();
@@ -116,6 +124,8 @@
         elements.cutoutConnected.checked = false;
         elements.cutoutPerceptual.checked = false;
         state.batchTrayCollapsed = true;
+      } else if (state.sourceKind !== "workset") {
+        setStatus(text("batchResumed", { count: state.items.length }), "idle");
       }
       state.returnFocus = documentApi.activeElement;
       elements.cutoutModal.hidden = false;
@@ -250,6 +260,7 @@
         const confirmed = await requestConfirmation(text("discardConfirm"), [], {
           title: text("discardTitle"),
           confirmLabel: text("confirmDiscard"),
+          tone: "danger",
         });
         if (!confirmed) return false;
       }

@@ -231,6 +231,100 @@ test("cutout executor does not retry algorithm failures", async () => {
   assert.equal(instances.length, 1);
 });
 
+test("cutout executor transports protected selection analysis without a synchronous fallback", async () => {
+  const received = [];
+  class SelectionWorker {
+    postMessage(message) {
+      received.push({
+        operation: message.operation,
+        protocolVersion: message.protocolVersion,
+        mask: Array.from(new Uint8Array(message.selectionMaskBuffer)),
+        preview: Array.from(new Uint8ClampedArray(message.previewBuffer)),
+      });
+      queueMicrotask(() =>
+        this.onmessage({
+          data: {
+            id: message.id,
+            ok: true,
+            result: { count: 1, coverage: 100 },
+            maskBuffer: Uint8Array.from([1]).buffer,
+          },
+        }),
+      );
+    }
+
+    terminate() {}
+  }
+  const executor = createExecutor({ WorkerConstructor: SelectionWorker });
+  const result = await executor.selectionRepair(
+    Uint8ClampedArray.from([10, 20, 30, 255]),
+    1,
+    1,
+    Uint8Array.from([1]),
+    {
+      mode: "protect-range",
+      rectangle: { x1: 0, y1: 0, x2: 0, y2: 0 },
+      previewData: Uint8ClampedArray.from([10, 20, 30, 255]),
+    },
+    { cancellationId: "selection-1", protocolVersion: 1 },
+  );
+
+  assert.deepEqual(received, [
+    { operation: "selection-repair", protocolVersion: 1, mask: [1], preview: [10, 20, 30, 255] },
+  ]);
+  assert.deepEqual(Array.from(result.mask), [1]);
+  assert.equal(result.coverage, 100);
+});
+
+test("cutout executor routes quality and repair tracking through Worker product operations", async () => {
+  const operations = [];
+  class AnalysisWorker {
+    postMessage(message) {
+      operations.push({
+        operation: message.operation,
+        parameters: message.analysisParameters,
+        original: message.analysisOriginalBuffer
+          ? Array.from(new Uint8ClampedArray(message.analysisOriginalBuffer))
+          : null,
+      });
+      const result =
+        message.operation === "quality-analysis"
+          ? [{ codes: [] }]
+          : { accepted: true, mappedCenter: { x: 0, y: 0 } };
+      queueMicrotask(() => this.onmessage({ data: { id: message.id, ok: true, result } }));
+    }
+
+    terminate() {}
+  }
+  const executor = createExecutor({ WorkerConstructor: AnalysisWorker });
+  const quality = await executor.analyzeQuality(
+    [{ opaquePixels: 1 }],
+    { circular: true },
+    {
+      protocolVersion: 1,
+    },
+  );
+  const repair = await executor.analyzeRepairTracking(
+    Uint8ClampedArray.from([1, 2, 3, 255]),
+    1,
+    1,
+    { kind: "map-target", originalData: Uint8ClampedArray.from([9, 8, 7, 255]) },
+    { protocolVersion: 1 },
+  );
+
+  assert.deepEqual(quality, [{ codes: [] }]);
+  assert.equal(repair.accepted, true);
+  assert.deepEqual(
+    operations.map(({ operation }) => operation),
+    ["quality-analysis", "repair-tracking"],
+  );
+  assert.deepEqual(operations[0].parameters, {
+    metrics: [{ opaquePixels: 1 }],
+    parameters: { circular: true },
+  });
+  assert.deepEqual(operations[1].original, [9, 8, 7, 255]);
+});
+
 test("loop executor forwards progress, transfers copies, and reuses its Worker", async () => {
   const instances = [];
   class FakeLoopWorker {
@@ -307,6 +401,33 @@ test("loop executor preserves object-signature dimensions", async () => {
     },
   ]);
   assert.deepEqual(candidates, [{ width: 2, height: 2 }]);
+});
+
+test("frame executor routes jump analysis with protected protocol metadata", async () => {
+  const requests = [];
+  class FrameAnalysisWorker {
+    postMessage(message) {
+      requests.push(message);
+      queueMicrotask(() =>
+        this.onmessage({
+          data: { id: message.id, type: "result", ok: true, result: { matches: [{ index: 1 }] } },
+        }),
+      );
+    }
+
+    terminate() {}
+  }
+  const executor = createLoopExecutor({ WorkerConstructor: FrameAnalysisWorker });
+  const result = await executor.analyze(
+    [Uint8Array.from([1, 2, 3, 4])],
+    { operation: "jump", threshold: 10 },
+    { cancellationId: "frames-1", protocolVersion: 1 },
+  );
+
+  assert.deepEqual(result.matches, [{ index: 1 }]);
+  assert.equal(requests[0].type, "jump");
+  assert.equal(requests[0].protocolVersion, 1);
+  assert.equal(requests[0].cancellationId, "frames-1");
 });
 
 test("loop executor rejects pending requests when the panel is closed", async () => {

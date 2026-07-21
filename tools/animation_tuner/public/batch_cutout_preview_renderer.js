@@ -39,7 +39,7 @@
       renderStatus,
       updateQueueCard,
       createDiagnosticCanvas,
-      core,
+      colorUtils,
       backgroundController,
       documentRef = _root?.document,
     } = dependencies;
@@ -50,7 +50,8 @@
       typeof selectedItem !== "function" ||
       typeof selectedBackgroundColor !== "function" ||
       typeof protectedColorEntries !== "function" ||
-      typeof processItem !== "function"
+      typeof processItem !== "function" ||
+      !colorUtils
     ) {
       throw new TypeError("BatchCutoutPreviewRenderer dependencies are required.");
     }
@@ -146,9 +147,9 @@
         const { color } = entry;
         const button = documentApi.createElement("button");
         button.type = "button";
-        button.title = core.rgbToHex(color);
-        button.setAttribute("aria-label", `${text("protectedPalette")} ${core.rgbToHex(color)}`);
-        button.style.setProperty("--protected-color", core.rgbToHex(color));
+        button.title = colorUtils.rgbToHex(color);
+        button.setAttribute("aria-label", `${text("protectedPalette")} ${colorUtils.rgbToHex(color)}`);
+        button.style.setProperty("--protected-color", colorUtils.rgbToHex(color));
         button.addEventListener("click", () => {
           recordItemEdit(item);
           entry.container.splice(entry.index, 1);
@@ -174,16 +175,16 @@
       for (const [index, color] of (item?.backgroundSamples || []).entries()) {
         const button = documentApi.createElement("button");
         button.type = "button";
-        const colorHex = core.rgbToHex(color);
+        const colorHex = colorUtils.rgbToHex(color);
         button.title = `${text("removeBackgroundSample")} ${colorHex}`;
         button.setAttribute("aria-label", `${text("removeBackgroundSample")} ${colorHex}`);
-        button.style.setProperty("--protected-color", core.rgbToHex(color));
+        button.style.setProperty("--protected-color", colorUtils.rgbToHex(color));
         button.addEventListener("click", () => {
           recordItemEdit(item);
           const removedColor = backgroundController.removeBackgroundSample(item, index);
           if (!item.backgroundSamples.length) item.automaticCutoutActivated = false;
           setStatus(
-            text("backgroundSampleRemoved", { color: core.rgbToHex(removedColor || color) }),
+            text("backgroundSampleRemoved", { color: colorUtils.rgbToHex(removedColor || color) }),
             "success",
           );
           schedulePreview({ recordHistory: false });

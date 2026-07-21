@@ -149,6 +149,37 @@ let {
   homeHubDismissed,
 } = globalThis.XSXBAppState.createInitialState();
 
+const appConfirmModule = globalThis.XSXBAppConfirm;
+if (!appConfirmModule) throw new Error("XSXBAppConfirm is required.");
+const appConfirmation = appConfirmModule.createController({
+  elements: {
+    panel: els.appConfirmPanel,
+    card: els.appConfirmCard,
+    title: els.appConfirmTitle,
+    message: els.appConfirmMessage,
+    details: els.appConfirmDetails,
+    cancel: els.appConfirmCancel,
+    accept: els.appConfirmAccept,
+  },
+  documentRef: globalThis.document,
+  windowRef: globalThis,
+});
+
+/**
+ * Opens the localized main-workbench confirmation layer.
+ * @param {string} message Confirmation message.
+ * @param {{title?:string,confirmLabel?:string,cancelLabel?:string,tone?:"warning"|"danger"}} [options] Dialog presentation.
+ * @returns {Promise<boolean>} Whether the user accepted the action.
+ */
+function requestAppConfirmation(message, options = {}) {
+  return appConfirmation.requestConfirmation(message, [], {
+    title: options.title || t("confirmTitle"),
+    confirmLabel: options.confirmLabel || t("confirm"),
+    cancelLabel: options.cancelLabel || t("cancel"),
+    tone: options.tone || "warning",
+  });
+}
+
 let projectStateController = null;
 
 function projectStateCall(name, ...args) {
@@ -404,7 +435,7 @@ const playbackTiming = globalThis.XSXBPlaybackTiming.createController({
   getAdjustmentMode: () => adjustmentMode,
   elements: els,
   canEditFramePlayback,
-  confirm: (message) => window.confirm(message),
+  confirm: requestAppConfirmation,
   translate: t,
   pushUndo: (label) => history.pushUndo(label),
   syncFrameInputs,
@@ -745,7 +776,7 @@ const projectMutations = globalThis.XSXBProjectMutations.createController({
   setSelectedProjectId: (value) => {
     selectedProjectId = value;
   },
-  confirm: (message) => window.confirm(message),
+  confirm: requestAppConfirmation,
   fetchImpl: globalThis.fetch,
   translate: t,
   projectLabel,
@@ -1027,6 +1058,7 @@ projectStateController = projectStateModule.createController({
   messages: I18N,
   documentRef: globalThis.document,
   windowRef: globalThis,
+  confirm: requestAppConfirmation,
   storage: globalThis.localStorage,
   projectLabel,
   groupLabel,
@@ -1732,7 +1764,14 @@ async function removeFrameAudioFromCard(index = selectedFrame, group = currentGr
   if (!group) return false;
   const frameIndex = clampFrameIndex(index, group);
   if (!frameAudioBinding(frameIndex, group)) return false;
-  if (!window.confirm(t("frameSfxDeleteConfirm"))) return false;
+  if (
+    !(await requestAppConfirmation(t("frameSfxDeleteConfirm"), {
+      title: t("clearFrameSfx"),
+      confirmLabel: t("clearFrameSfx"),
+      tone: "danger",
+    }))
+  )
+    return false;
   await clearFrameAudioBinding(frameIndex, group);
   markDirty();
   await syncFrameAudioBindingsToGame().catch((error) => {
@@ -1832,7 +1871,7 @@ appToolActionsController = appToolActionsModule.createController({
     selectedProjectId = value;
   },
   fetchImpl: globalThis.fetch,
-  windowRef: globalThis.window || globalThis,
+  confirm: requestAppConfirmation,
   storage: globalThis.localStorage,
   translate: t,
   status,
@@ -1927,7 +1966,7 @@ playbackInputsController = playbackInputsModule.createController({
   groupPlaybackFps,
   round,
   translate: t,
-  windowRef: globalThis.window || globalThis,
+  confirm: requestAppConfirmation,
   minFrameDurationMs: MIN_FRAME_DURATION_MS,
 });
 

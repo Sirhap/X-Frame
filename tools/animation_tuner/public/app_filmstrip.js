@@ -64,7 +64,7 @@
       card.draggable = true;
       card.title = `${asset.name}\n${translate("assetApplySelected")}`;
       card.innerHTML = `
-        <img src="${assetUrl(asset)}" alt="">
+        <img src="${assetUrl(asset)}" alt="" width="${Math.max(1, Number(asset.width || 1))}" height="${Math.max(1, Number(asset.height || 1))}" loading="lazy">
         <span>${escapeHtml(asset.name)}</span>
         <button type="button">${escapeHtml(translate("assetApplySelected"))}</button>
       `;
@@ -112,7 +112,7 @@
       const tray = documentApi.createElement("section");
       tray.className = "attachmentAssetTray";
       tray.innerHTML = `
-        <header><strong>${escapeHtml(translate("assetLibrary"))}</strong><button type="button" class="assetImportButton">＋</button></header>
+        <header><strong>${escapeHtml(translate("assetLibrary"))}</strong><button type="button" class="assetImportButton" aria-label="${escapeHtml(translate("assetImport"))}" title="${escapeHtml(translate("assetImport"))}">＋</button></header>
         <input class="assetImportInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
         <div class="attachmentAssetList"></div>
         ${groupAssets.length ? "" : `<small>${escapeHtml(translate("assetLibraryEmpty"))}</small>`}

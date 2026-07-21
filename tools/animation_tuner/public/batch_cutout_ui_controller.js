@@ -199,16 +199,22 @@
     function resolveConfirmation(accepted) {
       if (elements.cutoutConfirmPanel.hidden) return;
       elements.cutoutConfirmPanel.hidden = true;
+      elements.cutoutConfirmPanel.querySelector?.(".cutoutConfirmCard")?.removeAttribute("data-tone");
       const resolve = state.confirmationResolver;
       state.confirmationResolver = null;
+      const returnFocus = state.confirmationReturnFocus;
+      state.confirmationReturnFocus = null;
       resolve?.(Boolean(accepted));
+      if (returnFocus?.isConnected !== false && typeof returnFocus?.focus === "function") {
+        returnFocus.focus();
+      }
     }
 
     /**
      * Opens an application-styled confirmation dialog.
      * @param {string} message Confirmation message.
      * @param {Array<[string,string|number]>} details Summary rows.
-     * @param {{title?:string,confirmLabel?:string}} [options] Dialog labels.
+     * @param {{title?:string,confirmLabel?:string,tone?:"warning"|"danger"}} [options] Dialog labels and tone.
      * @returns {Promise<boolean>}
      */
     function requestConfirmation(message, details = [], options = {}) {
@@ -224,8 +230,16 @@
         description.textContent = String(value);
         elements.cutoutConfirmDetails.append(term, description);
       }
+      elements.cutoutConfirmDetails.hidden = details.length === 0;
+      const card = elements.cutoutConfirmPanel.querySelector?.(".cutoutConfirmCard");
+      if (card) card.dataset.tone = options.tone === "danger" ? "danger" : "warning";
+      state.confirmationReturnFocus = documentApi.activeElement;
       elements.cutoutConfirmPanel.hidden = false;
-      windowApi.setTimeout(() => elements.cutoutConfirmApply.focus(), 0);
+      windowApi.setTimeout(() => {
+        const initialControl =
+          options.tone === "danger" ? elements.cutoutConfirmCancel : elements.cutoutConfirmApply;
+        initialControl.focus();
+      }, 0);
       return new Promise((resolve) => {
         state.confirmationResolver = resolve;
       });

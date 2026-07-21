@@ -88,3 +88,36 @@ test("attached VFX timing follows the owner window", () => {
   assert.equal(timing.groupPlaybackFps(vfx), 10);
   assert.equal(controller.groupPlaybackFps({ frames: [] }), 12);
 });
+
+test("group timing conflict waits for warning confirmation before clearing frame overrides", async () => {
+  const group = { uiId: "idle", speed: 10, frames: [{}, {}] };
+  const playbackStore = { "idle:0": { duration: 2, disabled: false } };
+  const events = [];
+  const controller = createController({
+    minFrameDurationMs: 1,
+    getCurrentGroup: () => group,
+    getConfig: () => ({ groups: [group] }),
+    getPlaybackStore: () => playbackStore,
+    getTuningFrameKey: (index) => `idle:${index}`,
+    getGroupPlaybackKey: () => "idle:__group",
+    groupOwnsFrameKey: (_group, key) => key.startsWith("idle:") && key !== "idle:__group",
+    getClampInteger: (value, min, max) => Math.min(Math.max(Number(value) || 0, min), max),
+    cloneVector: (value) => ({ x: Number(value?.x || 0), y: Number(value?.y || 0) }),
+    nearlyEqual: (left, right) => left === right,
+    elements: { groupTimeMs: { value: "500" } },
+    canEditFramePlayback: () => true,
+    confirm: async (message, options) => {
+      events.push([message, options]);
+      return false;
+    },
+    translate: (key) => key,
+    syncGroupPlaybackInputs: () => events.push("sync"),
+    pushUndo: () => events.push("undo"),
+  });
+
+  await controller.applyGroupTimeFromInput();
+
+  assert.deepEqual(events, [["groupTimeConflict", { tone: "warning" }]]);
+  assert.equal(controller.groupTimeMs(group), 300);
+  assert.deepEqual(playbackStore, { "idle:0": { duration: 2, disabled: false } });
+});

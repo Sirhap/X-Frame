@@ -41,3 +41,42 @@ test("app tool actions preserve cutout replacement payload and refresh selection
   });
   assert.deepEqual(selected, [{ selectedGroup: group, options: { frameIndex: 1, preserveView: true } }]);
 });
+
+test("app tool actions wait for the shared danger confirmation before deleting frames", async () => {
+  const group = {
+    profileId: "hero",
+    animationId: "idle",
+    frames: [
+      { path: "a.png", name: "a.png" },
+      { path: "b.png", name: "b.png" },
+    ],
+  };
+  const confirmations = [];
+  let fetchCalls = 0;
+  const controller = createController({
+    getCurrentGroup: () => group,
+    getSelectedFrameIndexes: () => [0],
+    confirm: async (message, options) => {
+      confirmations.push({ message, options });
+      return false;
+    },
+    translate: (key, variables = {}) => (variables.count === undefined ? key : `${key}:${variables.count}`),
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      return { ok: true, text: async () => "{}" };
+    },
+  });
+
+  assert.equal(await controller.deleteSelectedAnimationFrames(), false);
+  assert.deepEqual(confirmations, [
+    {
+      message: "deleteFramesConfirm:1",
+      options: {
+        title: "deleteSelectedFrames",
+        confirmLabel: "deleteSelectedFrames",
+        tone: "danger",
+      },
+    },
+  ]);
+  assert.equal(fetchCalls, 0);
+});

@@ -27,7 +27,7 @@
       selectedItem,
       hasQualityIssue,
       selectedBackgroundColor,
-      core,
+      colorUtils,
       recordItemEdit,
       invalidateItem,
       renderPreview,
@@ -45,7 +45,7 @@
       typeof selectedItem !== "function" ||
       typeof hasQualityIssue !== "function" ||
       typeof selectedBackgroundColor !== "function" ||
-      !core ||
+      !colorUtils ||
       typeof recordItemEdit !== "function" ||
       typeof invalidateItem !== "function" ||
       typeof renderPreview !== "function" ||
@@ -244,6 +244,8 @@
         state.sessionMode === "single" ? "applySingle" : worksetSession ? "applyWorkset" : "applyGroup",
       );
       elements.cutoutClear.disabled = worksetSession || !state.items.length || state.busy;
+      elements.cutoutNewBatch.hidden = worksetSession;
+      elements.cutoutNewBatch.disabled = worksetSession || !state.items.length || state.busy;
       elements.cutoutLoadGroup.hidden = worksetSession || !hasAnimationTarget;
       elements.cutoutLoadGroup.disabled = worksetSession || !hasAnimationTarget || state.busy;
       elements.cutoutRepairUndo.disabled =
@@ -407,7 +409,7 @@
      */
     function selectedAreaColor() {
       if (state.areaColorTransparent) return { r: 0, g: 0, b: 0, a: 0 };
-      return core.hexToRgb(elements.cutoutAreaColor.value || "#00c800");
+      return colorUtils.hexToRgb(elements.cutoutAreaColor.value || "#00c800");
     }
 
     /**

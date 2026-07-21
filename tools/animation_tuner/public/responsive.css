@@ -611,3 +611,39 @@
     font-size: 10px;
   }
 }
+
+/*
+ * Compact desktop workspaces still have enough room for a two-row action bar.
+ * Giving export its own row prevents the destructive and navigation actions
+ * from competing with the primary action when the preview is around 900px wide.
+ */
+@media (min-width: 1121px) and (max-width: 1320px) {
+  .cutoutFooter {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .cutoutStatus {
+    flex: 1 1 240px;
+    padding-block: 8px 4px;
+  }
+
+  .cutoutFooterActions {
+    flex: 0 1 620px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .cutoutFooterActions button {
+    min-width: 0;
+    min-height: 36px;
+    padding-inline: 7px;
+    white-space: nowrap;
+  }
+
+  .cutoutFooterActions #cutoutDownload {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+}

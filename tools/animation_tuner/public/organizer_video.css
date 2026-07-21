@@ -47,7 +47,7 @@
   padding: 0;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: #05070a;
   font-size: 24px;
 }
 
@@ -272,6 +272,6 @@
 }
 
 .organizerThreshold output {
-  color: var(--accent);
+  color: var(--accent-text);
   text-align: right;
 }

@@ -138,7 +138,15 @@
         if (message.cancelled) {
           settle(id, "reject", createAbortError());
         } else if (message.ok) {
-          settle(id, "resolve", Array.isArray(message.candidates) ? message.candidates : []);
+          settle(
+            id,
+            "resolve",
+            message.result !== undefined
+              ? message.result
+              : Array.isArray(message.candidates)
+                ? message.candidates
+                : [],
+          );
         } else {
           settle(id, "reject", new Error(message.error || "Loop Worker failed."));
         }
@@ -163,6 +171,9 @@
      */
     function analyze(signatures, loopOptions = {}, callbacks = {}) {
       const copiedSignatures = Array.from(signatures || [], copySignature);
+      const operation = ["jump", "duplicate", "loop"].includes(loopOptions.operation)
+        ? loopOptions.operation
+        : "loop";
       if (typeof WorkerConstructor !== "function") {
         if (!fallback) return Promise.reject(new Error("This browser cannot run the loop analysis Worker."));
         return fallback(copiedSignatures, loopOptions, callbacks);
@@ -175,7 +186,15 @@
           const signatureBuffers = copiedSignatures.map((signature) => signature.data.buffer);
           const signatureDimensions = copiedSignatures.map(({ width, height }) => ({ width, height }));
           activeWorker.postMessage(
-            { id, type: "loop", signatureBuffers, signatureDimensions, options: loopOptions || {} },
+            {
+              id,
+              type: operation,
+              signatureBuffers,
+              signatureDimensions,
+              options: loopOptions || {},
+              cancellationId: String(callbacks.cancellationId || ""),
+              protocolVersion: Number(callbacks.protocolVersion || 1),
+            },
             signatureBuffers,
           );
         } catch (error) {

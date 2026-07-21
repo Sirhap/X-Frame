@@ -52,9 +52,12 @@
     /**
      * Applies the selected frame duration/disabled inputs to all selected frames.
      * @param {{preserveDuration?:boolean,changeDuration?:boolean}} [options] Edit options.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    function updateSelectedPlaybackFromInputs({ preserveDuration = false, changeDuration = true } = {}) {
+    async function updateSelectedPlaybackFromInputs({
+      preserveDuration = false,
+      changeDuration = true,
+    } = {}) {
       if (!canEditFramePlayback()) return;
       const previousDurationSeconds = preserveDuration ? groupPlaybackDurationSeconds() : 0;
       const targetMs = Math.max(
@@ -69,7 +72,12 @@
           (frameIndex) => Math.round(frameDurationMs(frameIndex, currentGroup)) !== targetMs,
         );
       const hasGroupTiming = durationChanged && groupHasGroupTimeOverride();
-      if (hasGroupTiming && !confirm(translate("frameTimeConflict"))) {
+      if (
+        hasGroupTiming &&
+        !(await confirm(translate("frameTimeConflict"), {
+          tone: "warning",
+        }))
+      ) {
         syncFrameInputs();
         return;
       }
@@ -97,9 +105,9 @@
      * Adjusts one frame duration from a filmstrip stepper control.
      * @param {number} index Frame index.
      * @param {number} deltaMs Duration delta in milliseconds.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    function adjustFrameDurationMs(index, deltaMs) {
+    async function adjustFrameDurationMs(index, deltaMs) {
       const currentGroup = getCurrentGroup();
       if (!currentGroup || !canEditFramePlayback() || usesAttachedPlaybackTiming()) return;
       const frameIndex = clampFrameIndex(index, currentGroup);
@@ -108,7 +116,12 @@
         Math.round(frameDurationMs(frameIndex, currentGroup) + deltaMs),
       );
       const hasGroupTiming = groupHasGroupTimeOverride();
-      if (hasGroupTiming && !confirm(translate("frameTimeConflict"))) {
+      if (
+        hasGroupTiming &&
+        !(await confirm(translate("frameTimeConflict"), {
+          tone: "warning",
+        }))
+      ) {
         syncFrameInputs();
         return;
       }

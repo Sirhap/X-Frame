@@ -497,7 +497,7 @@ kbd {
 }
 
 .saveState.dirty {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 #stage {

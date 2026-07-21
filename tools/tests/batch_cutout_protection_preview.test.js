@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { createController } = require("../animation_tuner/public/batch_cutout_protection_preview");
+const colorUtils = require("../animation_tuner/public/batch_cutout_public_color");
 
 /**
  * Creates a protection-preview fixture with deterministic pixel-processing stubs.
@@ -51,10 +52,8 @@ function createFixture(overrides = {}) {
     },
     ...overrides.elements,
   };
-  const core = {
-    colorDistance: (red, green, blue, color) =>
-      Math.abs(red - color.r) + Math.abs(green - color.g) + Math.abs(blue - color.b),
-    createProtectedRegionMask: () => ({
+  const selectionRepairExecutor = {
+    analyze: async () => ({
       mask: new Uint8Array([1, 0, 0, 0]),
       count: 1,
       bounds: { x1: 0, y1: 0, x2: 0, y2: 0 },
@@ -62,7 +61,8 @@ function createFixture(overrides = {}) {
     }),
   };
   const controller = createController({
-    core,
+    colorUtils,
+    selectionRepairExecutor,
     state,
     elements,
     text: (key) => key,
@@ -72,9 +72,9 @@ function createFixture(overrides = {}) {
   return { controller, state, item };
 }
 
-test("protection color preview reports matching pixels and source dimensions", () => {
+test("protection color preview reports matching pixels and source dimensions", async () => {
   const { controller, item } = createFixture();
-  const result = controller.createProtectionPreviewForRepair(item, item.repairs[0]);
+  const result = await controller.createProtectionPreviewForRepair(item, item.repairs[0]);
 
   assert.equal(result.width, 2);
   assert.equal(result.height, 2);
@@ -82,21 +82,21 @@ test("protection color preview reports matching pixels and source dimensions", (
   assert.deepEqual(result.bounds, { x1: 0, y1: 0, x2: 1, y2: 1 });
 });
 
-test("protection preview rejects malformed source image data", () => {
+test("protection preview rejects malformed source image data", async () => {
   const { controller, item } = createFixture({
     item: { sourceImageData: { width: 2, height: 2, data: new Uint8ClampedArray(3) } },
   });
 
-  assert.equal(controller.createProtectionPreviewForRepair(item, item.repairs[0]), null);
+  assert.equal(await controller.createProtectionPreviewForRepair(item, item.repairs[0]), null);
 });
 
-test("protection preview cache invalidates after processing revision changes", () => {
+test("protection preview cache invalidates after processing revision changes", async () => {
   const { controller, state, item } = createFixture();
 
-  controller.syncProtectionPreview(item);
+  await controller.syncProtectionPreview(item);
   const firstPreview = state.protectionPreview;
   item.processingRevision += 1;
-  controller.syncProtectionPreview(item);
+  await controller.syncProtectionPreview(item);
 
   assert.notEqual(state.protectionPreview, firstPreview);
   assert.notEqual(state.protectionPreview.previewKey, firstPreview.previewKey);

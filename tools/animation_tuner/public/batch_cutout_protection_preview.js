@@ -10,7 +10,8 @@
   /**
    * Creates protection-mask previews and their canvas renderer.
    * @param {object} dependencies Preview dependencies supplied by the batch controller.
-   * @param {object} dependencies.core Batch cutout pixel-processing core.
+   * @param {object} dependencies.colorUtils Public display color helpers.
+   * @param {object} dependencies.selectionRepairExecutor Protected selection analysis executor.
    * @param {object} dependencies.state Mutable batch controller state.
    * @param {object} dependencies.elements Batch-cutout DOM elements.
    * @param {(key:string,values?:object)=>string} dependencies.text Localized text resolver.
@@ -19,9 +20,17 @@
    * @returns {object} Protection preview controller.
    */
   function createController(dependencies) {
-    const { core, state, elements, text, selectedItem, selectedBackgroundColors } = dependencies || {};
-    if (!core || !state || !elements) {
-      throw new Error("BatchCutoutProtectionPreview requires core, state, and elements.");
+    const {
+      colorUtils,
+      selectionRepairExecutor,
+      state,
+      elements,
+      text,
+      selectedItem,
+      selectedBackgroundColors,
+    } = dependencies || {};
+    if (!colorUtils || !selectionRepairExecutor || !state || !elements) {
+      throw new Error("BatchCutoutProtectionPreview requires runtime, color, state, and elements.");
     }
 
     /**
@@ -39,6 +48,23 @@
         x2: Math.max(0, Math.min(width - 1, Math.ceil(Math.max(rectangle.x1, rectangle.x2)))),
         y2: Math.max(0, Math.min(height - 1, Math.ceil(Math.max(rectangle.y1, rectangle.y2)))),
       };
+    }
+
+    /**
+     * Creates the coarse public selection mask consumed by the protected runtime.
+     * @param {{x1:number,y1:number,x2:number,y2:number}} rectangle Source-space rectangle.
+     * @param {number} width Source width.
+     * @param {number} height Source height.
+     * @returns {Uint8Array} Binary selection mask.
+     */
+    function createSelectionMask(rectangle, width, height) {
+      const mask = new Uint8Array(Math.max(0, width * height));
+      const bounds = normalizeProtectionRectangle(rectangle, width, height);
+      if (!bounds) return mask;
+      for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+        mask.fill(1, y * width + bounds.x1, y * width + bounds.x2 + 1);
+      }
+      return mask;
     }
 
     /**
@@ -73,7 +99,7 @@
           if (!source[offset + 3]) continue;
           const matches = candidates.some(
             (color) =>
-              core.colorDistance(source[offset], source[offset + 1], source[offset + 2], color) <=
+              colorUtils.colorDistance(source[offset], source[offset + 1], source[offset + 2], color) <=
               distanceLimit,
           );
           if (!matches) continue;
@@ -100,9 +126,9 @@
      * The mask is intentionally kept outside the serialized repair record.
      * @param {object} item Active queue item.
      * @param {object} repair Protection repair record.
-     * @returns {{mode:string,rectangle:object,mask:Uint8Array,count:number,bounds:object|null,coarseArea:number,coverage:number}}
+     * @returns {Promise<{mode:string,rectangle:object,mask:Uint8Array,count:number,bounds:object|null,coarseArea:number,coverage:number}|null>}
      */
-    function createProtectionPreviewForRepair(item, repair) {
+    async function createProtectionPreviewForRepair(item, repair) {
       const sourceImageData = item?.sourceImageData;
       const width = Number(sourceImageData?.width);
       const height = Number(sourceImageData?.height);
@@ -120,11 +146,22 @@
       const rectangle = normalizeProtectionRectangle(repair, width, height) || repair;
       if (repair.mode === "protect-range") {
         const previewData = item.automaticImageData?.data || item.resultImageData?.data || null;
-        const region = core.createProtectedRegionMask(data, previewData, width, height, rectangle, {
-          backgroundColors: selectedBackgroundColors(item),
-          boundaryStrength: repair.boundaryStrength,
-          padding: repair.padding,
-        });
+        const region = await selectionRepairExecutor.analyze(
+          data,
+          width,
+          height,
+          createSelectionMask(rectangle, width, height),
+          {
+            mode: "protect-range",
+            rectangle,
+            previewData,
+            options: {
+              backgroundColors: selectedBackgroundColors(item),
+              boundaryStrength: repair.boundaryStrength,
+              padding: repair.padding,
+            },
+          },
+        );
         const coarseArea = Math.max(1, (rectangle.x2 - rectangle.x1 + 1) * (rectangle.y2 - rectangle.y1 + 1));
         return {
           mode: repair.mode,
@@ -166,9 +203,9 @@
     /**
      * Synchronizes the transient preview with the latest protection repair.
      * @param {object|null} item Active queue item.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    function syncProtectionPreview(item = selectedItem()) {
+    async function syncProtectionPreview(item = selectedItem()) {
       if (!item) {
         state.protectionPreview = null;
         return;
@@ -180,19 +217,35 @@
         state.protectionPreview = null;
         return;
       }
+      const processingRevision = Number(item.processingRevision || 0);
       const previewKey = JSON.stringify({
         itemId: item.id,
         repairId: latestRepair.id,
-        processingRevision: Number(item.processingRevision || 0),
+        processingRevision,
         protectionTolerance: item.processingParameters?.protectionTolerance,
         backgroundColors: selectedBackgroundColors(item),
       });
       if (state.protectionPreview?.previewKey === previewKey) {
         return;
       }
-      const preview = createProtectionPreviewForRepair(item, latestRepair);
+      let preview;
+      try {
+        preview = await createProtectionPreviewForRepair(item, latestRepair);
+      } catch {
+        if (item === selectedItem()) state.protectionPreview = null;
+        return;
+      }
       if (!preview) {
         state.protectionPreview = null;
+        return;
+      }
+      const currentRepair = [...(item.repairs || [])]
+        .reverse()
+        .find((repair) => ["protect-color", "protect-range"].includes(repair.mode));
+      if (
+        currentRepair?.id !== latestRepair.id ||
+        Number(item.processingRevision || 0) !== processingRevision
+      ) {
         return;
       }
       state.protectionPreview = {
@@ -394,6 +447,7 @@
 
     return {
       normalizeProtectionRectangle,
+      createSelectionMask,
       createColorProtectionPreview,
       createProtectionPreviewForRepair,
       syncProtectionPreview,

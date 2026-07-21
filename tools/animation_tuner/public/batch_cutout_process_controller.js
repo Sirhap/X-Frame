@@ -31,10 +31,7 @@
       createItem,
       processingOptions,
       repairReplayCore,
-      core,
       cutoutExecutor,
-      tracking,
-      quality,
       createThumbnailUrl,
       refreshQualityAnalysis,
       resultArtifacts,
@@ -82,36 +79,19 @@
         const { width, height, data } = item.sourceImageData;
         const options = processingOptions(item);
         const automaticKey = repairReplayCore.automaticCacheKey(options);
-        const canReplayRepairs = item.automaticImageData?.data && item.automaticCacheKey === automaticKey;
-        const result = canReplayRepairs
-          ? repairReplayCore.replayAutomaticResult({
-              source: data,
-              automatic: item.automaticImageData.data,
-              width,
-              height,
-              options,
-              repairs: item.repairs,
-              applyRepairs: core.applyCutoutRepairs,
-            })
-          : await cutoutExecutor.process(data, width, height, options, item.repairs || []);
+        const result = await cutoutExecutor.process(data, width, height, options, item.repairs || []);
         if (processingRevision !== Number(item.processingRevision || 0)) {
           throw new DOMExceptionClass("Stale cutout result was discarded.", "AbortError");
         }
         item.automaticImageData = new ImageDataClass(result.automaticData, width, height);
         item.automaticCacheKey = automaticKey;
-        item.shapeCandidates =
-          result.shapeCandidates || tracking.createShapeCandidates(result.automaticData, width, height);
-        item.shapeDescriptor =
-          result.shapeDescriptor ||
-          item.shapeCandidates[0] ||
-          tracking.createShapeDescriptor(result.automaticData, width, height);
+        if (!Array.isArray(result.shapeCandidates) || !result.qualityMetrics) {
+          throw new Error("ENGINE_INVALID_RESULT");
+        }
+        item.shapeCandidates = result.shapeCandidates;
+        item.shapeDescriptor = result.shapeDescriptor;
         item.resultImageData = new ImageDataClass(new Uint8ClampedArray(result.data), width, height);
-        item.qualityMetrics =
-          result.qualityMetrics ||
-          quality.createCutoutQualityMetrics(result.data, width, height, {
-            backgroundColors: options.backgroundColors,
-            backgroundTolerance: options.tolerance + options.feather,
-          });
+        item.qualityMetrics = result.qualityMetrics;
         item.diagnosticCanvases = {};
         const canvas = documentApi.createElement("canvas");
         canvas.width = width;
@@ -524,11 +504,15 @@
         );
         return;
       }
-      const confirmed = await requestConfirmation(text("applyConfirm"), [
-        [text("applyAnimation"), animation.name || "—"],
-        [text("applyFrames"), includedItems.length],
-        [text("applyExcluded"), state.items.length - includedItems.length],
-      ]);
+      const confirmed = await requestConfirmation(
+        text("applyConfirm"),
+        [
+          [text("applyAnimation"), animation.name || "—"],
+          [text("applyFrames"), includedItems.length],
+          [text("applyExcluded"), state.items.length - includedItems.length],
+        ],
+        { tone: "danger" },
+      );
       if (!confirmed) return;
       try {
         const { outputs, failures, cancelled } = await processAll({ applyProgress: options.live });

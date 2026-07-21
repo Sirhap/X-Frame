@@ -215,6 +215,8 @@
   display: grid;
   place-items: center;
   padding: 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
   background: rgba(5, 7, 10, 0.76);
   backdrop-filter: blur(7px);
 }
@@ -225,7 +227,10 @@
 
 .cutoutConfirmCard {
   width: min(470px, 100%);
+  max-height: calc(100dvh - 48px);
   padding: 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 4px solid var(--line);
   border-radius: 12px;
   background: var(--panel-2);
@@ -233,9 +238,13 @@
 }
 
 .cutoutConfirmCard > span {
-  color: var(--danger);
+  color: var(--accent-3);
   font: 950 9px/1 var(--data-font);
   letter-spacing: 0.16em;
+}
+
+.cutoutConfirmCard[data-tone="danger"] > span {
+  color: var(--danger);
 }
 
 .cutoutConfirmCard h3 {
@@ -265,6 +274,33 @@
   display: grid;
   grid-template-columns: 1fr 1.4fr;
   gap: 8px;
+}
+
+.cutoutConfirmCard > div button {
+  min-height: 48px;
+}
+
+.cutoutConfirmCard[data-tone="danger"] #cutoutConfirmApply {
+  background: var(--danger);
+  color: var(--danger-ink);
+}
+
+@media (max-width: 560px) {
+  .cutoutConfirmPanel {
+    place-items: end center;
+    padding: 12px;
+  }
+
+  .cutoutConfirmCard {
+    max-height: calc(100dvh - 24px);
+    padding: 18px;
+    border-width: 3px;
+    box-shadow: 6px 6px 0 var(--line);
+  }
+
+  .cutoutConfirmCard > div {
+    grid-template-columns: 1fr;
+  }
 }
 
 .cutoutPreviewHeader {
@@ -482,7 +518,7 @@
 
 .cutoutPrimary {
   background: var(--accent);
-  color: #fffaf0;
+  color: #05070a;
   font-weight: 950;
   box-shadow: 4px 4px 0 var(--line);
 }

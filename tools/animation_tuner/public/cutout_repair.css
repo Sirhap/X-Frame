@@ -501,7 +501,7 @@
 }
 
 .cutoutBatchAction::before {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .cutoutRepairModes button::before,
