@@ -23,9 +23,57 @@
   content: "PRO";
 }
 
+.activationManageLaunch {
+  min-width: 112px;
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  padding-block: 7px;
+  line-height: 1;
+}
+
+.activationManageLaunch > span {
+  font-weight: 950;
+}
+
+.activationManageLaunch > small {
+  color: var(--muted);
+  font: 850 8px/1 var(--data-font);
+  letter-spacing: 0.03em;
+}
+
 .activationManageLaunch[data-active="true"] {
   border-color: var(--accent-2);
   color: var(--accent-2);
+}
+
+.activationManageLaunch[data-active="true"] > small {
+  color: inherit;
+}
+
+.activationManageLaunch[data-urgency="soon"] {
+  border-color: var(--accent-3);
+  color: var(--accent-3);
+}
+
+.activationManageLaunch[data-urgency="critical"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.activationManageLaunch[data-new-trial="true"] {
+  animation: activationTrialReady 560ms steps(2, end) 2;
+}
+
+.organizerActivationLaunch {
+  min-width: 106px;
+}
+
+@keyframes activationTrialReady {
+  50% {
+    box-shadow: 4px 4px 0 var(--accent-2);
+    transform: translate(-1px, -1px);
+  }
 }
 
 .activationPanel {
@@ -108,12 +156,85 @@
   font: 750 12px/1.65 var(--data-font);
 }
 
-.activationCurrent {
-  padding: 10px 12px;
+.activationOverview {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
   border: 2px solid color-mix(in srgb, var(--accent-2) 50%, var(--line));
   border-radius: 6px;
   background: var(--panel-2);
+}
+
+.activationOverview[data-urgency="soon"] {
+  border-color: var(--accent-3);
+}
+
+.activationOverview[data-urgency="critical"] {
+  border-color: var(--danger);
+}
+
+.activationOverviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.activationOverviewHeader strong {
+  font: 950 13px/1 var(--data-font);
+}
+
+.activationPlanBadge {
+  padding: 5px 7px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  color: var(--accent-2);
+  font: 950 8px/1 var(--data-font);
+  letter-spacing: 0.08em;
+}
+
+.activationOverview[data-urgency="soon"] .activationPlanBadge,
+.activationOverview[data-urgency="soon"] .activationOverviewHeader strong {
+  color: var(--accent-3);
+}
+
+.activationOverview[data-urgency="critical"] .activationPlanBadge,
+.activationOverview[data-urgency="critical"] .activationOverviewHeader strong {
+  color: var(--danger);
+}
+
+.activationProgress {
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-3);
+}
+
+.activationOverview:not([data-state="trial"]) .activationProgress {
+  display: none;
+}
+
+.activationProgress i {
+  width: 0;
+  height: 100%;
+  display: block;
+  background: var(--accent-2);
+  transition: width 240ms ease;
+}
+
+.activationOverview[data-urgency="soon"] .activationProgress i {
+  background: var(--accent-3);
+}
+
+.activationOverview[data-urgency="critical"] .activationProgress i {
+  background: var(--danger);
+}
+
+.activationCurrent {
+  margin: 0;
   color: var(--ink) !important;
+  font: 750 11px/1.55 var(--data-font);
 }
 
 .activationFeatures {
@@ -211,6 +332,18 @@
 }
 
 @media (max-width: 560px) {
+  .organizerActivationLaunch {
+    min-width: 92px;
+    padding-inline: 8px;
+  }
+
+  .organizerActivationLaunch > small {
+    max-width: 76px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .activationPanel {
     place-items: end center;
     padding: 10px;
@@ -250,5 +383,15 @@
   .activationSubmit,
   .activationCancel {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activationManageLaunch[data-new-trial="true"] {
+    animation: none;
+  }
+
+  .activationProgress i {
+    transition: none;
   }
 }

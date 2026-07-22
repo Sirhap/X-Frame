@@ -272,7 +272,7 @@ const activationController = activationModule.createController({
   premiumFeatures,
   deviceIdentity,
 });
-if (browserOnlyMode) void activationController.refreshStatus();
+void activationController.refreshStatus();
 const ensurePremiumActivated = (featureIds) => activationController.ensureActivated(featureIds);
 
 /**
@@ -1403,7 +1403,9 @@ function t(...args) {
   return projectStateCall("t", ...args);
 }
 function applyLanguage(...args) {
-  return projectStateCall("applyLanguage", ...args);
+  const result = projectStateCall("applyLanguage", ...args);
+  activationController.renderStatus();
+  return result;
 }
 function normalizeTheme(...args) {
   return projectStateCall("normalizeTheme", ...args);

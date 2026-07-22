@@ -10,6 +10,7 @@ function createElement() {
   const listeners = new Map();
   return {
     dataset: {},
+    style: {},
     hidden: true,
     disabled: false,
     inert: false,
@@ -23,6 +24,9 @@ function createElement() {
     replaceChildren() {},
     querySelectorAll() {
       return [];
+    },
+    setAttribute(name, value) {
+      this[name] = value;
     },
     focus() {},
     listener(type) {
@@ -38,6 +42,10 @@ function createDocumentFixture() {
     "#activationCard",
     "#activationTitle",
     "#activationMessage",
+    "#activationOverview",
+    "#activationPlanBadge",
+    "#activationRemaining",
+    "#activationProgress",
     "#activationCurrent",
     "#activationFeatures",
     "#activationForm",
@@ -46,6 +54,11 @@ function createDocumentFixture() {
     "#activationCancel",
     "#activationSubmit",
     "#activationManage",
+    "#activationManageLabel",
+    "#activationManageStatus",
+    "#organizerActivationManage",
+    "#organizerActivationManageLabel",
+    "#organizerActivationManageStatus",
     ".app",
   ];
   const elements = Object.fromEntries(selectors.map((selector) => [selector, createElement()]));
@@ -70,6 +83,7 @@ function createControllerFixture(options = {}) {
     windowRef: { setTimeout: (callback) => callback() },
     fetchImpl: options.fetchImpl,
     deviceIdentity: options.deviceIdentity,
+    now: options.now,
     premiumFeatures: {
       describeFeatures: () => [],
       normalizeFeatureIds: (featureIds) => featureIds,
@@ -99,6 +113,7 @@ test("activation controller silently renews an expired Cookie with the device ke
 test("activation controller automatically starts a three-day trial after renewal misses", async () => {
   let trialCalls = 0;
   const fixture = createControllerFixture({
+    now: () => Date.parse("2026-07-23T00:00:00.000Z"),
     fetchImpl: async () => Response.json({ activated: false, configured: true }),
     deviceIdentity: {
       async renew() {
@@ -115,6 +130,31 @@ test("activation controller automatically starts a three-day trial after renewal
   assert.equal(status.activated, true);
   assert.equal(status.plan, "trial");
   assert.equal(trialCalls, 1);
+  assert.equal(fixture.elements["#activationManageLabel"].textContent, "3 天试用");
+  assert.match(fixture.elements["#activationManageStatus"].textContent, /已开启 · 剩余 2天/u);
+  assert.equal(fixture.elements["#organizerActivationManageLabel"].textContent, "3 天试用");
+  assert.match(fixture.elements["#organizerActivationManageStatus"].textContent, /剩余 2天/u);
+  assert.equal(fixture.elements["#activationPlanBadge"].textContent, "3 天免费试用");
+  assert.match(fixture.elements["#activationProgress"].style.width, /^66\./u);
+});
+
+test("activation controller warns when a trial has less than six hours remaining", async () => {
+  const fixture = createControllerFixture({
+    now: () => Date.parse("2026-07-23T00:00:00.000Z"),
+    fetchImpl: async () =>
+      Response.json({
+        activated: true,
+        configured: true,
+        plan: "trial",
+        expiresAt: "2026-07-23T04:00:00.000Z",
+      }),
+  });
+
+  await fixture.controller.refreshStatus();
+
+  assert.equal(fixture.elements["#activationManage"].dataset.urgency, "critical");
+  assert.equal(fixture.elements["#activationOverview"].dataset.urgency, "critical");
+  assert.equal(fixture.elements["#activationRemaining"].textContent, "剩余 4小时");
 });
 
 test("activation form delegates code redemption to the browser device protocol", async () => {
@@ -156,7 +196,8 @@ test("license manager stays available for replacement and shows the expiry", asy
 
   await fixture.controller.openManager();
   assert.equal(fixture.elements["#activationPanel"].hidden, false);
-  assert.match(fixture.elements["#activationCurrent"].textContent, /试用有效期至/u);
+  assert.match(fixture.elements["#activationMessage"].textContent, /3 天试用期间可正常导出/u);
+  assert.match(fixture.elements["#activationCurrent"].textContent, /试用将在/u);
   fixture.elements["#activationCode"].value = " 自定义 激活码 / 夏季✨ ";
   await fixture.elements["#activationForm"].listener("submit")({ preventDefault() {} });
 

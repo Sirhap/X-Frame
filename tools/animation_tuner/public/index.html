@@ -535,7 +535,8 @@
               处理新动画
             </button>
             <button id="activationManage" class="secondary activationManageLaunch" type="button">
-              授权管理
+              <span id="activationManageLabel">授权管理</span>
+              <small id="activationManageStatus">正在检查授权…</small>
             </button>
             <button
               id="exportWorkbench"
@@ -1867,6 +1868,14 @@
             <p id="organizerSubtitle" data-organizer-i18n="subtitle">排序、删帧、单帧抠图与序列分析</p>
           </div>
           <div class="workbenchHeaderActions">
+            <button
+              id="organizerActivationManage"
+              class="secondary activationManageLaunch organizerActivationLaunch"
+              type="button"
+            >
+              <span id="organizerActivationManageLabel">授权管理</span>
+              <small id="organizerActivationManageStatus">正在检查授权…</small>
+            </button>
             <button id="organizerCopyLink" class="workbenchLink" type="button" data-organizer-i18n="copyLink">
               复制链接
             </button>
@@ -2541,7 +2550,14 @@
           <span class="activationKicker">PREMIUM OUTPUT / ACTIVATION REQUIRED</span>
           <h2 id="activationTitle">激活后完成导出</h2>
           <p id="activationMessage">当前编辑不会丢失。输入激活码后即可继续。</p>
-          <p id="activationCurrent" class="activationCurrent">正在读取当前授权状态…</p>
+          <section id="activationOverview" class="activationOverview" aria-live="polite">
+            <div class="activationOverviewHeader">
+              <span id="activationPlanBadge" class="activationPlanBadge">授权状态</span>
+              <strong id="activationRemaining">正在读取…</strong>
+            </div>
+            <div class="activationProgress" aria-hidden="true"><i id="activationProgress"></i></div>
+            <p id="activationCurrent" class="activationCurrent">正在读取当前授权状态…</p>
+          </section>
           <ul id="activationFeatures" class="activationFeatures"></ul>
           <form id="activationForm" class="activationForm">
             <label class="srOnly" for="activationCode">激活码</label>

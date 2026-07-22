@@ -9,11 +9,12 @@
 
   const FOCUSABLE_SELECTOR =
     'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  const TRIAL_DURATION_MS = 3 * 24 * 60 * 60 * 1000;
 
   /**
    * Creates the shared premium activation flow.
-   * @param {{documentRef?:Document,windowRef?:Window,fetchImpl?:typeof fetch,getLanguage?:()=>string,premiumFeatures?:object,deviceIdentity?:object}} dependencies Runtime dependencies.
-   * @returns {{ensureActivated:(featureIds:string[])=>Promise<boolean>,openManager:()=>Promise<void>,refreshStatus:()=>Promise<object>,isActivated:()=>boolean}}
+   * @param {{documentRef?:Document,windowRef?:Window,fetchImpl?:typeof fetch,getLanguage?:()=>string,premiumFeatures?:object,deviceIdentity?:object,now?:()=>number}} dependencies Runtime dependencies.
+   * @returns {{ensureActivated:(featureIds:string[])=>Promise<boolean>,openManager:()=>Promise<void>,refreshStatus:()=>Promise<object>,renderStatus:()=>void,isActivated:()=>boolean}}
    */
   function createController(dependencies = {}) {
     const documentRef = dependencies.documentRef || root?.document;
@@ -22,11 +23,16 @@
     const premiumFeatures = dependencies.premiumFeatures || root?.XSXBPremiumFeatures;
     const deviceIdentity = dependencies.deviceIdentity || null;
     const getLanguage = dependencies.getLanguage || (() => "zh");
+    const now = dependencies.now || Date.now;
     const elements = {
       panel: documentRef?.querySelector?.("#activationPanel"),
       card: documentRef?.querySelector?.("#activationCard"),
       title: documentRef?.querySelector?.("#activationTitle"),
       message: documentRef?.querySelector?.("#activationMessage"),
+      overview: documentRef?.querySelector?.("#activationOverview"),
+      planBadge: documentRef?.querySelector?.("#activationPlanBadge"),
+      remaining: documentRef?.querySelector?.("#activationRemaining"),
+      progress: documentRef?.querySelector?.("#activationProgress"),
       current: documentRef?.querySelector?.("#activationCurrent"),
       features: documentRef?.querySelector?.("#activationFeatures"),
       form: documentRef?.querySelector?.("#activationForm"),
@@ -35,6 +41,13 @@
       cancel: documentRef?.querySelector?.("#activationCancel"),
       submit: documentRef?.querySelector?.("#activationSubmit"),
       manage: documentRef?.querySelector?.("#activationManage"),
+      manageLabel: documentRef?.querySelector?.("#activationManageLabel"),
+      manageStatus: documentRef?.querySelector?.("#activationManageStatus"),
+    };
+    const organizerLauncher = {
+      button: documentRef?.querySelector?.("#organizerActivationManage"),
+      label: documentRef?.querySelector?.("#organizerActivationManageLabel"),
+      status: documentRef?.querySelector?.("#organizerActivationManageStatus"),
     };
     if (
       !documentRef?.createElement ||
@@ -51,6 +64,14 @@
     let returnFocus = null;
     let previousAppInert = false;
     let panelMode = "prompt";
+
+    /** @returns {Array<{button:HTMLElement,label:HTMLElement,status:HTMLElement}>} Available status launchers. */
+    function statusLaunchers() {
+      return [
+        { button: elements.manage, label: elements.manageLabel, status: elements.manageStatus },
+        organizerLauncher,
+      ].filter((launcher) => launcher.button && launcher.label && launcher.status);
+    }
 
     /** @returns {boolean} Whether the current language is English. */
     function isEnglish() {
@@ -75,21 +96,107 @@
       }).format(timestamp);
     }
 
+    /**
+     * Calculates the visible countdown state for a finite license.
+     * @returns {{remainingMs:number,progress:number,urgency:"none"|"soon"|"critical",permanent:boolean}}
+     */
+    function expiryMetrics() {
+      const timestamp = Date.parse(String(activationStatus.expiresAt || ""));
+      const permanent = Number.isFinite(timestamp) && new Date(timestamp).getUTCFullYear() >= 9999;
+      if (!Number.isFinite(timestamp) || permanent) {
+        return { remainingMs: 0, progress: permanent ? 100 : 0, urgency: "none", permanent };
+      }
+      const remainingMs = Math.max(0, timestamp - now());
+      const urgency =
+        remainingMs <= 6 * 60 * 60 * 1000 ? "critical" : remainingMs <= 24 * 60 * 60 * 1000 ? "soon" : "none";
+      return {
+        remainingMs,
+        progress: Math.min(100, Math.max(0, (remainingMs / TRIAL_DURATION_MS) * 100)),
+        urgency,
+        permanent: false,
+      };
+    }
+
+    /** @param {{remainingMs:number,permanent:boolean}} metrics Countdown data. @returns {string} Localized remaining time. */
+    function formatRemaining(metrics) {
+      const english = isEnglish();
+      if (metrics.permanent) return english ? "Never expires" : "永久有效";
+      if (metrics.remainingMs <= 0) return english ? "Expired" : "已到期";
+      const totalMinutes = Math.max(1, Math.ceil(metrics.remainingMs / 60000));
+      const days = Math.floor(totalMinutes / 1440);
+      const hours = Math.floor((totalMinutes % 1440) / 60);
+      const minutes = totalMinutes % 60;
+      if (days > 0) {
+        return english
+          ? `${days}d${hours ? ` ${hours}h` : ""} left`
+          : `剩余 ${days}天${hours ? `${hours}小时` : ""}`;
+      }
+      if (hours > 0) return english ? `${hours}h left` : `剩余 ${hours}小时`;
+      return english ? `${minutes}m left` : `剩余 ${minutes}分钟`;
+    }
+
     /** @returns {void} */
     function renderCurrentStatus() {
       const english = isEnglish();
       const active = activationStatus.activated;
-      const plan =
-        activationStatus.plan === "trial" ? (english ? "Trial" : "试用") : english ? "License" : "授权";
-      elements.current.textContent = active
+      const trial = active && activationStatus.plan === "trial";
+      const metrics = expiryMetrics();
+      const remaining = formatRemaining(metrics);
+      const state = trial ? "trial" : active ? "licensed" : "inactive";
+
+      elements.overview.dataset.state = state;
+      elements.overview.dataset.urgency = active ? metrics.urgency : "none";
+      elements.planBadge.textContent = trial
         ? english
-          ? `${plan} active until ${formatExpiry(activationStatus.expiresAt)}.`
-          : `当前${plan}有效期至 ${formatExpiry(activationStatus.expiresAt)}。`
-        : english
-          ? "No active license on this browser."
-          : "当前浏览器没有有效授权。";
-      elements.manage.dataset.active = String(active);
-      elements.manage.title = elements.current.textContent;
+          ? "3-DAY FREE TRIAL"
+          : "3 天免费试用"
+        : active
+          ? english
+            ? "ACTIVATED"
+            : "已激活"
+          : english
+            ? "NOT ACTIVATED"
+            : "未激活";
+      elements.remaining.textContent = active
+        ? remaining
+        : activationStatus.configured
+          ? english
+            ? "Activation required"
+            : "需要激活"
+          : english
+            ? "Service unavailable"
+            : "服务未配置";
+      elements.progress.style.width = `${trial ? metrics.progress : 0}%`;
+      elements.current.textContent = trial
+        ? english
+          ? `Trial ends ${formatExpiry(activationStatus.expiresAt)}. Editing remains available afterwards; exporting requires activation.`
+          : `试用将在 ${formatExpiry(activationStatus.expiresAt)} 到期；到期后仍可编辑，导出需要激活码。`
+        : active
+          ? english
+            ? `Current license is valid until ${formatExpiry(activationStatus.expiresAt)}.`
+            : `当前授权有效期至 ${formatExpiry(activationStatus.expiresAt)}。`
+          : english
+            ? "No active license on this browser. Editing remains available; exporting requires activation."
+            : "当前浏览器没有有效授权；仍可继续编辑，导出时需要激活。";
+      const launcherLabel = trial ? (english ? "3-day trial" : "3 天试用") : english ? "License" : "授权管理";
+      const launcherStatus = active
+        ? `${activationStatus.justStarted ? (english ? "Started · " : "已开启 · ") : ""}${remaining}`
+        : activationStatus.configured
+          ? english
+            ? "Activate to export"
+            : "激活后可导出"
+          : english
+            ? "Service not configured"
+            : "服务未配置";
+      for (const launcher of statusLaunchers()) {
+        launcher.button.dataset.active = String(active);
+        launcher.button.dataset.urgency = active ? metrics.urgency : "none";
+        launcher.button.dataset.newTrial = String(Boolean(activationStatus.justStarted));
+        launcher.label.textContent = launcherLabel;
+        launcher.status.textContent = launcherStatus;
+        launcher.button.title = elements.current.textContent;
+        launcher.button.setAttribute("aria-label", `${launcherLabel}，${launcherStatus}`);
+      }
     }
 
     /** @returns {HTMLElement[]} Visible focusable activation controls. */
@@ -160,6 +267,7 @@
                 configured: true,
                 expiresAt: String(trial.expiresAt || ""),
                 plan: "trial",
+                justStarted: true,
               };
             }
           } catch (_error) {
@@ -217,9 +325,14 @@
       panelMode = "manage";
       const english = isEnglish();
       elements.title.textContent = english ? "License management" : "授权管理";
-      elements.message.textContent = english
-        ? "Enter a new activation code at any time to replace the license used by this browser."
-        : "可随时输入新的激活码，更换当前浏览器正在使用的授权。";
+      elements.message.textContent =
+        activationStatus.activated && activationStatus.plan === "trial"
+          ? english
+            ? "Export normally during the 3-day trial. Enter an activation code at any time to switch to a full license."
+            : "3 天试用期间可正常导出；随时填写激活码即可更换为正式授权。"
+          : english
+            ? "Enter a new activation code at any time to replace the license used by this browser."
+            : "可随时输入新的激活码，更换当前浏览器正在使用的授权。";
       elements.code.placeholder = english ? "Enter a new activation code" : "输入新的激活码";
       elements.cancel.textContent = english ? "Close" : "关闭";
       elements.submit.textContent = activationStatus.activated
@@ -311,7 +424,9 @@
         elements.code.focus();
       }
     });
-    elements.manage.addEventListener("click", () => void openManager());
+    for (const launcher of statusLaunchers()) {
+      launcher.button.addEventListener("click", () => void openManager());
+    }
     elements.cancel.addEventListener("click", () => resolvePrompt(false));
     elements.panel.addEventListener("click", (event) => {
       if (event.target === elements.panel) resolvePrompt(false);
@@ -342,6 +457,7 @@
       isActivated: () => activationStatus.activated,
       openManager,
       refreshStatus,
+      renderStatus: renderCurrentStatus,
     });
   }
 
