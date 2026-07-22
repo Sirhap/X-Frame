@@ -8,13 +8,14 @@
  * project write queues, and Godot synchronization in the route body preserves
  * the behavior of the original handlers while making the HTTP entry point
  * easier to navigate and test.
- * @param {{send:Function,readJsonBody:Function,withProjectWrite:Function,projectStore:object,projectFromRequest:Function,requiredProjectFromRequest:Function,projectDataRevision:Function,createFilesystemSnapshot:Function,managedProjectPaths:Function,rollbackFilesystemSnapshot:Function,fs:object,path:object,root:string,decodeDataUrl:Function,saveFrameAudioBindings:Function,saveFrameAttachmentImage:Function,saveAttachmentAssets:Function,replaceFrameImage:Function,replaceAnimationImages:Function,deleteAnimation:Function,importAnimation:Function,reorganizeAnimation:Function,syncGodotProjectAsync:Function,syncFrameAudioAsync:Function,syncGodotRuntimeProjectId:Function,godotMirrorPath:Function,validateProject:Function}} dependencies Route dependencies.
+ * @param {{send:Function,readJsonBody:Function,assertPremiumAccess?:(request:object,pathname:string,payload:object)=>unknown,withProjectWrite:Function,projectStore:object,projectFromRequest:Function,requiredProjectFromRequest:Function,projectDataRevision:Function,createFilesystemSnapshot:Function,managedProjectPaths:Function,rollbackFilesystemSnapshot:Function,fs:object,path:object,root:string,decodeDataUrl:Function,saveFrameAudioBindings:Function,saveFrameAttachmentImage:Function,saveAttachmentAssets:Function,replaceFrameImage:Function,replaceAnimationImages:Function,deleteAnimation:Function,importAnimation:Function,reorganizeAnimation:Function,syncGodotProjectAsync:Function,syncFrameAudioAsync:Function,syncGodotRuntimeProjectId:Function,godotMirrorPath:Function,validateProject:Function}} dependencies Route dependencies.
  * @returns {{handleMediaRoute:(req:object,res:object,parsed:URL)=>Promise<boolean>}} Media route dispatcher.
  */
 function createMediaRoutes(dependencies = {}) {
   const {
     send,
     readJsonBody,
+    assertPremiumAccess = () => {},
     withProjectWrite,
     projectStore,
     projectFromRequest,
@@ -52,6 +53,7 @@ function createMediaRoutes(dependencies = {}) {
   async function handleMediaRoute(req, res, parsed) {
     if (req.method === "POST" && parsed.pathname === "/api/frame-audio") {
       const payload = await readJsonBody(req, parsed.pathname);
+      assertPremiumAccess(req, parsed.pathname, payload);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       await withProjectWrite(project.id, async () => {
         const bindings = Array.isArray(payload.frameAudioBindings)
@@ -87,6 +89,7 @@ function createMediaRoutes(dependencies = {}) {
     }
     if (req.method === "POST" && parsed.pathname === "/api/frame-attachment-image") {
       const payload = await readJsonBody(req, parsed.pathname);
+      assertPremiumAccess(req, parsed.pathname, payload);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       await withProjectWrite(project.id, () =>
         send(res, 200, {
@@ -99,6 +102,7 @@ function createMediaRoutes(dependencies = {}) {
     }
     if (req.method === "POST" && parsed.pathname === "/api/attachment-assets") {
       const payload = await readJsonBody(req, parsed.pathname);
+      assertPremiumAccess(req, parsed.pathname, payload);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       await withProjectWrite(project.id, () =>
         send(res, 200, {
@@ -111,6 +115,7 @@ function createMediaRoutes(dependencies = {}) {
     }
     if (req.method === "POST" && parsed.pathname === "/api/replace-frame") {
       const payload = await readJsonBody(req, parsed.pathname);
+      assertPremiumAccess(req, parsed.pathname, payload);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       await withProjectWrite(project.id, () =>
         send(res, 200, {
@@ -122,6 +127,7 @@ function createMediaRoutes(dependencies = {}) {
     }
     if (req.method === "POST" && parsed.pathname === "/api/replace-animation") {
       const payload = await readJsonBody(req, parsed.pathname);
+      assertPremiumAccess(req, parsed.pathname, payload);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       const frames = Array.isArray(payload.frames) ? payload.frames : [];
       const files = Array.isArray(payload.files) ? payload.files : [];
@@ -204,6 +210,7 @@ function createMediaRoutes(dependencies = {}) {
     }
     if (req.method === "POST" && parsed.pathname === "/api/import-animation") {
       const payload = await readJsonBody(req, parsed.pathname);
+      assertPremiumAccess(req, parsed.pathname, payload);
       const items = Array.isArray(payload.items) ? payload.items : [];
       const profileLabel = String(payload.profileLabel || "").trim();
       const animationName = String(payload.animationName || "").trim();
@@ -275,6 +282,7 @@ function createMediaRoutes(dependencies = {}) {
     }
     if (req.method === "POST" && parsed.pathname === "/api/reorganize-animation") {
       const payload = await readJsonBody(req, parsed.pathname);
+      assertPremiumAccess(req, parsed.pathname, payload);
       const { project } = requiredProjectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       await withProjectWrite(project.id, async () => {
         const currentRevision = projectDataRevision(project);

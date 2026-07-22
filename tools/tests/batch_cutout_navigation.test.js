@@ -29,8 +29,8 @@ function createFixture() {
   };
   const elements = {
     cutoutQueue: {
-      clientWidth: 280,
-      scrollLeft: 0,
+      clientHeight: 280,
+      scrollTop: 0,
       querySelector: () => queueScrollTarget,
     },
     cutoutModal: { hidden: false },
@@ -41,7 +41,7 @@ function createFixture() {
     selectedItem: () => state.items[state.selectedIndex] || null,
     hasQualityIssue: (item) => Boolean(item?.quality?.codes?.length),
     applyProcessingParametersToControls: () => {},
-    setSettingsMode: () => {},
+    setRepairMode: () => {},
     renderSessionMode: () => {},
     setStatus: (message, tone) => calls.status.push({ message, tone }),
     text: (key) => key,

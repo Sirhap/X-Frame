@@ -1,9 +1,11 @@
 node_modules/
+.wrangler/
 target/
 coverage/
 dist/
 .dist-build-*/
 .dist-backup-*/
+cloudflare/site/dist/
 .dist-restore-*/
 .dist-restore-backup-*/
 .protected-releases/
@@ -16,6 +18,7 @@ pnpm-debug.log*
 
 .env
 .env.*
+!.env.local.example
 *.log
 
 .DS_Store

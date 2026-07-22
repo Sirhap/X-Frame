@@ -35,18 +35,7 @@
   margin: 12px 0;
 }
 
-.languageField {
-  display: none;
-}
-
-.characterGroupGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.16fr);
-  gap: 10px;
-  margin: 8px 0 10px;
-}
-
-.characterGroupGrid .field,
+.animationTargetField,
 .sceneGrid .field,
 .sceneGrid .number,
 .adjustGrid .number,
@@ -54,7 +43,7 @@
   margin: 0;
 }
 
-.characterGroupGrid select,
+.animationTargetField select,
 .sceneGrid select,
 .adjustGrid input {
   width: 100%;
@@ -98,7 +87,8 @@
   position: relative;
 }
 
-.toggle input[type="checkbox"] {
+.toggle input[type="checkbox"],
+.toggle input[type="radio"] {
   height: 1px;
   min-height: 0;
   opacity: 0;
@@ -137,11 +127,122 @@
   margin: 8px 0 10px;
 }
 
+.adjustModeRow .toggle.compact {
+  min-height: 58px;
+  padding: 8px 6px;
+}
+
+.adjustModeCopy {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  padding: 0;
+}
+
+.adjustModeCopy strong {
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.adjustModeCopy small {
+  color: color-mix(in srgb, currentColor 72%, transparent);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.adjustModeRow .toggle:has(input:checked)::after {
+  right: 5px;
+  top: 5px;
+  transform: none;
+}
+
+.scopeImpact {
+  min-height: 46px;
+  display: grid;
+  align-items: center;
+  margin: 0 0 10px;
+  padding: 8px 10px 8px 12px;
+  border-left: 4px solid var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 10%, var(--panel));
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.scopeImpact > span {
+  display: none;
+}
+
+.adjustModeRow:has(#adjustCharacter:checked) + .scopeImpact [data-scope-impact="character"],
+.adjustModeRow:has(#adjustGroup:checked) + .scopeImpact [data-scope-impact="group"],
+.adjustModeRow:has(#adjustFrame:checked) + .scopeImpact [data-scope-impact="frame"] {
+  display: block;
+}
+
 .adjustGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px 10px;
   margin: 10px 0;
+}
+
+.advancedAdjustments {
+  margin: 10px 0;
+  border: 2px solid color-mix(in srgb, var(--line) 62%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel-2) 58%, transparent);
+}
+
+.panel .advancedAdjustments > summary {
+  min-height: 42px;
+  padding: 7px 9px;
+}
+
+.advancedAdjustments > summary > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.advancedAdjustments > summary b {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.advancedAdjustments > summary small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.panel .advancedAdjustments > summary::after,
+.panel[open] .advancedAdjustments > summary::after {
+  content: "›";
+  width: 20px;
+  height: 20px;
+  color: var(--control-ink);
+  background: var(--control-bg);
+  transform: rotate(0);
+  transition: transform 140ms ease;
+}
+
+.panel .advancedAdjustments[open] > summary::after,
+.panel[open] .advancedAdjustments[open] > summary::after {
+  content: "›";
+  transform: rotate(90deg);
+}
+
+.advancedAdjustments .adjustGrid {
+  margin: 0;
+  padding: 0 9px 9px;
+}
+
+.panel:has(#adjustCharacter:checked) .frameOptionGrid,
+.panel:has(#adjustGroup:checked) .frameOptionGrid {
+  display: none;
 }
 
 .adjustGrid .number {

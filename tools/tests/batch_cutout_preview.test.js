@@ -45,3 +45,30 @@ test("cutout preview rejects hidden layouts and right-edge source coordinates", 
   };
   assert.equal(controller.previewSourcePoint({ clientX: 100, clientY: 50 }, visibleCanvas), null);
 });
+
+test("cutout preview supports zooming up to eight hundred percent", () => {
+  let renderCount = 0;
+  const state = { previewScale: 1, previewFitScale: 1, previewPanX: 0, previewPanY: 0 };
+  const elements = {
+    cutoutResult: { _cutoutView: { scale: 8 } },
+    cutoutOriginal: {},
+    cutoutZoom: { value: "100" },
+    cutoutZoomValue: { textContent: "" },
+    cutoutZoomFit: { classList: { toggle() {} } },
+    cutoutZoomActual: { classList: { toggle() {} } },
+  };
+  const controller = createController({
+    elements,
+    state,
+    renderPreview() {
+      renderCount += 1;
+    },
+  });
+
+  controller.setPreviewScale(12);
+  assert.equal(state.previewScale, 8);
+  assert.equal(renderCount, 1);
+  controller.renderPreviewZoom();
+  assert.equal(elements.cutoutZoom.value, "800");
+  assert.equal(elements.cutoutZoomValue.textContent, "800%");
+});

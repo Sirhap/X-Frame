@@ -29,9 +29,14 @@ test("app tool actions preserve cutout replacement payload and refresh selection
     clearImageCache: () => {},
     clearImageElements: () => {},
     setOpaqueRectCache: () => {},
+    premiumFeatures: {
+      normalizeFeatureIds: (featureIds) => Array.from(featureIds || []),
+    },
   });
 
-  await controller.applyCutoutOutputsToCurrentAnimation([{ data: "a" }, { data: "b" }]);
+  await controller.applyCutoutOutputsToCurrentAnimation([{ data: "a" }, { data: "b" }], {
+    premiumFeatures: ["cutout.alpha-control"],
+  });
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, "/api/replace-animation");
   assert.deepEqual(JSON.parse(requests[0].options.body), {
@@ -39,6 +44,7 @@ test("app tool actions preserve cutout replacement payload and refresh selection
     frameCount: 2,
     outputs: [{ data: "a" }, { data: "b" }],
   });
+  assert.equal(requests[0].options.headers["x-xsxb-premium-features"], "cutout.alpha-control");
   assert.deepEqual(selected, [{ selectedGroup: group, options: { frameIndex: 1, preserveView: true } }]);
 });
 

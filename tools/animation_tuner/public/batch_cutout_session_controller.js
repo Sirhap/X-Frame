@@ -19,7 +19,7 @@
       text,
       documentRef = root?.document,
       host = {},
-      setSettingsMode,
+      setRepairMode,
       setEditorInert,
       renderLanguage,
       renderPreview,
@@ -129,7 +129,7 @@
       }
       state.returnFocus = documentApi.activeElement;
       elements.cutoutModal.hidden = false;
-      setSettingsMode("automatic");
+      setRepairMode("automatic");
       setEditorInert(true);
       documentApi.body.classList.add("cutoutOpen");
       if (options.syncRoute !== false) host.onOpen?.();

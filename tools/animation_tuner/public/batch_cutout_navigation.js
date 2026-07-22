@@ -19,7 +19,7 @@
    * @param {()=>object|null} dependencies.selectedItem Selected queue item resolver.
    * @param {(item:object)=>boolean} dependencies.hasQualityIssue Quality predicate.
    * @param {(parameters:object|null|undefined)=>void} dependencies.applyProcessingParametersToControls Control synchronizer.
-   * @param {(mode:string)=>void} dependencies.setSettingsMode Sidebar mode setter.
+   * @param {(mode:string)=>void} dependencies.setRepairMode Active-tool setter.
    * @param {()=>void} dependencies.renderSessionMode Single-edit mode renderer.
    * @param {(message:string,tone?:string)=>void} dependencies.setStatus Status callback.
    * @param {(key:string,variables?:object)=>string} dependencies.text Localized text resolver.
@@ -38,7 +38,7 @@
       selectedItem,
       hasQualityIssue,
       applyProcessingParametersToControls,
-      setSettingsMode,
+      setRepairMode,
       renderSessionMode,
       setStatus,
       text,
@@ -56,7 +56,7 @@
       typeof selectedItem !== "function" ||
       typeof hasQualityIssue !== "function" ||
       typeof applyProcessingParametersToControls !== "function" ||
-      typeof setSettingsMode !== "function" ||
+      typeof setRepairMode !== "function" ||
       typeof renderSessionMode !== "function" ||
       typeof setStatus !== "function" ||
       typeof text !== "function" ||
@@ -103,7 +103,7 @@
         state.previewMode = targetItem?.processingActivated ? "result" : "original";
         state.keyboardRepairPoint = null;
         state.repairDrag = null;
-        if (!targetItem?.processingActivated) setSettingsMode("automatic");
+        if (!targetItem?.processingActivated) setRepairMode("automatic");
         renderSessionMode();
         setStatus(
           text(targetItem?.processingActivated ? "singleImageEdited" : "singleImageOriginal", {
@@ -118,15 +118,15 @@
       const visibleIndex = state.qualityOnly
         ? state.items.slice(0, nextIndex).filter(hasQualityIssue).length
         : nextIndex;
-      elements.cutoutQueue.scrollLeft = Math.max(
+      elements.cutoutQueue.scrollTop = Math.max(
         0,
-        visibleIndex * 140 - elements.cutoutQueue.clientWidth / 2,
+        visibleIndex * 175 - elements.cutoutQueue.clientHeight / 2,
       );
       renderQueue();
       renderPreview();
       elements.cutoutQueue.querySelector(`[data-index="${nextIndex}"]`)?.scrollIntoView({
-        block: "nearest",
-        inline: "center",
+        block: "center",
+        inline: "nearest",
         behavior: "smooth",
       });
     }

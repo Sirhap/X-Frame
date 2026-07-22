@@ -237,6 +237,25 @@
     }
 
     /**
+     * Validates and resolves a manual protected-color input without mutating the item.
+     * @param {object|null} item Queue item.
+     * @param {string} value Candidate six-digit HEX color.
+     * @returns {{status:"added"|"invalid"|"duplicate"|"limit",color?:object,hex?:string}} Resolution result.
+     */
+    function resolveProtectedColorInput(item, value) {
+      const match = /^#?([0-9a-f]{6})$/i.exec(String(value || "").trim());
+      if (!item || !match) return { status: "invalid" };
+      const entries = protectedColorEntries(item);
+      if (entries.length >= 32) return { status: "limit" };
+      const hex = `#${match[1].toLowerCase()}`;
+      const color = colorUtils.hexToRgb(hex);
+      const duplicate = entries.some(
+        (entry) => colorUtils.colorDistance(color.r, color.g, color.b, entry.color) < 2,
+      );
+      return duplicate ? { status: "duplicate" } : { status: "added", color, hex };
+    }
+
+    /**
      * Returns normalized processing options for a queue item.
      * @param {object} item Queue item.
      * @returns {object}
@@ -246,7 +265,7 @@
       return sessionCore.createProcessingOptions(item, {
         backgroundColor: selectedBackgroundColor(item),
         backgroundColors: selectedBackgroundColors(item),
-        protectedColors: effectiveProtectedColors(item),
+        protectedColors: (item.protectedColors || []).map((color) => ({ ...color })),
       });
     }
 
@@ -261,6 +280,7 @@
       selectedBackgroundColors,
       protectedColorEntries,
       effectiveProtectedColors,
+      resolveProtectedColorInput,
       processingOptions,
     };
   }

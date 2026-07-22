@@ -96,7 +96,6 @@
       const language = readState("language", "zh") === "en" ? "en" : "zh";
       state.language = language;
       if (documentRef.documentElement) documentRef.documentElement.lang = language === "zh" ? "zh-CN" : "en";
-      if (elements.languageSelect) elements.languageSelect.value = language;
       for (const button of elements.languageButtons || []) {
         const active = button.dataset.language === language;
         button.classList.toggle("active", active);

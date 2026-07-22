@@ -71,6 +71,7 @@
       selectedFrames,
       includedFrames,
       open,
+      openImport,
       requestClose,
       flipFrames,
       analyze,
@@ -266,8 +267,22 @@
       elements.organizerLoopClose.setAttribute("aria-label", text("close"));
       elements.organizerTag.placeholder = text("tagPlaceholder");
       elements.organizerTitle.textContent = text(state.mode === "import" ? "importTitle" : "title");
-      elements.organizerSubtitle.textContent = text(state.mode === "import" ? "importSubtitle" : "subtitle");
-      elements.organizerApply.textContent = text(state.mode === "import" ? "create" : "apply");
+      const browserExportOnly = hooks.browserExportOnly === true && state.mode === "import";
+      const importSetupHint = documentApi.querySelector('[data-organizer-i18n="importSetupHint"]');
+      if (browserExportOnly && importSetupHint) {
+        importSetupHint.textContent = text("browserImportSetupHint");
+      }
+      elements.organizerSubtitle.textContent = text(
+        state.mode === "import"
+          ? browserExportOnly
+            ? "browserImportSubtitle"
+            : "importSubtitle"
+          : "subtitle",
+      );
+      elements.organizerApply.textContent = text(
+        state.mode === "import" ? (browserExportOnly ? "exportZip" : "create") : "apply",
+      );
+      elements.organizerGodotPlaceholder.hidden = !browserExportOnly;
       elements.organizerReset.textContent = text(state.mode === "import" ? "clearWorkset" : "reset");
       elements.organizerImportSetup.hidden = state.mode !== "import";
       elements.organizerImportSetup
@@ -280,7 +295,9 @@
     /** Binds organizer DOM events to injected host callbacks in original order. @returns {void} */
     function bindEvents() {
       elements.organizerOpen.addEventListener("click", () =>
-        open().catch((error) => setStatus(text("failed", { message: error.message }), "error")),
+        (openImport || open)().catch((error) =>
+          setStatus(text("failed", { message: error.message }), "error"),
+        ),
       );
       elements.organizerCopyLink.addEventListener("click", async () => {
         try {

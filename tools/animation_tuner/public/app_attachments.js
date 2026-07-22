@@ -190,7 +190,7 @@
     async function addImagesToCurrentGroupAssets(items) {
       const currentGroup = getCurrentGroup();
       if (!currentGroup) {
-        throw new Error(getLanguage() === "zh" ? "请先选择当前动画组。" : "Select an animation group first.");
+        throw new Error(getLanguage() === "zh" ? "请先选择当前动画。" : "Select an animation first.");
       }
       const groupKey = attachmentAssetGroupKey(currentGroup);
       const added = [];

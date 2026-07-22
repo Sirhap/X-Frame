@@ -39,6 +39,12 @@
     const resultArtifacts = resultCacheCore.createResultArtifactCache();
     const elements = runtimeSetup.collectElements(document);
     const state = runtimeSetup.createInitialState(hooks.getLanguage?.());
+    if (elements.cutoutSidebarBatchPanel && elements.cutoutBatchTray) {
+      elements.cutoutSidebarBatchPanel.append(elements.cutoutBatchTray);
+    }
+    /** @type {HTMLElement|null} Persistent batch actions shared by both sidebar panels. */
+    const sidebarActions = document.querySelector(".cutoutBatchWorkspaceActions");
+    if (elements.cutoutSidebar && sidebarActions) elements.cutoutSidebar.append(sidebarActions);
     let settingsController = null;
     /** @param {string} method Settings method name. @param {...any} args Method arguments. @returns {any} Settings result. */
     function settingsCall(method, ...args) {
@@ -69,10 +75,6 @@
     function renderStatus(...args) {
       return settingsCall("renderStatus", ...args);
     }
-    /** @returns {void} Switches automatic/tool settings mode. */
-    function setSettingsMode(...args) {
-      return settingsCall("setSettingsMode", ...args);
-    }
     /** @returns {void} Selects the active repair mode. */
     function setRepairMode(...args) {
       return settingsCall("setRepairMode", ...args);
@@ -88,6 +90,10 @@
     /** @returns {boolean} Whether the latest area repair was updated. */
     function updateLatestAreaRepair(...args) {
       return settingsCall("updateLatestAreaRepair", ...args);
+    }
+    /** @returns {boolean} Whether the latest protection repair was updated. */
+    function updateLatestProtectionRepair(...args) {
+      return settingsCall("updateLatestProtectionRepair", ...args);
     }
     const MAX_IMAGE_FILE_BYTES = runtimeSetup.maxImageFileBytes;
     const IMAGE_PIXEL_LIMITS = runtimeSetup.createImagePixelLimits();
@@ -196,6 +202,7 @@
       selectedBackgroundColors,
       protectedColorEntries,
       effectiveProtectedColors,
+      resolveProtectedColorInput,
       processingOptions,
     } = imageController;
     /**
@@ -234,6 +241,8 @@
     const {
       normalizeProtectionRectangle,
       createSelectionMask,
+      encodeSubjectMask,
+      detectNativeSubject,
       createColorProtectionPreview,
       syncProtectionPreview,
       drawProtectionPreview,
@@ -292,7 +301,7 @@
       selectedItem,
       hasQualityIssue,
       applyProcessingParametersToControls,
-      setSettingsMode,
+      setRepairMode,
       renderSessionMode: (...args) => renderSessionMode(...args),
       setStatus,
       text,
@@ -409,7 +418,6 @@
       invalidateItem,
       renderPreview,
       schedulePreview,
-      syncProtectionPreview,
       renderAdvancedMode,
       advancedSummary,
       advancedPresetButtons,
@@ -454,6 +462,8 @@
       imageDataConstructor: ImageData,
       domExceptionConstructor: DOMException,
       maxImageFileBytes: MAX_IMAGE_FILE_BYTES,
+      premiumFeatures: hooks.premiumFeatures,
+      ensurePremiumActivated: hooks.ensurePremiumActivated,
     });
     const { loadFiles, loadCurrentGroup, processItem, processAll, downloadAll, applyCurrentGroup } =
       processController;
@@ -476,6 +486,7 @@
       renderPreviewZoom,
       setPreviewProcessing,
       drawRepairOverlay,
+      syncProtectionPreview,
       drawProtectionPreview,
       renderProtectionPreviewInfo,
       renderStatus,
@@ -531,6 +542,8 @@
       colorUtils,
       selectionRepairExecutor,
       createSelectionMask,
+      encodeSubjectMask,
+      detectNativeSubject,
       text,
       processItem,
       selectedItem,
@@ -561,7 +574,7 @@
       text,
       documentRef: document,
       host: hooks,
-      setSettingsMode,
+      setRepairMode,
       setEditorInert,
       renderLanguage,
       renderPreview,
@@ -625,6 +638,7 @@
       selectedAreaColor,
       applyProtectionSelection,
       selectedBackgroundColor,
+      resolveProtectedColorInput,
       setPreviewScale,
       zoomPreviewAtPointer,
       movePreviewPan,
@@ -632,6 +646,7 @@
       setRepairMode,
       setAreaColorTransparent,
       updateLatestAreaRepair,
+      updateLatestProtectionRepair,
       bindNumericRange,
       renderBackgroundSamples,
       renderProtectedColors,
@@ -639,10 +654,8 @@
       colorUtils,
       sessionCore,
       applyProcessingParametersToControls,
-      syncProtectionPreview,
       refreshQualityAnalysis,
       propagateLatestRepair,
-      setSettingsMode,
       applyAdvancedPreset,
       trapModalFocus,
       isEditableTarget,

@@ -1,26 +1,107 @@
+.filmstripPanel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 4px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--hard-shadow);
+}
+
+.filmstripHeader {
+  position: relative;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 7px 10px;
+  border-bottom: 3px solid var(--line);
+  background: color-mix(in srgb, var(--panel-2) 92%, var(--accent-2));
+}
+
+.filmstripHeader > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.filmstripHeader strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.frameActionsMenu {
+  position: relative;
+}
+
+.frameActionsMenu > summary {
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 4px 9px;
+  border: 2px solid var(--line);
+  border-radius: 7px;
+  background: var(--control-bg);
+  box-shadow: 2px 2px 0 var(--line);
+  color: var(--control-ink);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  list-style: none;
+}
+
+.frameActionsMenu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.animationFrameActions {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 190px;
+  display: grid;
+  gap: 6px;
+  padding: 7px;
+  border: 3px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  box-shadow: 4px 4px 0 var(--line);
+}
+
+.animationFrameActions button {
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 7px;
+  font-size: 10px;
+}
+
 .filmstrip {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   overflow-x: auto;
   overflow-y: auto;
-  padding: 12px 14px 16px 12px;
-  border: 4px solid var(--line);
-  border-radius: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 12px 14px;
   background: var(--panel);
-  box-shadow: var(--hard-shadow);
   scrollbar-gutter: auto;
 }
 
+.attachmentAssetTrayHost {
+  min-width: 0;
+}
+
 .attachmentAssetTray {
-  position: sticky;
-  left: 0;
-  z-index: 8;
-  flex: 0 0 210px;
-  width: 210px;
-  min-height: 225px;
+  min-width: 0;
+  min-height: 138px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 7px;
   padding: 8px;
   border: 3px solid var(--line);
@@ -56,19 +137,6 @@
   font: 800 9px/1.35 var(--data-font);
 }
 
-.animationFrameActions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.animationFrameActions button {
-  min-width: 0;
-  min-height: 30px;
-  padding: 4px 5px;
-  font-size: 9px;
-}
-
 .attachmentAssetList {
   min-height: 0;
   display: flex;
@@ -77,10 +145,10 @@
 }
 
 .attachmentAssetCard {
-  flex: 0 0 92px;
-  min-width: 92px;
+  flex: 0 0 82px;
+  min-width: 82px;
   display: grid;
-  grid-template-rows: 86px auto auto;
+  grid-template-rows: 72px auto auto;
   gap: 4px;
   padding: 5px;
   border: 2px solid var(--line);
@@ -92,7 +160,7 @@
 
 .attachmentAssetCard img {
   width: 100%;
-  height: 86px;
+  height: 72px;
   object-fit: contain;
   image-rendering: pixelated;
   background: conic-gradient(#d6d9dd 25%, #fff 0 50%, #d6d9dd 0 75%, #fff 0) 0 0 / 10px 10px;

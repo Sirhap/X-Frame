@@ -34,6 +34,7 @@
       renderPreviewZoom,
       setPreviewProcessing,
       drawRepairOverlay,
+      syncProtectionPreview,
       drawProtectionPreview,
       renderProtectionPreviewInfo,
       renderStatus,
@@ -51,6 +52,7 @@
       typeof selectedBackgroundColor !== "function" ||
       typeof protectedColorEntries !== "function" ||
       typeof processItem !== "function" ||
+      typeof syncProtectionPreview !== "function" ||
       !colorUtils
     ) {
       throw new TypeError("BatchCutoutPreviewRenderer dependencies are required.");
@@ -102,6 +104,13 @@
           finishPreview();
           return;
         }
+        if (state.repairMode === "protect") {
+          await syncProtectionPreview(item);
+          if (item !== selectedItem()) {
+            finishPreview();
+            return;
+          }
+        }
         const previewSource =
           state.previewMode === "original"
             ? item.sourceCanvas
@@ -142,26 +151,40 @@
      */
     function renderProtectedColors() {
       const item = selectedItem();
-      elements.cutoutProtectedColors.innerHTML = "";
-      for (const entry of protectedColorEntries(item)) {
-        const { color } = entry;
-        const button = documentApi.createElement("button");
-        button.type = "button";
-        button.title = colorUtils.rgbToHex(color);
-        button.setAttribute("aria-label", `${text("protectedPalette")} ${colorUtils.rgbToHex(color)}`);
-        button.style.setProperty("--protected-color", colorUtils.rgbToHex(color));
-        button.addEventListener("click", () => {
-          recordItemEdit(item);
-          entry.container.splice(entry.index, 1);
-          item.repairs = (item.repairs || []).filter(
-            (repair) => repair.mode !== "protect-color" || repair.colors?.length,
-          );
-          invalidateItem(item);
-          renderPreview();
-        });
-        elements.cutoutProtectedColors.appendChild(button);
+      const entries = protectedColorEntries(item);
+      const containers = [elements.cutoutProtectedColors, elements.cutoutProtectionColors].filter(Boolean);
+      containers.forEach((container) => {
+        container.innerHTML = "";
+        for (const entry of entries) {
+          const { color } = entry;
+          const colorHex = colorUtils.rgbToHex(color);
+          const button = documentApi.createElement("button");
+          button.type = "button";
+          button.title = colorHex;
+          button.setAttribute("aria-label", `${text("protectedPalette")} ${colorHex}`);
+          button.style.setProperty("--protected-color", colorHex);
+          button.addEventListener("click", () => {
+            recordItemEdit(item);
+            entry.container.splice(entry.index, 1);
+            item.repairs = (item.repairs || []).filter(
+              (repair) => repair.mode !== "protect-color" || repair.colors?.length,
+            );
+            invalidateItem(item);
+            renderPreview();
+          });
+          container.appendChild(button);
+        }
+      });
+      if (elements.cutoutProtectionColorStatus) {
+        elements.cutoutProtectionColorStatus.textContent = text(
+          entries.length ? "protectedColorCount" : "protectedColorEmpty",
+          { count: entries.length },
+        );
       }
-      elements.cutoutProtectClear.disabled = !protectedColorEntries(item).length;
+      elements.cutoutProtectClear.disabled = !entries.length;
+      if (elements.cutoutProtectionColorClear) {
+        elements.cutoutProtectionColorClear.disabled = !entries.length;
+      }
       elements.cutoutProtectSample.classList.toggle("active", state.samplingProtectedColor);
     }
 

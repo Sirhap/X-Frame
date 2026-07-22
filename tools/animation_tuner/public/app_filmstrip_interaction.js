@@ -63,6 +63,7 @@
       utils.cssEscape || root.CSS?.escape || ((value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&"));
 
     const renderAttachmentAssetTray = handlers.renderAttachmentAssetTray || (() => {});
+    const syncFrameActions = handlers.syncFrameActions || (() => {});
     const renderFilmstripGroupOverride = handlers.renderFilmstripGroup;
     const getPlaybackChainGroup = handlers.getPlaybackChainGroup || (() => null);
     const clearSelectedAttachment = handlers.clearSelectedAttachment || (() => {});
@@ -533,9 +534,10 @@
     function renderFilmstrip() {
       if (!filmstrip) return;
       filmstrip.innerHTML = "";
+      renderAttachmentAssetTray();
+      syncFrameActions();
       const currentGroup = getCurrentGroup();
       if (!currentGroup) return;
-      renderAttachmentAssetTray();
       const renderGroup = renderFilmstripGroupOverride || renderFilmstripGroup;
       renderGroup(currentGroup, translate("mainLabel"));
       const chain = getPlaybackChainGroup();

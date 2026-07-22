@@ -244,13 +244,6 @@
           status(t("projectMutationFailed", { message: error.message })),
         );
       });
-      if (els.languageSelect) {
-        els.languageSelect.addEventListener("change", () => {
-          state.language = els.languageSelect.value === "en" ? "en" : "zh";
-          localStorage.setItem("xsxbFrameTuner.language", state.language);
-          applyLanguage();
-        });
-      }
       for (const button of els.languageButtons) {
         button.addEventListener("click", () => {
           state.language = button.dataset.language === "en" ? "en" : "zh";
@@ -289,13 +282,6 @@
       els.groupSelect.addEventListener("change", () =>
         selectGroup(state.config.groups.find((group) => group.uiId === els.groupSelect.value)),
       );
-      els.profileSelect.addEventListener("change", () => {
-        state.selectedProfileId = els.profileSelect.value || "all";
-        localStorage.setItem("animationTuner.profile", state.selectedProfileId);
-        const groups = renderGroupSelect(state.currentGroup?.uiId);
-        const nextGroup = groups.find((group) => group.uiId === state.currentGroup?.uiId) || groups[0];
-        selectGroup(nextGroup);
-      });
       els.groupSearch.addEventListener("input", () => {
         state.groupSearch = els.groupSearch.value || "";
         localStorage.setItem("animationTuner.groupSearch", state.groupSearch);

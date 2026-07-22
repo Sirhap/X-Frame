@@ -89,12 +89,10 @@ test("image import creates a persisted animation through the organizer", async (
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
   await page.locator("#organizerApply").click();
   await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
-  await expect(page.locator("#organizerConfirmMessage")).toContainText("创建");
+  await expect(page.locator("#organizerConfirmMessage")).toContainText("应用为动画组");
   await page.locator("#organizerConfirmAccept").click();
-  await expect(page.locator(".organizerFrame")).toHaveCount(2);
-  await expect(page.locator("#organizerApply")).toHaveText("应用到动画组");
-
-  await page.goto("/");
+  await expect(page).toHaveURL(/\/workspace/);
+  await expect(page.locator("#organizerModal")).toBeHidden();
   await expect(page.locator("#projectSelect option:checked")).toContainText("E2E Seed Project");
   await expect(page.locator("#groupSelect option:checked")).toContainText("loop-idle");
   await expect(page.locator(".thumb")).toHaveCount(2);
@@ -102,7 +100,7 @@ test("image import creates a persisted animation through the organizer", async (
 
 test("editor tuning, frame attachment, and audio survive save and reload", async ({ page, request }) => {
   await importProject(request, "editor-media");
-  await page.goto("/");
+  await page.goto("/workspace");
   await expect(page.locator(".thumb")).toHaveCount(2);
   await page.locator("#adjustFrame").check();
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
@@ -149,7 +147,7 @@ test("mobile frame deletion and animation clearing remain explicit and bounded",
 }) => {
   await page.setViewportSize({ width: 390, height: 640 });
   await importProject(request, "frame-delete", 3);
-  await page.goto("/");
+  await page.goto("/workspace");
   await expect(page.locator(".thumb")).toHaveCount(3);
 
   await page.locator(".deleteSelectedFrames").click();
@@ -277,7 +275,7 @@ test("save failure remains dirty and a retry closes the persistence loop", async
       body: '{"error":"forced conflict"}',
     });
   });
-  await page.goto("/");
+  await page.goto("/workspace");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
   await page.locator("#save").click();
   await expect(page.locator("#status")).toContainText("forced conflict");
@@ -293,7 +291,7 @@ test("project switching, clearing, and deletion preserve explicit confirmation",
 }) => {
   const first = await importProject(request, "lifecycle-a");
   const second = await importProject(request, "lifecycle-b");
-  await page.goto("/");
+  await page.goto("/workspace");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
   await page.locator("#projectSelect").focus();
   await page.locator("#projectSelect").selectOption(first.activeProjectId);
@@ -327,7 +325,7 @@ test("project switching, clearing, and deletion preserve explicit confirmation",
 });
 
 test("@cross-browser route reload restores the selected animation", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/workspace");
   await expect(page.locator("#stage")).toBeVisible();
   await page.goto("/tools/organizer");
   await expect(page.locator("#organizerModal")).toBeVisible();

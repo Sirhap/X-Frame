@@ -97,7 +97,7 @@
       const view = elements.cutoutResult._cutoutView || elements.cutoutOriginal._cutoutView;
       const scale = view?.scale || 1;
       const percent = Math.round(scale * 100);
-      elements.cutoutZoom.value = String(Math.max(10, Math.min(500, percent)));
+      elements.cutoutZoom.value = String(Math.max(10, Math.min(800, percent)));
       elements.cutoutZoomValue.textContent =
         state.previewScale === null ? `FIT · ${percent}%` : `${percent}%`;
       elements.cutoutZoomFit.classList.toggle("active", state.previewScale === null);
@@ -124,7 +124,7 @@
         renderPreview();
         return;
       }
-      const nextScale = Math.max(0.1, Math.min(5, Number(scale || 1)));
+      const nextScale = Math.max(0.1, Math.min(8, Number(scale || 1)));
       if (view && canvasPoint) {
         const sourceX = (canvasPoint.x - view.offsetX) / view.scale;
         const sourceY = (canvasPoint.y - view.offsetY) / view.scale;

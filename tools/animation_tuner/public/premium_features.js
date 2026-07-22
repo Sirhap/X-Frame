@@ -1,0 +1,199 @@
+(function attachXsxbPremiumFeatures(root, factory) {
+  "use strict";
+
+  const api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  if (root) root.XSXBPremiumFeatures = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, () => {
+  "use strict";
+
+  const DEFINITIONS = Object.freeze({
+    "cutout.output": {
+      category: "cutout",
+      zh: "最终图片导出与动画替换",
+      en: "Final image export and animation replacement",
+    },
+    "cutout.edge-refinement": {
+      category: "cutout",
+      zh: "边缘增强、去污与颜色恢复",
+      en: "Edge refinement, despill, and color recovery",
+    },
+    "cutout.alpha-control": {
+      category: "cutout",
+      zh: "高级 Alpha、柔性色键与连通清除",
+      en: "Advanced alpha, soft keying, and connected removal",
+    },
+    "cutout.color-protection": {
+      category: "cutout",
+      zh: "颜色保护与保护区域",
+      en: "Color and region protection",
+    },
+    "cutout.local-repair": {
+      category: "cutout",
+      zh: "局部画笔、区域修复与颜色替换",
+      en: "Local brush, area repair, and recoloring",
+    },
+    "cutout.repair-propagation": {
+      category: "cutout",
+      zh: "跨帧智能修复传播",
+      en: "Tracked repair propagation across frames",
+    },
+    "organizer.sequence-analysis": {
+      category: "organizer",
+      zh: "跳变帧与重复帧智能分析",
+      en: "Jump-frame and duplicate-frame analysis",
+    },
+    "organizer.output": {
+      category: "organizer",
+      zh: "帧工作集导出与应用",
+      en: "Frame-workset export and application",
+    },
+    "organizer.loop-finder": {
+      category: "organizer",
+      zh: "智能循环段查找",
+      en: "Smart loop-range finder",
+    },
+    "tuner.collision-boxes": {
+      category: "tuner",
+      zh: "逐帧碰撞框调校",
+      en: "Per-frame collision-box tuning",
+    },
+    "tuner.frame-audio": {
+      category: "tuner",
+      zh: "帧音效绑定",
+      en: "Frame audio bindings",
+    },
+    "tuner.image-attachments": {
+      category: "tuner",
+      zh: "图片挂件与 VFX 图层",
+      en: "Image attachments and VFX layers",
+    },
+    "tuner.frame-playback": {
+      category: "tuner",
+      zh: "逐帧时长与高级播放覆盖",
+      en: "Per-frame timing and playback overrides",
+    },
+  });
+
+  /** @param {unknown} value Candidate nested record. @returns {boolean} Whether it contains data. */
+  function hasRecords(value) {
+    if (Array.isArray(value)) return value.length > 0;
+    if (!value || typeof value !== "object") return false;
+    return Object.values(value).some((entry) => {
+      if (Array.isArray(entry)) return entry.length > 0;
+      if (entry && typeof entry === "object") return hasRecords(entry);
+      return entry !== undefined && entry !== null && entry !== "";
+    });
+  }
+
+  /**
+   * Returns stable, supported feature identifiers.
+   * @param {Iterable<string>|string[]|null|undefined} featureIds Candidate feature identifiers.
+   * @returns {string[]} Unique identifiers ordered by the product catalog.
+   */
+  function normalizeFeatureIds(featureIds) {
+    const selected = new Set(Array.from(featureIds || []).filter((id) => DEFINITIONS[id]));
+    return Object.keys(DEFINITIONS).filter((id) => selected.has(id));
+  }
+
+  /**
+   * Resolves localized display records for an activation prompt.
+   * @param {Iterable<string>|string[]} featureIds Feature identifiers.
+   * @param {"zh"|"en"|string} language Display language.
+   * @returns {Array<{id:string,category:string,label:string}>} Display records.
+   */
+  function describeFeatures(featureIds, language = "zh") {
+    const locale = language === "en" ? "en" : "zh";
+    return normalizeFeatureIds(featureIds).map((id) => ({
+      id,
+      category: DEFINITIONS[id].category,
+      label: DEFINITIONS[id][locale],
+    }));
+  }
+
+  /**
+   * Detects premium cutout capabilities that materially affect final pixels.
+   * @param {object[]} items Cutout queue items.
+   * @returns {string[]} Used premium feature identifiers.
+   */
+  function detectCutoutFeatures(items) {
+    const features = new Set();
+    for (const item of Array.from(items || []).filter((entry) => !entry?.excluded)) {
+      const parameters = item?.processingParameters || {};
+      if (
+        Number(parameters.despillStrength) > 0 ||
+        Number(parameters.edgeDespillRadius) > 0 ||
+        Number(parameters.edgeRecoveryStrength) > 0 ||
+        Number(parameters.backgroundRadius) > 0 ||
+        Number(parameters.blurRadius) > 0 ||
+        String(parameters.despillMode || "general") !== "general"
+      ) {
+        features.add("cutout.edge-refinement");
+      }
+      if (
+        Number(parameters.feather) > 0 ||
+        Number(parameters.chromaFeather) > 0 ||
+        Number(parameters.alphaLow) > 0 ||
+        Number(parameters.alphaHigh) > 0 ||
+        Number(parameters.alphaThreshold) > 0 ||
+        Boolean(parameters.connected) ||
+        Boolean(parameters.perceptual)
+      ) {
+        features.add("cutout.alpha-control");
+      }
+      if (
+        item?.protectedColors?.length ||
+        item?.repairs?.some((repair) => String(repair?.mode || "").startsWith("protect"))
+      ) {
+        features.add("cutout.color-protection");
+      }
+      if (item?.repairs?.some((repair) => !String(repair?.mode || "").startsWith("protect"))) {
+        features.add("cutout.local-repair");
+      }
+      if (
+        item?.propagationUndo ||
+        item?.propagationRedo ||
+        item?.repairs?.some((repair) => repair?.propagatedFrom)
+      ) {
+        features.add("cutout.repair-propagation");
+      }
+    }
+    return normalizeFeatureIds(features);
+  }
+
+  /**
+   * Detects premium workbench data in a pending save.
+   * @param {object} snapshot Save payload fragments before default box generation.
+   * @returns {string[]} Used premium feature identifiers.
+   */
+  function detectTunerFeatures(snapshot = {}) {
+    const features = new Set();
+    if (hasRecords(snapshot.frameAudioBindings)) features.add("tuner.frame-audio");
+    if (hasRecords(snapshot.frameImageAttachments) || hasRecords(snapshot.vfxFrameOverrides)) {
+      features.add("tuner.image-attachments");
+    }
+    if (
+      hasRecords(snapshot.framePlaybackOverrides) ||
+      hasRecords(snapshot.vfxPlaybackOverrides) ||
+      hasRecords(snapshot.bossPlaybackOverrides) ||
+      hasRecords(snapshot.act2PlaybackOverrides) ||
+      hasRecords(snapshot.huangPlaybackOverrides) ||
+      hasRecords(snapshot.soulPlaybackOverrides)
+    ) {
+      features.add("tuner.frame-playback");
+    }
+    if (hasRecords(snapshot.frameBoxOverrides) || hasRecords(snapshot.soulFrameBoxOverrides)) {
+      features.add("tuner.collision-boxes");
+    }
+    return normalizeFeatureIds(features);
+  }
+
+  return Object.freeze({
+    DEFINITIONS,
+    describeFeatures,
+    detectCutoutFeatures,
+    detectTunerFeatures,
+    hasRecords,
+    normalizeFeatureIds,
+  });
+});

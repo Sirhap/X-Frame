@@ -43,6 +43,7 @@
       clearImageCache = () => {},
       clearImageElements = () => {},
       setOpaqueRectCache = () => {},
+      premiumFeatures = root?.XSXBPremiumFeatures,
     } = dependencies;
 
     /**
@@ -59,11 +60,12 @@
      * Replaces all PNG files in the active animation group with processed
      * cutout results.
      * @param {Array<{data:string}>} outputs Processed PNG data URLs in frame order.
+     * @param {{premiumFeatures?:string[]}} [options] Premium output metadata.
      * @returns {Promise<void>}
      */
-    async function applyCutoutOutputsToCurrentAnimation(outputs) {
+    async function applyCutoutOutputsToCurrentAnimation(outputs, options = {}) {
       const group = getCurrentGroup();
-      if (!group?.frames?.length) throw new Error("No active animation group.");
+      if (!group?.frames?.length) throw new Error("No active animation.");
       if (!outputCore?.createAnimationReplacementPayload) {
         throw new Error("Batch cutout output core is unavailable.");
       }
@@ -74,7 +76,7 @@
       );
       const response = await requireFetch()("/api/replace-animation", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: mutationHeaders(options.premiumFeatures),
         body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error(await response.text());
@@ -86,16 +88,17 @@
     /**
      * Applies a staged frame organizer plan and reloads project configuration.
      * @param {Array<object>} items Ordered organizer frame plan.
+     * @param {{premiumFeatures?:string[]}} [options] Premium output metadata.
      * @returns {Promise<void>}
      */
-    async function applyFrameOrganizerPlan(items) {
+    async function applyFrameOrganizerPlan(items, options = {}) {
       const group = getCurrentGroup();
       if (!group?.profileId || !group?.animationId) {
         throw new Error("The active group is not a manifest animation.");
       }
       const response = await requireFetch()("/api/reorganize-animation", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: mutationHeaders(options.premiumFeatures),
         body: JSON.stringify({
           projectId: getActiveProjectId(),
           profileId: group.profileId,
@@ -204,14 +207,15 @@
      * Creates a new manifest animation from a staged browser workset.
      * @param {object} metadata Project, profile, animation, type, and FPS metadata.
      * @param {Array<object>} items Ordered PNG workset.
+     * @param {{premiumFeatures?:string[]}} [options] Premium output metadata.
      * @returns {Promise<object>} Imported animation response.
      */
-    async function createAnimationFromOrganizer(metadata, items) {
+    async function createAnimationFromOrganizer(metadata, items, options = {}) {
       let response;
       try {
         response = await requireFetch()("/api/import-animation", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: mutationHeaders(options.premiumFeatures),
           body: JSON.stringify({
             ...metadata,
             items,
@@ -262,6 +266,19 @@
     function requireFetch() {
       if (typeof fetchImpl !== "function") throw new Error("fetch is unavailable");
       return fetchImpl;
+    }
+
+    /**
+     * Builds mutation headers while making premium writes explicit to the server.
+     * @param {Iterable<string>|string[]} featureIds Premium feature identifiers.
+     * @returns {Record<string,string>} Request headers.
+     */
+    function mutationHeaders(featureIds) {
+      const normalized = premiumFeatures?.normalizeFeatureIds?.(featureIds) || [];
+      return {
+        "content-type": "application/json",
+        ...(normalized.length ? { "x-xsxb-premium-features": normalized.join(",") } : {}),
+      };
     }
 
     return {

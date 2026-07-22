@@ -9,12 +9,16 @@ test("filmstrip rendering clears the tray and renders the active chain", () => {
   const chain = { uiId: "chain", frames: [] };
   const rendered = [];
   let trayCalls = 0;
+  let frameActionSyncCalls = 0;
   const controller = createController({
     elements: { filmstrip },
     state: { getCurrentGroup: () => group },
     handlers: {
       renderAttachmentAssetTray: () => {
         trayCalls += 1;
+      },
+      syncFrameActions: () => {
+        frameActionSyncCalls += 1;
       },
       getPlaybackChainGroup: () => chain,
       renderFilmstripGroup: (renderedGroup, label) => rendered.push([renderedGroup, label]),
@@ -26,6 +30,7 @@ test("filmstrip rendering clears the tray and renders the active chain", () => {
 
   assert.equal(filmstrip.innerHTML, "");
   assert.equal(trayCalls, 1);
+  assert.equal(frameActionSyncCalls, 1);
   assert.deepEqual(rendered, [
     [group, "mainLabel"],
     [chain, "thenLabel"],

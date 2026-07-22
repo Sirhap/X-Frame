@@ -41,9 +41,12 @@ function createFixture(overrides = {}) {
     ...overrides.item,
   };
   const elements = {
+    cutoutProtectionType: { value: "color" },
     cutoutProtectionTolerance: { value: "0" },
     cutoutProtectionPreview: { hidden: false, dataset: {} },
     cutoutProtectionPreviewStatus: { textContent: "" },
+    cutoutProtectionSubject: { hidden: true },
+    cutoutProtectionSubjectCanvas: null,
     cutoutResult: {
       width: 2,
       height: 2,
@@ -100,4 +103,78 @@ test("protection preview cache invalidates after processing revision changes", a
 
   assert.notEqual(state.protectionPreview, firstPreview);
   assert.notEqual(state.protectionPreview.previewKey, firstPreview.previewKey);
+});
+
+test("protection preview ignores repairs from the inactive protection mode", async () => {
+  const { controller, state, item } = createFixture({
+    elements: { cutoutProtectionType: { value: "range" } },
+  });
+
+  await controller.syncProtectionPreview(item);
+
+  assert.equal(state.protectionPreview, null);
+});
+
+test("protection focus sampling preserves blocks that contain protected pixels", () => {
+  const { controller } = createFixture();
+  const preview = {
+    mask: new Uint8Array([0, 1, 0, 0]),
+    width: 2,
+    height: 2,
+  };
+  const bounds = { x1: 0, y1: 0, x2: 1, y2: 1 };
+
+  assert.equal(controller.protectionBlockHasMatch(preview, 0, 0, 2, bounds), true);
+  assert.equal(controller.protectionBlockHasMatch(preview, 0, 1, 1, bounds), false);
+});
+
+test("protection subject pixels are cropped to the detected silhouette", () => {
+  const { controller, item } = createFixture();
+  const preview = {
+    mask: new Uint8Array([1, 0, 0, 1]),
+    width: 2,
+    height: 2,
+    bounds: { x1: 0, y1: 0, x2: 1, y2: 1 },
+  };
+
+  const subject = controller.createProtectionSubjectPixels(item.sourceImageData, preview);
+
+  assert.equal(subject.width, 2);
+  assert.equal(subject.height, 2);
+  assert.deepEqual(Array.from(subject.data.slice(0, 4)), [255, 0, 0, 255]);
+  assert.deepEqual(Array.from(subject.data.slice(4, 12)), [0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(Array.from(subject.data.slice(12, 16)), [255, 0, 0, 255]);
+});
+
+test("completed protection recognition does not draw a box on the main canvas", () => {
+  let contextRequests = 0;
+  const { controller } = createFixture({
+    elements: {
+      cutoutResult: {
+        getContext: () => {
+          contextRequests += 1;
+          return {};
+        },
+      },
+    },
+  });
+
+  controller.drawProtectionPreview();
+
+  assert.equal(contextRequests, 0);
+});
+
+test("persisted native subject masks decode into the selected image region", () => {
+  const { controller } = createFixture();
+  const decoded = controller.decodeSubjectMask(
+    { width: 2, height: 2, data: "CQ==" },
+    { x1: 1, y1: 1, x2: 2, y2: 2 },
+    4,
+    4,
+  );
+
+  assert.equal(decoded.count, 2);
+  assert.equal(decoded.mask[1 * 4 + 1], 1);
+  assert.equal(decoded.mask[2 * 4 + 2], 1);
+  assert.deepEqual(decoded.bounds, { x1: 1, y1: 1, x2: 2, y2: 2 });
 });

@@ -8,23 +8,33 @@ const { createController } = require("../animation_tuner/public/batch_cutout_eve
 /** Creates a tolerant DOM fixture for event-wiring registration. @returns {object} Fixture. */
 function createFixture() {
   const registrations = [];
-  const element = {
-    hidden: true,
-    value: "",
-    dataset: {},
-    classList: { add() {}, remove() {}, toggle() {} },
-    addEventListener(type, listener) {
-      registrations.push({ type, listener });
-    },
-    click() {},
-    focus() {},
-    setPointerCapture() {},
-    scrollTo() {},
+  const elementsByName = {};
+  const createElement = (name) => {
+    const attributes = new Map();
+    return {
+      hidden: true,
+      value: "",
+      dataset: {},
+      classList: { add() {}, remove() {}, toggle() {} },
+      addEventListener(type, listener) {
+        registrations.push({ name, type, listener });
+      },
+      setAttribute(attribute, value) {
+        attributes.set(attribute, String(value));
+      },
+      getAttribute(attribute) {
+        return attributes.get(attribute) ?? null;
+      },
+      click() {},
+      focus() {},
+      setPointerCapture() {},
+      scrollTo() {},
+    };
   };
   const elements = new Proxy(
     {},
     {
-      get: () => element,
+      get: (_target, name) => (elementsByName[name] ||= createElement(name)),
     },
   );
   const windowRef = {
@@ -36,10 +46,11 @@ function createFixture() {
     },
   };
   const documentRef = {
-    activeElement: element,
+    activeElement: createElement("activeElement"),
     querySelectorAll: () => [],
   };
-  const state = { items: [], selectedIndex: 0 };
+  const state = { items: [], selectedIndex: 0, protectionPreview: null };
+  let renderCalls = 0;
   const controller = createController({
     elements,
     state,
@@ -49,8 +60,12 @@ function createFixture() {
     advancedPresetButtons: [],
     bindNumericRange() {},
     text: (key) => key,
+    renderPreview: () => {
+      renderCalls += 1;
+    },
+    renderStatus() {},
   });
-  return { controller, registrations };
+  return { controller, registrations, elementsByName, state, renderCalls: () => renderCalls };
 }
 
 test("batch cutout event controller registers the full interaction surface", () => {
@@ -65,4 +80,36 @@ test("batch cutout event controller registers the full interaction surface", () 
 
 test("batch cutout event controller validates required state and elements", () => {
   assert.throws(() => createController(), /requires elements, state/);
+});
+
+test("switching protection mode clears the incompatible preview", () => {
+  const { controller, registrations, elementsByName, state, renderCalls } = createFixture();
+  controller.bind();
+  state.protectionPreview = { mode: "protect-range" };
+  elementsByName.cutoutProtectionType.value = "color";
+  const change = registrations.find(
+    (registration) => registration.name === "cutoutProtectionType" && registration.type === "change",
+  );
+
+  change.listener();
+
+  assert.equal(state.protectionPreview, null);
+  assert.equal(renderCalls(), 1);
+});
+
+test("sidebar switches between parameters and batch images and can collapse", () => {
+  const { controller, elementsByName, state, renderCalls } = createFixture();
+  controller.bind();
+  state.batchTrayCollapsed = true;
+
+  controller.setSidebarPanel("batch");
+  assert.equal(elementsByName.cutoutSidebarParametersPanel.hidden, true);
+  assert.equal(elementsByName.cutoutSidebarBatchPanel.hidden, false);
+  assert.equal(elementsByName.cutoutSidebarBatchTab.getAttribute("aria-selected"), "true");
+  assert.equal(elementsByName.cutoutModal.dataset.sidebarPanel, "batch");
+  assert.equal(state.batchTrayCollapsed, false);
+
+  controller.setSidebarCollapsed(true);
+  assert.equal(elementsByName.cutoutSidebarCollapse.getAttribute("aria-expanded"), "false");
+  assert.equal(renderCalls(), 1);
 });

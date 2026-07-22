@@ -61,3 +61,51 @@ test("range selection repairs a stale anchor without reading past the queue", ()
   );
   assert.deepEqual([...state.selectedIds], ["second"]);
 });
+
+test("quality badges expose their explanation only through hover metadata", () => {
+  const alert = {
+    dataset: {},
+    setAttribute(name, value) {
+      this[name] = value;
+    },
+  };
+  const card = {
+    dataset: {},
+    classList: { toggle() {} },
+    querySelector(selector) {
+      return selector === ".cutoutQueueAlert" ? alert : null;
+    },
+    setAttribute(name, value) {
+      this[name] = value;
+    },
+  };
+  const item = {
+    id: "quality-frame",
+    name: "frame.png",
+    status: "processed",
+    excluded: false,
+    issue: true,
+    quality: { severity: "critical", codes: ["split"] },
+  };
+  const controller = createController({
+    state: { items: [item], selectedIndex: 0, thumbnailMode: "result" },
+    elements: { cutoutQueue: { querySelector: () => card } },
+    text: (key) => key,
+    hasQualityIssue: () => true,
+    qualityLabel: () => "主体分裂",
+    selectedItem: () => item,
+    selectBatchIndex() {},
+    renderPreview() {},
+    renderStatus() {},
+    refreshQualityAnalysis() {},
+    stopBatchPlayback() {},
+    scheduleBatchThumbnails() {},
+    css: { escape: (value) => value },
+  });
+
+  controller.updateQueueCard(item);
+
+  assert.equal(alert.textContent, "!!");
+  assert.equal(alert.dataset.qualityLabel, "主体分裂");
+  assert.equal(alert.title, "主体分裂");
+});

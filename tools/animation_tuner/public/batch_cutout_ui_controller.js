@@ -109,6 +109,9 @@
       documentApi.querySelectorAll("[data-cutout-i18n-title]").forEach((node) => {
         node.title = text(node.dataset.cutoutI18nTitle);
       });
+      documentApi.querySelectorAll("[data-cutout-i18n-aria-label]").forEach((node) => {
+        node.setAttribute("aria-label", text(node.dataset.cutoutI18nAriaLabel));
+      });
       documentApi.querySelectorAll(".cutoutParameterNumber").forEach((input) => {
         const label = input.closest("label")?.querySelector("span")?.textContent?.trim();
         if (label) input.setAttribute("aria-label", label);
@@ -186,7 +189,11 @@
         alpha: "viewAlphaCaption",
         difference: "viewDifferenceCaption",
       };
-      elements.cutoutViewCaption.textContent = text(captionKeys[state.previewMode]);
+      elements.cutoutViewCaption.textContent = text(
+        state.previewMode === "result" && state.repairMode === "protect"
+          ? "protectionViewCaption"
+          : captionKeys[state.previewMode],
+      );
       elements.cutoutRepairTools.dataset.previewMode = state.previewMode;
       elements.cutoutResult.classList.toggle("diagnostic", state.previewMode !== "result");
     }

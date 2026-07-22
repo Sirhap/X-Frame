@@ -30,8 +30,6 @@
       setSelectedFrame = (value) => (state.selectedFrame = value),
       setSelectedFrames = (value) => (state.selectedFrames = value),
       setSelectionAnchorFrame = (value) => (state.selectionAnchorFrame = value),
-      getSelectedProfileId = () => state.selectedProfileId || "all",
-      setSelectedProfileId = (value) => (state.selectedProfileId = value),
       setPlaying = (value) => (state.playing = value),
       setPlaybackPrimaryGroup = (value) => (state.playbackPrimaryGroup = value),
       setPlaybackSecondaryGroup = (value) => (state.playbackSecondaryGroup = value),
@@ -306,10 +304,6 @@
         setPlaybackPrimaryGroup(null);
         setPlaybackSecondaryGroup(null);
         if (elements.playPause) elements.playPause.textContent = translate("play");
-      }
-      if (getSelectedProfileId() !== "all" && group.profileId !== getSelectedProfileId()) {
-        setSelectedProfileId(group.profileId || "all");
-        if (elements.profileSelect) elements.profileSelect.value = getSelectedProfileId();
       }
       renderGroupSelect(group.uiId);
       setCurrentGroup(group);

@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "xsxb-frame-tuner",
+  "main": "cloudflare/site/src/index.mjs",
+  "compatibility_date": "2026-07-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./cloudflare/site/dist",
+    "binding": "ASSETS",
+    "html_handling": "none",
+    "run_worker_first": ["/", "/api/*", "/workspace", "/tools/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "LICENSE_DB",
+      "database_name": "xsxb-frame-tuner-licenses",
+      "migrations_dir": "cloudflare/site/migrations",
+    },
+  ],
+  "observability": {
+    "enabled": true,
+  },
+}

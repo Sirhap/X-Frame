@@ -57,6 +57,8 @@
    *   getSoulFrameOverrides?:()=>object,
    *   getSoulPlaybackOverrides?:()=>object,
    *   getSoulFrameBoxOverrides?:()=>object,
+   *   premiumFeatures?:object,
+   *   ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>,
    *   fetchImpl?:typeof fetch,
    *   markClean?:()=>void,
    *   status?:(message:string)=>void,
@@ -117,6 +119,8 @@
       getSoulFrameOverrides = () => ({}),
       getSoulPlaybackOverrides = () => ({}),
       getSoulFrameBoxOverrides = () => ({}),
+      premiumFeatures = root?.XSXBPremiumFeatures,
+      ensurePremiumActivated = async () => true,
       fetchImpl = root?.fetch,
       markClean = () => {},
       status = () => {},
@@ -171,22 +175,43 @@
       if (getSaveInFlight()) return;
       setSaveInFlight(true);
       updateSaveState();
-      updateAdjustmentFromInputs();
-      pruneNoopFrameOverrides();
-      await ensureCollisionBoxOverridesForSave();
-      const frameAudioBindingsForSave = await collectFrameAudioBindingsForSave();
-      const savedRevision = getEditRevision();
       try {
+        updateAdjustmentFromInputs();
+        pruneNoopFrameOverrides();
+        const frameAudioBindingsForSave = await collectFrameAudioBindingsForSave();
+        await ensureCollisionBoxOverridesForSave();
+        const frameImageAttachmentsForSave = collectFrameImageAttachmentsForSave();
+        const premiumSnapshot = {
+          frameAudioBindings: frameAudioBindingsForSave,
+          frameImageAttachments: frameImageAttachmentsForSave,
+          vfxFrameOverrides: getVfxFrameOverrides(),
+          framePlaybackOverrides: getFramePlaybackOverrides(),
+          vfxPlaybackOverrides: getVfxPlaybackOverrides(),
+          frameBoxOverrides: getFrameBoxOverrides(),
+          bossPlaybackOverrides: getBossPlaybackOverrides(),
+          act2PlaybackOverrides: getAct2StatueBossPlaybackOverrides(),
+          huangPlaybackOverrides: getHuangXianPlaybackOverrides(),
+          soulPlaybackOverrides: getSoulPlaybackOverrides(),
+          soulFrameBoxOverrides: getSoulFrameBoxOverrides(),
+        };
+        const usedPremiumFeatures = premiumFeatures?.detectTunerFeatures?.(premiumSnapshot) || [];
+        if (usedPremiumFeatures.length && !(await ensurePremiumActivated(usedPremiumFeatures))) return;
+        const savedRevision = getEditRevision();
         const res = await fetchImpl("/api/save", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...(usedPremiumFeatures.length
+              ? { "x-xsxb-premium-features": usedPremiumFeatures.join(",") }
+              : {}),
+          },
           body: JSON.stringify({
             projectId: getActiveProjectId(),
             baseRevision: String(getConfig()?.dataRevision || ""),
             values: collectTuningValues(),
             scene_settings: collectSceneSettings(),
             frame_audio_bindings: frameAudioBindingsForSave,
-            frame_image_attachments: collectFrameImageAttachmentsForSave(),
+            frame_image_attachments: frameImageAttachmentsForSave,
             frame_visual_overrides: getFrameOverrides(),
             attack_vfx_frame_overrides: getVfxFrameOverrides(),
             frame_playback_overrides: getFramePlaybackOverrides(),
@@ -221,24 +246,18 @@
         const result = await res.json().catch(() => ({}));
         if (!res.ok && !result.localSaved) throw new Error(result.error || `HTTP ${res.status}`);
         if (result.localSaved && !res.ok) {
-          setSaveInFlight(false);
           if (getEditRevision() === savedRevision) markClean();
-          else {
-            setDirty(true);
-            updateSaveState();
-          }
+          else setDirty(true);
           status(translate("saveLocalOnly", { message: result.error || `HTTP ${res.status}` }));
           return;
         }
         const config = getConfig();
         if (result.dataRevision) config.dataRevision = result.dataRevision;
         if (Array.isArray(result.warnings)) config.warnings = result.warnings;
-        setSaveInFlight(false);
         if (getEditRevision() === savedRevision) {
           markClean();
         } else {
           setDirty(true);
-          updateSaveState();
         }
         const warningText =
           Array.isArray(result.warnings) && result.warnings.length
@@ -247,10 +266,9 @@
         const concurrentEditText =
           getEditRevision() === savedRevision ? "" : translate("savedWithNewChanges");
         status([concurrentEditText, warningText.trim()].filter(Boolean).join("\n"));
-      } catch (error) {
+      } finally {
         setSaveInFlight(false);
         updateSaveState();
-        throw error;
       }
     }
 

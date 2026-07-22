@@ -19,6 +19,8 @@
       colorUtils,
       selectionRepairExecutor,
       createSelectionMask,
+      encodeSubjectMask,
+      detectNativeSubject,
       text,
       processItem,
       selectedItem,
@@ -73,7 +75,11 @@
         const padding = Number(elements.cutoutProtectionPadding.value);
         let region;
         try {
-          region = await selectionRepairExecutor.analyze(
+          region =
+            typeof detectNativeSubject === "function"
+              ? await detectNativeSubject(item.sourceImageData, rectangle).catch(() => null)
+              : null;
+          region ||= await selectionRepairExecutor.analyze(
             item.sourceImageData.data,
             item.sourceImageData.width,
             item.sourceImageData.height,
@@ -107,6 +113,8 @@
             bounds: null,
             coarseArea: 0,
             coverage: 0,
+            width: item.sourceImageData.width,
+            height: item.sourceImageData.height,
           };
           setStatus(text("protectedRangeEmpty"), "error");
           renderPreview();
@@ -120,6 +128,7 @@
           ...rectangle,
           boundaryStrength,
           padding,
+          ...(region.subjectMask ? { subjectMask: region.subjectMask } : {}),
         });
         item.undoneRepairs = [];
         state.protectionPreview = {
@@ -132,6 +141,8 @@
           bounds: region.bounds,
           coarseArea: Math.max(1, (rectangle.x2 - rectangle.x1 + 1) * (rectangle.y2 - rectangle.y1 + 1)),
           coverage: region.coverage,
+          width: item.sourceImageData.width,
+          height: item.sourceImageData.height,
         };
         invalidateItem(item);
         setStatus(
@@ -145,16 +156,54 @@
         return true;
       }
       let selection;
+      let samplingMask;
       try {
+        const coarseMask = createSelectionMask(
+          rectangle,
+          item.sourceImageData.width,
+          item.sourceImageData.height,
+        );
+        const nativeSubject =
+          typeof detectNativeSubject === "function"
+            ? await detectNativeSubject(item.sourceImageData, rectangle).catch(() => null)
+            : null;
+        const spatialSubject = await selectionRepairExecutor
+          .analyze(
+            item.sourceImageData.data,
+            item.sourceImageData.width,
+            item.sourceImageData.height,
+            coarseMask,
+            {
+              mode: "protect-range",
+              rectangle,
+              previewData,
+              options: {
+                backgroundColors: selectedBackgroundColors(item),
+                boundaryStrength: Number(elements.cutoutProtectionBoundary.value),
+                padding: Number(elements.cutoutProtectionPadding.value),
+              },
+            },
+          )
+          .catch(() => null);
+        samplingMask = nativeSubject?.mask || spatialSubject?.mask || coarseMask;
+        if (nativeSubject?.mask && spatialSubject?.mask) {
+          const intersection = new Uint8Array(coarseMask.length);
+          let intersectionCount = 0;
+          for (let index = 0; index < intersection.length; index += 1) {
+            if (!nativeSubject.mask[index] || !spatialSubject.mask[index]) continue;
+            intersection[index] = 1;
+            intersectionCount += 1;
+          }
+          if (intersectionCount) samplingMask = intersection;
+        }
         selection = await selectionRepairExecutor.analyze(
           item.sourceImageData.data,
           item.sourceImageData.width,
           item.sourceImageData.height,
-          createSelectionMask(rectangle, item.sourceImageData.width, item.sourceImageData.height),
+          samplingMask,
           {
             mode: "protect-color",
             rectangle,
-            previewData,
             options: {
               maximumSamples: 5000,
               maximumColors: Math.max(0, 32 - effectiveProtectedColors(item).length),
@@ -196,6 +245,11 @@
           mode: "protect-color",
           ...rectangle,
           colors,
+          ...(typeof encodeSubjectMask === "function"
+            ? {
+                subjectMask: encodeSubjectMask(samplingMask, rectangle, item.sourceImageData.width),
+              }
+            : {}),
         });
         item.undoneRepairs = [];
       }
@@ -212,7 +266,17 @@
           ? Math.round((colorPreview.count * 100) / colorPreview.coarseArea)
           : 0,
         colorCount: colors.length,
+        width: item.sourceImageData.width,
+        height: item.sourceImageData.height,
       };
+      if (!colors.length) {
+        setStatus(
+          text(selection.count ? "protectedColorsUnchanged" : "protectedRegionEmpty"),
+          selection.count ? "idle" : "error",
+        );
+        renderPreview();
+        return false;
+      }
       invalidateItem(item);
       const protectionStatusKey = !selection.count
         ? "protectedRegionEmpty"

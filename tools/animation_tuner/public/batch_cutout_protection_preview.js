@@ -1,10 +1,10 @@
 (function attachBatchCutoutProtectionPreview(root, factory) {
   "use strict";
 
-  const api = factory();
+  const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
   root.BatchCutoutProtectionPreview = api;
-})(globalThis, function createBatchCutoutProtectionPreviewModule() {
+})(globalThis, function createBatchCutoutProtectionPreviewModule(root) {
   "use strict";
 
   /**
@@ -65,6 +65,134 @@
         mask.fill(1, y * width + bounds.x1, y * width + bounds.x2 + 1);
       }
       return mask;
+    }
+
+    /** Encodes a rectangular binary mask into a compact base64 bitset. */
+    function encodeSubjectMask(mask, rectangle, imageWidth) {
+      const width = rectangle.x2 - rectangle.x1 + 1;
+      const height = rectangle.y2 - rectangle.y1 + 1;
+      const bytes = new Uint8Array(Math.ceil((width * height) / 8));
+      let targetIndex = 0;
+      for (let y = rectangle.y1; y <= rectangle.y2; y += 1) {
+        for (let x = rectangle.x1; x <= rectangle.x2; x += 1) {
+          if (mask[y * imageWidth + x]) bytes[targetIndex >> 3] |= 1 << (targetIndex & 7);
+          targetIndex += 1;
+        }
+      }
+      let binary = "";
+      for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
+      return { width, height, data: root.btoa(binary) };
+    }
+
+    /** Decodes a persisted subject bitset into a full-image protection mask. */
+    function decodeSubjectMask(subjectMask, rectangle, imageWidth, imageHeight) {
+      if (
+        !subjectMask?.data ||
+        !Number.isInteger(subjectMask.width) ||
+        !Number.isInteger(subjectMask.height)
+      ) {
+        return null;
+      }
+      try {
+        const binary = root.atob(subjectMask.data);
+        const bounds = normalizeProtectionRectangle(rectangle, imageWidth, imageHeight);
+        if (!bounds || binary.length * 8 < subjectMask.width * subjectMask.height) return null;
+        const mask = new Uint8Array(imageWidth * imageHeight);
+        let count = 0;
+        let minX = imageWidth;
+        let minY = imageHeight;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+          const sourceY = Math.min(
+            subjectMask.height - 1,
+            Math.floor(((y - bounds.y1) * subjectMask.height) / Math.max(1, bounds.y2 - bounds.y1 + 1)),
+          );
+          for (let x = bounds.x1; x <= bounds.x2; x += 1) {
+            const sourceX = Math.min(
+              subjectMask.width - 1,
+              Math.floor(((x - bounds.x1) * subjectMask.width) / Math.max(1, bounds.x2 - bounds.x1 + 1)),
+            );
+            const bitIndex = sourceY * subjectMask.width + sourceX;
+            if (!(binary.charCodeAt(bitIndex >> 3) & (1 << (bitIndex & 7)))) continue;
+            mask[y * imageWidth + x] = 1;
+            count += 1;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+        return {
+          mask,
+          count,
+          bounds: maxX >= 0 ? { x1: minX, y1: minY, x2: maxX, y2: maxY } : null,
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    /** Requests macOS Vision foreground detection for the coarse selection. */
+    async function detectNativeSubject(sourceImageData, rectangle) {
+      const bounds = normalizeProtectionRectangle(rectangle, sourceImageData.width, sourceImageData.height);
+      if (!bounds || !root.document || typeof root.fetch !== "function") return null;
+      const width = bounds.x2 - bounds.x1 + 1;
+      const height = bounds.y2 - bounds.y1 + 1;
+      const sourceCanvas = root.document.createElement("canvas");
+      sourceCanvas.width = sourceImageData.width;
+      sourceCanvas.height = sourceImageData.height;
+      sourceCanvas.getContext("2d").putImageData(sourceImageData, 0, 0);
+      const cropCanvas = root.document.createElement("canvas");
+      cropCanvas.width = width;
+      cropCanvas.height = height;
+      cropCanvas
+        .getContext("2d")
+        .drawImage(sourceCanvas, bounds.x1, bounds.y1, width, height, 0, 0, width, height);
+      const response = await root.fetch("/api/segment-subject", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ imageDataUrl: cropCanvas.toDataURL("image/png") }),
+      });
+      if (!response.ok)
+        throw new Error((await response.json().catch(() => null))?.error || "SEGMENTATION_FAILED");
+      const payload = await response.json();
+      const image = new root.Image();
+      image.src = payload.imageDataUrl;
+      await image.decode();
+      const maskCanvas = root.document.createElement("canvas");
+      maskCanvas.width = width;
+      maskCanvas.height = height;
+      const context = maskCanvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(image, 0, 0, width, height);
+      const pixels = context.getImageData(0, 0, width, height).data;
+      const mask = new Uint8Array(sourceImageData.width * sourceImageData.height);
+      let count = 0;
+      let minX = sourceImageData.width;
+      let minY = sourceImageData.height;
+      let maxX = -1;
+      let maxY = -1;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          if (pixels[(y * width + x) * 4 + 3] < 12) continue;
+          const targetX = bounds.x1 + x;
+          const targetY = bounds.y1 + y;
+          mask[targetY * sourceImageData.width + targetX] = 1;
+          count += 1;
+          minX = Math.min(minX, targetX);
+          minY = Math.min(minY, targetY);
+          maxX = Math.max(maxX, targetX);
+          maxY = Math.max(maxY, targetY);
+        }
+      }
+      if (!count) return null;
+      return {
+        mask,
+        count,
+        bounds: { x1: minX, y1: minY, x2: maxX, y2: maxY },
+        coverage: Math.round((count * 100) / (width * height)),
+        subjectMask: encodeSubjectMask(mask, bounds, sourceImageData.width),
+      };
     }
 
     /**
@@ -145,6 +273,22 @@
       }
       const rectangle = normalizeProtectionRectangle(repair, width, height) || repair;
       if (repair.mode === "protect-range") {
+        const nativeRegion = decodeSubjectMask(repair.subjectMask, rectangle, width, height);
+        if (nativeRegion?.count) {
+          const coarseArea = Math.max(
+            1,
+            (rectangle.x2 - rectangle.x1 + 1) * (rectangle.y2 - rectangle.y1 + 1),
+          );
+          return {
+            mode: repair.mode,
+            rectangle,
+            ...nativeRegion,
+            coarseArea,
+            coverage: Math.round((nativeRegion.count * 100) / coarseArea),
+            width,
+            height,
+          };
+        }
         const previewData = item.automaticImageData?.data || item.resultImageData?.data || null;
         const region = await selectionRepairExecutor.analyze(
           data,
@@ -210,9 +354,9 @@
         state.protectionPreview = null;
         return;
       }
-      const latestRepair = [...(item.repairs || [])]
-        .reverse()
-        .find((repair) => ["protect-color", "protect-range"].includes(repair.mode));
+      const expectedMode =
+        elements.cutoutProtectionType.value === "color" ? "protect-color" : "protect-range";
+      const latestRepair = [...(item.repairs || [])].reverse().find((repair) => repair.mode === expectedMode);
       if (!latestRepair) {
         state.protectionPreview = null;
         return;
@@ -241,10 +385,11 @@
       }
       const currentRepair = [...(item.repairs || [])]
         .reverse()
-        .find((repair) => ["protect-color", "protect-range"].includes(repair.mode));
+        .find((repair) => repair.mode === expectedMode);
       if (
         currentRepair?.id !== latestRepair.id ||
-        Number(item.processingRevision || 0) !== processingRevision
+        Number(item.processingRevision || 0) !== processingRevision ||
+        item !== selectedItem()
       ) {
         return;
       }
@@ -254,6 +399,25 @@
         previewKey,
         ...preview,
       };
+    }
+
+    /**
+     * Checks whether a sampled source block contains at least one protected pixel.
+     * @param {{mask:Uint8Array,width:number,height:number}} preview Protection preview model.
+     * @param {number} startX Block origin X in source pixels.
+     * @param {number} startY Block origin Y in source pixels.
+     * @param {number} step Sample block size in source pixels.
+     * @param {{x2:number,y2:number}} bounds Inclusive selection bounds.
+     * @returns {boolean} Whether the block contains protected image content.
+     */
+    function protectionBlockHasMatch(preview, startX, startY, step, bounds) {
+      for (let y = startY; y <= Math.min(bounds.y2, startY + step - 1); y += 1) {
+        for (let x = startX; x <= Math.min(bounds.x2, startX + step - 1); x += 1) {
+          if (x >= preview.width || y >= preview.height) continue;
+          if (preview.mask[y * preview.width + x]) return true;
+        }
+      }
+      return false;
     }
 
     /**
@@ -272,148 +436,88 @@
     }
 
     /**
-     * Draws a compact label inside the protection overlay.
-     * @param {CanvasRenderingContext2D} context Canvas context.
-     * @param {string} label Label text.
-     * @param {number} x Canvas x coordinate.
-     * @param {number} y Canvas y coordinate.
-     * @param {string} color Accent color.
-     * @returns {void}
+     * Builds tightly cropped RGBA pixels for the recognized subject.
+     * Pixels outside the recognition mask remain transparent, so the preview
+     * follows the subject silhouette instead of the coarse selection box.
+     * @param {ImageData|object} sourceImageData Source RGBA image data.
+     * @param {{mask:Uint8Array,width:number,height:number,bounds:object|null}} preview Protection preview.
+     * @returns {{data:Uint8ClampedArray,width:number,height:number}|null} Cropped subject pixels.
      */
-    function drawProtectionOverlayLabel(context, label, x, y, color) {
-      if (!context) return;
-      context.save();
-      context.font = "900 11px ui-monospace, SFMono-Regular, Menlo, monospace";
-      const padding = 6;
-      const metrics = context.measureText(label);
-      const width = metrics.width + padding * 2;
-      const height = 22;
-      const labelX = Math.max(4, Math.min(elements.cutoutResult.width - width - 4, x));
-      const labelY = Math.max(height + 4, Math.min(elements.cutoutResult.height - 4, y));
-      context.fillStyle = "rgba(10, 17, 22, .9)";
-      context.fillRect(labelX, labelY - height, width, height);
-      context.strokeStyle = color;
-      context.lineWidth = 2;
-      context.strokeRect(labelX, labelY - height, width, height);
-      context.fillStyle = color;
-      context.fillText(label, labelX + padding, labelY - 7);
-      context.restore();
+    function createProtectionSubjectPixels(sourceImageData, preview) {
+      const source = sourceImageData?.data;
+      const sourceWidth = Number(sourceImageData?.width);
+      const sourceHeight = Number(sourceImageData?.height);
+      const bounds = preview?.bounds;
+      if (
+        !source ||
+        !preview?.mask ||
+        !bounds ||
+        !Number.isInteger(sourceWidth) ||
+        !Number.isInteger(sourceHeight) ||
+        sourceWidth !== preview.width ||
+        sourceHeight !== preview.height ||
+        source.length < sourceWidth * sourceHeight * 4 ||
+        preview.mask.length < sourceWidth * sourceHeight
+      ) {
+        return null;
+      }
+      const normalizedBounds = normalizeProtectionRectangle(bounds, sourceWidth, sourceHeight);
+      if (!normalizedBounds) return null;
+      const width = normalizedBounds.x2 - normalizedBounds.x1 + 1;
+      const height = normalizedBounds.y2 - normalizedBounds.y1 + 1;
+      const data = new Uint8ClampedArray(width * height * 4);
+      for (let y = normalizedBounds.y1; y <= normalizedBounds.y2; y += 1) {
+        for (let x = normalizedBounds.x1; x <= normalizedBounds.x2; x += 1) {
+          const sourceIndex = y * sourceWidth + x;
+          if (!preview.mask[sourceIndex]) continue;
+          const sourceOffset = sourceIndex * 4;
+          const targetOffset = ((y - normalizedBounds.y1) * width + x - normalizedBounds.x1) * 4;
+          data.set(source.subarray(sourceOffset, sourceOffset + 4), targetOffset);
+        }
+      }
+      return { data, width, height };
     }
 
     /**
-     * Draws coarse and recognized protection layers over the result canvas.
+     * Renders the recognized subject inside the processing-parameters panel.
+     * @param {object|null} item Active queue item.
+     * @param {object|null} preview Protection preview model.
+     * @returns {boolean} Whether a subject image was rendered.
+     */
+    function renderProtectionSubject(item, preview) {
+      const container = elements.cutoutProtectionSubject;
+      const canvas = elements.cutoutProtectionSubjectCanvas;
+      const context = canvas?.getContext?.("2d");
+      const subject = createProtectionSubjectPixels(item?.sourceImageData, preview);
+      if (!container || !canvas || !context || !subject) {
+        if (container) container.hidden = true;
+        return false;
+      }
+      try {
+        canvas.width = subject.width;
+        canvas.height = subject.height;
+        const imageData = context.createImageData(subject.width, subject.height);
+        imageData.data.set(subject.data);
+        context.putImageData(imageData, 0, 0);
+        container.hidden = false;
+        return true;
+      } catch {
+        container.hidden = true;
+        return false;
+      }
+    }
+
+    /**
+     * Keeps the completed recognition off the main result canvas. The shared
+     * repair renderer still displays the temporary rectangle while dragging.
      * @returns {void}
      */
     function drawProtectionPreview() {
-      if (state.previewMode !== "result" || state.repairMode !== "protect") return;
-      const canvas = elements.cutoutResult;
-      const view = canvas._cutoutView;
-      if (!view) return;
-      if (state.repairDrag) {
-        const dragSourceRectangle = normalizeProtectionRectangle(
-          {
-            x1: state.repairDrag.sourceStartX,
-            y1: state.repairDrag.sourceStartY,
-            x2: state.repairDrag.sourceCurrentX,
-            y2: state.repairDrag.sourceCurrentY,
-          },
-          view.sourceWidth,
-          view.sourceHeight,
-        );
-        if (!dragSourceRectangle) return;
-        const dragRectangle = protectionCanvasRectangle(dragSourceRectangle, view);
-        drawProtectionOverlayLabel(
-          canvas.getContext("2d"),
-          text("protectionPreviewDragging"),
-          dragRectangle.x,
-          dragRectangle.y,
-          "#ffd43d",
-        );
-        return;
-      }
-      const item = selectedItem();
-      const preview = state.protectionPreview;
-      if (!item || !preview || preview.itemId !== item.id) return;
-      const context = canvas.getContext("2d");
-      if (
-        !context ||
-        !preview.mask ||
-        !Number.isInteger(preview.width) ||
-        !Number.isInteger(preview.height)
-      ) {
-        return;
-      }
-      const coarse = protectionCanvasRectangle(preview.rectangle, view);
-      const accent = preview.count ? "#2bdcc4" : "#ff5245";
-      const fill = preview.count ? "rgba(43, 220, 196, .12)" : "rgba(255, 82, 69, .14)";
-      context.save();
-      context.fillStyle = fill;
-      context.fillRect(coarse.x, coarse.y, coarse.width, coarse.height);
-      context.strokeStyle = "#ffd43d";
-      context.lineWidth = 3;
-      context.setLineDash([9, 6]);
-      context.strokeRect(coarse.x, coarse.y, coarse.width, coarse.height);
-
-      if (preview.count && preview.mask) {
-        const bounds = preview.bounds || preview.rectangle;
-        const step = Math.max(
-          1,
-          Math.ceil(Math.sqrt(((bounds.x2 - bounds.x1 + 1) * (bounds.y2 - bounds.y1 + 1)) / 50000)),
-        );
-        context.fillStyle = "rgba(43, 220, 196, .58)";
-        context.setLineDash([]);
-        for (let y = bounds.y1; y <= bounds.y2; y += step) {
-          for (let x = bounds.x1; x <= bounds.x2; x += step) {
-            let matched = false;
-            for (let blockY = y; blockY <= Math.min(bounds.y2, y + step - 1) && !matched; blockY += 1) {
-              for (let blockX = x; blockX <= Math.min(bounds.x2, x + step - 1); blockX += 1) {
-                if (
-                  blockX >= preview.width ||
-                  blockY >= preview.height ||
-                  !preview.mask[blockY * preview.width + blockX]
-                )
-                  continue;
-                matched = true;
-                break;
-              }
-            }
-            if (!matched) continue;
-            context.fillRect(
-              view.offsetX + x * view.scale,
-              view.offsetY + y * view.scale,
-              Math.max(1, step * view.scale + 0.5),
-              Math.max(1, step * view.scale + 0.5),
-            );
-          }
-        }
-        if (preview.bounds) {
-          const recognized = protectionCanvasRectangle(preview.bounds, view);
-          context.strokeStyle = "#2bdcc4";
-          context.lineWidth = 2;
-          context.setLineDash([4, 4]);
-          context.strokeRect(recognized.x, recognized.y, recognized.width, recognized.height);
-        }
-      }
-      context.restore();
-      drawProtectionOverlayLabel(
-        context,
-        preview.count
-          ? preview.mode === "protect-range"
-            ? text("protectionPreviewRange", { pixels: preview.count, coverage: preview.coverage })
-            : text("protectionPreviewColors", {
-                colors: preview.colorCount,
-                pixels: preview.count,
-                coverage: preview.coverage,
-              })
-          : text("protectionPreviewEmpty"),
-        coarse.x,
-        coarse.y,
-        accent,
-      );
+      return undefined;
     }
 
     /**
-     * Renders the textual legend for the protection overlay.
+     * Renders the subject preview and its textual recognition status.
      * @returns {void}
      */
     function renderProtectionPreviewInfo() {
@@ -421,19 +525,27 @@
       if (!previewPanel) return;
       const visible = state.repairMode === "protect";
       previewPanel.hidden = !visible;
-      if (!visible) return;
+      if (!visible) {
+        if (elements.cutoutProtectionSubject) elements.cutoutProtectionSubject.hidden = true;
+        return;
+      }
       previewPanel.dataset.state = "ready";
       if (state.repairDrag) {
+        if (elements.cutoutProtectionSubject) elements.cutoutProtectionSubject.hidden = true;
         elements.cutoutProtectionPreviewStatus.textContent = text("protectionPreviewDragging");
         return;
       }
       const item = selectedItem();
       const preview = state.protectionPreview;
-      if (!item || !preview || preview.itemId !== item.id) {
+      const expectedMode =
+        elements.cutoutProtectionType.value === "color" ? "protect-color" : "protect-range";
+      if (!item || !preview || preview.itemId !== item.id || preview.mode !== expectedMode) {
+        if (elements.cutoutProtectionSubject) elements.cutoutProtectionSubject.hidden = true;
         elements.cutoutProtectionPreviewStatus.textContent = text("protectionPreviewWaiting");
         return;
       }
       if (!preview.count) previewPanel.dataset.state = "empty";
+      renderProtectionSubject(item, preview);
       elements.cutoutProtectionPreviewStatus.textContent = preview.count
         ? preview.mode === "protect-range"
           ? text("protectionPreviewRange", { pixels: preview.count, coverage: preview.coverage })
@@ -448,11 +560,16 @@
     return {
       normalizeProtectionRectangle,
       createSelectionMask,
+      encodeSubjectMask,
+      detectNativeSubject,
+      decodeSubjectMask,
       createColorProtectionPreview,
       createProtectionPreviewForRepair,
       syncProtectionPreview,
       protectionCanvasRectangle,
-      drawProtectionOverlayLabel,
+      protectionBlockHasMatch,
+      createProtectionSubjectPixels,
+      renderProtectionSubject,
       drawProtectionPreview,
       renderProtectionPreviewInfo,
     };

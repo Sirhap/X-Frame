@@ -85,6 +85,30 @@ function runCutoutProtectionSelfTests(context) {
   assert.equal(protectedRegion.count, 9);
   assert.deepEqual(protectedRegion.bounds, { x1: 1, y1: 1, x2: 3, y2: 3 });
   assert.equal(protectedRegion.coverage, 36);
+  const sceneSubjectFixture = new Uint8ClampedArray(9 * 9 * 4);
+  for (let y = 0; y < 9; y += 1) {
+    for (let x = 0; x < 9; x += 1) {
+      sceneSubjectFixture.set([24 + x, 30 + y, 42 + ((x + y) % 3), 255], (y * 9 + x) * 4);
+    }
+  }
+  for (let y = 3; y <= 5; y += 1) {
+    for (let x = 3; x <= 5; x += 1) {
+      sceneSubjectFixture.set([220, 40, 30, 255], (y * 9 + x) * 4);
+    }
+  }
+  sceneSubjectFixture.set([255, 255, 255, 255], (4 * 9 + 4) * 4);
+  const sceneSubjectPreview = new Uint8ClampedArray(sceneSubjectFixture);
+  const sceneSubject = directProtectionSelector.createProtectedRegionMask(
+    sceneSubjectFixture,
+    sceneSubjectPreview,
+    9,
+    9,
+    { x1: 0, y1: 0, x2: 8, y2: 8 },
+    { backgroundColors: [{ r: 255, g: 255, b: 255 }], boundaryStrength: 55, padding: 0 },
+  );
+  assert.equal(sceneSubject.count, 9);
+  assert.equal(sceneSubject.mask[4 * 9 + 4], 1);
+  assert.deepEqual(sceneSubject.bounds, { x1: 3, y1: 3, x2: 5, y2: 5 });
   const protectedRangeRepairResult = new Uint8ClampedArray(protectedRegionFixture.length);
   directProductPipeline.applyCutoutRepairs(
     protectedRegionFixture,

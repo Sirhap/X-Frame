@@ -6,17 +6,29 @@ const { createController } = require("../animation_tuner/public/app_project_sele
 
 /** Creates minimal select elements for the project-panel controller. */
 function createElements() {
+  const projectContextClasses = new Set();
   return {
+    projectContext: {
+      classList: {
+        toggle(name, enabled) {
+          if (enabled) projectContextClasses.add(name);
+          else projectContextClasses.delete(name);
+        },
+        contains: (name) => projectContextClasses.has(name),
+      },
+    },
+    currentProjectLabel: { textContent: "" },
     projectSelect: { innerHTML: "", value: "", disabled: false },
     clearProject: { disabled: false },
     deleteProject: { disabled: false },
-    profileSelect: { innerHTML: "", value: "" },
     groupSelect: { innerHTML: "", value: "", disabled: false },
+    groupSearch: { disabled: false },
+    groupFilterField: { hidden: false },
     chainGroupSelect: { innerHTML: "", value: "" },
   };
 }
 
-test("project selects preserve active project and profile options", () => {
+test("project selects preserve the active project and retire the profile filter", () => {
   const elements = createElements();
   const stored = [];
   const config = {
@@ -39,7 +51,6 @@ test("project selects preserve active project and profile options", () => {
     setSelectedProjectId: (value) => {
       selectedProjectId = value;
     },
-    getSelectedProfileId: () => selectedProfileId,
     setSelectedProfileId: (value) => {
       selectedProfileId = value;
     },
@@ -53,15 +64,16 @@ test("project selects preserve active project and profile options", () => {
   assert.equal(selectedProjectId, "project-2");
   assert.equal(elements.projectSelect.value, "project-2");
   assert.equal(elements.projectSelect.disabled, false);
+  assert.equal(elements.currentProjectLabel.textContent, "Two");
+  assert.equal(elements.projectContext.classList.contains("singleProject"), false);
   assert.deepEqual(stored, [["xsxbFrameTuner.project", "project-2"]]);
   controller.renderProfileSelect();
   assert.equal(selectedProfileId, "all");
-  assert.match(elements.profileSelect.innerHTML, /profile-1/);
-  assert.doesNotMatch(elements.profileSelect.innerHTML, /profile-2/);
 });
 
-test("group filters and chain select preserve labels and selected values", () => {
+test("small group lists stay visible and chain select preserves its value", () => {
   const elements = createElements();
+  let groupSearch = "slash";
   const config = {
     groups: [
       {
@@ -84,22 +96,87 @@ test("group filters and chain select preserve labels and selected values", () =>
   const controller = createController({
     elements,
     getConfig: () => config,
-    getSelectedProfileId: () => "hero",
-    getGroupSearch: () => "slash",
+    getGroupSearch: () => groupSearch,
+    setGroupSearch: (value) => {
+      groupSearch = value;
+    },
     groupLabel: (group) => group.name,
     translate: (key) => ({ noMatchingGroups: "None", none: "No chain" })[key] || key,
   });
 
   assert.deepEqual(
     controller.filteredGroups().map((group) => group.uiId),
-    ["hero-slash"],
+    ["hero-slash", "hero-idle"],
   );
   assert.deepEqual(
     controller.renderGroupSelect("hero-slash").map((group) => group.uiId),
-    ["hero-slash"],
+    ["hero-slash", "hero-idle"],
   );
+  assert.equal(groupSearch, "");
   assert.equal(elements.groupSelect.value, "hero-slash");
+  assert.equal(elements.groupSearch.disabled, false);
+  assert.equal(elements.groupFilterField.hidden, true);
   controller.renderChainGroupSelect("hero-idle");
   assert.equal(elements.chainGroupSelect.value, "hero-idle");
   assert.match(elements.chainGroupSelect.innerHTML, /hero-slash/);
+});
+
+test("large animation lists support search", () => {
+  const elements = createElements();
+  const groups = Array.from({ length: 9 }, (_value, index) => ({
+    uiId: `animation-${index}`,
+    profileId: index < 5 ? "hero" : "enemy",
+    profileLabel: index < 5 ? "Hero" : "Enemy",
+    name: index === 7 ? "Slash" : `Idle ${index}`,
+  }));
+  const controller = createController({
+    elements,
+    getConfig: () => ({ groups }),
+    getGroupSearch: () => "slash",
+    groupLabel: (group) => `${group.profileLabel} - ${group.name}`,
+    translate: (key) => ({ noMatchingGroups: "None", otherAnimations: "Other" })[key] || key,
+  });
+
+  const visibleGroups = controller.renderGroupSelect("animation-7");
+
+  assert.deepEqual(
+    visibleGroups.map((group) => group.uiId),
+    ["animation-7"],
+  );
+  assert.equal(elements.groupFilterField.hidden, false);
+  assert.equal(elements.groupSelect.value, "animation-7");
+});
+
+test("animation options use character optgroups", () => {
+  const elements = createElements();
+  const groups = [
+    { uiId: "hero-idle", profileId: "hero", profileLabel: "Hero", name: "Idle" },
+    { uiId: "enemy-run", profileId: "enemy", profileLabel: "Enemy", name: "Run" },
+  ];
+  const controller = createController({
+    elements,
+    getConfig: () => ({ groups }),
+    groupLabel: (group) => `${group.profileLabel} - ${group.name}`,
+    translate: (key) => ({ otherAnimations: "Other" })[key] || key,
+  });
+
+  const markup = controller.groupOptionsMarkup(groups);
+
+  assert.match(markup, /<optgroup label="Hero">/);
+  assert.match(markup, /<option value="hero-idle">Idle<\/option>/);
+  assert.doesNotMatch(markup, />Hero - Idle</);
+});
+
+test("empty projects disable the unnecessary group search", () => {
+  const elements = createElements();
+  const controller = createController({
+    elements,
+    getConfig: () => ({ groups: [] }),
+    translate: (key) => ({ noMatchingGroups: "None" })[key] || key,
+  });
+
+  assert.deepEqual(controller.renderGroupSelect(), []);
+  assert.equal(elements.groupSelect.disabled, true);
+  assert.equal(elements.groupSearch.disabled, true);
+  assert.equal(elements.groupFilterField.hidden, true);
 });

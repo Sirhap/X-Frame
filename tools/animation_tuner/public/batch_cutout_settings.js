@@ -8,6 +8,37 @@
   "use strict";
 
   /**
+   * Resolves whether the current edit can be propagated and explains unavailable states.
+   * Automatic parameters in batch sessions are already shared, while local repairs
+   * remain opt-in because their geometry must be tracked across frames.
+   * @param {{total:number,item:object|null|undefined,busy:boolean,sessionMode:string}} options Current session state.
+   * @returns {{enabled:boolean,labelKey:string,titleKey:string}} Propagation presentation state.
+   */
+  function resolveRepairPropagationState(options) {
+    const total = Math.max(0, Number(options?.total) || 0);
+    const item = options?.item;
+    const sessionMode = options?.sessionMode || "batch";
+    const defaultLabelKey = sessionMode === "single" ? "repairBatchSingle" : "repairBatch";
+    if (options?.busy) {
+      return { enabled: false, labelKey: defaultLabelKey, titleKey: "repairBatchBusyTitle" };
+    }
+    if (total < 2) {
+      return { enabled: false, labelKey: defaultLabelKey, titleKey: "repairBatchMultipleTitle" };
+    }
+    if (item?.repairs?.length || item?.pendingAutomaticPropagation) {
+      return { enabled: true, labelKey: defaultLabelKey, titleKey: "repairBatchReadyTitle" };
+    }
+    if (sessionMode === "batch") {
+      return {
+        enabled: false,
+        labelKey: "repairBatchParametersSynced",
+        titleKey: "repairBatchParametersSyncedTitle",
+      };
+    }
+    return { enabled: false, labelKey: defaultLabelKey, titleKey: "repairBatchNeedsEditTitle" };
+  }
+
+  /**
    * Creates the batch cutout control and presentation helpers.
    *
    * This controller owns only DOM-facing settings, status, and repair-mode
@@ -32,7 +63,6 @@
       invalidateItem,
       renderPreview,
       schedulePreview,
-      syncProtectionPreview,
       renderAdvancedMode,
       advancedSummary,
       advancedPresets = {},
@@ -50,7 +80,6 @@
       typeof invalidateItem !== "function" ||
       typeof renderPreview !== "function" ||
       typeof schedulePreview !== "function" ||
-      typeof syncProtectionPreview !== "function" ||
       typeof renderAdvancedMode !== "function"
     ) {
       throw new TypeError("BatchCutoutSettings dependencies are required.");
@@ -208,8 +237,21 @@
       elements.cutoutFrameNavigation.hidden = !hasMultipleItems;
       elements.cutoutBatchTray.hidden = !hasBatchItems;
       elements.cutoutRepairBatch.hidden = !hasMultipleItems;
-      elements.cutoutRepairAutomatic.disabled = !item || state.busy;
-      elements.cutoutRepairAutomaticQuick.disabled = !item || state.busy;
+      [
+        elements.cutoutRepairAutomatic,
+        elements.cutoutRepairAutomaticQuick,
+        elements.cutoutRepairBrush,
+        elements.cutoutRepairEraser,
+        elements.cutoutRepairSource,
+        elements.cutoutRepairFill,
+        elements.cutoutRepairRecolor,
+        elements.cutoutAreaTransparentQuick,
+        elements.cutoutRepairClear,
+        elements.cutoutRepairRestore,
+        elements.cutoutRepairProtect,
+      ].forEach((control) => {
+        control.disabled = !item || state.busy;
+      });
       elements.cutoutBatchSummary.textContent = text("batchSummary", {
         included,
         total,
@@ -253,10 +295,15 @@
       elements.cutoutRepairRedo.disabled =
         (!item?.editRedo?.length && !item?.undoneRepairs?.length && !item?.propagationRedo) || state.busy;
       elements.cutoutRepairReset.disabled = !item?.repairs?.length || state.busy;
-      elements.cutoutRepairBatch.disabled =
-        state.items.length < 2 ||
-        (!item?.repairs?.length && !item?.pendingAutomaticPropagation) ||
-        state.busy;
+      const propagationState = resolveRepairPropagationState({
+        total,
+        item,
+        busy: state.busy,
+        sessionMode: state.sessionMode,
+      });
+      elements.cutoutRepairBatch.disabled = !propagationState.enabled;
+      elements.cutoutRepairBatch.textContent = text(propagationState.labelKey);
+      elements.cutoutRepairBatch.title = text(propagationState.titleKey);
       elements.cutoutIncludeAll.disabled = !state.items.length || included === total || state.busy;
       elements.cutoutExcludeAll.disabled = !state.items.length || included === 0 || state.busy;
       elements.cutoutSelectAll.disabled = !total || selected === total || state.busy;
@@ -283,24 +330,45 @@
         ? text("sample", { color: selectedBackgroundColor().hex })
         : text("ready");
       elements.cutoutAddFiles.textContent = state.items.length ? text("appendFiles") : text("addFiles");
+      setSettingsMode(state.settingsMode || (state.repairMode === "automatic" ? "automatic" : "tool"));
     }
 
     /**
-     * Switches the left sidebar between automatic cutout and active-tool parameters.
+     * Resolves the localized label used for a repair mode.
+     * @param {string} mode Repair mode identifier.
+     * @returns {string} Translation key for the active tool.
+     */
+    function repairModeTextKey(mode) {
+      if (mode === "automatic") return "repairAutomatic";
+      if (mode === "clear") return "repairClear";
+      if (mode === "restore") return "repairRestore";
+      if (mode === "protect") return "repairProtect";
+      if (mode === "fill") return "repairFill";
+      if (mode === "recolor") return "repairRecolor";
+      if (mode === "eraser") return "repairEraser";
+      if (mode === "restore-source") return "repairSource";
+      return "repairBrush";
+    }
+
+    /**
+     * Synchronizes the left sidebar with the selected tool and image availability.
      * @param {"automatic"|"tool"} mode Sidebar parameter mode.
      * @returns {void}
      */
     function setSettingsMode(mode) {
-      state.settingsMode = mode;
-      const automatic = mode === "automatic";
-      elements.cutoutAutomaticSettings.hidden = !automatic;
-      const toolHasParameters = !["automatic", "clear", "restore"].includes(state.repairMode);
-      elements.cutoutLocalSettings.hidden = automatic || !toolHasParameters;
-      elements.cutoutSettings.classList.toggle("parameterlessTool", !automatic && !toolHasParameters);
-      elements.cutoutSettingsAutomatic.classList.toggle("active", automatic);
-      elements.cutoutSettingsTool.classList.toggle("active", !automatic);
-      elements.cutoutSettingsAutomatic.setAttribute("aria-selected", String(automatic));
-      elements.cutoutSettingsTool.setAttribute("aria-selected", String(!automatic));
+      state.settingsMode = mode === "tool" ? "tool" : "automatic";
+      const itemAvailable = Boolean(selectedItem());
+      const automatic = state.settingsMode === "automatic";
+      elements.cutoutSettingsEmpty.hidden = itemAvailable;
+      elements.cutoutAutomaticSettings.hidden = !itemAvailable || !automatic;
+      elements.cutoutLocalSettings.hidden = !itemAvailable || automatic;
+      elements.cutoutSettings.classList.toggle("empty", !itemAvailable);
+      elements.cutoutActiveToolTitle.textContent = itemAvailable
+        ? text(repairModeTextKey(automatic ? "automatic" : state.repairMode))
+        : text("settingsEmptyTitle");
+      elements.cutoutActiveToolHint.textContent = text(
+        itemAvailable ? (automatic ? "automaticToolSettingsHint" : "toolSettingsHint") : "settingsEmptyHint",
+      );
     }
 
     /**
@@ -318,7 +386,6 @@
       if (leavingSamplingMode) setStatus(text("samplingCancelled"), "idle");
       state.repairMode = mode;
       const item = selectedItem();
-      if (mode === "protect") syncProtectionPreview(item);
       state.previewMode = mode === "automatic" && !item?.processingActivated ? "original" : "result";
       if (mode !== "automatic" && state.sessionMode === "single" && item) {
         item.processingActivated = true;
@@ -354,25 +421,7 @@
       });
       elements.cutoutLocalSettings.querySelector(".cutoutBrushColor").hidden = mode !== "brush";
       elements.cutoutLocalSettings.querySelector(".cutoutAreaScope").hidden = mode === "fill";
-      const activeToolKey =
-        mode === "automatic"
-          ? "repairAutomatic"
-          : mode === "clear"
-            ? "repairClear"
-            : mode === "restore"
-              ? "repairRestore"
-              : mode === "protect"
-                ? "repairProtect"
-                : mode === "fill"
-                  ? "repairFill"
-                  : mode === "recolor"
-                    ? "repairRecolor"
-                    : mode === "eraser"
-                      ? "repairEraser"
-                      : mode === "restore-source"
-                        ? "repairSource"
-                        : "repairBrush";
-      elements.cutoutActiveToolTitle.textContent = text(activeToolKey);
+      elements.cutoutActiveToolTitle.textContent = text(repairModeTextKey(mode));
       if (optionKind === "area") {
         elements.cutoutAreaScope.disabled = mode === "fill";
         if (mode === "fill") elements.cutoutAreaScope.value = "connected";
@@ -392,13 +441,17 @@
             ? "restoreHint"
             : mode === "protect" && elements.cutoutProtectionType.value === "range"
               ? "protectRangeHint"
-              : "selectionHint",
+              : mode === "protect"
+                ? "protectColorHint"
+                : "selectionHint",
         );
       }
       const protectionActive = mode === "protect";
       elements.cutoutProtectionControls.hidden = !protectionActive;
       elements.cutoutProtectionRangeOptions.hidden =
         !protectionActive || elements.cutoutProtectionType.value !== "range";
+      elements.cutoutProtectionColorOptions.hidden =
+        !protectionActive || elements.cutoutProtectionType.value !== "color";
       setSettingsMode(mode === "automatic" ? "automatic" : "tool");
       renderPreview();
     }
@@ -444,6 +497,24 @@
       return true;
     }
 
+    /**
+     * Updates the latest intelligent protection repair and refreshes its result preview.
+     * @param {{boundaryStrength?:number,padding?:number}} patch Protection fields to replace.
+     * @returns {boolean} Whether a protection repair was updated.
+     */
+    function updateLatestProtectionRepair(patch) {
+      const item = selectedItem();
+      const repair = item?.repairs?.at(-1);
+      if (!repair || repair.mode !== "protect-range") return false;
+      recordItemEdit(item);
+      Object.assign(repair, patch);
+      item.undoneRepairs = [];
+      state.protectionPreview = null;
+      invalidateItem(item);
+      renderPreview();
+      return true;
+    }
+
     return {
       assertImagePixelBudget,
       syncNumericRange,
@@ -456,8 +527,9 @@
       selectedAreaColor,
       setAreaColorTransparent,
       updateLatestAreaRepair,
+      updateLatestProtectionRepair,
     };
   }
 
-  return { createController };
+  return { createController, resolveRepairPropagationState };
 });

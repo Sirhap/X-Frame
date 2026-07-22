@@ -7,6 +7,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (globalScope) => {
   "use strict";
 
+  const GROUP_SEARCH_THRESHOLD = 8;
+
   /**
    * Creates the project/profile/group select renderers for the workbench.
    *
@@ -22,9 +24,9 @@
       elements = {},
       getConfig = () => null,
       setSelectedProjectId = () => {},
-      getSelectedProfileId = () => "all",
       setSelectedProfileId = () => {},
       getGroupSearch = () => "",
+      setGroupSearch = () => {},
       getCurrentGroup = () => null,
       storage = globalScope?.localStorage,
       escapeHtml = (value) => String(value ?? ""),
@@ -54,6 +56,11 @@
       if (active) storage?.setItem("xsxbFrameTuner.project", active);
       elements.projectSelect.value = active;
       elements.projectSelect.disabled = !projects.length;
+      const activeProject = projects.find((project) => project.id === active) || projects[0];
+      if (elements.currentProjectLabel) {
+        elements.currentProjectLabel.textContent = activeProject ? projectLabel(activeProject) : "—";
+      }
+      elements.projectContext?.classList?.toggle("singleProject", projects.length <= 1);
       if (elements.clearProject) elements.clearProject.disabled = !active;
       if (elements.deleteProject) elements.deleteProject.disabled = !active;
     }
@@ -65,12 +72,8 @@
     function filteredGroups() {
       const config = getConfig();
       if (!config?.groups) return [];
-      const selectedProfileId = getSelectedProfileId();
-      let groups =
-        !selectedProfileId || selectedProfileId === "all"
-          ? config.groups
-          : config.groups.filter((group) => group.profileId === selectedProfileId);
-      const query = String(getGroupSearch() || "")
+      let groups = config.groups;
+      const query = String(groups.length > GROUP_SEARCH_THRESHOLD ? getGroupSearch() || "" : "")
         .trim()
         .toLowerCase();
       if (query) {
@@ -93,34 +96,49 @@
     }
 
     /**
-     * Builds profile options that are represented by configured groups.
-     * @returns {Array<{id:string,label:string}>} Profile select options.
-     */
-    function profileOptionsFromConfig() {
-      const config = getConfig();
-      const profileIdsInUse = new Set((config?.groups || []).map((group) => group.profileId).filter(Boolean));
-      const profiles = Array.isArray(config?.profiles) ? config.profiles : [];
-      return profiles
-        .filter((profile) => profileIdsInUse.has(profile.id))
-        .map((profile) => ({ id: profile.id, label: profile.label || profile.id }));
-    }
-
-    /**
-     * Renders the profile filter options and normalizes its selected value.
+     * Clears the retired profile filter while preserving legacy controller calls.
+     * Character/profile grouping is now represented directly inside the animation select.
      * @returns {void}
      */
     function renderProfileSelect() {
-      if (!elements.profileSelect) return;
-      const selectedProfileId = getSelectedProfileId();
-      const options = [{ id: "all", label: translate("allCharacters") }, ...profileOptionsFromConfig()];
-      elements.profileSelect.innerHTML = options
-        .map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.label)}</option>`)
-        .join("");
-      const nextProfileId = options.some((profile) => profile.id === selectedProfileId)
-        ? selectedProfileId
-        : "all";
-      setSelectedProfileId(nextProfileId);
-      elements.profileSelect.value = nextProfileId;
+      setSelectedProfileId("all");
+      storage?.removeItem?.("animationTuner.profile");
+    }
+
+    /**
+     * Builds animation options, grouping multiple characters without exposing a second selector.
+     * @param {Array<object>} groups Animation groups to render.
+     * @returns {string} Escaped option and optgroup markup.
+     */
+    function groupOptionsMarkup(groups) {
+      const profileKeys = new Set(groups.map((group) => group.profileId || group.profileLabel || ""));
+      if (profileKeys.size <= 1) {
+        return groups
+          .map(
+            (group) => `<option value="${escapeHtml(group.uiId)}">${escapeHtml(groupLabel(group))}</option>`,
+          )
+          .join("");
+      }
+
+      const groupedAnimations = new Map();
+      for (const group of groups) {
+        const profileLabel = group.profileLabel || translate("otherAnimations");
+        if (!groupedAnimations.has(profileLabel)) groupedAnimations.set(profileLabel, []);
+        groupedAnimations.get(profileLabel).push(group);
+      }
+      return Array.from(groupedAnimations, ([profileLabel, profileGroups]) => {
+        const prefix = `${profileLabel} - `;
+        const options = profileGroups
+          .map((group) => {
+            const fullLabel = groupLabel(group);
+            const animationLabel = fullLabel.startsWith(prefix)
+              ? fullLabel.slice(prefix.length)
+              : group.name || fullLabel;
+            return `<option value="${escapeHtml(group.uiId)}">${escapeHtml(animationLabel)}</option>`;
+          })
+          .join("");
+        return `<optgroup label="${escapeHtml(profileLabel)}">${options}</optgroup>`;
+      }).join("");
     }
 
     /**
@@ -130,16 +148,19 @@
      */
     function renderGroupSelect(selectedUiId = getCurrentGroup()?.uiId) {
       if (!elements.groupSelect) return [];
+      const configuredGroups = Array.isArray(getConfig()?.groups) ? getConfig().groups : [];
+      const searchable = configuredGroups.length > GROUP_SEARCH_THRESHOLD;
+      if (!searchable && getGroupSearch()) {
+        setGroupSearch("");
+        storage?.removeItem?.("animationTuner.groupSearch");
+      }
       const groups = filteredGroups();
       elements.groupSelect.innerHTML = groups.length
-        ? groups
-            .map(
-              (group) =>
-                `<option value="${escapeHtml(group.uiId)}">${escapeHtml(groupLabel(group))}</option>`,
-            )
-            .join("")
+        ? groupOptionsMarkup(groups)
         : `<option value="">${escapeHtml(translate("noMatchingGroups"))}</option>`;
       elements.groupSelect.disabled = !groups.length;
+      if (elements.groupSearch) elements.groupSearch.disabled = !configuredGroups.length;
+      if (elements.groupFilterField) elements.groupFilterField.hidden = !searchable;
       if (selectedUiId && groups.some((group) => group.uiId === selectedUiId)) {
         elements.groupSelect.value = selectedUiId;
       }
@@ -165,7 +186,7 @@
 
     return {
       filteredGroups,
-      profileOptionsFromConfig,
+      groupOptionsMarkup,
       renderChainGroupSelect,
       renderGroupSelect,
       renderProfileSelect,

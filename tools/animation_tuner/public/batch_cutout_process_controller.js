@@ -48,6 +48,8 @@
       imageDataConstructor = root?.ImageData,
       domExceptionConstructor = root?.DOMException,
       maxImageFileBytes = 48 * 1024 * 1024,
+      premiumFeatures = root?.XSXBPremiumFeatures,
+      ensurePremiumActivated = async () => true,
     } = dependencies;
     if (!state || !elements || typeof processingOptions !== "function") {
       throw new TypeError("BatchCutoutProcessController dependencies are required.");
@@ -58,6 +60,26 @@
     const urlApi = urlRef;
     const ImageDataClass = imageDataConstructor;
     const DOMExceptionClass = domExceptionConstructor;
+
+    /** @returns {string[]} Premium features represented by the current output pixels. */
+    function outputPremiumFeatures() {
+      const detected = premiumFeatures?.detectCutoutFeatures?.(state.items) || [];
+      return (
+        premiumFeatures?.normalizeFeatureIds?.(["cutout.output", ...detected]) || [
+          "cutout.output",
+          ...detected,
+        ]
+      );
+    }
+
+    /** @param {object[]} outputs Product outputs. @param {string[]} featureIds Feature identifiers. */
+    function attachPremiumFeatures(outputs, featureIds) {
+      Object.defineProperty(outputs, "premiumFeatures", {
+        configurable: true,
+        enumerable: false,
+        value: [...featureIds],
+      });
+    }
 
     /**
      * Processes one image and stores its result canvas.
@@ -357,6 +379,8 @@
      */
     async function downloadAll() {
       try {
+        const featureIds = outputPremiumFeatures();
+        if (!(await ensurePremiumActivated(featureIds))) return;
         const { outputs, failures, cancelled } = await processAll();
         if (cancelled || !outputs.length) return;
         state.cancelRequested = false;
@@ -440,6 +464,7 @@
      * @returns {Promise<void>}
      */
     async function applyCurrentGroup(options = {}) {
+      const featureIds = outputPremiumFeatures();
       const liveApply = state.worksetResolver?.liveApply;
       if (options.live && typeof liveApply !== "function") return;
       if (state.sourceKind === "workset" && typeof state.worksetResolver === "function") {
@@ -459,6 +484,7 @@
             canvas,
           }));
           if (publishedOutputs && publishedOutputs.every((output) => output.canvas)) {
+            attachPremiumFeatures(publishedOutputs, featureIds);
             await liveApply(publishedOutputs);
             state.items.forEach((item, index) => {
               item.publishedCanvas = publishedOutputs[index].canvas;
@@ -480,6 +506,7 @@
             return;
           }
           setStatus(text("worksetApplied", { count: outputs.length }), "success");
+          attachPremiumFeatures(outputs, featureIds);
           if (options.live) {
             await liveApply(outputs);
             state.items.forEach((item, index) => {
@@ -504,6 +531,7 @@
         );
         return;
       }
+      if (!(await ensurePremiumActivated(featureIds))) return;
       const confirmed = await requestConfirmation(
         text("applyConfirm"),
         [
@@ -528,7 +556,7 @@
           );
           return;
         }
-        await host.applyToCurrentAnimation?.(outputs);
+        await host.applyToCurrentAnimation?.(outputs, { premiumFeatures: featureIds });
         setStatus(text("applied", { count: outputs.length }), "success");
       } catch (error) {
         setStatus(text("failed", { message: error.message }), "error");

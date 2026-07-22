@@ -1,7 +1,7 @@
 .app {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
-  height: 100vh;
+  height: 100dvh;
   min-height: 0;
   overflow: hidden;
 }
@@ -10,7 +10,7 @@
   border-right: 4px solid var(--line);
   background: var(--panel);
   padding: 18px;
-  height: 100vh;
+  height: 100dvh;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;

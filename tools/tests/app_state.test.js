@@ -39,7 +39,7 @@ test("createInitialState combines URL and persisted preferences", () => {
   });
 
   assert.equal(state.selectedProjectId, "url-project");
-  assert.equal(state.selectedProfileId, "hero");
+  assert.equal(state.selectedProfileId, "all");
   assert.equal(state.selectedFrame, 4);
   assert.equal(state.language, "en");
   assert.equal(state.uiTheme, "light");

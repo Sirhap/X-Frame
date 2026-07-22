@@ -18,7 +18,7 @@
    *   elements:Record<string,any>,
    *   state:Record<string,any>,
    *   text:(key:string,variables?:Record<string,string|number>)=>string,
-   *   hooks?:{applyPlan?:(items:Array<object>)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>)=>Promise<void>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>},
+   *   hooks?:{browserExportOnly?:boolean,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
    *   includedFrames:()=>object[],
    *   imageCanvas:(image:CanvasImageSource)=>HTMLCanvasElement,
    *   renderCounts:()=>void,
@@ -27,12 +27,14 @@
    *   loadCurrentAnimation:()=>Promise<void>,
    *   importMetadata:()=>object,
    *   renderLanguage:()=>void,
+   *   closeOrganizer?:(options?:object)=>void,
    *   getUiController:()=>object|null,
    *   setStatus:(message:string,tone?:string)=>void,
    *   window?:Window,
    *   windowRef?:Window,
    *   document?:Document,
-   *   cssEscape?:(value:string)=>string
+   *   cssEscape?:(value:string)=>string,
+   *   premiumFeatures?:{normalizeFeatureIds?:(featureIds:Iterable<string>)=>string[]}
    * }} dependencies Organizer state and host callbacks.
    * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,applyPlan:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>}}
    */
@@ -50,8 +52,10 @@
       loadCurrentAnimation,
       importMetadata,
       renderLanguage,
+      closeOrganizer,
       getUiController,
       setStatus,
+      premiumFeatures = root?.XSXBPremiumFeatures,
     } = dependencies;
     if (
       !elements ||
@@ -126,6 +130,9 @@
           frame.analysisRevision = Number(frame.analysisRevision || 0) + 1;
           frame.thumbnails.edited = "";
         });
+        for (const featureId of premiumFeatures?.normalizeFeatureIds?.(outputs.premiumFeatures) || []) {
+          state.premiumFeatures.add(featureId);
+        }
         renderGrid();
       };
       state.busy = true;
@@ -178,8 +185,22 @@
         return;
       }
       const controller = uiController();
+      const usedPremiumFeatures = premiumFeatures?.normalizeFeatureIds?.([
+        "organizer.output",
+        ...Array.from(state.premiumFeatures || []),
+      ]) || ["organizer.output", ...Array.from(state.premiumFeatures || [])];
+      if (
+        usedPremiumFeatures.length &&
+        typeof hooks.ensurePremiumActivated === "function" &&
+        !(await hooks.ensurePremiumActivated(usedPremiumFeatures))
+      ) {
+        return;
+      }
+      const browserExportOnly = hooks.browserExportOnly === true && state.mode === "import";
       const confirmation =
-        state.mode === "import" ? text("createConfirm", { count: frames.length }) : text("applyConfirm");
+        state.mode === "import"
+          ? text(browserExportOnly ? "exportConfirm" : "createConfirm", { count: frames.length })
+          : text("applyConfirm");
       const details =
         state.mode === "import"
           ? [
@@ -208,12 +229,16 @@
               : "",
         }));
         if (state.mode === "import") {
-          await hooks.createAnimation?.(metadata, items);
-          state.mode = "edit";
-          setStatus(text("created", { count: items.length }), "success");
+          await hooks.createAnimation?.(metadata, items, { premiumFeatures: usedPremiumFeatures });
+          setStatus(text(browserExportOnly ? "exportedZip" : "created", { count: items.length }), "success");
+          if (!browserExportOnly) state.mode = "edit";
           renderLanguage();
+          if (typeof closeOrganizer === "function") {
+            closeOrganizer();
+            return;
+          }
         } else {
-          await hooks.applyPlan?.(items);
+          await hooks.applyPlan?.(items, { premiumFeatures: usedPremiumFeatures });
           setStatus(text("applied", { count: items.length }), "success");
         }
         await loadCurrentAnimation();

@@ -135,6 +135,56 @@ test("save resets in-flight state when the request fails", async () => {
   assert.equal(fixture.events.filter((event) => event === "save-state").length, 2);
 });
 
+test("save keeps advanced edits pending when activation is cancelled", async () => {
+  const prompts = [];
+  const fixture = createFixture({
+    premiumFeatures: {
+      detectTunerFeatures: () => ["tuner.frame-audio"],
+    },
+    ensurePremiumActivated: async (featureIds) => {
+      prompts.push(featureIds);
+      return false;
+    },
+  });
+
+  await fixture.controller.save();
+
+  assert.deepEqual(prompts, [["tuner.frame-audio"]]);
+  assert.equal(fixture.requests.length, 0);
+  assert.equal(fixture.state.saveInFlight, false);
+  assert.equal(fixture.state.dirty, true);
+});
+
+test("save locks before asynchronous preparation and ignores concurrent requests", async () => {
+  let releaseAudio;
+  let audioCollections = 0;
+  const audioReady = new Promise((resolve) => {
+    releaseAudio = resolve;
+  });
+  const fixture = createFixture({
+    collectFrameAudioBindingsForSave: async () => {
+      audioCollections += 1;
+      await audioReady;
+      return [];
+    },
+  });
+
+  const firstSave = fixture.controller.save();
+  assert.equal(fixture.state.saveInFlight, true);
+  await fixture.controller.save();
+  assert.equal(audioCollections, 1);
+  assert.equal(fixture.requests.length, 0);
+  releaseAudio();
+  await firstSave;
+
+  assert.equal(fixture.requests.length, 1);
+  assert.equal(fixture.state.saveInFlight, false);
+  assert.deepEqual(
+    fixture.events.filter((event) => event.startsWith("in-flight:")),
+    ["in-flight:true", "in-flight:false"],
+  );
+});
+
 test("collision box preparation keeps existing values and fills missing fields", async () => {
   const stores = new Map();
   const fixture = createFixture({

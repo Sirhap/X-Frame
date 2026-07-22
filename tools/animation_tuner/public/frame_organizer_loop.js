@@ -35,6 +35,7 @@
    *   renderCounts:()=>void,
    *   restartPreview:()=>void,
    *   setStatus:(message:string,tone?:string)=>void,
+   *   onPremiumFeatureUsed?:(featureId:string)=>void,
    *   clamp:(value:number,minimum:number,maximum:number)=>number,
    *   document?:Document,
    *   window?:Window
@@ -260,6 +261,7 @@
 
     /** @returns {Promise<void>} */
     async function startSearch() {
+      dependencies.onPremiumFeatureUsed?.("organizer.loop-finder");
       const sourceEntries = state.frames
         .map((frame, index) => ({ frame, index }))
         .filter((entry) => entry.frame.included);

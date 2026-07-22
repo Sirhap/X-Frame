@@ -44,6 +44,15 @@ test("HTTP utilities enforce JSON content type and local origins", () => {
       createRequest({ "content-type": "application/json; charset=utf-8", origin: "http://127.0.0.1:5179" }),
     ),
   );
+  assert.doesNotThrow(() =>
+    validateWriteRequest(
+      createRequest({
+        "content-type": "application/json",
+        host: "tuner.example.com",
+        origin: "https://tuner.example.com",
+      }),
+    ),
+  );
 });
 
 test("HTTP utilities parse bounded JSON object bodies", async () => {

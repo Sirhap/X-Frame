@@ -15,6 +15,9 @@
    *
    * @param {object} dependencies Controller dependencies.
    * @param {HTMLElement} dependencies.filmstrip Filmstrip root element.
+   * @param {HTMLElement} dependencies.attachmentAssetTrayHost Sidebar host for reusable assets.
+   * @param {HTMLButtonElement|null} dependencies.deleteSelectedFramesButton Frame deletion action.
+   * @param {HTMLButtonElement|null} dependencies.clearAnimationButton Animation clear action.
    * @param {string} dependencies.attachmentAssetDragType Custom drag MIME type.
    * @param {() => Array<object>} dependencies.getAttachmentAssets Returns all attachment assets.
    * @param {() => object|null} dependencies.getCurrentGroup Returns the active animation group.
@@ -30,12 +33,16 @@
    * @param {() => Promise<void>} dependencies.deleteSelectedAnimationFrames Deletes selected frames.
    * @param {() => Promise<void>} dependencies.clearCurrentAnimation Clears the active animation.
    * @param {Document} [dependencies.document] Document implementation.
-   * @returns {{renderAttachmentAssetTray:() => void}} Filmstrip controller.
+   * @returns {{renderAttachmentAssetTray:() => void,syncFrameActions:() => void}} Filmstrip controller.
    */
   function createController(dependencies) {
-    if (!dependencies?.filmstrip) throw new TypeError("Filmstrip dependencies are required.");
+    if (!dependencies?.filmstrip || !dependencies?.attachmentAssetTrayHost) {
+      throw new TypeError("Filmstrip dependencies are required.");
+    }
     const {
-      filmstrip,
+      attachmentAssetTrayHost,
+      deleteSelectedFramesButton,
+      clearAnimationButton,
       attachmentAssetDragType,
       getAttachmentAssets,
       getCurrentGroup,
@@ -52,6 +59,37 @@
       clearCurrentAnimation,
     } = dependencies;
     const documentApi = dependencies.document || root.document;
+
+    /**
+     * Synchronizes low-frequency frame actions with the active animation.
+     * @returns {void}
+     */
+    function syncFrameActions() {
+      const currentGroup = getCurrentGroup();
+      const canMutateFrames = Boolean(
+        currentGroup?.profileId && currentGroup?.animationId && currentGroup.frames?.length,
+      );
+      if (deleteSelectedFramesButton) {
+        const selectedCount = getSelectedFrameCount();
+        deleteSelectedFramesButton.disabled = !canMutateFrames;
+        deleteSelectedFramesButton.setAttribute(
+          "aria-label",
+          `${translate("deleteSelectedFrames")} (${selectedCount})`,
+        );
+      }
+      if (clearAnimationButton) clearAnimationButton.disabled = !canMutateFrames;
+    }
+
+    deleteSelectedFramesButton?.addEventListener("click", () => {
+      deleteSelectedAnimationFrames().catch((error) =>
+        status(translate("frameMutationFailed", { message: error.message })),
+      );
+    });
+    clearAnimationButton?.addEventListener("click", () => {
+      clearCurrentAnimation().catch((error) =>
+        status(translate("frameMutationFailed", { message: error.message })),
+      );
+    });
 
     /**
      * Creates a draggable attachment asset card.
@@ -101,11 +139,13 @@
     }
 
     /**
-     * Renders reusable images for the current group before the frame stacks.
+     * Renders reusable images in the sidebar, separate from the frame timeline.
      * @returns {void}
      */
     function renderAttachmentAssetTray() {
+      attachmentAssetTrayHost.innerHTML = "";
       const currentGroup = getCurrentGroup();
+      if (!currentGroup) return;
       const groupAssets = getAttachmentAssets().filter(
         (asset) => asset.groupKey === getAttachmentAssetGroupKey(),
       );
@@ -116,10 +156,6 @@
         <input class="assetImportInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
         <div class="attachmentAssetList"></div>
         ${groupAssets.length ? "" : `<small>${escapeHtml(translate("assetLibraryEmpty"))}</small>`}
-        <div class="animationFrameActions">
-          <button type="button" class="secondary deleteSelectedFrames">${escapeHtml(translate("deleteSelectedFrames"))} (${getSelectedFrameCount()})</button>
-          <button type="button" class="secondary dangerAction clearAnimation">${escapeHtml(translate("clearAnimation"))}</button>
-        </div>
       `;
       const list = tray.querySelector(".attachmentAssetList");
       groupAssets.forEach((asset) => list?.appendChild(createAttachmentAssetCard(asset)));
@@ -130,27 +166,10 @@
         void importAttachmentAssets(input);
       });
 
-      const canDeleteFrames = Boolean(
-        currentGroup?.profileId && currentGroup?.animationId && currentGroup.frames?.length,
-      );
-      const deleteFramesButton = tray.querySelector(".deleteSelectedFrames");
-      const clearAnimationButton = tray.querySelector(".clearAnimation");
-      deleteFramesButton.disabled = !canDeleteFrames;
-      clearAnimationButton.disabled = !canDeleteFrames;
-      deleteFramesButton.addEventListener("click", () => {
-        deleteSelectedAnimationFrames().catch((error) =>
-          status(translate("frameMutationFailed", { message: error.message })),
-        );
-      });
-      clearAnimationButton.addEventListener("click", () => {
-        clearCurrentAnimation().catch((error) =>
-          status(translate("frameMutationFailed", { message: error.message })),
-        );
-      });
-      filmstrip.appendChild(tray);
+      attachmentAssetTrayHost.appendChild(tray);
     }
 
-    return { renderAttachmentAssetTray };
+    return { renderAttachmentAssetTray, syncFrameActions };
   }
 
   return Object.freeze({ createController });

@@ -46,6 +46,260 @@
     }
 
     /**
+     * Samples deduplicated local-background colors from a coarse selection border.
+     * A user-drawn box describes the subject context more accurately than the
+     * image-wide background color when the subject sits inside a detailed scene.
+     * @param {Uint8ClampedArray|Uint8Array} data Original RGBA pixels.
+     * @param {number} width Image width.
+     * @param {{x1:number,y1:number,x2:number,y2:number}} bounds Selection bounds.
+     * @returns {Array<{r:number,g:number,b:number}>} Local background samples.
+     */
+    function sampleSelectionBorderColors(data, width, bounds) {
+      const selectionWidth = bounds.x2 - bounds.x1 + 1;
+      const selectionHeight = bounds.y2 - bounds.y1 + 1;
+      if (selectionWidth < 5 || selectionHeight < 5) return [];
+      const perimeter = selectionWidth * 2 + selectionHeight * 2;
+      const step = Math.max(1, Math.ceil(perimeter / 128));
+      const samples = [];
+      const append = (x, y) => {
+        const offset = (y * width + x) * 4;
+        if (!data[offset + 3]) return;
+        const color = { r: data[offset], g: data[offset + 1], b: data[offset + 2] };
+        const duplicate = samples.some(
+          (sample) => (sample.r - color.r) ** 2 + (sample.g - color.g) ** 2 + (sample.b - color.b) ** 2 < 144,
+        );
+        if (!duplicate) samples.push(color);
+      };
+      for (let x = bounds.x1; x <= bounds.x2; x += step) {
+        append(x, bounds.y1);
+        append(x, bounds.y2);
+      }
+      for (let y = bounds.y1 + step; y < bounds.y2; y += step) {
+        append(bounds.x1, y);
+        append(bounds.x2, y);
+      }
+      return samples.slice(0, 128);
+    }
+
+    /**
+     * Restores small opaque holes fully enclosed by the detected subject.
+     * This preserves background-like details such as white eyes without filling
+     * large gaps between limbs or unrelated scene areas.
+     * @param {Uint8Array} mask Detected subject mask, mutated in place.
+     * @param {Uint8ClampedArray|Uint8Array} data Original RGBA pixels.
+     * @param {number} width Image width.
+     * @param {number} height Image height.
+     * @param {{x1:number,y1:number,x2:number,y2:number}} bounds Detected subject bounds.
+     * @param {number} regionArea Coarse selection area.
+     * @returns {void}
+     */
+    function fillSmallEnclosedHoles(mask, data, width, height, bounds, regionArea) {
+      if (!bounds) return;
+      const visited = new Uint8Array(mask.length);
+      const maximumHoleSize = Math.max(4, Math.floor(regionArea * 0.25));
+      for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+        for (let x = bounds.x1; x <= bounds.x2; x += 1) {
+          const startIndex = y * width + x;
+          if (mask[startIndex] || visited[startIndex] || !data[startIndex * 4 + 3]) continue;
+          const stack = [startIndex];
+          const hole = [];
+          let touchesBounds = false;
+          visited[startIndex] = 1;
+          while (stack.length) {
+            const index = stack.pop();
+            hole.push(index);
+            const pointX = index % width;
+            const pointY = Math.floor(index / width);
+            touchesBounds ||=
+              pointX === bounds.x1 || pointX === bounds.x2 || pointY === bounds.y1 || pointY === bounds.y2;
+            const neighbors = [
+              pointX > bounds.x1 ? index - 1 : -1,
+              pointX < bounds.x2 ? index + 1 : -1,
+              pointY > bounds.y1 ? index - width : -1,
+              pointY < bounds.y2 ? index + width : -1,
+            ];
+            for (const neighbor of neighbors) {
+              if (neighbor < 0 || mask[neighbor] || visited[neighbor] || !data[neighbor * 4 + 3]) {
+                continue;
+              }
+              visited[neighbor] = 1;
+              stack.push(neighbor);
+            }
+          }
+          if (!touchesBounds && hole.length <= maximumHoleSize) {
+            hole.forEach((index) => {
+              mask[index] = 1;
+            });
+          }
+        }
+      }
+    }
+
+    /**
+     * Closes short gaps in a fragmented subject contour before enclosed pixels
+     * are restored. The radius scales with the user's coarse selection and is
+     * capped to keep large-image processing predictable.
+     * @param {Uint8Array} mask Detected subject mask, mutated in place.
+     * @param {number} width Image width.
+     * @param {{x1:number,y1:number,x2:number,y2:number}} bounds Processing bounds.
+     * @param {number} radius Closing radius in pixels.
+     * @returns {void}
+     */
+    function closeSubjectContour(mask, width, bounds, radius) {
+      if (!bounds || radius <= 0) return;
+      const boundsWidth = bounds.x2 - bounds.x1 + 1;
+      const boundsHeight = bounds.y2 - bounds.y1 + 1;
+      if (boundsWidth <= radius * 2 || boundsHeight <= radius * 2) return;
+      let current = new Uint8Array(mask);
+      for (let iteration = 0; iteration < radius; iteration += 1) {
+        const expanded = new Uint8Array(current);
+        for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+          for (let x = bounds.x1; x <= bounds.x2; x += 1) {
+            const index = y * width + x;
+            if (current[index]) continue;
+            if (
+              (x > bounds.x1 && current[index - 1]) ||
+              (x < bounds.x2 && current[index + 1]) ||
+              (y > bounds.y1 && current[index - width]) ||
+              (y < bounds.y2 && current[index + width])
+            ) {
+              expanded[index] = 1;
+            }
+          }
+        }
+        current = expanded;
+      }
+      for (let iteration = 0; iteration < radius; iteration += 1) {
+        const contracted = new Uint8Array(current);
+        for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+          for (let x = bounds.x1; x <= bounds.x2; x += 1) {
+            const index = y * width + x;
+            if (!current[index]) continue;
+            if (
+              x === bounds.x1 ||
+              x === bounds.x2 ||
+              y === bounds.y1 ||
+              y === bounds.y2 ||
+              !current[index - 1] ||
+              !current[index + 1] ||
+              !current[index - width] ||
+              !current[index + width]
+            ) {
+              contracted[index] = 0;
+            }
+          }
+        }
+        current = contracted;
+      }
+      mask.set(current);
+    }
+
+    /**
+     * Removes small scene fragments and restores the original opaque pixels
+     * inside a row-wise subject envelope. This recovers dark clothing that is
+     * chromatically indistinguishable from a dark scene while preserving a
+     * non-rectangular silhouette derived from detected subject edges.
+     * @param {Uint8Array} mask Detected subject mask, mutated in place.
+     * @param {Uint8ClampedArray|Uint8Array} data Original RGBA pixels.
+     * @param {number} width Image width.
+     * @param {{x1:number,y1:number,x2:number,y2:number}} bounds Processing bounds.
+     * @returns {void}
+     */
+    function restoreSubjectEnvelope(mask, data, width, bounds) {
+      const visited = new Uint8Array(mask.length);
+      const components = [];
+      for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+        for (let x = bounds.x1; x <= bounds.x2; x += 1) {
+          const startIndex = y * width + x;
+          if (!mask[startIndex] || visited[startIndex]) continue;
+          const stack = [startIndex];
+          const indices = [];
+          let sumX = 0;
+          let sumY = 0;
+          visited[startIndex] = 1;
+          while (stack.length) {
+            const index = stack.pop();
+            const pointX = index % width;
+            const pointY = Math.floor(index / width);
+            indices.push(index);
+            sumX += pointX;
+            sumY += pointY;
+            const neighbors = [
+              pointX > bounds.x1 ? index - 1 : -1,
+              pointX < bounds.x2 ? index + 1 : -1,
+              pointY > bounds.y1 ? index - width : -1,
+              pointY < bounds.y2 ? index + width : -1,
+            ];
+            for (const neighbor of neighbors) {
+              if (neighbor < 0 || !mask[neighbor] || visited[neighbor]) continue;
+              visited[neighbor] = 1;
+              stack.push(neighbor);
+            }
+          }
+          components.push({ indices, centerX: sumX / indices.length, centerY: sumY / indices.length });
+        }
+      }
+      if (!components.length) return;
+      const largestSize = components.reduce(
+        (largest, component) => Math.max(largest, component.indices.length),
+        0,
+      );
+      const centerX = (bounds.x1 + bounds.x2) * 0.5;
+      const centerY = (bounds.y1 + bounds.y2) * 0.5;
+      const halfWidth = Math.max(1, (bounds.x2 - bounds.x1 + 1) * 0.5);
+      const halfHeight = Math.max(1, (bounds.y2 - bounds.y1 + 1) * 0.5);
+      mask.fill(0);
+      for (const component of components) {
+        const central =
+          Math.abs(component.centerX - centerX) / halfWidth <= 0.86 &&
+          Math.abs(component.centerY - centerY) / halfHeight <= 0.86;
+        if (
+          component.indices.length !== largestSize &&
+          (!central || component.indices.length < largestSize * 0.03)
+        ) {
+          continue;
+        }
+        component.indices.forEach((index) => {
+          mask[index] = 1;
+        });
+      }
+      const rows = [];
+      for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+        let minimumX = bounds.x2 + 1;
+        let maximumX = bounds.x1 - 1;
+        for (let x = bounds.x1; x <= bounds.x2; x += 1) {
+          if (!mask[y * width + x]) continue;
+          minimumX = Math.min(minimumX, x);
+          maximumX = Math.max(maximumX, x);
+        }
+        if (maximumX >= minimumX) rows.push({ y, minimumX, maximumX });
+      }
+      if (!rows.length) return;
+      const fillRow = (y, minimumX, maximumX) => {
+        for (let x = Math.round(minimumX); x <= Math.round(maximumX); x += 1) {
+          const index = y * width + x;
+          if (data[index * 4 + 3]) mask[index] = 1;
+        }
+      };
+      const maximumGap = Math.max(2, Math.round((bounds.y2 - bounds.y1 + 1) * 0.22));
+      rows.forEach((row) => fillRow(row.y, row.minimumX, row.maximumX));
+      for (let index = 1; index < rows.length; index += 1) {
+        const previous = rows[index - 1];
+        const next = rows[index];
+        const gap = next.y - previous.y - 1;
+        if (gap <= 0 || gap > maximumGap) continue;
+        for (let offset = 1; offset <= gap; offset += 1) {
+          const progress = offset / (gap + 1);
+          fillRow(
+            previous.y + offset,
+            previous.minimumX + (next.minimumX - previous.minimumX) * progress,
+            previous.maximumX + (next.maximumX - previous.maximumX) * progress,
+          );
+        }
+      }
+    }
+
+    /**
      * Detects a foreground boundary inside a coarse rectangle. Alpha from the
      * current preview is a positive hint, while distance from known background
      * colors and connected components determine the final spatial mask.
@@ -81,7 +335,16 @@
       const providedBackgrounds = Array.isArray(options.backgroundColors)
         ? options.backgroundColors.filter((color) => [color?.r, color?.g, color?.b].every(Number.isFinite))
         : [];
-      const backgrounds = providedBackgrounds.length ? providedBackgrounds : [{ r: 0, g: 255, b: 0 }];
+      const localBackgrounds = sampleSelectionBorderColors(data, width, {
+        x1: startX,
+        y1: startY,
+        x2: endX,
+        y2: endY,
+      });
+      const backgrounds = [
+        ...(providedBackgrounds.length ? providedBackgrounds : [{ r: 0, g: 255, b: 0 }]),
+        ...localBackgrounds,
+      ];
       const boundaryStrength = clamp(options.boundaryStrength ?? 55, 0, 100);
       const distanceThreshold = 5 + boundaryStrength * 0.27;
       const padding = Math.round(clamp(options.padding ?? 2, 0, 8));
@@ -201,6 +464,40 @@
         }
         mask.set(expanded);
       }
+      const selectionWidth = endX - startX + 1;
+      const selectionHeight = endY - startY + 1;
+      const desiredContourRadius = Math.round(Math.min(selectionWidth, selectionHeight) * 0.015);
+      const budgetContourRadius = Math.max(1, Math.floor(24000000 / Math.max(1, regionArea * 2)));
+      const contourRadius = Math.min(10, budgetContourRadius, Math.max(1, desiredContourRadius));
+      closeSubjectContour(
+        mask,
+        width,
+        { x1: searchStartX, y1: searchStartY, x2: searchEndX, y2: searchEndY },
+        contourRadius,
+      );
+      if (localBackgrounds.length) {
+        restoreSubjectEnvelope(mask, data, width, {
+          x1: searchStartX,
+          y1: searchStartY,
+          x2: searchEndX,
+          y2: searchEndY,
+        });
+      }
+      let preliminaryBounds = null;
+      for (let y = searchStartY; y <= searchEndY; y += 1) {
+        for (let x = searchStartX; x <= searchEndX; x += 1) {
+          if (!mask[y * width + x]) continue;
+          preliminaryBounds = preliminaryBounds
+            ? {
+                x1: Math.min(preliminaryBounds.x1, x),
+                y1: Math.min(preliminaryBounds.y1, y),
+                x2: Math.max(preliminaryBounds.x2, x),
+                y2: Math.max(preliminaryBounds.y2, y),
+              }
+            : { x1: x, y1: y, x2: x, y2: y };
+        }
+      }
+      fillSmallEnclosedHoles(mask, data, width, height, preliminaryBounds, regionArea);
       let count = 0;
       let countInsideSelection = 0;
       let detectedBounds = null;

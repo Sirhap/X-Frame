@@ -7,6 +7,9 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
+  /** Height of one sidebar queue card including its gap, in CSS pixels. */
+  const QUEUE_ITEM_STRIDE = 175;
+
   /**
    * Creates the batch queue selection and virtual-list renderer.
    * @param {object} dependencies Queue dependencies supplied by the batch controller.
@@ -139,13 +142,15 @@
       if (alert) {
         alert.textContent = item.quality?.severity === "critical" ? "!!" : "!";
         alert.setAttribute("aria-label", issueLabel);
+        alert.dataset.qualityLabel = issueLabel;
+        alert.title = issueLabel;
       }
     }
 
     /**
      * Appends a virtual-list spacer to the queue.
      * @param {number} count Number of hidden items represented by the spacer.
-     * @param {number} itemStride Queue item width including its gap.
+     * @param {number} itemStride Queue item height including its gap.
      * @returns {void}
      */
     function appendSpacer(count, itemStride) {
@@ -162,15 +167,15 @@
      * @returns {void}
      */
     function renderQueue() {
-      const previousScroll = elements.cutoutQueue.scrollLeft;
+      const previousScroll = elements.cutoutQueue.scrollTop;
       elements.cutoutQueue.innerHTML = "";
       const filteredItems = state.items
         .map((item, index) => ({ item, index }))
         .filter(({ item }) => !state.qualityOnly || hasQualityIssue(item));
-      const itemStride = 140;
+      const itemStride = QUEUE_ITEM_STRIDE;
       const visibleCount = Math.max(
         20,
-        Math.ceil((elements.cutoutQueue.clientWidth || 840) / itemStride) + 20,
+        Math.ceil((elements.cutoutQueue.clientHeight || 680) / itemStride) + 20,
       );
       const start = Math.max(0, Math.min(filteredItems.length, Math.floor(previousScroll / itemStride) - 10));
       const end = Math.min(filteredItems.length, start + visibleCount);
@@ -219,7 +224,7 @@
           if (!state.draggedItemId || state.draggedItemId === item.id) return;
           event.preventDefault();
           const rect = card.getBoundingClientRect();
-          const after = event.clientX >= rect.left + rect.width / 2;
+          const after = event.clientY >= rect.top + rect.height / 2;
           card.classList.toggle("dragBefore", !after);
           card.classList.toggle("dragAfter", after);
         });
@@ -227,7 +232,7 @@
         card.addEventListener("drop", (event) => {
           event.preventDefault();
           const rect = card.getBoundingClientRect();
-          const after = event.clientX >= rect.left + rect.width / 2;
+          const after = event.clientY >= rect.top + rect.height / 2;
           card.classList.remove("dragBefore", "dragAfter");
           reorderBatchItem(state.draggedItemId, index, after);
           state.draggedItemId = "";
@@ -278,7 +283,7 @@
         empty.textContent = text("qualityFilteredEmpty");
         elements.cutoutQueue.appendChild(empty);
       }
-      elements.cutoutQueue.scrollLeft = previousScroll;
+      elements.cutoutQueue.scrollTop = previousScroll;
       elements.cutoutShowResult.classList.toggle("active", state.thumbnailMode === "result");
       elements.cutoutShowOriginal.classList.toggle("active", state.thumbnailMode === "original");
       renderStatus();

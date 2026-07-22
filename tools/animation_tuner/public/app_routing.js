@@ -17,6 +17,7 @@
     import: "/tools/import",
     organizer: "/tools/organizer",
   });
+  const WORKSPACE_PATH = "/workspace";
   const VALID_ROUTES = new Set(Object.keys(PATH_BY_ROUTE));
 
   /**
@@ -28,7 +29,6 @@
    *   getCurrentGroup?:()=>object|null,
    *   getHomeHubDismissed?:()=>boolean,
    *   setHomeHubDismissed?:(dismissed:boolean)=>void,
-   *   getSelectedProfileId?:()=>string,
    *   getSelectedFrame?:()=>number,
    *   getActiveProjectId?:()=>string,
    *   getBatchCutout?:()=>object|null,
@@ -57,7 +57,6 @@
       getCurrentGroup = () => null,
       getHomeHubDismissed = () => true,
       setHomeHubDismissed = () => {},
-      getSelectedProfileId = () => "all",
       getSelectedFrame = () => 0,
       getActiveProjectId = () => "",
       getBatchCutout = () => null,
@@ -190,7 +189,7 @@
      * @returns {void}
      */
     function syncWorkbenchRoute(route, options = {}) {
-      const targetPath = PATH_BY_ROUTE[route] || "/";
+      const targetPath = PATH_BY_ROUTE[route] || WORKSPACE_PATH;
       const currentPath = windowRef.location?.pathname || "/";
       const legacyRoute = new URLSearchParams(windowRef.location?.search || "").has("tool");
       if (!route) setHomeHubDismissed(true);
@@ -348,10 +347,8 @@
     function syncUrlState(options = {}) {
       const url = new URL(windowRef.location.href);
       const currentGroup = getCurrentGroup();
-      const selectedProfileId = getSelectedProfileId();
       const entries = {
         project: getActiveProjectId(),
-        profile: selectedProfileId !== "all" ? selectedProfileId : "",
         group: currentGroup?.uiId || "",
         frame: currentGroup ? String(getSelectedFrame()) : "",
       };

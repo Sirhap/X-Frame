@@ -1,7 +1,10 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { createController } = require("../animation_tuner/public/batch_cutout_settings.js");
+const {
+  createController,
+  resolveRepairPropagationState,
+} = require("../animation_tuner/public/batch_cutout_settings.js");
 
 function createFixture() {
   const item = { id: "frame-1", repairs: [{ mode: "fill", color: "#fff" }] };
@@ -15,6 +18,12 @@ function createFixture() {
   };
   const elements = {
     cutoutAreaColor: { value: "#0a0b0c" },
+    cutoutSettingsEmpty: { hidden: true },
+    cutoutAutomaticSettings: { hidden: true },
+    cutoutLocalSettings: { hidden: true },
+    cutoutSettings: { classList: { toggle() {} } },
+    cutoutActiveToolTitle: { textContent: "" },
+    cutoutActiveToolHint: { textContent: "" },
   };
   const events = [];
   const controller = createController({
@@ -29,7 +38,7 @@ function createFixture() {
     },
     imagePixelLimits: { maxPixelsPerImage: 10, maxTotalPixels: 20 },
     text: (key, variables = {}) => `${key}:${variables.limit || ""}`,
-    selectedItem: () => item,
+    selectedItem: () => state.items[state.selectedIndex] || null,
     hasQualityIssue: () => false,
     selectedBackgroundColor: () => ({ hex: "#000000" }),
     colorUtils: {
@@ -62,4 +71,62 @@ test("batch settings preserves pixel-budget rejection messages", () => {
   const { controller } = createFixture();
 
   assert.throws(() => controller.assertImagePixelBudget({ width: 4, height: 4 }, 1), /batchPixelLimit:1/);
+});
+
+test("batch settings follows the active tool and exposes canvas-only tool instructions", () => {
+  const { controller, state, elements } = createFixture();
+
+  controller.setSettingsMode("automatic");
+  assert.equal(elements.cutoutAutomaticSettings.hidden, false);
+  assert.equal(elements.cutoutLocalSettings.hidden, true);
+  assert.equal(elements.cutoutActiveToolTitle.textContent, "repairAutomatic:");
+
+  state.repairMode = "clear";
+  controller.setSettingsMode("tool");
+  assert.equal(elements.cutoutAutomaticSettings.hidden, true);
+  assert.equal(elements.cutoutLocalSettings.hidden, false);
+  assert.equal(elements.cutoutActiveToolTitle.textContent, "repairClear:");
+});
+
+test("batch settings replaces inactive controls with an image-loading guide", () => {
+  const { controller, state, elements } = createFixture();
+  state.items = [];
+
+  controller.setSettingsMode("automatic");
+
+  assert.equal(elements.cutoutSettingsEmpty.hidden, false);
+  assert.equal(elements.cutoutAutomaticSettings.hidden, true);
+  assert.equal(elements.cutoutLocalSettings.hidden, true);
+  assert.equal(elements.cutoutActiveToolTitle.textContent, "settingsEmptyTitle:");
+});
+
+test("batch settings writes live protection parameters to the latest range repair", () => {
+  const { controller, state, item, events } = createFixture();
+  item.repairs = [{ mode: "protect-range", boundaryStrength: 4, padding: 1 }];
+
+  assert.equal(controller.updateLatestProtectionRepair({ boundaryStrength: 70, padding: 3 }), true);
+  assert.equal(item.repairs[0].boundaryStrength, 70);
+  assert.equal(item.repairs[0].padding, 3);
+  assert.equal(state.protectionPreview, null);
+  assert.deepEqual(events, ["record", "invalidate", "preview"]);
+});
+
+test("batch settings explains that automatic parameters are already shared", () => {
+  assert.deepEqual(
+    resolveRepairPropagationState({ total: 3, item: { repairs: [] }, busy: false, sessionMode: "batch" }),
+    {
+      enabled: false,
+      labelKey: "repairBatchParametersSynced",
+      titleKey: "repairBatchParametersSyncedTitle",
+    },
+  );
+  assert.equal(
+    resolveRepairPropagationState({
+      total: 3,
+      item: { repairs: [{ mode: "protect-range" }] },
+      busy: false,
+      sessionMode: "batch",
+    }).enabled,
+    true,
+  );
 });

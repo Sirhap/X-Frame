@@ -45,6 +45,7 @@
       setPreviewMode,
       renderStatus,
       selectedItem,
+      resolveProtectedColorInput,
       hasQualityIssue,
       renderQueue,
       renderPreview,
@@ -72,6 +73,7 @@
       setRepairMode,
       setAreaColorTransparent,
       updateLatestAreaRepair,
+      updateLatestProtectionRepair,
       bindNumericRange,
       renderBackgroundSamples,
       renderProtectedColors,
@@ -79,10 +81,8 @@
       colorUtils,
       sessionCore,
       applyProcessingParametersToControls,
-      syncProtectionPreview,
       refreshQualityAnalysis,
       propagateLatestRepair,
-      setSettingsMode,
       applyAdvancedPreset,
       trapModalFocus,
       isEditableTarget,
@@ -121,6 +121,47 @@
       endPreviewPan,
       setPreviewScale,
     });
+
+    let sidebarCollapsed = false;
+
+    /**
+     * Selects the visible left-workbar surface without changing image-processing state.
+     * @param {"parameters"|"batch"} panel Requested sidebar panel.
+     * @returns {void}
+     */
+    function setSidebarPanel(panel) {
+      const showBatch = panel === "batch";
+      elements.cutoutSidebarParametersTab.classList.toggle("active", !showBatch);
+      elements.cutoutSidebarParametersTab.setAttribute("aria-selected", String(!showBatch));
+      elements.cutoutSidebarParametersTab.setAttribute("tabindex", showBatch ? "-1" : "0");
+      elements.cutoutSidebarBatchTab.classList.toggle("active", showBatch);
+      elements.cutoutSidebarBatchTab.setAttribute("aria-selected", String(showBatch));
+      elements.cutoutSidebarBatchTab.setAttribute("tabindex", showBatch ? "0" : "-1");
+      elements.cutoutSidebarParametersPanel.hidden = showBatch;
+      elements.cutoutSidebarBatchPanel.hidden = !showBatch;
+      elements.cutoutModal.dataset.sidebarPanel = showBatch ? "batch" : "parameters";
+      if (showBatch && state.batchTrayCollapsed) {
+        state.batchTrayCollapsed = false;
+        renderStatus();
+      }
+    }
+
+    /**
+     * Collapses or restores the desktop sidebar while keeping its selected panel.
+     * @param {boolean} collapsed Whether the sidebar should use its rail state.
+     * @returns {void}
+     */
+    function setSidebarCollapsed(collapsed) {
+      sidebarCollapsed = Boolean(collapsed);
+      elements.cutoutModal.classList.toggle("sidebarCollapsed", sidebarCollapsed);
+      elements.cutoutSidebarCollapse.textContent = sidebarCollapsed ? "›" : "‹";
+      elements.cutoutSidebarCollapse.setAttribute("aria-expanded", String(!sidebarCollapsed));
+      const label = text(sidebarCollapsed ? "expandSidebar" : "collapseSidebar");
+      elements.cutoutSidebarCollapse.setAttribute("aria-label", label);
+      elements.cutoutSidebarCollapse.title = label;
+      state.previewFitScale = null;
+      renderPreview();
+    }
 
     function bind() {
       elements.cutoutOpen.addEventListener("click", open);
@@ -171,6 +212,22 @@
       elements.cutoutViewOriginal.addEventListener("click", () => setPreviewMode("original"));
       elements.cutoutViewAlpha.addEventListener("click", () => setPreviewMode("alpha"));
       elements.cutoutViewDifference.addEventListener("click", () => setPreviewMode("difference"));
+      elements.cutoutSidebarParametersTab.addEventListener("click", () => setSidebarPanel("parameters"));
+      elements.cutoutSidebarBatchTab.addEventListener("click", () => setSidebarPanel("batch"));
+      elements.cutoutSidebarCollapse.addEventListener("click", () => {
+        setSidebarCollapsed(!sidebarCollapsed);
+      });
+      [elements.cutoutSidebarParametersTab, elements.cutoutSidebarBatchTab].forEach((tab, index, tabs) => {
+        tab.addEventListener("keydown", (event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          const nextIndex =
+            event.key === "ArrowRight" ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length;
+          const nextTab = tabs[nextIndex];
+          setSidebarPanel(nextTab === elements.cutoutSidebarBatchTab ? "batch" : "parameters");
+          nextTab.focus();
+        });
+      });
       elements.cutoutBatchTrayToggle.addEventListener("click", () => {
         state.batchTrayCollapsed = !state.batchTrayCollapsed;
         renderStatus();
@@ -258,7 +315,7 @@
           if (state.queueRenderFrame) return;
           state.queueRenderFrame = requestAnimationFrame(() => {
             state.queueRenderFrame = 0;
-            const nextStart = Math.max(0, Math.floor(elements.cutoutQueue.scrollLeft / 140) - 10);
+            const nextStart = Math.max(0, Math.floor(elements.cutoutQueue.scrollTop / 175) - 10);
             if (Math.abs(nextStart - state.queueWindowStart) >= 5) renderQueue();
           });
         },
@@ -311,23 +368,34 @@
         updateLatestAreaRepair({ color: selectedAreaColor() });
       });
       elements.cutoutProtectionType.addEventListener("change", () => {
+        state.protectionPreview = null;
         elements.cutoutProtectionRangeOptions.hidden = elements.cutoutProtectionType.value !== "range";
+        elements.cutoutProtectionColorOptions.hidden = elements.cutoutProtectionType.value !== "color";
         elements.cutoutSelectionHint.textContent = text(
           state.repairMode === "restore"
             ? "restoreHint"
             : elements.cutoutProtectionType.value === "range"
               ? "protectRangeHint"
-              : "selectionHint",
+              : "protectColorHint",
         );
+        renderPreview();
       });
       [
         [elements.cutoutBrushSize, elements.cutoutBrushSizeValue, ""],
         [elements.cutoutBrushHardness, elements.cutoutBrushHardnessValue, "%"],
         [elements.cutoutBrushOpacity, elements.cutoutBrushOpacityValue, "%"],
-        [elements.cutoutProtectionBoundary, elements.cutoutProtectionBoundaryValue, ""],
-        [elements.cutoutProtectionPadding, elements.cutoutProtectionPaddingValue, ""],
       ].forEach(([input, output, suffix]) => {
         bindNumericRange(input, output, { suffix });
+      });
+      bindNumericRange(elements.cutoutProtectionBoundary, elements.cutoutProtectionBoundaryValue, {
+        onInput: () => {
+          updateLatestProtectionRepair({ boundaryStrength: Number(elements.cutoutProtectionBoundary.value) });
+        },
+      });
+      bindNumericRange(elements.cutoutProtectionPadding, elements.cutoutProtectionPaddingValue, {
+        onInput: () => {
+          updateLatestProtectionRepair({ padding: Number(elements.cutoutProtectionPadding.value) });
+        },
       });
       bindNumericRange(elements.cutoutAreaTolerance, elements.cutoutAreaToleranceValue, {
         onInput: () => {
@@ -347,7 +415,6 @@
         state.samplingBackgroundColor = false;
         state.samplingProtectedColor = false;
         state.protectionPreview = null;
-        syncProtectionPreview(item);
         refreshQualityAnalysis();
         renderPreview();
         if (outcome.live) {
@@ -365,7 +432,6 @@
         state.samplingBackgroundColor = false;
         state.samplingProtectedColor = false;
         state.protectionPreview = null;
-        syncProtectionPreview(item);
         refreshQualityAnalysis();
         renderPreview();
         if (outcome.live) {
@@ -395,7 +461,12 @@
         renderBackgroundSamples();
         renderProtectedColors();
       });
-      elements.cutoutProtectClear.addEventListener("click", () => {
+
+      /**
+       * Clears manually entered and automatically detected protected colors.
+       * @returns {void}
+       */
+      function clearProtectedColors() {
         const item = selectedItem();
         if (item) {
           recordItemEdit(item);
@@ -406,7 +477,60 @@
         }
         state.samplingProtectedColor = false;
         renderPreview();
+      }
+
+      /**
+       * Adds a validated manual HEX color to the selected image palette.
+       * @returns {void}
+       */
+      function addProtectionColorFromInput() {
+        const item = selectedItem();
+        const input = elements.cutoutProtectionColorHex;
+        const resolution = resolveProtectedColorInput(item, input.value);
+        input.setCustomValidity("");
+        if (resolution.status === "invalid") {
+          input.setCustomValidity(text("protectedColorInvalid"));
+          input.reportValidity();
+          setStatus(text("protectedColorInvalid"), "error");
+          return;
+        }
+        if (resolution.status === "limit") {
+          setStatus(text("protectedColorLimit"), "error");
+          return;
+        }
+        if (resolution.status === "duplicate") {
+          setStatus(text("protectedColorDuplicate"), "idle");
+          return;
+        }
+        recordItemEdit(item);
+        item.protectedColors ||= [];
+        item.protectedColors.push(resolution.color);
+        input.value = resolution.hex;
+        elements.cutoutProtectionColorPicker.value = resolution.hex;
+        invalidateItem(item);
+        setStatus(text("protectedColorAdded", { color: resolution.hex }), "success");
+        renderPreview();
+      }
+
+      elements.cutoutProtectClear.addEventListener("click", clearProtectedColors);
+      elements.cutoutProtectionColorClear.addEventListener("click", clearProtectedColors);
+      elements.cutoutProtectionColorPicker.addEventListener("input", () => {
+        elements.cutoutProtectionColorHex.value = elements.cutoutProtectionColorPicker.value;
+        elements.cutoutProtectionColorHex.setCustomValidity("");
       });
+      elements.cutoutProtectionColorHex.addEventListener("input", () => {
+        const value = String(elements.cutoutProtectionColorHex.value || "").trim();
+        if (/^#[0-9a-f]{6}$/i.test(value)) {
+          elements.cutoutProtectionColorPicker.value = value;
+          elements.cutoutProtectionColorHex.setCustomValidity("");
+        }
+      });
+      elements.cutoutProtectionColorHex.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        addProtectionColorFromInput();
+      });
+      elements.cutoutProtectionColorAdd.addEventListener("click", addProtectionColorFromInput);
       elements.cutoutBackgroundClear.addEventListener("click", () => {
         const item = selectedItem();
         if (item) {
@@ -419,8 +543,6 @@
         state.samplingBackgroundColor = false;
         renderBackgroundSamples();
       });
-      elements.cutoutSettingsAutomatic.addEventListener("click", () => setSettingsMode("automatic"));
-      elements.cutoutSettingsTool.addEventListener("click", () => setSettingsMode("tool"));
       document.querySelectorAll("[data-cutout-tab]").forEach((button) => {
         button.addEventListener("click", () => {
           const tab = button.dataset.cutoutTab;
@@ -581,7 +703,7 @@
       });
     }
 
-    return { bind };
+    return { bind, setSidebarCollapsed, setSidebarPanel };
   }
 
   return { createController };

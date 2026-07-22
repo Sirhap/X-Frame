@@ -42,7 +42,12 @@ function createIntegrationTests(options) {
     const port = 20000 + (process.pid % 20000);
     const child = spawnProcess(process.execPath, ["tools/animation_tuner/server.js"], {
       cwd: repositoryRoot,
-      env: { ...process.env, PORT: String(port) },
+      env: {
+        ...process.env,
+        PORT: String(port),
+        XSXB_ACTIVATION_CODE_HASHES: "",
+        XSXB_ACTIVATION_SECRET: "",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
     try {
@@ -102,6 +107,24 @@ function createIntegrationTests(options) {
         request.end();
       });
       assert.equal(oversizedMediaStatus, 413);
+      const premiumSaveBypass = await fetchImpl(`${baseUrl}/api/save`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ frame_audio_bindings: [{ key: "walk:0" }] }),
+      });
+      assert.equal(premiumSaveBypass.status, 402);
+      const premiumReplacementBypass = await fetchImpl(`${baseUrl}/api/replace-animation`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ frames: [], files: [] }),
+      });
+      assert.equal(premiumReplacementBypass.status, 402);
+      const premiumWorksetBypass = await fetchImpl(`${baseUrl}/api/reorganize-animation`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ items: [] }),
+      });
+      assert.equal(premiumWorksetBypass.status, 402);
     } finally {
       child.kill("SIGTERM");
     }
@@ -146,6 +169,8 @@ function createIntegrationTests(options) {
         ...process.env,
         PORT: String(port),
         XSXB_ROOT: isolatedRoot,
+        XSXB_ACTIVATION_CODE_HASHES: "ccd11a14d740e9ecf27b6434bb77686182737925d98e009e92e5a1e3394162b9",
+        XSXB_ACTIVATION_SECRET: "self-test-secret-with-at-least-thirty-two-characters",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -163,13 +188,22 @@ function createIntegrationTests(options) {
         });
       });
       const baseUrl = `http://127.0.0.1:${port}`;
+      const activationResponse = await fetchImpl(`${baseUrl}/api/activation`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "XSXB-SELF-TEST" }),
+      });
+      assert.equal(activationResponse.status, 200);
+      const activationCookie = String(activationResponse.headers.get("set-cookie") || "").split(";", 1)[0];
+      assert.match(activationCookie, /^xsxb_activation=/);
+      const authorizedHeaders = { "content-type": "application/json", cookie: activationCookie };
       const invalidFiles = replacements.map((bytes) => ({
         data: `data:image/png;base64,${bytes.toString("base64")}`,
       }));
       invalidFiles[10] = { data: "data:image/png;base64,bm90LXBuZw==" };
       const failedResponse = await fetchImpl(`${baseUrl}/api/replace-animation`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: authorizedHeaders,
         body: JSON.stringify({
           projectId: project.id,
           frames,
@@ -187,7 +221,7 @@ function createIntegrationTests(options) {
       fsApi.writeFileSync(godotSyncBlocker, "block Godot sync directory creation", "utf8");
       const syncFailureResponse = await fetchImpl(`${baseUrl}/api/replace-animation`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: authorizedHeaders,
         body: JSON.stringify({
           projectId: project.id,
           frames,
@@ -206,7 +240,7 @@ function createIntegrationTests(options) {
       fsApi.rmSync(godotSyncBlocker, { force: true });
       const validResponse = await fetchImpl(`${baseUrl}/api/replace-animation`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: authorizedHeaders,
         body: JSON.stringify({
           projectId: project.id,
           frames,
@@ -229,7 +263,7 @@ function createIntegrationTests(options) {
       }
       const duplicateResponse = await fetchImpl(`${baseUrl}/api/replace-animation`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: authorizedHeaders,
         body: JSON.stringify({
           projectId: project.id,
           frames: [frames[0], frames[0]],

@@ -136,6 +136,7 @@
       "organizerFindLoop",
       "organizerReset",
       "organizerAddAssets",
+      "organizerGodotPlaceholder",
       "organizerApply",
       "organizerGrid",
       "organizerStatus",
@@ -180,6 +181,7 @@
       loopCancelled: false,
       loopSourceEntries: [],
       baselineFrameIds: [],
+      premiumFeatures: new Set(),
     };
     const IMAGE_PIXEL_LIMITS = Object.freeze({
       maxPixelsPerImage: 16_777_216,
@@ -224,6 +226,7 @@
       text,
       getCurrentAnimation: () => hooks.getCurrentAnimation?.(),
       canAddAssets: () => typeof hooks.addAssets === "function",
+      browserExportOnly: hooks.browserExportOnly === true,
       editImportCutout,
       renderPreview,
       restartPreview,
@@ -268,6 +271,7 @@
       restartPreview,
       setStatus,
       clamp,
+      onPremiumFeatureUsed: (featureId) => state.premiumFeatures.add(featureId),
     });
     /**
      * Validates decoded image memory before allocating organizer canvases.
@@ -422,6 +426,7 @@
      * @returns {Promise<void>}
      */
     async function loadCurrentAnimation() {
+      state.premiumFeatures.clear();
       const animation = hooks.getCurrentAnimation?.();
       if (!animation?.frames?.length || animation.images?.length !== animation.frames.length) {
         state.frames = [];
@@ -469,6 +474,7 @@
      * @returns {Promise<void>}
      */
     async function analyze(type) {
+      state.premiumFeatures.add("organizer.sequence-analysis");
       const included = state.frames
         .map((frame, index) => ({ frame, index }))
         .filter((entry) => entry.frame.included);
@@ -563,6 +569,7 @@
       batchZip,
       outputCore,
       cssEscape: (value) => CSS.escape(value),
+      premiumFeatures: hooks.premiumFeatures,
     });
 
     /**
@@ -597,6 +604,7 @@
       state.anchorIndex = -1;
       state.previewIndex = 0;
       state.deletedFramesSnapshot = null;
+      state.premiumFeatures.clear();
       elements.organizerUndoDelete.hidden = true;
       elements.organizerModal.hidden = false;
       uiController.setEditorInert(true);
@@ -661,6 +669,7 @@
       selectedFrames,
       includedFrames,
       open,
+      openImport,
       requestClose,
       flipFrames,
       analyze,

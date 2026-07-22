@@ -12,17 +12,15 @@ const WIDE_IMAGE_PATH = path.resolve(__dirname, "../../../docs/screenshot.png");
 const WIDE_IMAGE_PNG = fs.readFileSync(WIDE_IMAGE_PATH);
 
 /**
- * Waits for the batch queue and the tray expansion transition to finish.
+ * Opens the sidebar batch panel after its queue is ready.
  * @param {import("@playwright/test").Page} page Browser page.
  * @returns {Promise<void>}
  */
 async function expandStableBatchTray(page) {
   await expect.poll(() => page.locator(".cutoutQueueItem").count()).toBeGreaterThan(0);
-  const batchTray = page.locator(".cutoutBatchTray");
-  await page.locator("#cutoutBatchTrayToggle").click();
-  await expect
-    .poll(() => batchTray.evaluate((element) => element.scrollHeight - element.clientHeight))
-    .toBeLessThanOrEqual(1);
+  await page.locator("#cutoutSidebarBatchTab").click();
+  await expect(page.locator("#cutoutSidebarBatchTab")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#cutoutSidebarBatchPanel")).toBeVisible();
 }
 
 /**
@@ -80,7 +78,7 @@ async function dragAcrossPreview(page) {
 test("desktop selection is linkable and browser history restores it", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/");
+  await page.goto("/workspace");
   await expect(page).toHaveTitle(/XSXB Frame Tuner$/);
   const options = await page
     .locator("#groupSelect option")
@@ -96,42 +94,36 @@ test("desktop selection is linkable and browser history restores it", async ({ p
   expect(errors).toEqual([]);
 });
 
-test("the original editor is the default and the home hub opens on demand", async ({ page }) => {
+test("the website home, import flow, and tuning workbench use separate URLs", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator("#homeHub")).toBeHidden();
+  await expect(page.locator("#hero-title")).toBeVisible();
+  await expect(page.locator("#stage")).toHaveCount(0);
+  await page.getByRole("link", { name: "开始制作" }).click();
+  await expect(page).toHaveURL(/\/tools\/import/);
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  await page.goto("/workspace");
+  await expect(page).toHaveURL(/\/workspace/);
   await expect(page.locator("#stage")).toBeVisible();
   await expect(page.locator("#filmstrip")).toBeVisible();
-  await expect(page.locator("#homeHubOpen")).toHaveAttribute("aria-pressed", "false");
   await page.locator("#homeHubOpen").click();
-  await expect(page.locator("#homeHub")).toBeVisible();
-  await expect(page.locator("#homeAnimationCount")).toBeVisible();
-  await expect(page.locator("#homeFrameCount")).toBeVisible();
-  const [homeHubBox, filmstripBox] = await Promise.all([
-    page.locator("#homeHub").boundingBox(),
-    page.locator("#filmstrip").boundingBox(),
-  ]);
-  expect(homeHubBox).not.toBeNull();
-  expect(filmstripBox).not.toBeNull();
-  expect(homeHubBox.y + homeHubBox.height).toBeLessThanOrEqual(filmstripBox.y);
-  await page.locator("#homeHubContinue").click();
-  await expect(page.locator("#homeHub")).toBeHidden();
-  await page.locator("#homeHubOpen").click();
-  await page.locator('[data-home-tool="import"]').click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator("#hero-title")).toBeVisible();
+  await page.goto("/tools/import");
   await expect(page.locator("#organizerModal")).toBeVisible();
   await page.locator("#organizerHome").click();
-  await expect(page.locator("#homeHub")).toBeHidden();
+  await expect(page).toHaveURL(/\/workspace/);
   await expect(page.locator("#stage")).toBeVisible();
   await page.reload();
-  await expect(page.locator("#homeHub")).toBeHidden();
   await expect(page.locator("#stage")).toBeVisible();
   await expect(page.locator("#filmstrip")).toBeVisible();
 });
 
 test("workbench controls expose specific accessible names without nested actions", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/workspace");
   await expect(page.getByRole("spinbutton", { name: "缩放", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "减少缩放", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "增加缩放", exact: true })).toBeVisible();
+  await page.locator('[data-panel="attachment-assets"] > summary').click();
   await expect(page.getByRole("button", { name: "添加图片", exact: true })).toBeVisible();
 
   await page.locator('.languageButton[data-language="en"]').click();
@@ -141,6 +133,7 @@ test("workbench controls expose specific accessible names without nested actions
   await expect(page.locator("#save")).toHaveCSS("color", "rgb(5, 7, 10)");
 
   await page.locator('.themeButton[data-theme="light"]').click();
+  await page.locator(".projectContext > summary").click();
   await page.locator("#deleteProject").click();
   await expect(page.locator("#appConfirmAccept")).toHaveCSS("background-color", "rgb(180, 35, 24)");
   await expect(page.locator("#appConfirmAccept")).toHaveCSS("color", "rgb(255, 255, 255)");
@@ -158,15 +151,15 @@ test("workbench controls expose specific accessible names without nested actions
   await expect(page.locator(".organizerFrameSelect").nth(1)).toBeFocused();
 });
 
-test("tool paths refresh, update titles, and return home", async ({ page }) => {
+test("tool paths refresh, update titles, and return to the tuning workbench", async ({ page }) => {
   await page.goto("/tools/import");
   await expect(page).toHaveURL(/\/tools\/import/);
-  await expect(page).toHaveTitle(/导入动画/);
+  await expect(page).toHaveTitle(/导入与处理动画/);
   await expect(page.locator("#organizerModal")).toBeVisible();
   await page.reload();
   await expect(page.locator("#organizerModal")).toBeVisible();
   await page.locator("#organizerHome").click();
-  await expect(page).toHaveURL(/\/(?:\?|$)/);
+  await expect(page).toHaveURL(/\/workspace(?:\?|$)/);
   await expect(page.locator("#homeHub")).toBeHidden();
   await expect(page.locator("#stage")).toBeVisible();
 });
@@ -346,7 +339,7 @@ test("brush-family and region repair tools keep edits after a horizontal release
   await dragAcrossPreview(page);
   await expect(page.locator("#cutoutStatus")).toContainText(/已提取|已智能识别保护范围|未提取到保护色/);
   await expect(page.locator("#cutoutProtectionPreview")).toBeVisible();
-  await expect(page.locator(".cutoutProtectionPreviewLegend")).toContainText("黄色");
+  await expect(page.locator(".cutoutProtectionPreviewLegend")).toContainText("保护主体");
   await expect(page.locator("#cutoutProtectionPreviewStatus")).toContainText(/保护|识别/);
   await expect(page.locator("#cutoutRepairUndo")).toBeEnabled();
 
@@ -489,7 +482,7 @@ test("organizer confirms before discarding an imported workset", async ({ page }
   await page.locator("#organizerHome").click();
   await page.locator("#organizerConfirmAccept").click();
   await expect(page.locator("#organizerModal")).toBeHidden();
-  await expect(page).toHaveURL(/\/(?:\?|$)/);
+  await expect(page).toHaveURL(/\/workspace(?:\?|$)/);
 });
 
 test("cutout reports mixed-file skips and confirms destructive clearing", async ({ page }) => {
@@ -501,8 +494,9 @@ test("cutout reports mixed-file skips and confirms destructive clearing", async 
 
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
   await expect(page.locator("#cutoutStatus")).toContainText("跳过 1");
-  await expect(page.locator("#cutoutBatchTray")).toBeVisible();
-  await expect(page.locator("#cutoutBatchTrayToggle")).toHaveAttribute("aria-label", "展开批次图片栏");
+  await expect(page.locator("#cutoutBatchTray")).toBeHidden();
+  await expect(page.locator("#cutoutSidebarBatchTab")).toHaveAttribute("aria-selected", "false");
+  await expandStableBatchTray(page);
 
   await page.locator("#cutoutClear").click();
   await expect(page.locator("#cutoutConfirmTitle")).toHaveText("清空当前批次？");
@@ -512,7 +506,6 @@ test("cutout reports mixed-file skips and confirms destructive clearing", async 
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
   await expect(page.locator("#cutoutClear")).toBeFocused();
 
-  await expandStableBatchTray(page);
   await page.locator("#cutoutDeleteSelected").click();
   await expect(page.locator("#cutoutConfirmTitle")).toHaveText("删除选中的图片？");
   await page.locator("#cutoutConfirmCancel").click();
@@ -532,7 +525,7 @@ test("cutout reports mixed-file skips and confirms destructive clearing", async 
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(0);
 });
 
-test("cutout restores a closed batch and starts a new batch explicitly", async ({ page }) => {
+test("cutout restores a batch after leaving its URL and starts a new batch explicitly", async ({ page }) => {
   await page.goto("/tools/cutout");
   await page.locator("#cutoutFileInput").setInputFiles({
     name: "frame.png",
@@ -541,8 +534,9 @@ test("cutout restores a closed batch and starts a new batch explicitly", async (
   });
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
 
-  await page.locator("#cutoutClose").click();
+  await page.locator("#cutoutHome").click();
   await expect(page.locator("#cutoutModal")).toBeHidden();
+  await expect(page).toHaveURL(/\/workspace(?:\?|$)/);
   await page.locator("#cutoutOpen").click();
   await expect(page.locator("#cutoutModal")).toBeVisible();
   await expect(page.locator("#cutoutStatus")).toHaveText("已恢复上次批次：1 张图片");
@@ -628,6 +622,14 @@ test("@cross-browser protected runtime stays local and resolves its Worker", asy
 
 test("area tools expose and synchronize the transparent color shortcut", async ({ page }) => {
   await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles({
+    name: "frame.png",
+    mimeType: "image/png",
+    buffer: ONE_PIXEL_PNG,
+  });
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", {
+    timeout: 20000,
+  });
   const quickTransparent = page.locator("#cutoutAreaTransparentQuick");
   const detailedTransparent = page.locator("#cutoutAreaTransparent");
   await expect(quickTransparent).toBeVisible();
@@ -642,6 +644,14 @@ test("area tools expose and synchronize the transparent color shortcut", async (
 
 test("cutout parameters follow the regular post-processing advanced layout", async ({ page }) => {
   await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles({
+    name: "frame.png",
+    mimeType: "image/png",
+    buffer: ONE_PIXEL_PNG,
+  });
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", {
+    timeout: 20000,
+  });
   const processingDefaults = await page
     .locator(
       [
@@ -760,7 +770,7 @@ test("mobile cutout keeps preview first and supports keyboard repair", async ({ 
 
 test("mobile editor presents the operation workspace before the parameter sidebar", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/workspace");
 
   const [stageBox, workspaceBox, sidebarBox] = await Promise.all([
     page.locator("#stage").boundingBox(),
@@ -774,7 +784,7 @@ test("mobile editor presents the operation workspace before the parameter sideba
   expect(workspaceBox.y).toBeLessThan(sidebarBox.y);
 });
 
-test("desktop cutout fixes the main workspace and anchors zoom to the canvas", async ({ page }) => {
+test("desktop cutout keeps batch images in the collapsible sidebar", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 700 });
   await page.goto("/tools/cutout");
   await page.locator("#cutoutFileInput").setInputFiles([
@@ -782,14 +792,15 @@ test("desktop cutout fixes the main workspace and anchors zoom to the canvas", a
     { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
     { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
   ]);
+  const parameterCompareBox = await page.locator(".cutoutCompare").boundingBox();
   await expandStableBatchTray(page);
 
   const preview = page.locator(".cutoutPreview");
-  const [compareBox, zoomBox, batchTrayBox, footerBox, scrollMetrics, batchTrayMetrics] = await Promise.all([
+  const [compareBox, zoomBox, batchTrayBox, sidebarBox, scrollMetrics, batchTrayMetrics] = await Promise.all([
     page.locator(".cutoutCompare").boundingBox(),
     page.locator(".cutoutZoomControls").boundingBox(),
     page.locator(".cutoutBatchTray").boundingBox(),
-    page.locator(".cutoutFooter").boundingBox(),
+    page.locator("#cutoutSidebar").boundingBox(),
     preview.evaluate((element) => ({
       clientHeight: element.clientHeight,
       scrollHeight: element.scrollHeight,
@@ -803,75 +814,92 @@ test("desktop cutout fixes the main workspace and anchors zoom to the canvas", a
   expect(compareBox).not.toBeNull();
   expect(zoomBox).not.toBeNull();
   expect(batchTrayBox).not.toBeNull();
-  expect(footerBox).not.toBeNull();
-  expect(compareBox.y + compareBox.height).toBeLessThanOrEqual(batchTrayBox.y);
+  expect(sidebarBox).not.toBeNull();
+  expect(parameterCompareBox).not.toBeNull();
+  expect(Math.abs(compareBox.width - parameterCompareBox.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(compareBox.height - parameterCompareBox.height)).toBeLessThanOrEqual(1);
+  expect(batchTrayBox.x + batchTrayBox.width).toBeLessThanOrEqual(compareBox.x);
+  expect(batchTrayBox.x).toBeGreaterThanOrEqual(sidebarBox.x);
+  expect(batchTrayBox.x + batchTrayBox.width).toBeLessThanOrEqual(sidebarBox.x + sidebarBox.width);
   expect(zoomBox.x + zoomBox.width).toBeLessThanOrEqual(compareBox.x + compareBox.width);
   expect(zoomBox.y + zoomBox.height).toBeLessThanOrEqual(compareBox.y + compareBox.height);
-  expect(zoomBox.y).toBeGreaterThan(compareBox.y + compareBox.height / 2);
-  expect(batchTrayBox.y + batchTrayBox.height).toBeLessThanOrEqual(footerBox.y);
+  expect(zoomBox.y).toBeLessThan(compareBox.y + compareBox.height / 2);
   expect(batchTrayMetrics.scrollHeight).toBeLessThanOrEqual(batchTrayMetrics.clientHeight);
   expect(scrollMetrics.scrollHeight).toBeLessThanOrEqual(scrollMetrics.clientHeight + 1);
   expect(scrollMetrics.overflowY).toBe("hidden");
+
+  await page.locator("#cutoutSidebarCollapse").click();
+  await expect(page.locator("#cutoutSidebarCollapse")).toHaveAttribute("aria-expanded", "false");
+  const expandedCompareBox = await page.locator(".cutoutCompare").boundingBox();
+  expect(expandedCompareBox.width).toBeGreaterThan(compareBox.width + 200);
 
   await page.locator("#cutoutResult").hover();
   await page.mouse.wheel(0, 500);
   await expect.poll(() => preview.evaluate((element) => element.scrollTop)).toBe(0);
 });
 
-test("compact desktop cutout keeps footer actions inside a readable action grid", async ({ page }) => {
+test("compact desktop cutout keeps batch actions and readable previews in the sidebar", async ({ page }) => {
   await page.setViewportSize({ width: 1299, height: 802 });
   await page.goto("/tools/cutout");
-  await page.locator("#cutoutFileInput").setInputFiles({
-    name: "frame.png",
-    mimeType: "image/png",
-    buffer: ONE_PIXEL_PNG,
-  });
-  await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
-
-  const footer = page.locator(".cutoutFooter");
-  const actions = page.locator(".cutoutFooterActions");
-  const visibleButtons = page.locator(".cutoutFooterActions button:visible");
-  const [footerBox, actionsBox, statusBox, downloadBox, actionLayout, buttonMetrics] = await Promise.all([
-    footer.boundingBox(),
-    actions.boundingBox(),
-    page.locator("#cutoutStatus").boundingBox(),
-    page.locator("#cutoutDownload").boundingBox(),
-    actions.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return {
-        display: style.display,
-        columns: style.gridTemplateColumns.split(" ").filter(Boolean).length,
-      };
-    }),
-    visibleButtons.evaluateAll((buttons) =>
-      buttons.map((button) => {
-        const box = button.getBoundingClientRect();
-        return {
-          height: box.height,
-          left: box.left,
-          right: box.right,
-          width: box.width,
-        };
-      }),
-    ),
+  await page.locator("#cutoutFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: WIDE_IMAGE_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
   ]);
+  await expect(page.locator(".cutoutQueueItem")).toHaveCount(3);
+  await expandStableBatchTray(page);
 
-  expect(footerBox).not.toBeNull();
-  expect(actionsBox).not.toBeNull();
-  expect(statusBox).not.toBeNull();
+  const sidebarPanel = page.locator("#cutoutSidebar");
+  const batchActions = page.locator(".cutoutBatchWorkspaceActions");
+  const utilityActions = batchActions.locator(":scope > div");
+  const previewCards = page.locator(".cutoutQueueItem");
+  const [panelBox, batchActionsBox, downloadBox, actionLayout, buttonMetrics, previewMetrics] =
+    await Promise.all([
+      sidebarPanel.boundingBox(),
+      batchActions.boundingBox(),
+      page.locator("#cutoutDownload").boundingBox(),
+      utilityActions.evaluate((element) => ({
+        display: getComputedStyle(element).display,
+        columns: getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length,
+      })),
+      batchActions.locator("button:visible").evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const box = button.getBoundingClientRect();
+          return { height: box.height, left: box.left, right: box.right, width: box.width };
+        }),
+      ),
+      previewCards.evaluateAll((cards) =>
+        cards.map((card) => {
+          const box = card.getBoundingClientRect();
+          const imageBox = card.querySelector("img").getBoundingClientRect();
+          return {
+            cardHeight: box.height,
+            imageHeight: imageBox.height,
+            imageWidth: imageBox.width,
+          };
+        }),
+      ),
+    ]);
+
+  expect(panelBox).not.toBeNull();
+  expect(batchActionsBox).not.toBeNull();
   expect(downloadBox).not.toBeNull();
-  expect(actionLayout).toEqual({ display: "grid", columns: 3 });
-  expect(actionsBox.x).toBeGreaterThanOrEqual(footerBox.x);
-  expect(actionsBox.x + actionsBox.width).toBeLessThanOrEqual(footerBox.x + footerBox.width + 1);
-  expect(statusBox.x).toBeGreaterThanOrEqual(footerBox.x);
-  expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(footerBox.x + footerBox.width + 1);
-  expect(downloadBox.x).toBeCloseTo(actionsBox.x, 1);
-  expect(downloadBox.x + downloadBox.width).toBeCloseTo(actionsBox.x + actionsBox.width, 1);
-  expect(buttonMetrics.length).toBeGreaterThanOrEqual(4);
+  expect(actionLayout).toEqual({ display: "grid", columns: 2 });
+  expect(batchActionsBox.x).toBeGreaterThanOrEqual(panelBox.x);
+  expect(batchActionsBox.x + batchActionsBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
+  expect(downloadBox.x).toBeCloseTo(batchActionsBox.x, 1);
+  expect(downloadBox.x + downloadBox.width).toBeCloseTo(batchActionsBox.x + batchActionsBox.width, 1);
+  expect(buttonMetrics.length).toBeGreaterThanOrEqual(3);
   for (const button of buttonMetrics) {
     expect(button.width).toBeGreaterThanOrEqual(80);
     expect(button.height).toBeGreaterThanOrEqual(34);
-    expect(button.left).toBeGreaterThanOrEqual(actionsBox.x);
-    expect(button.right).toBeLessThanOrEqual(actionsBox.x + actionsBox.width + 1);
+    expect(button.left).toBeGreaterThanOrEqual(batchActionsBox.x);
+    expect(button.right).toBeLessThanOrEqual(batchActionsBox.x + batchActionsBox.width + 1);
+  }
+  expect(previewMetrics).toHaveLength(3);
+  for (const preview of previewMetrics) {
+    expect(preview.cardHeight).toBeGreaterThanOrEqual(160);
+    expect(preview.imageHeight).toBeGreaterThanOrEqual(110);
+    expect(preview.imageWidth).toBeGreaterThan(preview.imageHeight * 1.8);
   }
 });

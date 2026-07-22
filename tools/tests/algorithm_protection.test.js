@@ -272,6 +272,29 @@ test("development adapter executes selection analysis behind the runtime seam", 
   assert.deepEqual(Array.from(result.mask), [1]);
 });
 
+test("development color selection excludes pixels outside the subject mask", async () => {
+  const dependencies = createDevelopmentDependencies();
+  let sampledSource = null;
+  dependencies.cutout.selectProtectedColorsInRectangle = (source) => {
+    sampledSource = source;
+    return { colors: [{ r: 1, g: 2, b: 3 }], count: 1 };
+  };
+  const runtime = createRuntime({ adapter: createDevelopmentJsAdapter(dependencies) });
+
+  await runtime.applySelectionRepair(
+    {
+      data: Uint8Array.from([1, 2, 3, 255, 4, 5, 6, 255]),
+      width: 2,
+      height: 1,
+    },
+    Uint8Array.from([1, 0]),
+    { mode: "protect-color", rectangle: { x1: 0, y1: 0, x2: 1, y2: 0 } },
+    "selection-color-mask",
+  );
+
+  assert.deepEqual(Array.from(sampledSource), [1, 2, 3, 255, 4, 5, 6, 0]);
+});
+
 test("frame analysis executor routes jump analysis through the shared runtime", async () => {
   const calls = [];
   const executor = createFrameAnalysisExecutor({

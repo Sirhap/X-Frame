@@ -367,6 +367,29 @@ function runCutoutProductBasicTests(dependencies) {
     tolerance: 2,
   });
   assert.equal(protectedReferenceProductCutout.removedPixels, 0);
+  const scopedColorProtection = applyProductCutout(
+    Uint8ClampedArray.from([220, 30, 20, 255, 220, 30, 20, 255]),
+    2,
+    1,
+    {
+      ...referenceProductOptions,
+      backgroundColors: [{ r: 220, g: 30, b: 20 }],
+      tolerance: 0,
+      protectionTolerance: 0,
+    },
+    [
+      {
+        mode: "protect-color",
+        x1: 0,
+        y1: 0,
+        x2: 0,
+        y2: 0,
+        colors: [{ r: 220, g: 30, b: 20 }],
+      },
+    ],
+  );
+  assert.equal(scopedColorProtection.data[3], 255);
+  assert.equal(scopedColorProtection.data[7], 0);
   const smartRepairFixture = Uint8ClampedArray.from([
     0, 255, 0, 255, 0, 250, 0, 255, 220, 30, 20, 255, 220, 30, 20, 255, 0, 255, 0, 255,
   ]);

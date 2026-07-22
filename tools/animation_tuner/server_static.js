@@ -5,7 +5,7 @@ const defaultPath = require("node:path");
 
 /**
  * Creates the local static-resource handler.
- * @param {{publicRoot:string,workbenchRoutes:Set<string>,safeResolve:(base:string,requested:string)=>string|null,send:Function,fsApi?:typeof import("node:fs"),pathApi?:typeof import("node:path")}} options Static handler dependencies.
+ * @param {{publicRoot:string,workbenchRoutes:Set<string>,safeResolve:(base:string,requested:string)=>string|null,send:Function,landingDocument?:string,workbenchDocument?:string,fsApi?:typeof import("node:fs"),pathApi?:typeof import("node:path")}} options Static handler dependencies.
  * @returns {(request:object,response:object,pathname:string)=>boolean} Resource handler.
  */
 function createStaticHandler(options) {
@@ -14,9 +14,15 @@ function createStaticHandler(options) {
   }
   const fsApi = options.fsApi || defaultFs;
   const pathApi = options.pathApi || defaultPath;
+  const landingDocument = options.landingDocument || "landing.html";
+  const workbenchDocument = options.workbenchDocument || "index.html";
   return function serveStatic(_request, response, pathname) {
     const requestPath =
-      pathname === "/" || options.workbenchRoutes.has(pathname) ? "index.html" : pathname.slice(1);
+      pathname === "/"
+        ? landingDocument
+        : options.workbenchRoutes.has(pathname)
+          ? workbenchDocument
+          : pathname.slice(1);
     const fullPath = options.safeResolve(options.publicRoot, requestPath);
     if (!fullPath || !fsApi.existsSync(fullPath) || fsApi.statSync(fullPath).isDirectory()) {
       return options.send(response, 404, "Not found", "text/plain");

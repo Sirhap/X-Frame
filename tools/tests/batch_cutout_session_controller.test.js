@@ -52,7 +52,7 @@ function createFixture() {
       onOpen: () => lifecycle.push("open-route"),
       onClose: () => lifecycle.push("close-route"),
     },
-    setSettingsMode() {},
+    setRepairMode() {},
     setEditorInert(value) {
       lifecycle.push(`editor-inert:${value}`);
     },

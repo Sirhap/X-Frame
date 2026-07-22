@@ -53,6 +53,57 @@
     let smartRepairPatchCache = null;
 
     /**
+     * Expands a persisted foreground bitset into the current repair rectangle.
+     * The normalized mapping also keeps the mask usable when a batch frame has
+     * the same subject at a proportionally remapped selection size.
+     * @param {object} repair Protection repair containing a compact subject mask.
+     * @param {number} width Target image width.
+     * @param {number} height Target image height.
+     * @returns {Uint8Array|null} Full-image mask, or null for legacy/invalid data.
+     */
+    function decodeSubjectMask(repair, width, height) {
+      const subjectMask = repair?.subjectMask;
+      if (
+        !subjectMask?.data ||
+        !Number.isInteger(subjectMask.width) ||
+        !Number.isInteger(subjectMask.height) ||
+        subjectMask.width <= 0 ||
+        subjectMask.height <= 0
+      ) {
+        return null;
+      }
+      try {
+        const binary = globalThis.atob(subjectMask.data);
+        if (binary.length * 8 < subjectMask.width * subjectMask.height) return null;
+        const startX = Math.max(0, Math.floor(Math.min(repair.x1, repair.x2)));
+        const endX = Math.min(width - 1, Math.ceil(Math.max(repair.x1, repair.x2)));
+        const startY = Math.max(0, Math.floor(Math.min(repair.y1, repair.y2)));
+        const endY = Math.min(height - 1, Math.ceil(Math.max(repair.y1, repair.y2)));
+        if (endX < startX || endY < startY) return null;
+        const targetWidth = endX - startX + 1;
+        const targetHeight = endY - startY + 1;
+        const mask = new Uint8Array(width * height);
+        for (let y = startY; y <= endY; y += 1) {
+          const sourceY = Math.min(
+            subjectMask.height - 1,
+            Math.floor(((y - startY) * subjectMask.height) / targetHeight),
+          );
+          for (let x = startX; x <= endX; x += 1) {
+            const sourceX = Math.min(
+              subjectMask.width - 1,
+              Math.floor(((x - startX) * subjectMask.width) / targetWidth),
+            );
+            const bitIndex = sourceY * subjectMask.width + sourceX;
+            if (binary.charCodeAt(bitIndex >> 3) & (1 << (bitIndex & 7))) mask[y * width + x] = 1;
+          }
+        }
+        return mask;
+      } catch {
+        return null;
+      }
+    }
+
+    /**
      * Creates an identity for the inputs that can alter a smart-clear patch.
      * @param {object} options Processing options.
      * @param {object} repair Smart-clear repair.
@@ -246,14 +297,13 @@
     }
 
     /**
-     * Merges color-protection repair records into immutable processing options.
-     * This keeps serialized repairs self-contained for Worker, export, and direct
-     * core callers instead of relying on the UI to duplicate their colors.
+     * Normalizes global color-protection options without promoting local repair
+     * samples into the global palette. Local samples are restored only inside
+     * their persisted rectangle or subject mask by applyCutoutRepairs.
      * @param {object} options Processing options.
-     * @param {Array<object>} repairs Serialized repairs.
      * @returns {object}
      */
-    function mergeProtectionOptions(options, repairs) {
+    function normalizeProtectionOptions(options) {
       const protectedColors = [];
       const appendColor = (color) => {
         if (![color?.r, color?.g, color?.b].every(Number.isFinite)) return;
@@ -266,10 +316,6 @@
         });
       };
       (Array.isArray(options?.protectedColors) ? options.protectedColors : []).forEach(appendColor);
-      for (const repair of repairs) {
-        if (repair?.mode !== "protect-color" || !Array.isArray(repair.colors)) continue;
-        repair.colors.forEach(appendColor);
-      }
       return { ...(options || {}), protectedColors };
     }
 
@@ -334,15 +380,41 @@
           applyAreaColorRepair(resultData, width, height, repair, options);
           continue;
         }
-        if (repair.mode === "protect-color") continue;
+        if (repair.mode === "protect-color") {
+          const protectionMask = decodeSubjectMask(repair, width, height);
+          const colors = Array.isArray(repair.colors) ? repair.colors : [];
+          const tolerance = Math.max(0, Number(repair.tolerance ?? options.protectionTolerance ?? 8));
+          if (!colors.length) continue;
+          const startX = Math.max(0, Math.floor(Math.min(repair.x1, repair.x2)));
+          const endX = Math.min(width - 1, Math.ceil(Math.max(repair.x1, repair.x2)));
+          const startY = Math.max(0, Math.floor(Math.min(repair.y1, repair.y2)));
+          const endY = Math.min(height - 1, Math.ceil(Math.max(repair.y1, repair.y2)));
+          for (let y = startY; y <= endY; y += 1) {
+            for (let x = startX; x <= endX; x += 1) {
+              const index = y * width + x;
+              if (protectionMask && !protectionMask[index]) continue;
+              const offset = index * 4;
+              if (!source[offset + 3]) continue;
+              const matches = colors.some(
+                (color) =>
+                  colorDistance(source[offset], source[offset + 1], source[offset + 2], color) <= tolerance,
+              );
+              if (matches) resultData.set(source.subarray(offset, offset + 4), offset);
+            }
+          }
+          continue;
+        }
         if (repair.mode === "protect-range") {
-          const region = createProtectedRegionMask(source, protectionPreview, width, height, repair, {
-            backgroundColors: options.backgroundColors || [defaultBackground],
-            boundaryStrength: repair.boundaryStrength,
-            padding: repair.padding,
-          });
-          for (let index = 0; index < region.mask.length; index += 1) {
-            if (!region.mask[index]) continue;
+          const persistedMask = decodeSubjectMask(repair, width, height);
+          const protectionMask =
+            persistedMask ||
+            createProtectedRegionMask(source, protectionPreview, width, height, repair, {
+              backgroundColors: options.backgroundColors || [defaultBackground],
+              boundaryStrength: repair.boundaryStrength,
+              padding: repair.padding,
+            }).mask;
+          for (let index = 0; index < protectionMask.length; index += 1) {
+            if (!protectionMask[index]) continue;
             const offset = index * 4;
             resultData.set(source.subarray(offset, offset + 4), offset);
           }
@@ -460,7 +532,7 @@
      */
     function applyProductCutout(source, width, height, options = {}, repairs = []) {
       const normalizedRepairs = Array.isArray(repairs) ? repairs : [];
-      const normalizedOptions = mergeProtectionOptions(options, normalizedRepairs);
+      const normalizedOptions = normalizeProtectionOptions(options);
       const result =
         normalizedOptions.automaticCutout === false
           ? {

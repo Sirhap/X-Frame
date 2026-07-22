@@ -17,7 +17,15 @@ function createFixture() {
     thumbnails: { edited: "" },
   };
   const state = { frames: [frame], mode: "edit", animationName: "demo", busy: false, previewTimer: 0 };
-  const calls = { assets: null, animation: null, status: [], counts: 0, reloads: 0, languages: 0 };
+  const calls = {
+    assets: null,
+    animation: null,
+    status: [],
+    counts: 0,
+    reloads: 0,
+    languages: 0,
+    closes: 0,
+  };
   const controller = createController({
     state,
     elements: {
@@ -53,6 +61,9 @@ function createFixture() {
     renderLanguage: () => {
       calls.languages += 1;
     },
+    closeOrganizer: () => {
+      calls.closes += 1;
+    },
     getUiController: () => ({
       requestConfirmation: async () => Boolean(state.confirmApply),
     }),
@@ -82,7 +93,7 @@ test("organizer actions reject an unknown cutout target without side effects", a
   assert.equal(fixture.calls.reloads, 0);
 });
 
-test("import mode creates an animation and reloads the organizer", async () => {
+test("import mode creates an animation and enters the tuning workbench", async () => {
   const fixture = createFixture();
   fixture.state.mode = "import";
   fixture.state.confirmApply = true;
@@ -91,7 +102,8 @@ test("import mode creates an animation and reloads the organizer", async () => {
   await fixture.controller.applyPlan();
 
   assert.equal(fixture.state.mode, "edit");
-  assert.equal(fixture.calls.reloads, 1);
+  assert.equal(fixture.calls.reloads, 0);
+  assert.equal(fixture.calls.closes, 1);
   assert.deepEqual(fixture.calls.animation, {
     metadata: fixture.state.importMetadata,
     items: [
@@ -120,6 +132,7 @@ test("failed animation creation keeps the import workbench and staged frames ope
 
   assert.equal(fixture.state.mode, "import");
   assert.equal(fixture.calls.reloads, 0);
+  assert.equal(fixture.calls.closes, 0);
   assert.deepEqual(fixture.calls.status, ["failed"]);
   assert.equal(fixture.state.frames.length, 1);
   assert.equal(fixture.state.busy, false);

@@ -18,6 +18,9 @@ const { createProjectRoutes } = require("./server_project_routes");
 const { createMediaRoutes } = require("./server_media_routes");
 const { createStaticHandler } = require("./server_static");
 const { createServerIoOperations } = require("./server_io_operations");
+const { createActivationService } = require("./server_activation");
+const { createPremiumAuthorizer } = require("./server_premium_authorization");
+const { segmentSubject } = require("./server_subject_segmentation");
 const {
   decodeDataUrl,
   imageExtensionFromMime,
@@ -31,6 +34,7 @@ const {
 const ROOT = path.resolve(process.env.XSXB_ROOT || path.resolve(__dirname, "..", ".."));
 const PUBLIC = path.join(__dirname, "public");
 const PORT = Number(process.env.PORT || 5179);
+const HOST = process.env.XSXB_HOST || process.env.HOST || "127.0.0.1";
 const projectStore = createProjectStore(ROOT);
 const UPDATE_TOKEN = crypto.randomBytes(24).toString("hex");
 let restartScheduled = false;
@@ -38,6 +42,7 @@ const DEFAULT_BODY_LIMIT = 2 * 1024 * 1024;
 const SAVE_BODY_LIMIT = 64 * 1024 * 1024;
 const MEDIA_BODY_LIMIT = 96 * 1024 * 1024;
 const MEDIA_ROUTES = new Set([
+  "/api/segment-subject",
   "/api/attachment-assets",
   "/api/frame-attachment-image",
   "/api/import-animation",
@@ -45,7 +50,7 @@ const MEDIA_ROUTES = new Set([
   "/api/replace-frame",
   "/api/reorganize-animation",
 ]);
-const WORKBENCH_ROUTES = new Set(["/tools/cutout", "/tools/import", "/tools/organizer"]);
+const WORKBENCH_ROUTES = new Set(["/workspace", "/tools/cutout", "/tools/import", "/tools/organizer"]);
 
 const DEFAULT_SUPPORTS = [
   "character_transform",
@@ -69,6 +74,11 @@ const serveStatic = createStaticHandler({
   safeResolve,
   send,
 });
+const activationService = createActivationService({
+  codeHashes: process.env.XSXB_ACTIVATION_CODE_HASHES || "",
+  secret: process.env.XSXB_ACTIVATION_SECRET || "",
+});
+const premiumAuthorizer = createPremiumAuthorizer({ activationService, HttpError });
 const {
   withProjectWrite,
   syncGodotProjectAsync,
@@ -165,6 +175,7 @@ const { handleProjectRoute } = createProjectRoutes({
 const { handleMediaRoute } = createMediaRoutes({
   send,
   readJsonBody,
+  assertPremiumAccess: premiumAuthorizer.assertAuthorized,
   withProjectWrite,
   projectStore,
   projectFromRequest,
@@ -621,7 +632,29 @@ ensureDataFiles();
 const server = http.createServer(async (req, res) => {
   try {
     const parsed = new URL(req.url, "http://127.0.0.1");
-    if (req.method === "POST") validateWriteRequest(req);
+    if (req.method === "POST") {
+      validateWriteRequest(req);
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/activation") {
+      return send(res, 200, activationService.status(req));
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/activation") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const result = activationService.activate(payload.code);
+      if (!result.ok) {
+        return send(res, result.status, {
+          activated: false,
+          configured: activationService.status(req).configured,
+          error: result.error,
+        });
+      }
+      res.setHeader("set-cookie", activationService.cookieHeader(result.token, req));
+      return send(res, 200, {
+        activated: true,
+        configured: true,
+        expiresAt: result.expiresAt,
+      });
+    }
     if (req.method === "GET" && parsed.pathname === "/api/update-status") {
       return send(res, 200, {
         ...(await checkForUpdates(ROOT)),
@@ -641,11 +674,20 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (await handleProjectRoute(req, res, parsed)) return;
+    if (req.method === "POST" && parsed.pathname === "/api/segment-subject") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      try {
+        return send(res, 200, { imageDataUrl: await segmentSubject(payload.imageDataUrl) });
+      } catch (error) {
+        return send(res, 422, { error: error?.message || "Subject segmentation failed." });
+      }
+    }
     if (req.method === "GET" && parsed.pathname === "/api/config") {
       return send(res, 200, configResponse(parsed.searchParams.get("project")));
     }
     if (req.method === "POST" && parsed.pathname === "/api/save") {
       const payload = await readJsonBody(req, parsed.pathname);
+      premiumAuthorizer.assertAuthorized(req, parsed.pathname, payload);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       return await withProjectWrite(project.id, async () => {
         const currentRevision = projectDataRevision(project);
@@ -756,13 +798,13 @@ function handleServerStartupError(error) {
     process.exitCode = 1;
     return;
   }
-  console.error(`Unable to start XSXB Frame Tuner on 127.0.0.1:${PORT}:`, error.message);
+  console.error(`Unable to start XSXB Frame Tuner on ${HOST}:${PORT}:`, error.message);
   process.exitCode = 1;
 }
 
 server.on("error", handleServerStartupError);
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`XSXB Frame Tuner running at http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`XSXB Frame Tuner running at http://${HOST}:${PORT}`);
   console.log(`Workspace root: ${ROOT}`);
 });

@@ -1,4 +1,22 @@
 const els = globalThis.XSXBAppDom.createElements();
+const browserRuntime = globalThis.XSXBBrowserRuntime;
+const browserOnlyMode = browserRuntime?.isEnabled() === true;
+if (browserOnlyMode) {
+  document.body.classList.add("browserOnlyMode");
+  const browserModeBanner = document.querySelector("#browserModeBanner");
+  if (browserModeBanner) browserModeBanner.hidden = false;
+}
+
+/**
+ * Exports processed organizer frames without calling the local project API.
+ * @param {object} metadata Animation export metadata.
+ * @param {Array<object>} items Processed PNG frame records.
+ * @returns {Promise<object>} Browser ZIP export result.
+ */
+async function exportBrowserAnimation(metadata, items) {
+  if (!browserRuntime) throw new Error("Browser export runtime is unavailable.");
+  return browserRuntime.exportAnimationPackage(metadata, items);
+}
 
 const ctx = els.stage.getContext("2d");
 const { constants: appConstants } = globalThis.XSXBAppState;
@@ -164,6 +182,28 @@ const appConfirmation = appConfirmModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
 });
+const premiumFeatures = globalThis.XSXBPremiumFeatures;
+if (!premiumFeatures) throw new Error("XSXBPremiumFeatures is required.");
+const activationModule = globalThis.XSXBActivation;
+if (!activationModule) throw new Error("XSXBActivation is required.");
+const deviceIdentityModule = globalThis.XSXBDeviceIdentity;
+if (browserOnlyMode && !deviceIdentityModule) throw new Error("XSXBDeviceIdentity is required.");
+const deviceIdentity = browserOnlyMode
+  ? deviceIdentityModule?.createController({
+      fetchImpl: globalThis.fetch,
+      cryptoApi: globalThis.crypto,
+      navigatorRef: globalThis.navigator,
+    })
+  : null;
+const activationController = activationModule.createController({
+  documentRef: globalThis.document,
+  windowRef: globalThis,
+  fetchImpl: globalThis.fetch,
+  getLanguage: () => language,
+  premiumFeatures,
+  deviceIdentity,
+});
+const ensurePremiumActivated = (featureIds) => activationController.ensureActivated(featureIds);
 
 /**
  * Opens the localized main-workbench confirmation layer.
@@ -402,7 +442,6 @@ const routing = globalThis.XSXBAppRouting.createController({
   setHomeHubDismissed: (dismissed) => {
     homeHubDismissed = Boolean(dismissed);
   },
-  getSelectedProfileId: () => selectedProfileId,
   getSelectedFrame: () => selectedFrame,
   getActiveProjectId: activeProjectId,
   getBatchCutout: () => batchCutout,
@@ -1095,7 +1134,7 @@ projectStateController = projectStateModule.createController({
 });
 const projectLifecycle = projectLifecycleModule.createController({
   state: lifecycleState,
-  fetchImpl: globalThis.fetch,
+  fetchImpl: browserOnlyMode ? browserRuntime.fetchConfig : globalThis.fetch,
   translate: t,
   getGroupSearch: () => groupSearch,
   loadFrameImageAttachmentsFromProject,
@@ -1196,6 +1235,8 @@ const saveController = saveControllerModule.createController({
   getSoulFrameOverrides: () => soulFrameOverrides,
   getSoulPlaybackOverrides: () => soulPlaybackOverrides,
   getSoulFrameBoxOverrides: () => soulFrameBoxOverrides,
+  premiumFeatures,
+  ensurePremiumActivated,
   fetchImpl: globalThis.fetch,
   markClean,
   status,
@@ -1886,6 +1927,7 @@ appToolActionsController = appToolActionsModule.createController({
   setOpaqueRectCache: (value) => {
     opaqueRectCache = value;
   },
+  premiumFeatures,
 });
 
 const attachmentManipulationModule = globalThis.XSXBAppAttachmentManipulation;
@@ -1974,22 +2016,28 @@ const projectSelectsModule = globalThis.XSXBAppProjectSelects;
 if (!projectSelectsModule) throw new Error("XSXBAppProjectSelects is required.");
 projectSelectsController = projectSelectsModule.createController({
   elements: {
+    projectContext: els.projectContext,
+    currentProjectLabel: els.currentProjectLabel,
     projectSelect: els.projectSelect,
     clearProject: els.clearProject,
     deleteProject: els.deleteProject,
-    profileSelect: els.profileSelect,
     groupSelect: els.groupSelect,
+    groupSearch: els.groupSearch,
+    groupFilterField: els.groupFilterField,
     chainGroupSelect: els.chainGroupSelect,
   },
   getConfig: () => config,
   setSelectedProjectId: (value) => {
     selectedProjectId = value;
   },
-  getSelectedProfileId: () => selectedProfileId,
   setSelectedProfileId: (value) => {
     selectedProfileId = value;
   },
   getGroupSearch: () => groupSearch,
+  setGroupSearch: (value) => {
+    groupSearch = value;
+    if (els.groupSearch) els.groupSearch.value = value;
+  },
   getCurrentGroup: () => currentGroup,
   storage: globalThis.localStorage,
   escapeHtml,
@@ -2002,6 +2050,9 @@ const filmstripModule = globalThis.XSXBAppFilmstrip;
 if (!filmstripModule) throw new Error("XSXBAppFilmstrip is required.");
 const filmstripRendering = filmstripModule.createController({
   filmstrip: els.filmstrip,
+  attachmentAssetTrayHost: els.attachmentAssetTrayHost,
+  deleteSelectedFramesButton: els.deleteSelectedFrames,
+  clearAnimationButton: els.clearAnimation,
   attachmentAssetDragType: ATTACHMENT_ASSET_DRAG_TYPE,
   getAttachmentAssets: () => attachmentAssets,
   getCurrentGroup: () => currentGroup,
@@ -2017,7 +2068,7 @@ const filmstripRendering = filmstripModule.createController({
   deleteSelectedAnimationFrames,
   clearCurrentAnimation,
 });
-const { renderAttachmentAssetTray } = filmstripRendering;
+const { renderAttachmentAssetTray, syncFrameActions } = filmstripRendering;
 
 const filmstripInteractionModule = globalThis.XSXBAppFilmstripInteraction;
 if (!filmstripInteractionModule) throw new Error("XSXBAppFilmstripInteraction is required.");
@@ -2054,6 +2105,7 @@ filmstripInteraction = filmstripInteractionModule.createController({
   },
   handlers: {
     renderAttachmentAssetTray,
+    syncFrameActions,
     getPlaybackChainGroup: playbackChainGroup,
     clearSelectedAttachment,
     clampFrameIndex,
@@ -2522,9 +2574,8 @@ window.addEventListener("popstate", () => {
   const requestedProject = urlState.get("project") || "";
   const requestedGroup = urlState.get("group") || "";
   const requestedFrame = Math.max(0, Number.parseInt(urlState.get("frame") || "0", 10) || 0);
-  const requestedProfile = urlState.get("profile") || "all";
   const restore = async () => {
-    selectedProfileId = requestedProfile;
+    selectedProfileId = "all";
     if (requestedProject && requestedProject !== activeProjectId()) {
       selectedProjectId = requestedProject;
       await loadConfig();
@@ -2553,6 +2604,8 @@ batchCutout =
           }
         : null,
     applyToCurrentAnimation: applyCutoutOutputsToCurrentAnimation,
+    premiumFeatures,
+    ensurePremiumActivated,
     onOpen: () => {
       const currentRoute = currentWorkbenchRoute();
       cutoutReturnTool = currentRoute === "organizer" || currentRoute === "import" ? currentRoute : "";
@@ -2566,6 +2619,7 @@ batchCutout =
   }) || null;
 frameOrganizer =
   window.FrameOrganizer?.createController({
+    browserExportOnly: browserOnlyMode,
     getLanguage: () => language,
     getImportContext: () => ({
       activeProject: config?.activeProject || null,
@@ -2582,12 +2636,14 @@ frameOrganizer =
           }
         : null,
     applyPlan: applyFrameOrganizerPlan,
-    createAnimation: createAnimationFromOrganizer,
-    addAssets: addImagesToCurrentGroupAssets,
+    createAnimation: browserOnlyMode ? exportBrowserAnimation : createAnimationFromOrganizer,
+    addAssets: browserOnlyMode ? undefined : addImagesToCurrentGroupAssets,
     editCutout: (workset) => {
       if (!batchCutout?.openWorkset) throw new Error("Batch cutout is unavailable.");
       return batchCutout.openWorkset(workset);
     },
+    premiumFeatures,
+    ensurePremiumActivated,
     onOpen: (mode) => syncWorkbenchRoute(mode === "import" ? "import" : "organizer", { push: true }),
     onClose: () => syncWorkbenchRoute(""),
     onStatus: (message) => status(message),
@@ -2596,11 +2652,6 @@ els.homeHubContinue?.addEventListener("click", () => {
   homeHubDismissed = true;
   renderHomeHub();
   els.stage.focus();
-});
-els.homeHubOpen?.addEventListener("click", () => {
-  homeHubDismissed = false;
-  renderHomeHub();
-  els.homeHub.querySelector("[data-home-tool]")?.focus();
 });
 els.homeCopyProjectPath?.addEventListener("click", async () => {
   const projectPath = els.homeProjectPath?.textContent || "";
@@ -2617,8 +2668,9 @@ for (const button of els.homeToolButtons) {
     const tool = button.dataset.homeTool;
     if (tool === "import") {
       frameOrganizer?.openImport().catch((error) => status(t("loadFailed", { message: error.message })));
-    } else if (tool === "organizer") {
-      frameOrganizer?.open().catch((error) => status(t("loadFailed", { message: error.message })));
+    } else if (tool === "workspace") {
+      syncWorkbenchRoute("", { push: true });
+      els.stage.focus();
     } else if (tool === "cutout") {
       batchCutout?.open();
     }
@@ -2630,7 +2682,7 @@ applyLanguage();
 loadConfig()
   .then(async () => {
     resizeCanvas();
-    checkTunerUpdate();
+    if (!browserOnlyMode) checkTunerUpdate();
     await applyWorkbenchRoute();
   })
   .catch((error) => status(t("loadFailed", { message: error.message })));

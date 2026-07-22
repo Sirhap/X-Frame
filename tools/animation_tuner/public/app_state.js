@@ -98,8 +98,7 @@
       selectedFrame: Math.max(0, Number.parseInt(initialUrlState.get("frame") || "0", 10) || 0),
       selectedFrames: new Set([0]),
       selectionAnchorFrame: 0,
-      selectedProfileId:
-        initialUrlState.get("profile") || readStorage(storage, "animationTuner.profile", "all") || "all",
+      selectedProfileId: "all",
       groupSearch: readStorage(storage, "animationTuner.groupSearch"),
       images: [],
       chainImages: [],

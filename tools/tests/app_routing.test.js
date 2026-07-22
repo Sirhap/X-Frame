@@ -56,7 +56,6 @@ function createControllerFixture(href = "http://localhost/") {
       profiles: [{ id: "hero" }],
     },
     currentGroup: { name: "Idle", uiId: "idle" },
-    selectedProfileId: "hero",
     selectedFrame: 1,
   };
   const controller = createController({
@@ -68,7 +67,6 @@ function createControllerFixture(href = "http://localhost/") {
     setHomeHubDismissed: (dismissed) => {
       state.homeHubDismissed = dismissed;
     },
-    getSelectedProfileId: () => state.selectedProfileId,
     getSelectedFrame: () => state.selectedFrame,
     getActiveProjectId: () => "project-1",
     translate: (key) =>
@@ -121,16 +119,16 @@ test("route and selection synchronization preserve URL state", () => {
   assert.equal(windowRef.historyCalls[0].method, "pushState");
 
   controller.syncUrlState({ push: true });
-  assert.equal(windowRef.location.search, "?legacy=1&project=project-1&profile=hero&group=idle&frame=1");
+  assert.equal(windowRef.location.search, "?legacy=1&project=project-1&group=idle&frame=1");
   assert.equal(windowRef.historyCalls[1].state.xsxbSelection, true);
 });
 
-test("returning to the root route restores the frame editor", () => {
+test("returning to the workspace route restores the frame editor", () => {
   const { controller, state, values, windowRef } = createControllerFixture("http://localhost/tools/cutout");
 
   controller.syncWorkbenchRoute("");
 
-  assert.equal(windowRef.location.pathname, "/");
+  assert.equal(windowRef.location.pathname, "/workspace");
   assert.equal(state.homeHubDismissed, true);
   assert.equal(values.homeHub.hidden, true);
 });
@@ -171,7 +169,7 @@ test("route application restores home when the requested controller is unavailab
   });
 
   assert.equal(await controller.applyWorkbenchRoute(), false);
-  assert.equal(windowRef.location.pathname, "/");
+  assert.equal(windowRef.location.pathname, "/workspace");
 });
 
 test("route application restores the open organizer when close is cancelled", async () => {
@@ -213,5 +211,5 @@ test("route application rolls URL back when opening a workbench throws", async (
   });
 
   await assert.rejects(() => controller.applyWorkbenchRoute(), /cutout failed/);
-  assert.equal(windowRef.location.pathname, "/");
+  assert.equal(windowRef.location.pathname, "/workspace");
 });

@@ -378,8 +378,12 @@
           );
         }
         if (parameters.mode === "protect-color") {
+          const colorSource = new Uint8ClampedArray(normalized.data);
+          for (let index = 0; index < mask.length; index += 1) {
+            if (!mask[index]) colorSource[index * 4 + 3] = 0;
+          }
           return dependencies.cutout.selectProtectedColorsInRectangle(
-            normalized.data,
+            colorSource,
             normalized.width,
             normalized.height,
             rectangle,

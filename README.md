@@ -46,6 +46,12 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 
 macOS 可双击 `start_xsxb_frame_tuner.command` 启动本地服务和页面。使用期间需要保持启动器打开的终端窗口；关闭终端会同时停止本地服务。
 
+服务启动后的站点入口：
+
+- `/`：公开产品首页。
+- `/workspace`：帧动画调参工作台。
+- `/tools/import`、`/tools/organizer`、`/tools/cutout`：三个工具的稳定深链接。
+
 安装后，建议继续用自然语言让 Agent 操作，不需要手动跑导入脚本。常用说法：
 
 ```text
@@ -95,6 +101,41 @@ npm run audit:production
 ```
 
 生产构建会生成内容哈希资源并拒绝 Source Map、文档、测试和未列入 manifest 的文件。授权边界与发布限制见 [`docs/production-asset-boundary.md`](docs/production-asset-boundary.md)。
+
+## 服务部署
+
+Node 服务支持平台注入的 `PORT` 和 `HOST` 环境变量。例如容器中可使用 `HOST=0.0.0.0 npm start` 对外监听。当前工作台包含项目写入、素材上传和 Godot 同步 API，但尚未内置多用户身份认证；公网部署前必须在反向代理或平台层增加访问控制，并为每个实例配置隔离的 `XSXB_ROOT`。不要直接把未鉴权的 Node 服务暴露到公网。
+
+### 高级功能激活
+
+高级功能允许完整试用和预览，在最终 ZIP 导出、动画替换、帧工作集应用或高级调参保存时校验激活状态。获取激活码入口为 <https://pay.ldxp.cn/shop/sirhao>。
+
+服务端不保存明文激活码。本地 Node 开发服务器可通过以下环境变量配置：
+
+- `XSXB_ACTIVATION_CODE_HASHES`：一个或多个逗号分隔的 SHA-256；激活码会先去除首尾空格并转为大写后再计算哈希。
+- `XSXB_ACTIVATION_SECRET`：用于签发 HttpOnly 激活 Cookie 的持久随机密钥；多实例部署必须共享同一个值。
+
+macOS 生成单个激活码哈希：
+
+```bash
+printf %s 'XSXB-PRO-示例激活码' | tr '[:lower:]' '[:upper:]' | shasum -a 256
+```
+
+如果没有同时配置 `XSXB_ACTIVATION_CODE_HASHES` 和至少 32 字符的持久
+`XSXB_ACTIVATION_SECRET`，激活接口会安全地拒绝所有激活请求，不会生成临时签名密钥或使用开发环境万能码。
+
+Cloudflare 正式部署使用 D1 单设备授权，不使用 `XSXB_ACTIVATION_CODE_HASHES` 环境变量：浏览器会生成不可导出的 ECDSA P-256 私钥，D1 只保存公钥、激活码哈希和基础风险记录。试用期默认从首次激活起 3 天，也可按激活码设置 `duration_days`、未使用兑换截止时间 `redeem_by`，或固定到期时间 `expires_at`。完整配置见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
+
+本地开发使用独立环境文件，避免开发码进入正式启动流程：
+
+```bash
+cp .env.local.example .env.local
+# 将本地开发码规范化为大写后生成 SHA-256，并填入 .env.local
+printf %s 'YOUR-LOCAL-CODE' | tr '[:lower:]' '[:upper:]' | shasum -a 256
+npm run start:local
+```
+
+`.env.local` 已被 Git 忽略；普通 `npm start` 不会读取该文件，生产环境仍必须显式提供正式激活配置。
 
 对已绑定的 Godot 项目还可以运行：
 

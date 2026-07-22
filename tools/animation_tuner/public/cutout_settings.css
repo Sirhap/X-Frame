@@ -80,32 +80,58 @@
 
 .cutoutSettingsContext {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 3px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 9px;
+  padding: 10px 11px;
   border: 2px solid var(--line);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--control-bg) 78%, var(--panel-2));
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--panel-3) 76%, var(--accent-2)),
+    var(--panel-3)
+  );
 }
 
-.cutoutSettingsContext button {
-  min-height: 34px;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--control-muted);
-  box-shadow: none;
-  font-size: 12px;
-  font-weight: 700;
+.cutoutSettingsContext > span {
+  color: var(--accent-2);
+  font: 800 9px/1 var(--data-font);
+  letter-spacing: 0.12em;
 }
 
-.cutoutSettingsContext button:hover,
-.cutoutSettingsContext button.active {
-  transform: none;
-  background: var(--accent-2);
-  color: #06120f;
-  box-shadow: none;
+.cutoutSettingsContext > strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cutoutSettingsContext > small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font: 600 11px/1.35 var(--ui-font);
+}
+
+.cutoutSettingsEmpty {
+  min-height: 150px;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 22px;
+  border: 2px dashed color-mix(in srgb, var(--muted) 42%, transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.cutoutSettingsEmpty strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.cutoutSettingsEmpty small {
+  max-width: 250px;
+  font: 600 11px/1.5 var(--ui-font);
 }
 
 .cutoutAutomaticSettings {
@@ -118,7 +144,8 @@
 }
 
 .cutoutAutomaticSettings[hidden],
-.cutoutLocalSettings[hidden] {
+.cutoutLocalSettings[hidden],
+.cutoutSettingsEmpty[hidden] {
   display: none;
 }
 
@@ -130,39 +157,6 @@
   overflow: hidden auto;
   padding: 2px 7px 8px 2px;
   scrollbar-gutter: stable;
-}
-
-.cutoutLocalSettingsHeading {
-  display: grid;
-  gap: 5px;
-  padding: 11px;
-  border: 2px solid var(--accent-2);
-  border-radius: 8px;
-  background: linear-gradient(
-    120deg,
-    color-mix(in srgb, var(--panel-3) 78%, var(--accent-2)),
-    var(--panel-3)
-  );
-}
-
-.cutoutLocalSettingsHeading > div {
-  display: grid;
-  gap: 4px;
-}
-
-.cutoutLocalSettingsHeading span {
-  color: var(--accent-2);
-  font: 700 9px/1 var(--data-font);
-  letter-spacing: 0.15em;
-}
-
-.cutoutLocalSettingsHeading strong {
-  font-size: 14px;
-}
-
-.cutoutLocalSettingsHeading small {
-  color: var(--muted);
-  font: 600 11px/1.35 var(--ui-font);
 }
 
 .cutoutDisclosure {
@@ -647,14 +641,15 @@
 }
 
 .cutoutQueue {
-  min-height: 94px;
+  min-height: 0;
   display: flex;
-  gap: 9px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 3px 9px 9px 3px;
-  scroll-padding-inline: 4px;
-  overscroll-behavior-inline: contain;
+  flex-direction: column;
+  gap: 7px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 3px 7px 7px 3px;
+  scroll-padding-block: 4px;
+  overscroll-behavior-block: contain;
   scrollbar-width: thin;
 }
 

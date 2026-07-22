@@ -133,6 +133,35 @@ test("repair controller creates a protected range repair", async () => {
   assert.equal(created, true);
   assert.equal(item.repairs[0].mode, "protect-range");
   assert.equal(state.protectionPreview.count, 2);
+  assert.equal(state.protectionPreview.width, 2);
+  assert.equal(state.protectionPreview.height, 2);
+});
+
+test("repair controller prefers and persists a native subject mask", async () => {
+  let fallbackCalls = 0;
+  const subjectMask = { width: 2, height: 2, data: "Aw==" };
+  const { controller, item, state } = createFixture({
+    dependencies: {
+      detectNativeSubject: async () => ({
+        mask: new Uint8Array([1, 1, 0, 0]),
+        count: 2,
+        bounds: { x1: 0, y1: 0, x2: 1, y2: 0 },
+        coverage: 50,
+        subjectMask,
+      }),
+      selectionRepairExecutor: {
+        analyze: async () => {
+          fallbackCalls += 1;
+          throw new Error("The fallback should not run.");
+        },
+      },
+    },
+  });
+
+  assert.equal(await controller.applyProtectionSelection(item, { x1: 0, y1: 0, x2: 1, y2: 1 }), true);
+  assert.deepEqual(item.repairs[0].subjectMask, subjectMask);
+  assert.equal(state.protectionPreview.count, 2);
+  assert.equal(fallbackCalls, 0);
 });
 
 test("repair controller reports empty protected selections without creating history", async () => {
@@ -144,6 +173,61 @@ test("repair controller reports empty protected selections without creating hist
   assert.equal(created, false);
   assert.equal(item.repairs.length, 0);
   assert.ok(statuses.includes("protectedRangeEmpty"));
+});
+
+test("color protection distinguishes empty selections from duplicate colors", async () => {
+  const empty = createFixture({
+    elements: { cutoutProtectionType: { value: "color" } },
+    core: { selectProtectedColorsInRectangle: () => ({ colors: [], count: 0, coverage: 0, status: 1 }) },
+  });
+  assert.equal(
+    await empty.controller.applyProtectionSelection(empty.item, { x1: 0, y1: 0, x2: 1, y2: 1 }),
+    false,
+  );
+  assert.ok(empty.statuses.includes("protectedRegionEmpty"));
+
+  const duplicate = createFixture({
+    elements: { cutoutProtectionType: { value: "color" } },
+    core: { selectProtectedColorsInRectangle: () => ({ colors: [], count: 1, coverage: 100, status: 0 }) },
+  });
+  assert.equal(
+    await duplicate.controller.applyProtectionSelection(duplicate.item, { x1: 0, y1: 0, x2: 1, y2: 1 }),
+    false,
+  );
+  assert.ok(duplicate.statuses.includes("protectedColorsUnchanged"));
+});
+
+test("color protection samples the original selection without filtering by the current cutout", async () => {
+  let capturedParameters = null;
+  let capturedMask = null;
+  const { controller, item } = createFixture({
+    elements: { cutoutProtectionType: { value: "color" } },
+    dependencies: {
+      selectionRepairExecutor: {
+        analyze: async (_source, _width, _height, mask, parameters) => {
+          if (parameters.mode === "protect-range") {
+            return { mask: new Uint8Array([1, 1, 0, 0]), count: 2 };
+          }
+          capturedMask = mask;
+          capturedParameters = parameters;
+          return {
+            colors: [{ r: 242, g: 173, b: 15 }],
+            count: 1,
+            coverage: 100,
+            status: 0,
+          };
+        },
+      },
+      detectNativeSubject: async () => ({ mask: new Uint8Array([1, 0, 1, 0]) }),
+      encodeSubjectMask: () => ({ width: 2, height: 2, data: "AQ==" }),
+    },
+  });
+
+  assert.equal(await controller.applyProtectionSelection(item, { x1: 0, y1: 0, x2: 1, y2: 1 }), true);
+  assert.equal(Object.hasOwn(capturedParameters, "previewData"), false);
+  assert.deepEqual(Array.from(capturedMask), [1, 0, 0, 0]);
+  assert.deepEqual(item.repairs[0].colors, [{ r: 242, g: 173, b: 15 }]);
+  assert.deepEqual(item.repairs[0].subjectMask, { width: 2, height: 2, data: "AQ==" });
 });
 
 test("repair controller propagates automatic processing through the session core", async () => {

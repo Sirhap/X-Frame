@@ -114,17 +114,21 @@ self.onmessage = async (event) => {
         return;
       }
       if (parameters.mode === "protect-color") {
+        const colorSource = new Uint8ClampedArray(source);
+        for (let index = 0; index < selectionMask.length; index += 1) {
+          if (!selectionMask[index]) colorSource[index * 4 + 3] = 0;
+        }
         const selectionOptions = { ...(parameters.options || {}), previewData };
         const result = self.ProtectedWasmKernelBridge.isReady()
           ? self.ProtectedWasmKernelBridge.selectProtectionColors(
-              source,
+              colorSource,
               normalizedWidth,
               normalizedHeight,
               rectangle,
               selectionOptions,
             )
           : self.BatchCutoutCore.selectProtectedColorsInRectangle(
-              source,
+              colorSource,
               normalizedWidth,
               normalizedHeight,
               rectangle,

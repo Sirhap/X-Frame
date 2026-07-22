@@ -15,6 +15,7 @@
    *   text:(key:string,variables?:Record<string,string|number>)=>string,
    *   getCurrentAnimation:()=>object|null,
    *   canAddAssets:()=>boolean,
+   *   browserExportOnly?:boolean,
    *   editImportCutout:(frame:object)=>Promise<void>,
    *   renderPreview:()=>void,
    *   restartPreview:()=>void,
@@ -57,7 +58,7 @@
       elements.organizerDeleteExcluded.disabled = included === state.frames.length || state.busy;
       elements.organizerFileInput.disabled = state.busy;
       elements.organizerVideoInput.disabled = state.busy;
-      elements.organizerAddAssets.hidden = state.mode !== "import";
+      elements.organizerAddAssets.hidden = state.mode !== "import" || dependencies.browserExportOnly === true;
       elements.organizerAddAssets.disabled =
         state.mode !== "import" ||
         !included ||

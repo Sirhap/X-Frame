@@ -1,5 +1,7 @@
 "use strict";
 
+const { URL } = require("node:url");
+
 /** HTTP-safe application error carrying a response status. */
 class HttpError extends Error {
   /**
@@ -77,9 +79,24 @@ function createHttpUtilities(options) {
     }
     const origin = String(request.headers.origin || "").trim();
     if (!origin) return;
-    if (!new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]).has(origin)) {
-      throw new HttpError(403, "Cross-origin local API writes are not allowed.");
+    const localOrigins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
+    if (localOrigins.has(origin)) return;
+    try {
+      const originUrl = new URL(origin);
+      const requestHost = String(request.headers.host || "")
+        .trim()
+        .toLowerCase();
+      if (
+        ["http:", "https:"].includes(originUrl.protocol) &&
+        requestHost &&
+        originUrl.host.toLowerCase() === requestHost
+      ) {
+        return;
+      }
+    } catch (_error) {
+      // Malformed origins are rejected below.
     }
+    throw new HttpError(403, "Cross-origin API writes are not allowed.");
   }
 
   /**

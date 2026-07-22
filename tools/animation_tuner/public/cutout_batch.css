@@ -8,7 +8,7 @@
   border-radius: 10px;
   background: color-mix(in srgb, var(--panel-2) 88%, var(--accent-3));
   box-shadow: 4px 4px 0 var(--line);
-  max-height: 280px;
+  max-height: 184px;
   overflow: hidden;
   transition:
     max-height 0.18s ease,
@@ -16,7 +16,7 @@
 }
 
 .cutoutModal.batchTrayCollapsed .cutoutBatchTray {
-  max-height: 48px;
+  max-height: 40px;
   grid-template-rows: auto;
   padding-bottom: 7px;
 }
@@ -24,6 +24,142 @@
 .cutoutModal.batchTrayCollapsed .cutoutBatchTrayActions,
 .cutoutModal.batchTrayCollapsed .cutoutQueue {
   display: none;
+}
+
+/* The batch tray is mounted inside the sidebar workbar at runtime. It owns the
+   panel height and scrolls its queue instead of competing with the canvas. */
+.cutoutSidebarBatchPanel .cutoutBatchTray {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  height: 100%;
+  max-height: none;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 8px;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.cutoutModal.batchTrayCollapsed .cutoutSidebarBatchPanel .cutoutBatchTray {
+  max-height: none;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding-bottom: 8px;
+}
+
+.cutoutModal.batchTrayCollapsed .cutoutSidebarBatchPanel .cutoutBatchTrayActions,
+.cutoutModal.batchTrayCollapsed .cutoutSidebarBatchPanel .cutoutQueue {
+  display: flex;
+}
+
+.cutoutSidebarBatchPanel .cutoutBatchTrayToggle {
+  display: none;
+}
+
+.cutoutSidebarBatchPanel .cutoutBatchTrayActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 6px;
+  overflow: visible;
+  padding: 0;
+}
+
+.cutoutSidebarBatchPanel .cutoutThumbnailMode,
+.cutoutSidebarBatchPanel .cutoutBatchActionGroup {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 4px;
+  padding: 20px 5px 5px;
+  border: 2px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--panel-3) 62%, transparent);
+}
+
+.cutoutSidebarBatchPanel .cutoutThumbnailMode::before,
+.cutoutSidebarBatchPanel .cutoutBatchActionGroup::before {
+  content: attr(aria-label);
+  position: absolute;
+  top: 5px;
+  left: 6px;
+  color: var(--muted);
+  font: 850 8px/1 var(--data-font);
+  letter-spacing: 0.12em;
+}
+
+.cutoutSidebarBatchPanel .cutoutBatchSelectionGroup,
+.cutoutSidebarBatchPanel .cutoutBatchDangerGroup {
+  grid-column: 1 / -1;
+}
+
+.cutoutSidebarBatchPanel .cutoutBatchSelectionGroup {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cutoutSidebarBatchPanel .cutoutBatchDangerGroup {
+  border-color: color-mix(in srgb, var(--danger) 58%, var(--line));
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+
+.cutoutSidebarBatchPanel .cutoutBatchTrayActions button {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 4px;
+}
+
+.cutoutBatchWorkspaceActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 2px solid color-mix(in srgb, var(--line) 72%, transparent);
+}
+
+.cutoutModal:not(.hasItems) .cutoutBatchWorkspaceActions {
+  display: none;
+}
+
+.cutoutBatchWorkspaceActions > span {
+  grid-column: 1 / -1;
+  color: var(--accent-2);
+  font: 850 8px/1 var(--data-font);
+  letter-spacing: 0.12em;
+}
+
+.cutoutBatchWorkspaceActions > span b {
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+.cutoutBatchWorkspaceActions > div {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.cutoutBatchWorkspaceActions button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 5px 7px;
+  font-size: 10px;
+}
+
+.cutoutBatchWorkspaceActions #cutoutDownload {
+  grid-column: 1 / -1;
+  min-height: 40px;
+}
+
+.cutoutBatchWorkspaceActions #cutoutCancelProcess,
+.cutoutBatchWorkspaceActions #cutoutApplyGroup {
+  grid-column: 1 / -1;
+}
+
+.cutoutBatchWorkspaceActions #cutoutCancelProcess {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .cutoutBatchTray:has(.cutoutQueue:empty) {
@@ -50,13 +186,13 @@
   width: 100%;
   flex: 1 1 auto;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .cutoutBatchTrayToggle {
-  width: 28px;
-  min-width: 28px;
-  min-height: 28px;
+  width: 24px;
+  min-width: 24px;
+  min-height: 24px;
   padding: 0;
   border-color: var(--accent-2);
   color: var(--accent-2);
@@ -81,8 +217,8 @@
 .cutoutQualityFilter,
 .cutoutNextIssue {
   flex: 0 0 auto;
-  min-height: 28px;
-  padding: 3px 7px;
+  min-height: 24px;
+  padding: 2px 6px;
   border-width: 2px;
   box-shadow: none;
   font-size: 11px;
@@ -140,7 +276,7 @@
 }
 
 .cutoutBatchDangerGroup {
-  padding: 3px 5px;
+  padding: 2px 4px;
   border: 2px solid color-mix(in srgb, var(--danger) 58%, var(--line));
   border-radius: 6px;
   background: color-mix(in srgb, var(--danger) 7%, transparent);
@@ -154,7 +290,7 @@
   flex-wrap: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 2px 3px 6px;
+  padding: 1px 3px 4px;
   scroll-padding-inline: 3px;
   overscroll-behavior-inline: contain;
   scrollbar-width: thin;
@@ -167,12 +303,13 @@
 
 .cutoutBatchTrayActions button {
   flex: 0 0 auto;
-  min-height: 30px;
-  padding: 4px 8px;
-  font-size: 11px;
+  min-height: 26px;
+  padding: 3px 7px;
+  font-size: 10px;
 }
 
 .cutoutBatchTrayActions button::before,
+.cutoutBatchWorkspaceActions button::before,
 .cutoutFooterActions button::before {
   content: attr(data-icon);
   display: inline-block;
