@@ -11,6 +11,7 @@
    *   getImportContext?:()=>{activeProject?:object|null,profiles?:object[]},
    *   applyPlan?:(items:Array<object>)=>Promise<void>,
    *   createAnimation?:(metadata:object,items:Array<object>)=>Promise<void>,
+   *   createSessionAnimation?:(metadata:object,items:Array<object>)=>Promise<void>,
    *   addAssets?:(items:Array<{name:string,image:HTMLCanvasElement}>)=>Promise<number>,
    *   editCutout?:(workset:{name:string,onLiveApply?:(outputs:Array<object>)=>void,items:Array<{name:string,image:HTMLCanvasElement,frame:object}>})=>Promise<Array<{canvas?:HTMLCanvasElement,data?:string,frame?:object}>|null>,
    *   onOpen?:(mode:"edit"|"import")=>void,
@@ -134,6 +135,7 @@
       "organizerFindJump",
       "organizerFindDuplicate",
       "organizerFindLoop",
+      "organizerAnalysisFeedback",
       "organizerReset",
       "organizerAddAssets",
       "organizerGodotPlaceholder",
@@ -161,6 +163,7 @@
       previewTimer: 0,
       viewMode: "edited",
       busy: false,
+      sequenceAnalyzing: false,
       animationName: "",
       videoUrl: "",
       videoFileName: "",
@@ -203,6 +206,10 @@
 
     function applyPlan(...args) {
       return organizerActionCall("applyPlan", ...args);
+    }
+
+    function importIntoSession(...args) {
+      return organizerActionCall("importIntoSession", ...args);
     }
 
     function addIncludedFramesToAssets(...args) {
@@ -369,6 +376,7 @@
         flipped: false,
         imported: Boolean(options.imported),
         tag: "",
+        analysisMatch: "",
         signature: null,
         analysisRevision: 0,
         thumbnails: { original: "", edited: "" },
@@ -474,22 +482,43 @@
      * @returns {Promise<void>}
      */
     async function analyze(type) {
+      if (state.sequenceAnalyzing) return;
       state.premiumFeatures.add("organizer.sequence-analysis");
       const included = state.frames
         .map((frame, index) => ({ frame, index }))
         .filter((entry) => entry.frame.included);
       const { signatures } = sequenceAnalysisContext(included);
       const threshold = Number(elements.organizerThreshold.value);
+      const isJumpAnalysis = type === "jump";
+      const searchingMessage = text(isJumpAnalysis ? "jumpSearching" : "duplicateSearching");
+      state.sequenceAnalyzing = true;
+      elements.organizerFindJump.setAttribute("aria-busy", String(isJumpAnalysis));
+      elements.organizerFindDuplicate.setAttribute("aria-busy", String(!isJumpAnalysis));
+      elements.organizerAnalysisFeedback.textContent = searchingMessage;
+      elements.organizerAnalysisFeedback.dataset.tone = "busy";
+      setStatus(searchingMessage, "busy");
+      renderCounts();
       let result;
       try {
         result = await sequenceAnalysisExecutor.analyze(signatures, { operation: type, threshold });
       } catch (error) {
-        setStatus(error?.code || error?.message || "ENGINE_EXECUTION_FAILED", "error");
+        const message = error?.code || error?.message || "ENGINE_EXECUTION_FAILED";
+        elements.organizerAnalysisFeedback.textContent = message;
+        elements.organizerAnalysisFeedback.dataset.tone = "error";
+        setStatus(message, "error");
         return;
+      } finally {
+        state.sequenceAnalyzing = false;
+        elements.organizerFindJump.removeAttribute("aria-busy");
+        elements.organizerFindDuplicate.removeAttribute("aria-busy");
+        renderCounts();
       }
       if (type === "jump") {
         const { matches } = result;
-        selectIndexes(matches.map((match) => included[match.index].index));
+        selectIndexes(
+          matches.map((match) => included[match.index].index),
+          "jump",
+        );
         if (result.autoAdjustedThreshold != null) {
           elements.organizerThreshold.value = String(result.autoAdjustedThreshold);
           elements.organizerThresholdValue.textContent = String(result.autoAdjustedThreshold);
@@ -498,14 +527,19 @@
           result.autoAdjustedThreshold == null
             ? ""
             : ` · ${text("thresholdAdjusted", { threshold: result.autoAdjustedThreshold })}`;
-        setStatus(
-          matches.length ? `${text("foundJump", { count: matches.length })}${adjusted}` : text("noneFound"),
-          matches.length ? "success" : "idle",
-        );
+        const message = matches.length
+          ? `${text("foundJump", { count: matches.length })}${adjusted}`
+          : text("noJumpFound");
+        elements.organizerAnalysisFeedback.textContent = message;
+        elements.organizerAnalysisFeedback.dataset.tone = matches.length ? "jump" : "idle";
+        setStatus(message, matches.length ? "success" : "idle");
         return;
       }
       const { matches } = result;
-      selectIndexes(matches.map((match) => included[match.index].index));
+      selectIndexes(
+        matches.map((match) => included[match.index].index),
+        "duplicate",
+      );
       if (result.autoAdjustedThreshold != null) {
         elements.organizerThreshold.value = String(result.autoAdjustedThreshold);
         elements.organizerThresholdValue.textContent = String(result.autoAdjustedThreshold);
@@ -514,12 +548,12 @@
         result.autoAdjustedThreshold == null
           ? ""
           : ` · ${text("thresholdAdjusted", { threshold: result.autoAdjustedThreshold })}`;
-      setStatus(
-        matches.length
-          ? `${text("foundDuplicate", { count: matches.length })}${adjusted}`
-          : text("noneFound"),
-        matches.length ? "success" : "idle",
-      );
+      const message = matches.length
+        ? `${text("foundDuplicate", { count: matches.length })}${adjusted}`
+        : text("noDuplicateFound");
+      elements.organizerAnalysisFeedback.textContent = message;
+      elements.organizerAnalysisFeedback.dataset.tone = matches.length ? "duplicate" : "idle";
+      setStatus(message, matches.length ? "success" : "idle");
     }
 
     /**
@@ -669,12 +703,12 @@
       selectedFrames,
       includedFrames,
       open,
-      openImport,
       requestClose,
       flipFrames,
       analyze,
       loadCurrentAnimation,
       applyPlan,
+      importIntoSession,
       addIncludedFramesToAssets,
       selectFrame,
       imageImporter,

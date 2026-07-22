@@ -353,6 +353,7 @@
         canvas.addEventListener("pointermove", movePreviewPan);
         canvas.addEventListener("pointerup", endPreviewPan);
         canvas.addEventListener("pointercancel", endPreviewPan);
+        canvas.addEventListener("lostpointercapture", endPreviewPan);
       });
       elements.cutoutZoomOut.addEventListener("click", () => {
         const view = elements.cutoutResult._cutoutView || elements.cutoutOriginal._cutoutView;

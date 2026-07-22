@@ -54,3 +54,14 @@ test("premium catalog labels final cutout output for route-level authorization",
   assert.equal(premium.describeFeatures(["cutout.output"], "zh")[0].label, "最终图片导出与动画替换");
   assert.equal(premium.describeFeatures(["organizer.output"], "zh")[0].label, "帧工作集导出与应用");
 });
+
+test("workbench export gates only advanced features actually used", () => {
+  assert.deepEqual(
+    premium.detectExportFeatures({
+      sourceFeatures: ["organizer.output", "cutout.output", "cutout.edge-refinement"],
+      tuner: { frameImageAttachments: [{ id: "layer" }] },
+    }),
+    ["cutout.edge-refinement", "tuner.image-attachments"],
+  );
+  assert.deepEqual(premium.detectExportFeatures({ sourceFeatures: ["organizer.output"] }), []);
+});

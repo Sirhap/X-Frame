@@ -47,7 +47,7 @@
         <section id="browserModeBanner" class="browserModeBanner" hidden>
           <span>WEB MODE / LOCAL PROCESSING</span>
           <strong>素材只在当前浏览器处理</strong>
-          <p>导入图片或视频，完成后下载动画包。Godot 导入暂未开放。</p>
+          <p>导入后可在当前会话继续调参或下载动画包；直接写入 Godot 暂未开放。</p>
         </section>
         <section id="updatePanel" class="updatePanel" aria-live="polite" hidden>
           <div class="updateHeading">
@@ -108,7 +108,7 @@
           <header class="sidebarSectionHeader">
             <div>
               <span class="sectionEyebrow">TARGET / ANIMATION</span>
-              <h2 id="animationPickerTitle" data-i18n="animationSelection">当前动画</h2>
+              <h2 id="animationPickerTitle" data-i18n="animationSelection">当前动画组</h2>
             </div>
           </header>
           <p class="sidebarHint" data-i18n="animationSelectionHint">
@@ -116,7 +116,7 @@
           </p>
           <label class="field animationTargetField">
             <span class="fieldLabel"
-              ><b data-i18n="group">动画</b><small data-i18n="groupTargetHint">当前编辑</small></span
+              ><b data-i18n="group">动画组</b><small data-i18n="groupTargetHint">当前编辑</small></span
             >
             <select id="groupSelect"></select>
           </label>
@@ -525,6 +525,22 @@
             </button>
             <button id="organizerOpen" class="organizerLaunch" type="button" data-organizer-i18n="open">
               帧整理
+            </button>
+            <button
+              id="organizerNewOpen"
+              class="organizerNewLaunch"
+              type="button"
+              data-i18n="processNewAnimation"
+            >
+              处理新动画
+            </button>
+            <button
+              id="exportWorkbench"
+              class="exportWorkbenchLaunch"
+              type="button"
+              data-i18n="exportAnimation"
+            >
+              导出动画包
             </button>
             <details class="shortcutGuide">
               <summary data-i18n-title="shortcutGuide" title="快捷键" aria-label="快捷键">⌘</summary>
@@ -1549,7 +1565,11 @@
                 </button>
               </div>
             </div>
-            <div class="cutoutCompare" data-cutout-i18n-title="zoomHint" title="滚轮缩放；按住空格拖拽平移">
+            <div
+              class="cutoutCompare"
+              data-cutout-i18n-title="zoomHint"
+              title="滚轮缩放；空闲画布可直接拖拽平移；使用修正工具时按住空格拖拽平移"
+            >
               <figure class="cutoutSourceReference" aria-hidden="true">
                 <figcaption data-cutout-i18n="original">原图</figcaption>
                 <canvas id="cutoutOriginal" width="480" height="360"></canvas>
@@ -1568,7 +1588,7 @@
               <div class="cutoutZoomControls" aria-label="Preview zoom">
                 <button id="cutoutZoomOut" type="button" class="secondary" aria-label="Zoom out">−</button>
                 <label class="cutoutZoomSlider">
-                  <input id="cutoutZoom" type="range" min="10" max="800" step="5" value="100" />
+                  <input id="cutoutZoom" type="range" min="12" max="800" step="1" value="100" />
                   <output id="cutoutZoomValue">FIT</output>
                 </label>
                 <button id="cutoutZoomIn" type="button" class="secondary" aria-label="Zoom in">+</button>
@@ -1861,7 +1881,7 @@
         >
           <div class="organizerImportIntro">
             <span>NEW ANIMATION / LOCAL</span>
-            <strong id="organizerImportSetupTitle" data-organizer-i18n="importSetupTitle">导出信息</strong>
+            <strong id="organizerImportSetupTitle" data-organizer-i18n="importSetupTitle">动画信息</strong>
             <small data-organizer-i18n="importSetupHint"
               >动画名称用于 ZIP 文件名；处理和导出均在浏览器本地完成。</small
             >
@@ -2020,6 +2040,13 @@
               >
                 寻找循环段
               </button>
+              <output
+                id="organizerAnalysisFeedback"
+                class="organizerAnalysisFeedback"
+                aria-live="polite"
+                data-organizer-i18n="analysisReady"
+                >跳变：孤立异常帧 · 重复：与保留锚帧高度相似</output
+              >
             </div>
             <div class="organizerToolGroup organizerDangerTools" role="group" aria-label="删除操作">
               <span data-organizer-i18n="dangerTools">移除</span>
@@ -2456,8 +2483,15 @@
               >
                 添加到附加素材
               </button>
-              <button id="organizerGodotPlaceholder" type="button" class="secondary" disabled hidden>
-                导入 Godot · 即将开放
+              <button
+                id="organizerGodotPlaceholder"
+                type="button"
+                class="secondary"
+                data-organizer-i18n="importSession"
+                disabled
+                hidden
+              >
+                导入动画组并进入调参
               </button>
               <button id="organizerApply" type="button" class="organizerPrimary" data-organizer-i18n="apply">
                 应用到动画
@@ -2586,6 +2620,7 @@
     <script src="/frame_organizer_actions.js"></script>
     <script src="/frame_organizer.js"></script>
     <script src="/browser_runtime.js"></script>
+    <script src="/workbench_export.js"></script>
     <script src="/app_dom.js"></script>
     <script src="/app_state.js"></script>
     <script src="/app_frame_selection.js"></script>

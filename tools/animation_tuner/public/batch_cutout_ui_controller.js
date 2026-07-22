@@ -273,11 +273,22 @@
 
     /**
      * Returns whether a pointer event should start preview panning.
+     * Manual repair gestures keep priority on the result canvas. Everywhere
+     * else, primary-button dragging mirrors the frame-tuning stage.
      * @param {PointerEvent} event Pointer event.
+     * @param {HTMLCanvasElement|null} [target=null] Preview canvas.
      * @returns {boolean}
      */
-    function shouldPanPreview(event) {
-      return event.button === 1 || (event.button === 0 && state.previewSpacePan);
+    function shouldPanPreview(event, target = null) {
+      if (event.button === 1 || (event.button === 0 && state.previewSpacePan)) return true;
+      if (event.button !== 0 || state.samplingProtectedColor || state.samplingBackgroundColor) {
+        return false;
+      }
+      return (
+        target === elements.cutoutOriginal ||
+        state.repairMode === "automatic" ||
+        state.previewMode !== "result"
+      );
     }
 
     /**
@@ -287,7 +298,7 @@
      * @returns {boolean}
      */
     function beginPreviewPan(event, target) {
-      if (!shouldPanPreview(event)) return false;
+      if (!shouldPanPreview(event, target)) return false;
       event.preventDefault();
       target.setPointerCapture(event.pointerId);
       state.previewPanDrag = {
@@ -307,9 +318,9 @@
      * @returns {void}
      */
     function zoomPreviewAtPointer(event, target) {
-      if (!target._cutoutView || (!event.ctrlKey && !event.metaKey)) return;
+      if (!target._cutoutView) return;
       event.preventDefault();
-      const direction = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const direction = event.deltaY < 0 ? 1.08 : 0.92;
       const currentScale = target._cutoutView.scale;
       setPreviewScale(currentScale * direction, target, previewCanvasPoint(event, target));
     }

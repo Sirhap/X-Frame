@@ -41,6 +41,7 @@ function createFixture() {
   };
   const elements = {
     cutoutResult: { dataset: {}, setAttribute() {}, classList: classList() },
+    cutoutOriginal: { dataset: {}, setAttribute() {}, classList: classList() },
     cutoutConfirmPanel: {
       hidden: true,
       querySelector: (selector) => (selector === ".cutoutConfirmCard" ? confirmationCard : null),
@@ -170,6 +171,65 @@ test("preview pan controller preserves viewport state and redraws", () => {
   assert.equal(state.previewPanDrag, null);
   assert.equal(controller.isEditableTarget(new HTMLElementStub("INPUT")), true);
   assert.equal(elements.cutoutResult.dataset.processing, undefined);
+});
+
+test("idle preview uses stage-style primary drag while repair tools keep pointer priority", () => {
+  const { controller, state, elements } = createFixture();
+  const primaryPointer = { button: 0 };
+
+  state.repairMode = "automatic";
+  assert.equal(controller.shouldPanPreview(primaryPointer, elements.cutoutResult), true);
+  state.repairMode = "brush";
+  state.previewMode = "result";
+  assert.equal(controller.shouldPanPreview(primaryPointer, elements.cutoutResult), false);
+  assert.equal(controller.shouldPanPreview(primaryPointer, elements.cutoutOriginal), true);
+  state.previewSpacePan = true;
+  assert.equal(controller.shouldPanPreview(primaryPointer, elements.cutoutResult), true);
+});
+
+test("preview wheel zoom matches the frame stage without requiring a modifier", () => {
+  const fixture = createFixture();
+  const zoomCalls = [];
+  const controller = createController({
+    ...fixture.dependencies,
+    setPreviewScale(...args) {
+      zoomCalls.push(args);
+    },
+    previewCanvasPoint(event, target) {
+      const rect = target.getBoundingClientRect();
+      return {
+        x: ((event.clientX - rect.left) / rect.width) * target.width,
+        y: ((event.clientY - rect.top) / rect.height) * target.height,
+      };
+    },
+  });
+  const target = {
+    width: 200,
+    height: 100,
+    _cutoutView: { scale: 2 },
+    getBoundingClientRect: () => ({ left: 10, top: 20, width: 200, height: 100 }),
+  };
+  let prevented = false;
+
+  controller.zoomPreviewAtPointer(
+    {
+      clientX: 110,
+      clientY: 70,
+      deltaY: -1,
+      ctrlKey: false,
+      metaKey: false,
+      preventDefault() {
+        prevented = true;
+      },
+    },
+    target,
+  );
+
+  assert.equal(prevented, true);
+  assert.equal(zoomCalls.length, 1);
+  assert.equal(zoomCalls[0][0], 2.16);
+  assert.equal(zoomCalls[0][1], target);
+  assert.deepEqual(zoomCalls[0][2], { x: 100, y: 50 });
 });
 
 test("confirmation controller resolves the active promise", async () => {

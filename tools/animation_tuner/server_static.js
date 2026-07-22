@@ -3,6 +3,19 @@
 const defaultFs = require("node:fs");
 const defaultPath = require("node:path");
 
+/** @type {Readonly<Record<string, string>>} MIME types for locally served public assets. */
+const CONTENT_TYPES = Object.freeze({
+  ".css": "text/css",
+  ".gif": "image/gif",
+  ".html": "text/html",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".js": "application/javascript",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+});
+
 /**
  * Creates the local static-resource handler.
  * @param {{publicRoot:string,workbenchRoutes:Set<string>,safeResolve:(base:string,requested:string)=>string|null,send:Function,landingDocument?:string,workbenchDocument?:string,fsApi?:typeof import("node:fs"),pathApi?:typeof import("node:path")}} options Static handler dependencies.
@@ -28,8 +41,7 @@ function createStaticHandler(options) {
       return options.send(response, 404, "Not found", "text/plain");
     }
     const extension = pathApi.extname(fullPath).toLowerCase();
-    const contentType =
-      extension === ".js" ? "application/javascript" : extension === ".css" ? "text/css" : "text/html";
+    const contentType = CONTENT_TYPES[extension] || "application/octet-stream";
     return options.send(response, 200, fsApi.readFileSync(fullPath), contentType);
   };
 }

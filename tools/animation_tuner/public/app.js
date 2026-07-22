@@ -18,6 +18,51 @@ async function exportBrowserAnimation(metadata, items) {
   return browserRuntime.exportAnimationPackage(metadata, items);
 }
 
+/**
+ * Creates a transient animation group so browser users can continue into the tuning workbench.
+ * The frame data remains in memory and is intentionally not presented as a Godot project write.
+ * @param {object} metadata Animation metadata collected by the organizer.
+ * @param {Array<object>} items Processed PNG frame records.
+ * @returns {Promise<object>} Created browser-session animation group.
+ */
+async function createBrowserSessionAnimation(metadata, items, options = {}) {
+  if (!browserOnlyMode || !config || !Array.isArray(config.groups)) {
+    throw new Error(
+      language === "zh" ? "浏览器动画会话尚未就绪。" : "The browser animation session is not ready.",
+    );
+  }
+  const group = browserRuntime.createSessionAnimationGroup(
+    { ...metadata, premiumFeatures: options.premiumFeatures || [] },
+    items,
+    config.groups,
+    language,
+  );
+  const profileId = group.profileId;
+  if (!Array.isArray(config.profiles)) config.profiles = [];
+  const profileAdded = !config.profiles.some((profile) => profile.id === profileId);
+  config.groups.push(group);
+  if (profileAdded) {
+    config.profiles.push({ id: profileId, label: group.profileLabel, kind: group.profileKind });
+  }
+  try {
+    renderProfileSelect();
+    renderGroupSelect();
+    renderChainGroupSelect();
+    await selectGroup(group, { fitView: true });
+    resizeCanvas();
+    return group;
+  } catch (error) {
+    config.groups.splice(config.groups.indexOf(group), 1);
+    if (profileAdded && !config.groups.some((entry) => entry.profileId === profileId)) {
+      config.profiles = config.profiles.filter((profile) => profile.id !== profileId);
+    }
+    renderProfileSelect();
+    renderGroupSelect();
+    renderChainGroupSelect();
+    throw error;
+  }
+}
+
 const ctx = els.stage.getContext("2d");
 const { constants: appConstants } = globalThis.XSXBAppState;
 const {
@@ -1884,7 +1929,93 @@ const {
 } = attachmentController;
 const persistAttachmentAssets = attachmentPersistAssets;
 const applyAttachmentAsset = attachmentApplyAsset;
-const addImagesToCurrentGroupAssets = attachmentAddImagesToCurrentGroupAssets;
+/**
+ * Adds processed images to the active browser-session animation without a server upload.
+ * @param {Array<{name?:string,data?:string,image?:HTMLCanvasElement,type?:string}>} items Image sources.
+ * @returns {Promise<number>} Added asset count.
+ */
+async function addBrowserSessionAssets(items) {
+  if (!currentGroup)
+    throw new Error(language === "zh" ? "请先选择当前动画组。" : "Select an animation group first.");
+  const groupKey = attachmentAssetGroupKey(currentGroup);
+  const additions = Array.from(items || []).flatMap((item, index) => {
+    const path = String(item.data || item.image?.toDataURL?.("image/png") || "");
+    if (!path.startsWith("data:image/")) return [];
+    return [
+      {
+        id: newLocalId("asset"),
+        name: item.name || `asset_${String(index + 1).padStart(4, "0")}.png`,
+        path,
+        type: item.type || "image/png",
+        width: Number(item.image?.width || 0),
+        height: Number(item.image?.height || 0),
+        groupKey,
+      },
+    ];
+  });
+  attachmentAssets.push(...additions);
+  renderFilmstrip();
+  markDirty();
+  return additions.length;
+}
+
+/** @param {object} target Mutable record. @param {object} source Replacement record. @returns {void} */
+function replaceRecordContents(target, source) {
+  for (const key of Object.keys(target || {})) delete target[key];
+  Object.assign(target, source || {});
+}
+
+/**
+ * Applies a frame-organizer plan to the active in-memory browser animation.
+ * @param {Array<object>} items Ordered frame plan.
+ * @param {{premiumFeatures?:string[]}} [options] Used Pro features.
+ * @returns {Promise<void>}
+ */
+async function applyBrowserFrameOrganizerPlan(items, options = {}) {
+  if (!currentGroup?.frames?.length) throw new Error("No active browser animation.");
+  const visualOverrides = overrideStore(currentGroup);
+  const playbackOverrides = playbackStore(currentGroup);
+  const boxOverrides = boxOverrideStore(currentGroup);
+  const result = browserRuntime.reorganizeSessionAnimation(currentGroup, items, {
+    frameVisualOverrides: visualOverrides,
+    framePlaybackOverrides: playbackOverrides,
+    frameBoxOverrides: boxOverrides,
+    frameAudioBindings,
+    frameImageAttachments,
+    premiumFeatures: options.premiumFeatures || [],
+  });
+  replaceRecordContents(visualOverrides, result.frameVisualOverrides);
+  replaceRecordContents(playbackOverrides, result.framePlaybackOverrides);
+  replaceRecordContents(boxOverrides, result.frameBoxOverrides);
+  frameAudioBindings = result.frameAudioBindings;
+  frameImageAttachments = result.frameImageAttachments;
+  imageCache.clear();
+  imageElements.clear();
+  await selectGroup(currentGroup, {
+    frameIndex: Math.min(selectedFrame, Math.max(currentGroup.frames.length - 1, 0)),
+    preserveView: true,
+  });
+  markDirty();
+}
+
+/**
+ * Replaces the current browser animation pixels with processed cutout outputs.
+ * @param {Array<object>} outputs Processed frames.
+ * @param {{premiumFeatures?:string[]}} [options] Used Pro features.
+ * @returns {Promise<void>}
+ */
+async function applyBrowserCutoutOutputs(outputs, options = {}) {
+  if (!currentGroup?.frames?.length) throw new Error("No active browser animation.");
+  browserRuntime.replaceSessionAnimationFrames(currentGroup, outputs, options.premiumFeatures || []);
+  imageCache.clear();
+  imageElements.clear();
+  await selectGroup(currentGroup, { frameIndex: selectedFrame, preserveView: true });
+  markDirty();
+}
+
+const addImagesToCurrentGroupAssets = browserOnlyMode
+  ? addBrowserSessionAssets
+  : attachmentAddImagesToCurrentGroupAssets;
 const bindFrameImageAttachmentFile = attachmentBindImageFile;
 const removeFrameImageAttachment = attachmentRemoveImage;
 const collectFrameImageAttachmentsForSave = attachmentCollectForSave;
@@ -2603,7 +2734,9 @@ batchCutout =
             loop: currentGroup.loop === true || currentGroup.loopMode === "loop",
           }
         : null,
-    applyToCurrentAnimation: applyCutoutOutputsToCurrentAnimation,
+    applyToCurrentAnimation: browserOnlyMode
+      ? applyBrowserCutoutOutputs
+      : applyCutoutOutputsToCurrentAnimation,
     premiumFeatures,
     ensurePremiumActivated,
     onOpen: () => {
@@ -2635,9 +2768,10 @@ frameOrganizer =
             images,
           }
         : null,
-    applyPlan: applyFrameOrganizerPlan,
+    applyPlan: browserOnlyMode ? applyBrowserFrameOrganizerPlan : applyFrameOrganizerPlan,
     createAnimation: browserOnlyMode ? exportBrowserAnimation : createAnimationFromOrganizer,
-    addAssets: browserOnlyMode ? undefined : addImagesToCurrentGroupAssets,
+    createSessionAnimation: browserOnlyMode ? createBrowserSessionAnimation : undefined,
+    addAssets: addImagesToCurrentGroupAssets,
     editCutout: (workset) => {
       if (!batchCutout?.openWorkset) throw new Error("Batch cutout is unavailable.");
       return batchCutout.openWorkset(workset);
@@ -2648,6 +2782,39 @@ frameOrganizer =
     onClose: () => syncWorkbenchRoute(""),
     onStatus: (message) => status(message),
   }) || null;
+const workbenchExportModule = globalThis.XSXBWorkbenchExport;
+if (browserOnlyMode && !workbenchExportModule) throw new Error("XSXBWorkbenchExport is required.");
+const workbenchExportController = browserOnlyMode
+  ? workbenchExportModule.createController({
+      browserRuntime,
+      premiumFeatures,
+      ensureActivated: ensurePremiumActivated,
+      getCurrentGroup: () => currentGroup,
+      getAttachmentAssets: () => attachmentAssets,
+      getTuningSnapshot: (group) =>
+        browserRuntime.createSessionExportSnapshot(group, {
+          values: tuningValues.collectTuningValues(),
+          frameAudioBindings,
+          frameImageAttachments: attachmentCollectForSave(),
+          frameVisualOverrides: overrideStore(group),
+          framePlaybackOverrides: playbackStore(group),
+          frameBoxOverrides: boxOverrideStore(group),
+        }),
+      status,
+      translate: t,
+    })
+  : null;
+if (els.exportWorkbench) {
+  els.exportWorkbench.hidden = !browserOnlyMode;
+  els.exportWorkbench.addEventListener("click", () => {
+    void workbenchExportController
+      ?.exportCurrentAnimation()
+      .catch((error) => status(t("saveFailed", { message: error.message })));
+  });
+}
+els.organizerNewOpen?.addEventListener("click", () => {
+  void frameOrganizer?.openImport().catch((error) => status(t("loadFailed", { message: error.message })));
+});
 els.homeHubContinue?.addEventListener("click", () => {
   homeHubDismissed = true;
   renderHomeHub();

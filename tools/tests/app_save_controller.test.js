@@ -135,7 +135,7 @@ test("save resets in-flight state when the request fails", async () => {
   assert.equal(fixture.events.filter((event) => event === "save-state").length, 2);
 });
 
-test("save keeps advanced edits pending when activation is cancelled", async () => {
+test("save keeps advanced edits available without requesting export activation", async () => {
   const prompts = [];
   const fixture = createFixture({
     premiumFeatures: {
@@ -149,10 +149,10 @@ test("save keeps advanced edits pending when activation is cancelled", async () 
 
   await fixture.controller.save();
 
-  assert.deepEqual(prompts, [["tuner.frame-audio"]]);
-  assert.equal(fixture.requests.length, 0);
+  assert.deepEqual(prompts, []);
+  assert.equal(fixture.requests.length, 1);
   assert.equal(fixture.state.saveInFlight, false);
-  assert.equal(fixture.state.dirty, true);
+  assert.equal(fixture.events.includes("clean"), true);
 });
 
 test("save locks before asynchronous preparation and ignores concurrent requests", async () => {

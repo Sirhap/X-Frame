@@ -1,4 +1,6 @@
 import { handleActivationRequest } from "./activation.mjs";
+import { handleAdminRequest } from "./admin.mjs";
+import { handleExportAuthorizationRequest } from "./export_authorization.mjs";
 
 const WORKBENCH_ROUTES = new Set(["/workspace", "/tools/import", "/tools/cutout", "/tools/organizer"]);
 
@@ -9,6 +11,7 @@ const WORKBENCH_ROUTES = new Set(["/workspace", "/tools/import", "/tools/cutout"
  */
 export function resolveAssetPath(pathname) {
   if (pathname === "/") return "/index.html";
+  if (pathname === "/admin/licenses") return "/admin.html";
   if (WORKBENCH_ROUTES.has(pathname)) return "/workbench.html";
   return pathname;
 }
@@ -42,8 +45,14 @@ export default {
    */
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/admin" || url.pathname.startsWith("/api/admin/")) {
+      return handleAdminRequest(request, env);
+    }
     if (url.pathname === "/api/activation" || url.pathname.startsWith("/api/activation/")) {
       return handleActivationRequest(request, env);
+    }
+    if (url.pathname === "/api/export" || url.pathname.startsWith("/api/export/")) {
+      return handleExportAuthorizationRequest(request, env);
     }
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method Not Allowed", { status: 405, headers: { Allow: "GET, HEAD" } });

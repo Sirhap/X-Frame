@@ -64,12 +64,7 @@
     /** @returns {string[]} Premium features represented by the current output pixels. */
     function outputPremiumFeatures() {
       const detected = premiumFeatures?.detectCutoutFeatures?.(state.items) || [];
-      return (
-        premiumFeatures?.normalizeFeatureIds?.(["cutout.output", ...detected]) || [
-          "cutout.output",
-          ...detected,
-        ]
-      );
+      return premiumFeatures?.normalizeFeatureIds?.(detected) || detected;
     }
 
     /** @param {object[]} outputs Product outputs. @param {string[]} featureIds Feature identifiers. */
@@ -531,7 +526,6 @@
         );
         return;
       }
-      if (!(await ensurePremiumActivated(featureIds))) return;
       const confirmed = await requestConfirmation(
         text("applyConfirm"),
         [

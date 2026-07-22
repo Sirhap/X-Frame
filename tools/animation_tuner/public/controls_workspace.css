@@ -484,6 +484,20 @@ kbd {
   box-shadow: 3px 3px 0 var(--line);
 }
 
+.organizerNewLaunch {
+  background: var(--control-bg);
+  color: var(--control-ink);
+  font-weight: 950;
+  box-shadow: 3px 3px 0 var(--line);
+}
+
+.exportWorkbenchLaunch {
+  background: var(--accent-3);
+  color: #05070a;
+  font-weight: 950;
+  box-shadow: 3px 3px 0 var(--line);
+}
+
 .selectionHud {
   min-height: 22px;
   color: var(--muted);

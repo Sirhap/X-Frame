@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  assetUrl,
   clampInteger,
   clampNumber,
   cloneScaleVector,
@@ -59,4 +60,13 @@ test("mapWithConcurrency preserves order and propagates mapper failures", async 
       }),
     /mapper failed/,
   );
+});
+
+test("asset URL preserves browser-session image sources", () => {
+  const dataUrl = "data:image/png;base64,frame";
+  const blobUrl = "blob:https://example.test/frame";
+
+  assert.equal(assetUrl({ path: dataUrl }), dataUrl);
+  assert.equal(assetUrl({ path: blobUrl }), blobUrl);
+  assert.match(assetUrl({ path: "frames/idle.png" }), /^\/asset\?path=frames%2Fidle\.png&v=\d+$/);
 });

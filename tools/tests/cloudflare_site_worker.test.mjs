@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 
 import worker, { resolveAssetPath } from "../../cloudflare/site/src/index.mjs";
@@ -10,6 +11,16 @@ import {
 
 const activationSecret = "test-secret-with-at-least-thirty-two-characters";
 const dayMs = 86_400_000;
+
+test("static asset headers cache fingerprinted assets without caching HTML or APIs", () => {
+  const headersPath = new URL("../../cloudflare/site/_headers", import.meta.url);
+  const headers = fs.readFileSync(headersPath, "utf8");
+
+  assert.match(headers, /^\/assets\/\*$/mu);
+  assert.match(headers, /^\s+Cache-Control: public, max-age=31556952, immutable$/mu);
+  assert.doesNotMatch(headers, /^\/\*$/mu);
+  assert.doesNotMatch(headers, /^\/api(?:\/|$)/mu);
+});
 
 /** @param {ArrayBuffer|ArrayBufferView} value Bytes. @returns {string} Base64url text. */
 function bytesToBase64Url(value) {
@@ -118,6 +129,7 @@ async function signChallenge(privateKey, challenge) {
 
 test("resolveAssetPath maps public tool routes to the workbench", () => {
   assert.equal(resolveAssetPath("/"), "/index.html");
+  assert.equal(resolveAssetPath("/admin/licenses"), "/admin.html");
   assert.equal(resolveAssetPath("/tools/import"), "/workbench.html");
   assert.equal(resolveAssetPath("/assets/app.js"), "/assets/app.js");
 });
@@ -264,6 +276,18 @@ test("license duration, fixed expiry, and unused-code redemption deadline are co
     activationRequest("/api/activation/challenge"),
   );
   assert.equal(challenge.expiresAt, fixedExpiry);
+
+  const permanentExpiry = "9999-12-31T23:59:59.999Z";
+  const permanent = await createRepositoryFixture({ expires_at: permanentExpiry });
+  const permanentService = createActivationService(
+    { XSXB_ACTIVATION_SECRET: activationSecret },
+    { repository: permanent.repository, now: () => now },
+  );
+  const permanentChallenge = await permanentService.activationChallenge(
+    { code: "XSXB-TRIAL-TEST", publicKey: (await createDeviceKey()).publicKey },
+    activationRequest("/api/activation/challenge"),
+  );
+  assert.equal(permanentChallenge.expiresAt, permanentExpiry);
 
   const expiredCode = await createRepositoryFixture({ redeem_by: new Date(now - 1).toISOString() });
   const expiredService = createActivationService(

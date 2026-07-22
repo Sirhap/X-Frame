@@ -588,7 +588,12 @@
 }
 
 #cutoutResult.diagnostic {
-  cursor: help;
+  cursor: grab;
+}
+
+.cutoutModal[data-repair-mode="automatic"] #cutoutResult,
+#cutoutOriginal {
+  cursor: grab;
 }
 
 .cutoutModal.isPreviewPanReady .cutoutCompare canvas {

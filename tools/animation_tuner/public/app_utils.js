@@ -13,7 +13,9 @@
    * @returns {string} Asset endpoint URL.
    */
   function assetUrl(frame) {
-    return `/asset?path=${encodeURIComponent(frame?.path || "")}&v=${Date.now()}`;
+    const sourcePath = String(frame?.path || "");
+    if (sourcePath.startsWith("data:image/") || sourcePath.startsWith("blob:")) return sourcePath;
+    return `/asset?path=${encodeURIComponent(sourcePath)}&v=${Date.now()}`;
   }
 
   /**

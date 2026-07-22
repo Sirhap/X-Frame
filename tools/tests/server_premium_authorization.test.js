@@ -16,18 +16,16 @@ class TestHttpError extends Error {
   }
 }
 
-test("server derives premium save requirements without trusting the client header", () => {
+test("editing and saving remain available before export activation", () => {
   const authorizer = createPremiumAuthorizer({
     activationService: { isActivated: () => false },
     HttpError: TestHttpError,
   });
   const requestWithoutHeader = { headers: {} };
-  assert.throws(
-    () =>
-      authorizer.assertAuthorized(requestWithoutHeader, "/api/save", {
-        frame_audio_bindings: [{ key: "walk:0" }],
-      }),
-    (error) => error instanceof TestHttpError && error.status === 402,
+  assert.doesNotThrow(() =>
+    authorizer.assertAuthorized(requestWithoutHeader, "/api/save", {
+      frame_audio_bindings: [{ key: "walk:0" }],
+    }),
   );
   assert.doesNotThrow(() =>
     authorizer.assertAuthorized(requestWithoutHeader, "/api/save", {
@@ -36,7 +34,7 @@ test("server derives premium save requirements without trusting the client heade
   );
 });
 
-test("animation replacement and dedicated premium media routes always require activation", () => {
+test("import, processing, and media editing routes remain free before export", () => {
   const authorizer = createPremiumAuthorizer({
     activationService: { isActivated: () => false },
     HttpError: TestHttpError,
@@ -50,14 +48,11 @@ test("animation replacement and dedicated premium media routes always require ac
     "/api/import-animation",
     "/api/reorganize-animation",
   ]) {
-    assert.throws(
-      () => authorizer.assertAuthorized({ headers: {} }, pathname, {}),
-      (error) => error.status === 402,
-    );
+    assert.doesNotThrow(() => authorizer.assertAuthorized({ headers: {} }, pathname, {}));
   }
 });
 
-test("valid activation authorizes server-derived premium writes", () => {
+test("legacy write authorization reports no export requirements", () => {
   const authorizer = createPremiumAuthorizer({
     activationService: { isActivated: () => true },
     HttpError: TestHttpError,
@@ -66,8 +61,8 @@ test("valid activation authorizes server-derived premium writes", () => {
     authorizer.assertAuthorized({ headers: {} }, "/api/save", {
       soul: { frame_box_overrides: { "hero:0": { collisionbox: { enabled: true } } } },
     }),
-    ["tuner.collision-boxes"],
+    [],
   );
-  assert.deepEqual(requiredPremiumFeatures("/api/replace-animation", {}), ["cutout.output"]);
-  assert.deepEqual(requiredPremiumFeatures("/api/reorganize-animation", {}), ["organizer.output"]);
+  assert.deepEqual(requiredPremiumFeatures("/api/replace-animation", {}), []);
+  assert.deepEqual(requiredPremiumFeatures("/api/reorganize-animation", {}), []);
 });

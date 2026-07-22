@@ -20,6 +20,7 @@ function createFixture() {
   const calls = {
     assets: null,
     animation: null,
+    sessionAnimation: null,
     status: [],
     counts: 0,
     reloads: 0,
@@ -41,6 +42,10 @@ function createFixture() {
       createAnimation: async (metadata, items) => {
         if (state.createError) throw state.createError;
         calls.animation = { metadata, items };
+      },
+      createSessionAnimation: async (metadata, items) => {
+        if (state.createError) throw state.createError;
+        calls.sessionAnimation = { metadata, items };
       },
     },
     text: (key) => key,
@@ -136,4 +141,54 @@ test("failed animation creation keeps the import workbench and staged frames ope
   assert.deepEqual(fixture.calls.status, ["failed"]);
   assert.equal(fixture.state.frames.length, 1);
   assert.equal(fixture.state.busy, false);
+});
+
+test("browser import creates a transient animation group instead of downloading a ZIP", async () => {
+  const fixture = createFixture();
+  fixture.state.mode = "import";
+  fixture.state.confirmApply = true;
+  fixture.state.importMetadata = {
+    projectId: "browser-session",
+    profileLabel: "Hero",
+    animationName: "demo",
+  };
+  fixture.state.premiumFeatures = new Set(["organizer.sequence-analysis"]);
+  fixture.controller = createController({
+    state: fixture.state,
+    elements: {
+      organizerModal: { inert: false, setAttribute() {}, removeAttribute() {} },
+      organizerAnimationName: { value: "demo" },
+      organizerGrid: { querySelector: () => null },
+    },
+    hooks: {
+      browserExportOnly: true,
+      createSessionAnimation: async (metadata, items, options) => {
+        fixture.calls.sessionAnimation = { metadata, items, options };
+      },
+    },
+    text: (key) => key,
+    includedFrames: () => fixture.state.frames,
+    imageCanvas: (source) => source,
+    renderGrid: () => {},
+    renderCounts: () => {},
+    restartPreview: () => {},
+    setStatus: (message) => fixture.calls.status.push(message),
+    loadCurrentAnimation: async () => {},
+    importMetadata: () => fixture.state.importMetadata,
+    renderLanguage: () => {},
+    closeOrganizer: () => {
+      fixture.calls.closes += 1;
+    },
+    getUiController: () => ({ requestConfirmation: async () => true }),
+    windowRef: { clearTimeout() {} },
+  });
+
+  await fixture.controller.applyPlan();
+
+  assert.equal(fixture.state.mode, "edit");
+  assert.equal(fixture.calls.closes, 1);
+  assert.equal(fixture.calls.sessionAnimation.metadata.animationName, "demo");
+  assert.equal(fixture.calls.sessionAnimation.items[0].data, "data:image/png;base64,frame");
+  assert.deepEqual(fixture.calls.sessionAnimation.options.premiumFeatures, ["organizer.sequence-analysis"]);
+  assert.deepEqual(fixture.calls.status, ["created"]);
 });

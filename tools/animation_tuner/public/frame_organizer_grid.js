@@ -22,7 +22,7 @@
    *   setStatus:(message:string,tone?:string)=>void,
    *   document?:Document
    * }} dependencies Organizer integration dependencies.
-   * @returns {{renderCounts:()=>void,renderGrid:()=>void,selectFrame:(index:number,event:MouseEvent|object)=>void,selectIndexes:(indexes:number[])=>void}}
+   * @returns {{renderCounts:()=>void,renderGrid:()=>void,selectFrame:(index:number,event:MouseEvent|object)=>void,selectIndexes:(indexes:number[],analysisType?:"jump"|"duplicate"|"")=>void}}
    */
   function createController(dependencies) {
     if (!dependencies?.elements || !dependencies.state || typeof dependencies.text !== "function") {
@@ -52,13 +52,15 @@
       elements.organizerSelection.textContent = text("selected", { count: selected });
       elements.organizerApply.disabled =
         !included || state.busy || (state.mode === "edit" && !animation?.frames?.length);
+      elements.organizerGodotPlaceholder.disabled =
+        dependencies.browserExportOnly !== true || state.mode !== "import" || !included || state.busy;
       elements.organizerDeleteSelected.disabled = !selected || state.busy;
       elements.organizerInvert.disabled = !state.frames.length || state.busy;
       elements.organizerFlip.disabled = (!selected && !included) || state.busy;
       elements.organizerDeleteExcluded.disabled = included === state.frames.length || state.busy;
       elements.organizerFileInput.disabled = state.busy;
       elements.organizerVideoInput.disabled = state.busy;
-      elements.organizerAddAssets.hidden = state.mode !== "import" || dependencies.browserExportOnly === true;
+      elements.organizerAddAssets.hidden = state.mode !== "import";
       elements.organizerAddAssets.disabled =
         state.mode !== "import" ||
         !included ||
@@ -67,9 +69,9 @@
         !dependencies.canAddAssets();
       elements.organizerReduce.disabled = !included || state.busy;
       elements.organizerAutoSort.disabled = state.frames.length < 2 || state.busy;
-      elements.organizerFindJump.disabled = included < 3 || state.busy;
-      elements.organizerFindDuplicate.disabled = included < 3 || state.busy;
-      elements.organizerFindLoop.disabled = included < 4 || state.busy;
+      elements.organizerFindJump.disabled = included < 3 || state.busy || state.sequenceAnalyzing;
+      elements.organizerFindDuplicate.disabled = included < 3 || state.busy || state.sequenceAnalyzing;
+      elements.organizerFindLoop.disabled = included < 4 || state.busy || state.sequenceAnalyzing;
       elements.organizerGrid.querySelectorAll(".organizerFrameCutout").forEach((button) => {
         button.disabled = state.busy;
       });
@@ -106,14 +108,24 @@
       dependencies.renderPreview();
     }
 
-    /** Selects frame indexes returned by analysis. @param {number[]} indexes Frame indexes. @returns {void} */
-    function selectIndexes(indexes) {
+    /**
+     * Selects frame indexes and optionally labels their sequence-analysis reason.
+     * @param {number[]} indexes Frame indexes.
+     * @param {"jump"|"duplicate"|""} [analysisType] Analysis marker applied to matched frames.
+     * @returns {void}
+     */
+    function selectIndexes(indexes, analysisType = "") {
       const selected = new Set(indexes);
       state.frames.forEach((frame, index) => {
         frame.selected = selected.has(index);
+        frame.analysisMatch = frame.selected ? analysisType : "";
       });
       state.anchorIndex = indexes[0] ?? -1;
       renderGrid();
+      if (analysisType && indexes.length) {
+        const firstMatch = elements.organizerGrid.querySelector(".organizerFrame.analysisMatch");
+        firstMatch?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      }
     }
 
     /** @param {object} frame Organizer frame. @returns {string} Cached PNG thumbnail. */
@@ -133,6 +145,7 @@
       card.innerHTML = `
           <button type="button" class="organizerFrameSelect"></button>
           <span class="organizerFrameNumber"></span>
+          <span class="organizerFrameAnalysisBadge"></span>
           <img alt="" width="156" height="156" loading="lazy">
           <span class="organizerFrameName"></span>
           <span class="organizerFrameTag"></span>
@@ -170,10 +183,13 @@
       const fragment = documentApi.createDocumentFragment();
       state.frames.forEach((frame, index) => {
         const card = existingCards.get(frame.uid) || createFrameCard(frame);
-        card.className = `organizerFrame ${frame.selected ? "selected" : ""} ${frame.included ? "included" : "excluded"}`;
+        card.className = `organizerFrame ${frame.selected ? "selected" : ""} ${frame.included ? "included" : "excluded"} ${frame.analysisMatch ? `analysisMatch analysis-${frame.analysisMatch}` : ""}`;
         card.querySelector(".organizerFrameNumber").textContent = String(index + 1).padStart(3, "0");
         card.querySelector(".organizerFrameName").textContent = frame.name;
         card.querySelector(".organizerFrameTag").textContent = frame.tag;
+        const analysisBadge = card.querySelector(".organizerFrameAnalysisBadge");
+        analysisBadge.textContent = frame.analysisMatch ? text(`${frame.analysisMatch}Badge`) : "";
+        analysisBadge.hidden = !frame.analysisMatch;
         const includeInput = card.querySelector("input");
         includeInput.checked = frame.included;
         includeInput.setAttribute("aria-label", text("includeFrame", { name: frame.name }));

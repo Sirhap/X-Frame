@@ -1,24 +1,47 @@
 (function attachBatchCutoutPreview(root, factory) {
   "use strict";
-
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.BatchCutoutPreview = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
+  const MIN_PREVIEW_ZOOM = 0.12;
+  const MAX_PREVIEW_ZOOM = 8;
+
+  /**
+   * Calculates the same padded fit zoom used by the frame-tuning stage.
+   * @param {number} canvasWidth Preview canvas width in backing pixels.
+   * @param {number} canvasHeight Preview canvas height in backing pixels.
+   * @param {number} sourceWidth Source image width.
+   * @param {number} sourceHeight Source image height.
+   * @param {number} [pixelRatio=1] Canvas device-pixel ratio.
+   * @returns {number} Clamped fit zoom.
+   */
+  function calculateFitScale(canvasWidth, canvasHeight, sourceWidth, sourceHeight, pixelRatio = 1) {
+    const horizontalPadding = Math.max(96 * pixelRatio, canvasWidth * 0.14);
+    const verticalPadding = Math.max(72 * pixelRatio, canvasHeight * 0.14);
+    const fitScale = Math.min(
+      (canvasWidth - horizontalPadding) / sourceWidth,
+      (canvasHeight - verticalPadding) / sourceHeight,
+    );
+    return Math.min(MAX_PREVIEW_ZOOM, Math.max(MIN_PREVIEW_ZOOM, fitScale));
+  }
+
   /**
    * Calculates the drawing transform for a preview source.
-   * @param {{canvasWidth:number,canvasHeight:number,sourceWidth:number,sourceHeight:number,fitScale:number|null,scale:number|null,panX:number,panY:number}} options View inputs.
+   * @param {{canvasWidth:number,canvasHeight:number,sourceWidth:number,sourceHeight:number,fitScale:number|null,scale:number|null,panX:number,panY:number,pixelRatio?:number}} options View inputs.
    * @returns {{sourceWidth:number,sourceHeight:number,fitScale:number,scale:number,offsetX:number,offsetY:number}} Preview transform.
    */
   function calculateView(options) {
     const sourceWidth = Math.max(1, Number(options.sourceWidth) || 1);
     const sourceHeight = Math.max(1, Number(options.sourceHeight) || 1);
-    const measuredFitScale = Math.min(
-      1,
-      options.canvasWidth / sourceWidth,
-      options.canvasHeight / sourceHeight,
+    const measuredFitScale = calculateFitScale(
+      options.canvasWidth,
+      options.canvasHeight,
+      sourceWidth,
+      sourceHeight,
+      Math.max(1, Number(options.pixelRatio) || 1),
     );
     const fitScale = options.fitScale ?? measuredFitScale;
     const scale = options.scale ?? fitScale;
@@ -67,7 +90,7 @@
       if (!source) return;
       const sourceWidth = Number(source.naturalWidth || source.width || 1);
       const sourceHeight = Number(source.naturalHeight || source.height || 1);
-      const measuredFitScale = Math.min(1, width / sourceWidth, height / sourceHeight);
+      const measuredFitScale = calculateFitScale(width, height, sourceWidth, sourceHeight, pixelRatio);
       if (target === elements.cutoutResult && state.previewFitScale === null) {
         state.previewFitScale = measuredFitScale;
       }
@@ -80,6 +103,7 @@
         scale: state.previewScale,
         panX: state.previewPanX,
         panY: state.previewPanY,
+        pixelRatio,
       });
       context.imageSmoothingEnabled = false;
       context.drawImage(
@@ -97,7 +121,7 @@
       const view = elements.cutoutResult._cutoutView || elements.cutoutOriginal._cutoutView;
       const scale = view?.scale || 1;
       const percent = Math.round(scale * 100);
-      elements.cutoutZoom.value = String(Math.max(10, Math.min(800, percent)));
+      elements.cutoutZoom.value = String(Math.max(12, Math.min(800, percent)));
       elements.cutoutZoomValue.textContent =
         state.previewScale === null ? `FIT · ${percent}%` : `${percent}%`;
       elements.cutoutZoomFit.classList.toggle("active", state.previewScale === null);
@@ -124,7 +148,7 @@
         renderPreview();
         return;
       }
-      const nextScale = Math.max(0.1, Math.min(8, Number(scale || 1)));
+      const nextScale = Math.max(MIN_PREVIEW_ZOOM, Math.min(MAX_PREVIEW_ZOOM, Number(scale || 1)));
       if (view && canvasPoint) {
         const sourceX = (canvasPoint.x - view.offsetX) / view.scale;
         const sourceY = (canvasPoint.y - view.offsetY) / view.scale;
@@ -181,5 +205,5 @@
     return { drawPreviewCanvas, renderPreviewZoom, setPreviewScale, previewCanvasPoint, previewSourcePoint };
   }
 
-  return { calculateView, createController };
+  return { calculateFitScale, calculateView, createController };
 });

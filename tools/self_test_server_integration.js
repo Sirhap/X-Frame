@@ -107,24 +107,24 @@ function createIntegrationTests(options) {
         request.end();
       });
       assert.equal(oversizedMediaStatus, 413);
-      const premiumSaveBypass = await fetchImpl(`${baseUrl}/api/save`, {
+      const premiumSaveWithoutActivation = await fetchImpl(`${baseUrl}/api/save`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ frame_audio_bindings: [{ key: "walk:0" }] }),
       });
-      assert.equal(premiumSaveBypass.status, 402);
-      const premiumReplacementBypass = await fetchImpl(`${baseUrl}/api/replace-animation`, {
+      assert.equal(premiumSaveWithoutActivation.status, 200);
+      const premiumReplacementWithoutActivation = await fetchImpl(`${baseUrl}/api/replace-animation`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ frames: [], files: [] }),
       });
-      assert.equal(premiumReplacementBypass.status, 402);
-      const premiumWorksetBypass = await fetchImpl(`${baseUrl}/api/reorganize-animation`, {
+      assert.equal(premiumReplacementWithoutActivation.status, 400);
+      const premiumWorksetWithoutActivation = await fetchImpl(`${baseUrl}/api/reorganize-animation`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ items: [] }),
       });
-      assert.equal(premiumWorksetBypass.status, 402);
+      assert.equal(premiumWorksetWithoutActivation.status, 400);
     } finally {
       child.kill("SIGTERM");
     }

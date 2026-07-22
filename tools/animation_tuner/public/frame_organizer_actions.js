@@ -18,7 +18,7 @@
    *   elements:Record<string,any>,
    *   state:Record<string,any>,
    *   text:(key:string,variables?:Record<string,string|number>)=>string,
-   *   hooks?:{browserExportOnly?:boolean,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
+   *   hooks?:{browserExportOnly?:boolean,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,createSessionAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
    *   includedFrames:()=>object[],
    *   imageCanvas:(image:CanvasImageSource)=>HTMLCanvasElement,
    *   renderCounts:()=>void,
@@ -36,7 +36,7 @@
    *   cssEscape?:(value:string)=>string,
    *   premiumFeatures?:{normalizeFeatureIds?:(featureIds:Iterable<string>)=>string[]}
    * }} dependencies Organizer state and host callbacks.
-   * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,applyPlan:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>}}
+   * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,applyPlan:()=>Promise<void>,importIntoSession:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>}}
    */
   function createController(dependencies = {}) {
     const {
@@ -185,18 +185,11 @@
         return;
       }
       const controller = uiController();
-      const usedPremiumFeatures = premiumFeatures?.normalizeFeatureIds?.([
-        "organizer.output",
-        ...Array.from(state.premiumFeatures || []),
-      ]) || ["organizer.output", ...Array.from(state.premiumFeatures || [])];
-      if (
-        usedPremiumFeatures.length &&
-        typeof hooks.ensurePremiumActivated === "function" &&
-        !(await hooks.ensurePremiumActivated(usedPremiumFeatures))
-      ) {
-        return;
-      }
-      const browserExportOnly = hooks.browserExportOnly === true && state.mode === "import";
+      const usedPremiumFeatures =
+        premiumFeatures?.normalizeFeatureIds?.(Array.from(state.premiumFeatures || [])) ||
+        Array.from(state.premiumFeatures || []);
+      const sessionImport = hooks.browserExportOnly === true && state.mode === "import";
+      const browserExportOnly = hooks.browserExportOnly === true && state.mode === "import" && !sessionImport;
       const confirmation =
         state.mode === "import"
           ? text(browserExportOnly ? "exportConfirm" : "createConfirm", { count: frames.length })
@@ -229,7 +222,9 @@
               : "",
         }));
         if (state.mode === "import") {
-          await hooks.createAnimation?.(metadata, items, { premiumFeatures: usedPremiumFeatures });
+          const createAnimation = sessionImport ? hooks.createSessionAnimation : hooks.createAnimation;
+          if (typeof createAnimation !== "function") throw new Error("Animation import is unavailable.");
+          await createAnimation(metadata, items, { premiumFeatures: usedPremiumFeatures });
           setStatus(text(browserExportOnly ? "exportedZip" : "created", { count: items.length }), "success");
           if (!browserExportOnly) state.mode = "edit";
           renderLanguage();
@@ -248,6 +243,14 @@
         state.busy = false;
         renderCounts();
       }
+    }
+
+    /**
+     * Imports the current browser workset into a transient tuning-session animation group.
+     * @returns {Promise<void>}
+     */
+    async function importIntoSession() {
+      await applyPlan();
     }
 
     /**
@@ -275,7 +278,7 @@
       }
     }
 
-    return { editImportCutout, applyPlan, addIncludedFramesToAssets };
+    return { editImportCutout, applyPlan, importIntoSession, addIncludedFramesToAssets };
   }
 
   return { createController };

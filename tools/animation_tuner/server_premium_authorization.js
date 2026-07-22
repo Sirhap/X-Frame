@@ -2,15 +2,7 @@
 
 const defaultPremiumFeatures = require("./public/premium_features");
 
-const ROUTE_FEATURES = Object.freeze({
-  "/api/frame-audio": ["tuner.frame-audio"],
-  "/api/frame-attachment-image": ["tuner.image-attachments"],
-  "/api/attachment-assets": ["tuner.image-attachments"],
-  "/api/replace-frame": ["cutout.output"],
-  "/api/replace-animation": ["cutout.output"],
-  "/api/import-animation": ["organizer.output"],
-  "/api/reorganize-animation": ["organizer.output"],
-});
+const ROUTE_FEATURES = Object.freeze({});
 
 /**
  * Maps a save request body to the shared premium-feature detector contract.
@@ -41,9 +33,9 @@ function savePremiumSnapshot(payload = {}) {
  * @returns {string[]} Required feature identifiers.
  */
 function requiredPremiumFeatures(pathname, payload = {}, premiumFeatures = defaultPremiumFeatures) {
-  if (pathname === "/api/save") {
-    return premiumFeatures.detectTunerFeatures(savePremiumSnapshot(payload));
-  }
+  // Editing, importing, processing, and saving remain free. Licensing is enforced
+  // by the workbench export boundary after it detects the features actually used.
+  if (pathname === "/api/save") return [];
   return Array.from(ROUTE_FEATURES[pathname] || []);
 }
 

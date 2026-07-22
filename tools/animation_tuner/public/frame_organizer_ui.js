@@ -8,6 +8,18 @@
   "use strict";
 
   /**
+   * Opens the existing animation workset from the current-animation launcher.
+   * @param {()=>Promise<void>} open Existing-animation loader.
+   * @returns {Promise<void>} Completed open operation.
+   */
+  function openCurrentAnimation(open) {
+    if (typeof open !== "function") {
+      return Promise.reject(new TypeError("Current-animation organizer loader is required."));
+    }
+    return Promise.resolve().then(open);
+  }
+
+  /**
    * Creates the organizer UI/lifecycle interaction controller.
    *
    * The controller deliberately contains only DOM-facing helpers and event
@@ -29,13 +41,13 @@
    *   selectedFrames:()=>object[],
    *   includedFrames:()=>object[],
    *   open:()=>Promise<void>,
-   *   openImport?:()=>Promise<void>,
    *   requestClose:(options?:object)=>Promise<boolean>,
    *   close?:()=>void,
    *   flipFrames:()=>void,
    *   analyze:(type:"jump"|"duplicate")=>void,
    *   loadCurrentAnimation:()=>Promise<void>,
    *   applyPlan:()=>Promise<void>,
+   *   importIntoSession:()=>Promise<void>,
    *   addIncludedFramesToAssets:()=>Promise<void>,
    *   selectFrame:(index:number,event:object)=>void,
    *   imageImporter:{importFiles:(files:File[])=>Promise<void>},
@@ -71,12 +83,12 @@
       selectedFrames,
       includedFrames,
       open,
-      openImport,
       requestClose,
       flipFrames,
       analyze,
       loadCurrentAnimation,
       applyPlan,
+      importIntoSession,
       addIncludedFramesToAssets,
       selectFrame,
       imageImporter,
@@ -280,9 +292,10 @@
           : "subtitle",
       );
       elements.organizerApply.textContent = text(
-        state.mode === "import" ? (browserExportOnly ? "exportZip" : "create") : "apply",
+        state.mode === "import" ? (browserExportOnly ? "importSession" : "create") : "apply",
       );
-      elements.organizerGodotPlaceholder.hidden = !browserExportOnly;
+      elements.organizerGodotPlaceholder.hidden = true;
+      elements.organizerGodotPlaceholder.textContent = text("importSession");
       elements.organizerReset.textContent = text(state.mode === "import" ? "clearWorkset" : "reset");
       elements.organizerImportSetup.hidden = state.mode !== "import";
       elements.organizerImportSetup
@@ -295,7 +308,7 @@
     /** Binds organizer DOM events to injected host callbacks in original order. @returns {void} */
     function bindEvents() {
       elements.organizerOpen.addEventListener("click", () =>
-        (openImport || open)().catch((error) =>
+        openCurrentAnimation(open).catch((error) =>
           setStatus(text("failed", { message: error.message }), "error"),
         ),
       );
@@ -405,6 +418,7 @@
         );
       });
       elements.organizerApply.addEventListener("click", applyPlan);
+      elements.organizerGodotPlaceholder.addEventListener("click", importIntoSession);
       elements.organizerAddAssets.addEventListener("click", addIncludedFramesToAssets);
       elements.organizerProjectSelect.addEventListener("change", syncImportProjectField);
       elements.organizerSpeed.addEventListener("input", schedulePreviewFrame);
@@ -504,5 +518,5 @@
     };
   }
 
-  return { createController };
+  return { createController, openCurrentAnimation };
 });

@@ -535,51 +535,31 @@ a:focus-visible {
 .fighter {
   position: absolute;
   z-index: 4;
-  top: 43%;
-  left: 47%;
-  width: 56px;
-  height: 118px;
-  transform: rotate(-7deg);
+  right: -2%;
+  bottom: 5%;
+  width: min(91%, 590px);
+  filter: drop-shadow(0 14px 14px rgba(0, 0, 0, 0.5));
+  transform-origin: 44% 72%;
+  animation: fighter-breathe 4.8s ease-in-out 900ms infinite;
 }
 
-.fighter i {
-  position: absolute;
+.fighter img {
+  width: 100%;
+  height: auto;
   display: block;
-  border: 1px solid #d9ded8;
-  background: #78867e;
-  box-shadow: inset -7px -7px 0 #3d4841;
 }
 
-.fighter-head {
-  top: 0;
-  left: 17px;
-  width: 27px;
-  height: 27px;
-  border-radius: 45% 45% 35% 35%;
-}
-
-.fighter-body {
-  top: 24px;
-  left: 10px;
-  width: 37px;
-  height: 55px;
-  transform: skew(-8deg);
-}
-
-.fighter-arm {
-  top: 33px;
-  left: -27px;
-  width: 49px;
-  height: 13px;
-  transform: rotate(-21deg);
-}
-
-.fighter-leg {
-  top: 70px;
-  left: 17px;
-  width: 18px;
-  height: 45px;
-  transform: rotate(15deg);
+.fighter-shadow {
+  position: absolute;
+  z-index: 2;
+  right: 14%;
+  bottom: 8%;
+  width: 58%;
+  height: 8%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.88), transparent 70%);
+  filter: blur(5px);
+  transform: skewX(-12deg);
 }
 
 .hurtbox,
@@ -590,21 +570,21 @@ a:focus-visible {
 }
 
 .hurtbox {
-  top: 38%;
-  left: 45%;
-  width: 77px;
-  height: 137px;
+  top: 17%;
+  left: 31%;
+  width: 31%;
+  height: 73%;
   border-color: var(--mint);
-  background: rgba(72, 226, 189, 0.1);
+  background: rgba(72, 226, 189, 0.045);
 }
 
 .hitbox {
-  top: 28%;
-  left: 56%;
-  width: 148px;
-  height: 142px;
+  top: 27%;
+  right: 3%;
+  width: 44%;
+  height: 29%;
   border-color: var(--coral);
-  background: rgba(255, 101, 66, 0.08);
+  background: rgba(255, 101, 66, 0.045);
 }
 
 .hurtbox span,
@@ -621,19 +601,6 @@ a:focus-visible {
 
 .hitbox span {
   color: var(--coral);
-}
-
-.motion-arc {
-  position: absolute;
-  z-index: 5;
-  top: 31%;
-  left: 51%;
-  width: 185px;
-  height: 85px;
-  border-top: 9px solid rgba(245, 200, 75, 0.72);
-  border-radius: 50%;
-  filter: drop-shadow(0 0 8px rgba(245, 200, 75, 0.42));
-  transform: rotate(13deg);
 }
 
 .frame-ghost {
@@ -694,11 +661,30 @@ a:focus-visible {
 }
 
 .timeline li i {
-  width: 12px;
-  height: 34px;
-  border-radius: 8px 8px 2px 2px;
-  background: #58645c;
-  transform: skew(-8deg);
+  width: 88%;
+  height: 76%;
+  background-image: url("/assets/landing/hero-fighter-frame-01.webp");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  filter: grayscale(1) brightness(0.64);
+  opacity: 0.8;
+  transform: translateY(2px);
+}
+
+.timeline li:nth-child(2) i {
+  background-image: url("/assets/landing/hero-fighter-frame-02.webp");
+  transform: translateY(1px);
+}
+
+.timeline li:nth-child(3) i {
+  background-image: url("/assets/landing/hero-fighter-frame-03.webp");
+  transform: translateY(1px);
+}
+
+.timeline li:nth-child(4) i {
+  background-image: url("/assets/landing/hero-fighter-frame-04.webp");
+  transform: translateY(1px);
 }
 
 .timeline li.active {
@@ -707,7 +693,10 @@ a:focus-visible {
 }
 
 .timeline li.active i {
-  background: var(--mint);
+  background-image: url("/assets/landing/hero-fighter-v2.webp");
+  filter: none;
+  opacity: 1;
+  transform: translateY(0) scale(1.04);
 }
 
 .console-note {
@@ -1079,6 +1068,17 @@ a:focus-visible {
   }
 }
 
+@keyframes fighter-breathe {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(-3px) rotate(-0.35deg);
+  }
+}
+
 @keyframes orbit {
   to {
     transform: rotate(360deg);
@@ -1186,8 +1186,9 @@ a:focus-visible {
   }
 
   .hitbox {
-    left: 55%;
-    width: 120px;
+    right: 2%;
+    left: auto;
+    width: 43%;
   }
 
   .timeline {

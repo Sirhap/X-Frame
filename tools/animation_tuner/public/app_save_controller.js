@@ -58,7 +58,6 @@
    *   getSoulPlaybackOverrides?:()=>object,
    *   getSoulFrameBoxOverrides?:()=>object,
    *   premiumFeatures?:object,
-   *   ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>,
    *   fetchImpl?:typeof fetch,
    *   markClean?:()=>void,
    *   status?:(message:string)=>void,
@@ -120,7 +119,6 @@
       getSoulPlaybackOverrides = () => ({}),
       getSoulFrameBoxOverrides = () => ({}),
       premiumFeatures = root?.XSXBPremiumFeatures,
-      ensurePremiumActivated = async () => true,
       fetchImpl = root?.fetch,
       markClean = () => {},
       status = () => {},
@@ -195,7 +193,6 @@
           soulFrameBoxOverrides: getSoulFrameBoxOverrides(),
         };
         const usedPremiumFeatures = premiumFeatures?.detectTunerFeatures?.(premiumSnapshot) || [];
-        if (usedPremiumFeatures.length && !(await ensurePremiumActivated(usedPremiumFeatures))) return;
         const savedRevision = getEditRevision();
         const res = await fetchImpl("/api/save", {
           method: "POST",

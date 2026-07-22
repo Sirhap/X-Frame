@@ -19,6 +19,7 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.local.example
+.dev.vars
 *.log
 
 .DS_Store

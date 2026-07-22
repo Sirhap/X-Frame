@@ -11,6 +11,7 @@
     <title>XSXB Frame Tuner — 把每一帧调到刚刚好</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/landing.css" />
+    <link rel="stylesheet" href="/landing-admin.css" />
   </head>
   <body>
     <a class="skip-link" href="#main">跳到主要内容</a>
@@ -24,7 +25,12 @@
         <a href="#workflow">流程</a>
         <a href="#privacy">本地优先</a>
       </nav>
-      <a class="button button-small" href="/tools/import">开始制作 <span aria-hidden="true">↗</span></a>
+      <div class="header-actions">
+        <a id="adminOpenButton" class="admin-trigger" href="/admin/licenses">
+          <span aria-hidden="true">⌁</span> 激活码管理
+        </a>
+        <a class="button button-small" href="/tools/import">开始制作 <span aria-hidden="true">↗</span></a>
+      </div>
     </header>
 
     <main id="main">
@@ -61,7 +67,7 @@
         <div class="hero-console" aria-label="帧动画工作台示意图">
           <div class="console-topbar">
             <span><i></i><i></i><i></i></span>
-            <code>hero / stand_attack / frame_09</code>
+            <code>hero / blade_slash / frame_09</code>
             <b>LIVE</b>
           </div>
           <div class="console-body">
@@ -81,12 +87,18 @@
               <div class="frame-ghost frame-ghost-one"></div>
               <div class="frame-ghost frame-ghost-two"></div>
               <div class="fighter" aria-hidden="true">
-                <i class="fighter-head"></i><i class="fighter-body"></i><i class="fighter-arm"></i
-                ><i class="fighter-leg"></i>
+                <img
+                  src="/assets/landing/hero-fighter-v2.webp"
+                  alt=""
+                  width="1152"
+                  height="768"
+                  decoding="async"
+                  fetchpriority="high"
+                />
               </div>
+              <div class="fighter-shadow" aria-hidden="true"></div>
               <div class="hurtbox"><span>HURT</span></div>
               <div class="hitbox"><span>HIT</span></div>
-              <div class="motion-arc"></div>
               <code class="coordinate">X 364 · Y 4</code>
             </div>
           </div>

@@ -2,7 +2,17 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { calculateView, createController } = require("../animation_tuner/public/batch_cutout_preview");
+const {
+  calculateFitScale,
+  calculateView,
+  createController,
+} = require("../animation_tuner/public/batch_cutout_preview");
+
+test("cutout fit zoom matches the frame stage padding and zoom limits", () => {
+  assert.equal(calculateFitScale(480, 360, 480, 360), 0.8);
+  assert.equal(calculateFitScale(480, 360, 1, 1), 8);
+  assert.equal(calculateFitScale(480, 360, 8000, 8000), 0.12);
+});
 
 test("cutout preview view calculation normalizes empty source dimensions", () => {
   const view = calculateView({
@@ -71,4 +81,23 @@ test("cutout preview supports zooming up to eight hundred percent", () => {
   controller.renderPreviewZoom();
   assert.equal(elements.cutoutZoom.value, "800");
   assert.equal(elements.cutoutZoomValue.textContent, "800%");
+});
+
+test("cutout preview uses the frame stage twelve-percent lower zoom limit", () => {
+  const state = { previewScale: 1, previewFitScale: 1, previewPanX: 0, previewPanY: 0 };
+  const controller = createController({
+    elements: {
+      cutoutResult: {},
+      cutoutOriginal: {},
+      cutoutZoom: {},
+      cutoutZoomValue: {},
+      cutoutZoomFit: { classList: { toggle() {} } },
+      cutoutZoomActual: { classList: { toggle() {} } },
+    },
+    state,
+    renderPreview() {},
+  });
+
+  controller.setPreviewScale(0.01);
+  assert.equal(state.previewScale, 0.12);
 });

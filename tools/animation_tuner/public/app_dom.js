@@ -34,6 +34,8 @@
       currentProjectLabel: documentRef.querySelector("#currentProjectLabel"),
       projectSelect: documentRef.querySelector("#projectSelect"),
       importAnimationOpen: documentRef.querySelector("#importAnimationOpen"),
+      organizerNewOpen: documentRef.querySelector("#organizerNewOpen"),
+      exportWorkbench: documentRef.querySelector("#exportWorkbench"),
       refreshProject: documentRef.querySelector("#refreshProject"),
       clearProject: documentRef.querySelector("#clearProject"),
       deleteProject: documentRef.querySelector("#deleteProject"),

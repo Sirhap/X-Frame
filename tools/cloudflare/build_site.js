@@ -6,6 +6,8 @@ const path = require("node:path");
 const projectRoot = path.resolve(__dirname, "../..");
 const protectedDist = path.join(projectRoot, "dist");
 const publicRoot = path.join(projectRoot, "tools/animation_tuner/public");
+const landingAssetsSource = path.join(publicRoot, "assets/landing");
+const staticHeadersSource = path.join(projectRoot, "cloudflare/site/_headers");
 const siteDist = path.join(projectRoot, "cloudflare/site/dist");
 
 /**
@@ -35,7 +37,12 @@ function buildSite() {
   fs.cpSync(protectedDist, siteDist, { recursive: true });
   fs.renameSync(path.join(siteDist, "index.html"), path.join(siteDist, "workbench.html"));
   fs.copyFileSync(path.join(publicRoot, "landing.html"), path.join(siteDist, "index.html"));
+  fs.copyFileSync(path.join(publicRoot, "admin.html"), path.join(siteDist, "admin.html"));
   fs.copyFileSync(path.join(publicRoot, "landing.css"), path.join(siteDist, "landing.css"));
+  fs.copyFileSync(path.join(publicRoot, "landing-admin.css"), path.join(siteDist, "landing-admin.css"));
+  fs.copyFileSync(path.join(publicRoot, "landing-admin.js"), path.join(siteDist, "landing-admin.js"));
+  fs.cpSync(landingAssetsSource, path.join(siteDist, "assets/landing"), { recursive: true });
+  fs.copyFileSync(staticHeadersSource, path.join(siteDist, "_headers"));
   process.stdout.write(`Built Cloudflare site at ${path.relative(projectRoot, siteDist)}.\n`);
 }
 

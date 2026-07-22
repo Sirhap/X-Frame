@@ -11,6 +11,7 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 - 帧动画预览：支持逐帧选择、播放、暂停、参考帧、黑/白/透明背景和网格坐标。
 - 本地批量抠图：支持多图导入、自动/手动背景取色、边缘连通或全图清除、边缘增强、去污、Alpha 双阈值、逐图颜色保护与矩形局部修复；局部修复可通过最近三帧运动预测、PCA 形状匹配和局部颜色重采样传播到整组；可批量导出 PNG，并可确认后替换当前动画组。
 - 帧工作集整理：支持图片和视频导入；视频可在本地预览、选择起止片段、设置 1–60 FPS 并提取为帧。工作集还支持反选、减帧、恢复源顺序、水平翻转、导入/删除帧、帧标记，以及跳变帧、重复帧和循环段相似度诊断；应用时会同步重映射调参、碰撞框和帧绑定。
+- 浏览器动画组：每次“处理新动画”可建立独立动画组，也可把处理结果加入当前组的附加素材；工作台可把当前组的帧、附加素材和完整调参数据导出为 ZIP 动画包。
 - 三层变换：角色级、动画组级、单帧级分别保存缩放、偏移、旋转和禁用状态。
 - 碰撞框调节：支持 hurtbox、hitbox、collisionbox，在画布中直接拖动和变形。
 - 播放调节：支持组级时长、单帧时长、禁用帧，以及调参后的实际播放节奏。
@@ -108,7 +109,7 @@ Node 服务支持平台注入的 `PORT` 和 `HOST` 环境变量。例如容器�
 
 ### 高级功能激活
 
-高级功能允许完整试用和预览，在最终 ZIP 导出、动画替换、帧工作集应用或高级调参保存时校验激活状态。获取激活码入口为 <https://pay.ldxp.cn/shop/sirhao>。
+导入、处理、调参和本地保存不要求激活。只有从工作台导出动画包时，系统才会根据当前动画实际使用的 Pro 功能决定是否校验激活状态；未使用 Pro 功能可直接导出。获取激活码入口为 <https://pay.ldxp.cn/shop/sirhao>。
 
 服务端不保存明文激活码。本地 Node 开发服务器可通过以下环境变量配置：
 
@@ -124,7 +125,9 @@ printf %s 'XSXB-PRO-示例激活码' | tr '[:lower:]' '[:upper:]' | shasum -a 25
 如果没有同时配置 `XSXB_ACTIVATION_CODE_HASHES` 和至少 32 字符的持久
 `XSXB_ACTIVATION_SECRET`，激活接口会安全地拒绝所有激活请求，不会生成临时签名密钥或使用开发环境万能码。
 
-Cloudflare 正式部署使用 D1 单设备授权，不使用 `XSXB_ACTIVATION_CODE_HASHES` 环境变量：浏览器会生成不可导出的 ECDSA P-256 私钥，D1 只保存公钥、激活码哈希和基础风险记录。试用期默认从首次激活起 3 天，也可按激活码设置 `duration_days`、未使用兑换截止时间 `redeem_by`，或固定到期时间 `expires_at`。完整配置见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
+Cloudflare 正式部署使用 D1 单设备授权，不使用 `XSXB_ACTIVATION_CODE_HASHES` 环境变量：浏览器会生成不可导出的 ECDSA P-256 私钥；D1 保存公钥、激活码哈希、管理员查看所需的 AES-GCM 密文和基础风险记录。授权期默认从首次激活起 3 天，也可按激活码设置永久有效、`duration_days` 与未使用兑换截止时间 `redeem_by`。完整配置见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
+
+Cloudflare 首页右上角链接到独立的 `/admin/licenses` 激活码管理页面，不使用悬浮弹窗，工具工作台也不会显示该入口。管理员使用用户名和 Google Authenticator 兼容的 6 位 TOTP 登录，不使用密码；用户名由 `XSXB_ADMIN_USERNAME` 配置（省略时为 `admin`）。验证后可以查看、单个复制或批量复制新建激活码；迁移前仅保存哈希的旧码无法恢复原文。`XSXB_ADMIN_TOTP_SECRET` 必须以 Base32 形式通过 Worker 环境密钥设置，不得写入源码、Wrangler 配置或 D1。Google Authenticator 固定每 30 秒更新验证码，服务端只接受当前时间窗口，并阻止同一计数器重复使用。管理会话、D1 迁移与远程配置步骤见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
 
 本地开发使用独立环境文件，避免开发码进入正式启动流程：
 

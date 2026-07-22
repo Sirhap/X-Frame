@@ -188,10 +188,25 @@
     return normalizeFeatureIds(features);
   }
 
+  /**
+   * Detects premium capabilities that must be licensed when exporting a finished workbench animation.
+   * Generic import/output operations remain free; only materially used advanced features are returned.
+   * @param {{sourceFeatures?:Iterable<string>,tuner?:object}} snapshot Export state.
+   * @returns {string[]} Premium feature identifiers required for this export.
+   */
+  function detectExportFeatures(snapshot = {}) {
+    const freeOutputOperations = new Set(["cutout.output", "organizer.output"]);
+    return normalizeFeatureIds([
+      ...Array.from(snapshot.sourceFeatures || []),
+      ...detectTunerFeatures(snapshot.tuner || {}),
+    ]).filter((featureId) => !freeOutputOperations.has(featureId));
+  }
+
   return Object.freeze({
     DEFINITIONS,
     describeFeatures,
     detectCutoutFeatures,
+    detectExportFeatures,
     detectTunerFeatures,
     hasRecords,
     normalizeFeatureIds,

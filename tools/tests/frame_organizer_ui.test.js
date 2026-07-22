@@ -2,7 +2,18 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createController } = require("../animation_tuner/public/frame_organizer_ui");
+const { createController, openCurrentAnimation } = require("../animation_tuner/public/frame_organizer_ui");
+
+test("current-animation launcher loads the existing workset", async () => {
+  let openCalls = 0;
+
+  await openCurrentAnimation(async () => {
+    openCalls += 1;
+  });
+
+  assert.equal(openCalls, 1);
+  await assert.rejects(() => openCurrentAnimation(null), /loader is required/);
+});
 
 test("organizer UI controller preserves baseline change detection", () => {
   const state = {
