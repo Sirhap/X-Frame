@@ -534,6 +534,9 @@
             >
               处理新动画
             </button>
+            <button id="activationManage" class="secondary activationManageLaunch" type="button">
+              授权管理
+            </button>
             <button
               id="exportWorkbench"
               class="exportWorkbenchLaunch"
@@ -2535,6 +2538,7 @@
           <span class="activationKicker">PREMIUM OUTPUT / ACTIVATION REQUIRED</span>
           <h2 id="activationTitle">激活后完成导出</h2>
           <p id="activationMessage">当前编辑不会丢失。输入激活码后即可继续。</p>
+          <p id="activationCurrent" class="activationCurrent">正在读取当前授权状态…</p>
           <ul id="activationFeatures" class="activationFeatures"></ul>
           <form id="activationForm" class="activationForm">
             <label class="srOnly" for="activationCode">激活码</label>
@@ -2544,7 +2548,7 @@
               type="text"
               autocomplete="off"
               spellcheck="false"
-              maxlength="160"
+              maxlength="512"
               placeholder="输入激活码"
             />
             <button id="activationSubmit" class="activationSubmit" type="submit">激活并继续</button>

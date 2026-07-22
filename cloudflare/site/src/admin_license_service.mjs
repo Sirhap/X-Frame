@@ -8,7 +8,7 @@ import {
 
 export const MAX_LICENSE_BATCH_SIZE = 100;
 export const MAX_LICENSE_SELECTION_SIZE = 200;
-export const MAX_LICENSE_DEVICES = 100;
+export const MAX_ACTIVATION_CODE_LENGTH = 512;
 export const PERMANENT_REDEEM_BY = "9999-12-31T23:59:59.999Z";
 
 /** @param {unknown} value Raw activation code. @returns {string} Normalized activation code. */
@@ -16,32 +16,37 @@ function normalizeCode(value) {
   const code = String(value || "")
     .trim()
     .toUpperCase();
-  if (code.length < 8 || code.length > 160) {
-    throw Object.assign(new Error("Activation code must contain 8 to 160 characters."), { status: 400 });
-  }
-  if (!/^[A-Z0-9][A-Z0-9_-]*$/u.test(code)) {
+  if (!code || code.length > MAX_ACTIVATION_CODE_LENGTH) {
     throw Object.assign(
-      new Error("Activation code may only use letters, numbers, hyphens, and underscores."),
+      new Error(`Activation code must contain 1 to ${MAX_ACTIVATION_CODE_LENGTH} characters.`),
       { status: 400 },
     );
   }
   return code;
 }
 
-/** @param {unknown} value Raw duration. @returns {number} Valid duration in days. */
-function normalizeDurationDays(value) {
+/** @param {unknown} value Raw duration. @param {number} referenceTime Reference epoch. @returns {number} Valid duration in days. */
+function normalizeDurationDays(value, referenceTime) {
   const durationDays = Number(value);
-  if (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3650) {
-    throw Object.assign(new Error("Duration must be between 1 and 3650 days."), { status: 400 });
+  if (!Number.isSafeInteger(durationDays) || durationDays < 1) {
+    throw Object.assign(new Error("Duration must be a positive whole number of days."), { status: 400 });
+  }
+  try {
+    resolveLicenseExpiry(referenceTime, durationDays, false);
+  } catch (_error) {
+    throw Object.assign(new Error("Duration is too large; use permanent validity instead."), {
+      status: 400,
+    });
   }
   return durationDays;
 }
 
-/** @param {unknown} value Raw device limit. @returns {number} Valid maximum devices. */
+/** @param {unknown} value Raw device limit. @returns {number|null} Valid maximum devices or unlimited. */
 function normalizeMaxDevices(value) {
+  if (value === null) return null;
   const maxDevices = Number(value);
-  if (!Number.isInteger(maxDevices) || maxDevices < 1 || maxDevices > MAX_LICENSE_DEVICES) {
-    throw Object.assign(new Error(`Device limit must be between 1 and ${MAX_LICENSE_DEVICES}.`), {
+  if (!Number.isSafeInteger(maxDevices) || maxDevices < 1) {
+    throw Object.assign(new Error("Device limit must be a positive whole number or unlimited."), {
       status: 400,
     });
   }
@@ -166,10 +171,11 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
       if (new Set(codes).size !== codes.length) {
         throw Object.assign(new Error("The batch contains duplicate activation codes."), { status: 400 });
       }
-      const durationDays = normalizeDurationDays(payload.durationDays ?? 3);
-      const maxDevices = normalizeMaxDevices(payload.maxDevices ?? 1);
+      const currentTime = now();
+      const durationDays = normalizeDurationDays(payload.durationDays ?? 3, currentTime);
+      const maxDevices = Object.hasOwn(payload, "maxDevices") ? normalizeMaxDevices(payload.maxDevices) : 1;
       const permanent = Object.hasOwn(payload, "permanent") ? normalizePermanent(payload.permanent) : false;
-      const redeemBy = normalizeRedeemBy(payload.redeemBy, now());
+      const redeemBy = normalizeRedeemBy(payload.redeemBy, currentTime);
       const licenses = await Promise.all(
         codes.map(async (code) => {
           const codeHash = await sha256Hex(code, subtle);
@@ -231,7 +237,7 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
           status: 400,
         });
       }
-      const durationDays = hasDuration ? normalizeDurationDays(payload.durationDays) : null;
+      const durationDays = hasDuration ? normalizeDurationDays(payload.durationDays, now()) : null;
       const permanent = hasPermanent ? normalizePermanent(payload.permanent) : null;
       const redeemBy = hasRedeemBy ? normalizeRedeemBy(payload.redeemBy, now()) : null;
       const maxDevices = hasMaxDevices ? normalizeMaxDevices(payload.maxDevices) : null;
@@ -245,7 +251,11 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
         return {
           id: row.id,
           durationDays: nextDurationDays,
-          maxDevices: maxDevices ?? Number(row.max_devices || 1),
+          maxDevices: hasMaxDevices
+            ? maxDevices
+            : row.max_devices === null
+              ? null
+              : Number(row.max_devices || 1),
           redeemBy: redeemBy ?? row.redeem_by ?? PERMANENT_REDEEM_BY,
           expiresAt: expiryChanged
             ? resolveLicenseExpiry(activatedAt, nextDurationDays, nextPermanent)

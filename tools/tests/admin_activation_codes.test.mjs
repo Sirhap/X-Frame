@@ -351,6 +351,37 @@ test("administrator batch updates active expiry, revokes, restores, and deletes 
   assert.equal(state.licenses.length, 1);
 });
 
+test("administrator creates custom-format long-duration licenses without a device limit", async () => {
+  const { repository, state } = createAdminRepositoryFixture();
+  const service = configuredService(repository);
+  const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
+  const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
+  const loginRequest = adminRequest("/api/admin/login");
+  const login = await service.login({ username: adminUsername, code }, loginRequest);
+  const cookie = service.cookieHeader(login.token, loginRequest);
+  const request = adminRequest("/api/admin/licenses", { headers: { cookie } });
+
+  const created = await service.createLicenses(
+    {
+      code: " 自定义 激活码 / summer✨ ",
+      durationDays: 12_000,
+      maxDevices: null,
+    },
+    request,
+  );
+
+  assert.equal(created.code, "自定义 激活码 / SUMMER✨");
+  assert.equal(created.license.durationDays, 12_000);
+  assert.equal(created.license.maxDevices, null);
+  assert.equal(created.license.unlimitedDevices, true);
+  assert.equal(state.licenses[0].max_devices, null);
+
+  const finite = await service.updateLicenses({ ids: [created.license.id], maxDevices: 10_000 }, request);
+  assert.equal(finite.licenses[0].maxDevices, 10_000);
+  const unlimited = await service.updateLicenses({ ids: [created.license.id], maxDevices: null }, request);
+  assert.equal(unlimited.licenses[0].unlimitedDevices, true);
+});
+
 test("administrator lists, revokes, restores, and resets individual devices", async () => {
   const { repository, state } = createAdminRepositoryFixture();
   const service = configuredService(repository);
@@ -417,6 +448,10 @@ test("administrator API fails closed and rejects cross-origin login", async () =
 test("administrator control links to a dedicated non-modal management page", () => {
   const landing = fs.readFileSync(new URL("../animation_tuner/public/landing.html", import.meta.url), "utf8");
   const admin = fs.readFileSync(new URL("../animation_tuner/public/admin.html", import.meta.url), "utf8");
+  const adminScript = fs.readFileSync(
+    new URL("../animation_tuner/public/landing-admin.js", import.meta.url),
+    "utf8",
+  );
   const workbench = fs.readFileSync(new URL("../animation_tuner/public/index.html", import.meta.url), "utf8");
   const buildScript = fs.readFileSync(new URL("../cloudflare/build_site.js", import.meta.url), "utf8");
 
@@ -425,7 +460,12 @@ test("administrator control links to a dedicated non-modal management page", () 
   assert.doesNotMatch(landing, /landing-admin\.js/u);
   assert.match(admin, /id="adminBatchCount"/u);
   assert.match(admin, /id="adminMaxDevices"/u);
+  assert.match(admin, /id="adminUnlimitedDevices"/u);
   assert.match(admin, /id="adminBulkMaxDevices"/u);
+  assert.match(admin, /id="adminBulkUnlimitedDevices"/u);
+  assert.match(adminScript, /设备 ID.*首次绑定.*最后使用/u);
+  assert.match(workbench, /id="activationManage"/u);
+  assert.match(workbench, /id="activationCurrent"/u);
   assert.match(admin, /value="9999-12-31T23:59"/u);
   assert.match(admin, /id="adminCopySelectedButton"/u);
   assert.match(admin, /id="adminCopyAllButton"/u);

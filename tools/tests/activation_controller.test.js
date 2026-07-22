@@ -38,12 +38,14 @@ function createDocumentFixture() {
     "#activationCard",
     "#activationTitle",
     "#activationMessage",
+    "#activationCurrent",
     "#activationFeatures",
     "#activationForm",
     "#activationCode",
     "#activationStatus",
     "#activationCancel",
     "#activationSubmit",
+    "#activationManage",
     ".app",
   ];
   const elements = Object.fromEntries(selectors.map((selector) => [selector, createElement()]));
@@ -131,5 +133,35 @@ test("activation form delegates code redemption to the browser device protocol",
 
   assert.equal(activationCode, "XSXB-TRIAL-TEST");
   assert.equal(fixture.controller.isActivated(), true);
+  assert.equal(fixture.elements["#activationStatus"].dataset.tone, "success");
+});
+
+test("license manager stays available for replacement and shows the expiry", async () => {
+  let activationCode = "";
+  const fixture = createControllerFixture({
+    fetchImpl: async () =>
+      Response.json({
+        activated: true,
+        configured: true,
+        plan: "trial",
+        expiresAt: "2026-07-25T00:00:00.000Z",
+      }),
+    deviceIdentity: {
+      async activate(code) {
+        activationCode = code;
+        return { activated: true, plan: "standard", expiresAt: "2027-07-25T00:00:00.000Z" };
+      },
+    },
+  });
+
+  await fixture.controller.openManager();
+  assert.equal(fixture.elements["#activationPanel"].hidden, false);
+  assert.match(fixture.elements["#activationCurrent"].textContent, /试用有效期至/u);
+  fixture.elements["#activationCode"].value = " 自定义 激活码 / 夏季✨ ";
+  await fixture.elements["#activationForm"].listener("submit")({ preventDefault() {} });
+
+  assert.equal(activationCode, "自定义 激活码 / 夏季✨");
+  assert.equal(fixture.elements["#activationPanel"].hidden, false);
+  assert.match(fixture.elements["#activationCurrent"].textContent, /当前授权有效期至/u);
   assert.equal(fixture.elements["#activationStatus"].dataset.tone, "success");
 });

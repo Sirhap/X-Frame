@@ -13,7 +13,7 @@
   /**
    * Creates the shared premium activation flow.
    * @param {{documentRef?:Document,windowRef?:Window,fetchImpl?:typeof fetch,getLanguage?:()=>string,premiumFeatures?:object,deviceIdentity?:object}} dependencies Runtime dependencies.
-   * @returns {{ensureActivated:(featureIds:string[])=>Promise<boolean>,refreshStatus:()=>Promise<object>,isActivated:()=>boolean}}
+   * @returns {{ensureActivated:(featureIds:string[])=>Promise<boolean>,openManager:()=>Promise<void>,refreshStatus:()=>Promise<object>,isActivated:()=>boolean}}
    */
   function createController(dependencies = {}) {
     const documentRef = dependencies.documentRef || root?.document;
@@ -27,12 +27,14 @@
       card: documentRef?.querySelector?.("#activationCard"),
       title: documentRef?.querySelector?.("#activationTitle"),
       message: documentRef?.querySelector?.("#activationMessage"),
+      current: documentRef?.querySelector?.("#activationCurrent"),
       features: documentRef?.querySelector?.("#activationFeatures"),
       form: documentRef?.querySelector?.("#activationForm"),
       code: documentRef?.querySelector?.("#activationCode"),
       status: documentRef?.querySelector?.("#activationStatus"),
       cancel: documentRef?.querySelector?.("#activationCancel"),
       submit: documentRef?.querySelector?.("#activationSubmit"),
+      manage: documentRef?.querySelector?.("#activationManage"),
     };
     if (
       !documentRef?.createElement ||
@@ -48,6 +50,7 @@
     let pendingResolver = null;
     let returnFocus = null;
     let previousAppInert = false;
+    let panelMode = "prompt";
 
     /** @returns {boolean} Whether the current language is English. */
     function isEnglish() {
@@ -60,6 +63,35 @@
       elements.status.dataset.tone = tone;
     }
 
+    /** @param {unknown} value ISO expiry. @returns {string} Localized expiry. */
+    function formatExpiry(value) {
+      const timestamp = Date.parse(String(value || ""));
+      if (!Number.isFinite(timestamp)) return isEnglish() ? "Unknown" : "未知";
+      if (new Date(timestamp).getUTCFullYear() >= 9999) return isEnglish() ? "Never" : "永久";
+      return new Intl.DateTimeFormat(isEnglish() ? "en" : "zh-CN", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        hour12: false,
+      }).format(timestamp);
+    }
+
+    /** @returns {void} */
+    function renderCurrentStatus() {
+      const english = isEnglish();
+      const active = activationStatus.activated;
+      const plan =
+        activationStatus.plan === "trial" ? (english ? "Trial" : "试用") : english ? "License" : "授权";
+      elements.current.textContent = active
+        ? english
+          ? `${plan} active until ${formatExpiry(activationStatus.expiresAt)}.`
+          : `当前${plan}有效期至 ${formatExpiry(activationStatus.expiresAt)}。`
+        : english
+          ? "No active license on this browser."
+          : "当前浏览器没有有效授权。";
+      elements.manage.dataset.active = String(active);
+      elements.manage.title = elements.current.textContent;
+    }
+
     /** @returns {HTMLElement[]} Visible focusable activation controls. */
     function focusableElements() {
       return Array.from(elements.panel.querySelectorAll(FOCUSABLE_SELECTOR)).filter(
@@ -69,7 +101,6 @@
 
     /** @param {boolean} activated Resolution value. @returns {boolean} Whether a prompt closed. */
     function resolvePrompt(activated) {
-      if (!pendingResolver) return false;
       const resolve = pendingResolver;
       pendingResolver = null;
       elements.panel.hidden = true;
@@ -79,8 +110,19 @@
       if (app) app.inert = previousAppInert;
       returnFocus?.focus?.();
       returnFocus = null;
-      resolve(Boolean(activated));
+      resolve?.(Boolean(activated));
       return true;
+    }
+
+    /** @returns {void} */
+    function showPanel() {
+      returnFocus = documentRef.activeElement;
+      const app = documentRef.querySelector(".app");
+      previousAppInert = Boolean(app?.inert);
+      if (app) app.inert = true;
+      elements.panel.hidden = false;
+      elements.code.value = "";
+      windowRef.setTimeout(() => elements.code.focus(), 0);
     }
 
     /** @returns {Promise<object>} Latest activation status. */
@@ -92,6 +134,7 @@
           activated: Boolean(response.ok && result.activated),
           configured: Boolean(result.configured),
           expiresAt: String(result.expiresAt || ""),
+          plan: String(result.plan || ""),
         };
         if (!activationStatus.activated && activationStatus.configured && deviceIdentity?.renew) {
           try {
@@ -101,6 +144,7 @@
                 activated: true,
                 configured: true,
                 expiresAt: String(renewal.expiresAt || ""),
+                plan: String(renewal.plan || ""),
               };
             }
           } catch (_error) {
@@ -126,11 +170,13 @@
         activationStatus = { activated: false, configured: false };
       }
       statusLoaded = true;
+      renderCurrentStatus();
       return activationStatus;
     }
 
     /** @param {string[]} featureIds Used premium feature identifiers. */
     function renderPrompt(featureIds) {
+      panelMode = "prompt";
       const english = isEnglish();
       const features = premiumFeatures.describeFeatures(featureIds, english ? "en" : "zh");
       elements.title.textContent = english ? "Activate to export" : "激活后完成导出";
@@ -140,6 +186,7 @@
       elements.code.placeholder = english ? "Enter activation code" : "输入激活码";
       elements.cancel.textContent = english ? "Not now" : "暂不激活";
       elements.submit.textContent = english ? "Activate and continue" : "激活并继续";
+      elements.features.hidden = false;
       elements.features.replaceChildren();
       for (const feature of features) {
         const item = documentRef.createElement("li");
@@ -160,6 +207,42 @@
             : "当前服务尚未配置激活码校验，请联系管理员。",
         activationStatus.configured ? "idle" : "error",
       );
+      renderCurrentStatus();
+    }
+
+    /** @returns {Promise<void>} Opens the user-controlled license manager. */
+    async function openManager() {
+      if (pendingResolver) resolvePrompt(false);
+      if (!statusLoaded) await refreshStatus();
+      panelMode = "manage";
+      const english = isEnglish();
+      elements.title.textContent = english ? "License management" : "授权管理";
+      elements.message.textContent = english
+        ? "Enter a new activation code at any time to replace the license used by this browser."
+        : "可随时输入新的激活码，更换当前浏览器正在使用的授权。";
+      elements.code.placeholder = english ? "Enter a new activation code" : "输入新的激活码";
+      elements.cancel.textContent = english ? "Close" : "关闭";
+      elements.submit.textContent = activationStatus.activated
+        ? english
+          ? "Replace license"
+          : "更换激活码"
+        : english
+          ? "Activate"
+          : "立即激活";
+      elements.features.replaceChildren();
+      elements.features.hidden = true;
+      renderCurrentStatus();
+      setStatus(
+        activationStatus.configured
+          ? english
+            ? "Activation codes are verified securely by this service."
+            : "激活码将由当前服务安全校验。"
+          : english
+            ? "Activation verification is not configured."
+            : "当前服务尚未配置激活码校验，请联系管理员。",
+        activationStatus.configured ? "idle" : "error",
+      );
+      showPanel();
     }
 
     /** @param {string[]} featureIds Used premium feature identifiers. @returns {Promise<boolean>} */
@@ -170,13 +253,7 @@
       if (activationStatus.activated) return true;
       if (pendingResolver) resolvePrompt(false);
       renderPrompt(normalized);
-      returnFocus = documentRef.activeElement;
-      const app = documentRef.querySelector(".app");
-      previousAppInert = Boolean(app?.inert);
-      if (app) app.inert = true;
-      elements.panel.hidden = false;
-      elements.code.value = "";
-      windowRef.setTimeout(() => elements.code.focus(), 0);
+      showPanel();
       return new Promise((resolve) => {
         pendingResolver = resolve;
       });
@@ -209,10 +286,24 @@
           }
         }
         if (!result?.activated) throw new Error(isEnglish() ? "Activation failed." : "激活失败。");
-        activationStatus = { activated: true, configured: true, expiresAt: result.expiresAt || "" };
+        activationStatus = {
+          activated: true,
+          configured: true,
+          expiresAt: result.expiresAt || "",
+          plan: result.plan || "",
+        };
         statusLoaded = true;
-        setStatus(isEnglish() ? "Activated. Continuing…" : "激活成功，正在继续…", "success");
-        windowRef.setTimeout(() => resolvePrompt(true), 260);
+        renderCurrentStatus();
+        if (panelMode === "prompt") {
+          setStatus(isEnglish() ? "Activated. Continuing…" : "激活成功，正在继续…", "success");
+          windowRef.setTimeout(() => resolvePrompt(true), 260);
+        } else {
+          setStatus(isEnglish() ? "License replaced successfully." : "激活码更换成功。", "success");
+          elements.submit.textContent = isEnglish() ? "Replace license" : "更换激活码";
+          elements.submit.disabled = false;
+          elements.code.disabled = false;
+          elements.code.value = "";
+        }
       } catch (error) {
         elements.submit.disabled = false;
         elements.code.disabled = false;
@@ -220,6 +311,7 @@
         elements.code.focus();
       }
     });
+    elements.manage.addEventListener("click", () => void openManager());
     elements.cancel.addEventListener("click", () => resolvePrompt(false));
     elements.panel.addEventListener("click", (event) => {
       if (event.target === elements.panel) resolvePrompt(false);
@@ -248,6 +340,7 @@
     return Object.freeze({
       ensureActivated,
       isActivated: () => activationStatus.activated,
+      openManager,
       refreshStatus,
     });
   }

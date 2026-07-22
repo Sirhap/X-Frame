@@ -94,11 +94,10 @@
                   id="adminActivationCode"
                   name="activationCode"
                   type="text"
-                  minlength="8"
-                  maxlength="160"
+                  maxlength="512"
                   autocomplete="off"
                   spellcheck="false"
-                  placeholder="XSXB-XXXXXX-XXXXXX-XXXXXX"
+                  placeholder="可输入任意自定义文本"
                 />
                 <button id="adminGenerateCodeButton" type="button">随机生成</button>
               </div>
@@ -124,7 +123,6 @@
                       name="durationDays"
                       type="number"
                       min="1"
-                      max="3650"
                       value="3"
                       required
                     />
@@ -133,18 +131,14 @@
                     </button>
                   </div>
                 </div>
-                <label>
-                  <span>最多激活设备</span>
-                  <input
-                    id="adminMaxDevices"
-                    name="maxDevices"
-                    type="number"
-                    min="1"
-                    max="100"
-                    value="1"
-                    required
-                  />
-                </label>
+                <div class="admin-field admin-device-limit-field">
+                  <label for="adminMaxDevices">最多激活设备</label>
+                  <input id="adminMaxDevices" name="maxDevices" type="number" min="1" value="1" required />
+                  <label class="admin-unlimited-toggle">
+                    <input id="adminUnlimitedDevices" type="checkbox" />
+                    <span>不限设备数量</span>
+                  </label>
+                </div>
               </div>
 
               <label for="adminRedeemBy">最晚兑换时间</label>
@@ -199,7 +193,7 @@
                 <div class="admin-bulk-duration-field">
                   <span>有效天数</span>
                   <div class="admin-duration-input">
-                    <input id="adminBulkDurationDays" type="number" min="1" max="3650" value="3" />
+                    <input id="adminBulkDurationDays" type="number" min="1" value="3" />
                     <button id="adminBulkPermanentButton" type="button" aria-pressed="false">永久</button>
                   </div>
                 </div>
@@ -212,10 +206,14 @@
                     value="9999-12-31T23:59"
                   />
                 </label>
-                <label>
-                  <span>最多激活设备</span>
-                  <input id="adminBulkMaxDevices" type="number" min="1" max="100" value="1" />
-                </label>
+                <div class="admin-field admin-device-limit-field">
+                  <label for="adminBulkMaxDevices">最多激活设备</label>
+                  <input id="adminBulkMaxDevices" type="number" min="1" value="1" />
+                  <label class="admin-unlimited-toggle">
+                    <input id="adminBulkUnlimitedDevices" type="checkbox" />
+                    <span>不限设备数量</span>
+                  </label>
+                </div>
                 <button id="adminBulkApplyButton" type="button">应用设置</button>
                 <button id="adminBulkRevokeButton" type="button">撤销</button>
                 <button id="adminBulkRestoreButton" type="button">恢复</button>

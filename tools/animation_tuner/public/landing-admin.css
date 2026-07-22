@@ -470,6 +470,27 @@
   display: grid;
 }
 
+.admin-unlimited-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  margin-bottom: 0 !important;
+  color: var(--muted);
+  font: 700 9px/1.2 var(--sans);
+  letter-spacing: 0.04em;
+}
+
+.admin-unlimited-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--mint);
+}
+
+.admin-device-limit-field > input:disabled {
+  opacity: 0.45;
+}
+
 .admin-duration-input {
   margin-bottom: 0;
 }
@@ -797,6 +818,20 @@
   margin: 0;
   color: #aeb6b0;
   font: 9px/1.45 var(--mono);
+}
+
+.admin-license-device strong,
+.admin-license-device small {
+  display: block;
+}
+
+.admin-license-device strong {
+  color: var(--ink);
+}
+
+.admin-license-device small {
+  margin-top: 3px;
+  color: #7e857f;
 }
 
 .admin-license-device div {

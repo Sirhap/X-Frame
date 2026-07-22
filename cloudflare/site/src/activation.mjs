@@ -8,6 +8,7 @@ import {
   verifyToken,
 } from "./activation_crypto.mjs";
 import { createLicenseRepository } from "./license_repository.mjs";
+import { resolveLicenseExpiry } from "./license_duration.mjs";
 import { hashDeviceFingerprint, normalizeDeviceFingerprint } from "./trial_identity.mjs";
 
 const COOKIE_NAME = "xsxb_activation";
@@ -16,6 +17,7 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const MAX_REQUEST_BYTES = 8192;
 const AUTOMATIC_TRIAL_DAYS = 3;
 const DAY_MS = 86_400_000;
+const MAX_ACTIVATION_CODE_LENGTH = 512;
 
 /** @param {string} code Activation code. @param {SubtleCrypto} subtle Web Crypto. @returns {Promise<string>} Normalized code hash. */
 export async function hashActivationCode(code, subtle) {
@@ -179,7 +181,7 @@ export function createActivationService(env, options = {}) {
       if (!configured)
         throw Object.assign(new Error("Activation verification is not configured."), { status: 503 });
       const code = String(payload.code || "").trim();
-      if (!code || code.length > 160)
+      if (!code || code.length > MAX_ACTIVATION_CODE_LENGTH)
         throw Object.assign(new Error("Invalid activation code."), { status: 401 });
       const { jwk, publicKeyHash } = await prepareDeviceKey(payload, subtle);
       const license = await repository.findLicenseByCodeHash(await hashActivationCode(code, subtle));
@@ -199,7 +201,14 @@ export function createActivationService(env, options = {}) {
       }
       const activatedAt = license.first_activated_at || new Date(currentTime).toISOString();
       const durationDays = Math.max(1, Number(license.duration_days || 3));
-      const expiresAt = license.expires_at || new Date(currentTime + durationDays * 86_400_000).toISOString();
+      let expiresAt = license.expires_at;
+      if (!expiresAt) {
+        try {
+          expiresAt = resolveLicenseExpiry(currentTime, durationDays, false);
+        } catch (_error) {
+          throw Object.assign(new Error("Activation code duration is misconfigured."), { status: 500 });
+        }
+      }
       if (Date.parse(expiresAt) <= currentTime)
         throw Object.assign(new Error("Trial period has expired."), { status: 402 });
       if (!license.first_activated_at || !license.expires_at) {
@@ -374,6 +383,7 @@ export function createActivationService(env, options = {}) {
         activated: true,
         configured: true,
         deviceId: authorization.device_id,
+        plan: authorization.plan,
         expiresAt: new Date(licenseExpiresAt).toISOString(),
         sessionExpiresAt: new Date(sessionExpiresAt).toISOString(),
         token,

@@ -94,8 +94,12 @@ export function createLicenseRepository(database) {
              (id, license_id, public_key, public_key_hash, fingerprint_hash, device_name,
               first_ip_hash, last_ip_hash, first_country, last_country, created_at, last_seen_at)
            SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?8, ?9, ?9
-            WHERE (SELECT COUNT(*) FROM license_devices WHERE license_id = ?2 AND revoked_at IS NULL) <
-                  (SELECT max_devices FROM licenses WHERE id = ?2 AND revoked_at IS NULL)`,
+             FROM licenses l
+            WHERE l.id = ?2
+              AND l.revoked_at IS NULL
+              AND (l.max_devices IS NULL OR
+                   (SELECT COUNT(*) FROM license_devices WHERE license_id = ?2 AND revoked_at IS NULL) <
+                   l.max_devices)`,
         )
         .bind(
           device.id,

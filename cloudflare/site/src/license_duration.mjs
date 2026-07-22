@@ -1,4 +1,5 @@
 export const PERMANENT_LICENSE_EXPIRES_AT = "9999-12-31T23:59:59.999Z";
+const PERMANENT_LICENSE_EXPIRY_EPOCH = Date.parse(PERMANENT_LICENSE_EXPIRES_AT);
 
 /** @param {unknown} value Stored expiry value. @returns {boolean} Whether the expiry represents a permanent license. */
 export function isPermanentLicenseExpiry(value) {
@@ -16,5 +17,9 @@ export function isPermanentLicenseExpiry(value) {
 export function resolveLicenseExpiry(activatedAt, durationDays, permanent) {
   if (permanent) return PERMANENT_LICENSE_EXPIRES_AT;
   if (!Number.isFinite(activatedAt)) return null;
-  return new Date(activatedAt + durationDays * 86_400_000).toISOString();
+  const expiresAt = activatedAt + durationDays * 86_400_000;
+  if (!Number.isFinite(expiresAt) || expiresAt >= PERMANENT_LICENSE_EXPIRY_EPOCH) {
+    throw new RangeError("Finite license expiry must be before year 9999.");
+  }
+  return new Date(expiresAt).toISOString();
 }

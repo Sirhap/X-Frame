@@ -104,7 +104,9 @@ async function createRepositoryFixture(overrides = {}) {
       const activeCount = state.devices.filter(
         (entry) => entry.license_id === device.licenseId && !entry.revoked_at,
       ).length;
-      if (activeCount >= state.license.max_devices) return { meta: { changes: 0 } };
+      if (state.license.max_devices !== null && activeCount >= state.license.max_devices) {
+        return { meta: { changes: 0 } };
+      }
       if (
         state.devices.some(
           (entry) => entry.license_id === device.licenseId && entry.public_key_hash === device.publicKeyHash,
@@ -379,6 +381,30 @@ test("a multi-device activation code occupies distinct slots and reuses an exist
     service.activationChallenge({ code: "XSXB-TRIAL-TEST", publicKey: devices[2].publicKey }, request),
     (error) => error.status === 409 && /device limit/u.test(error.message),
   );
+});
+
+test("an unlimited activation code accepts custom text and any number of devices", async () => {
+  const customCode = "自定义 激活码 / 夏季✨";
+  const fixture = await createRepositoryFixture({
+    code_hash: await hashActivationCode(customCode, crypto.subtle),
+    duration_days: 12_000,
+    max_devices: null,
+  });
+  const service = createActivationService(
+    { XSXB_ACTIVATION_SECRET: activationSecret },
+    { repository: fixture.repository, now: () => Date.parse("2026-07-22T00:00:00.000Z") },
+  );
+  const devices = await Promise.all(Array.from({ length: 6 }, () => createDeviceKey()));
+  for (const device of devices) {
+    const challenge = await service.activationChallenge(
+      { code: customCode, publicKey: device.publicKey },
+      activationRequest("/api/activation/challenge"),
+    );
+    assert.ok(challenge.deviceId);
+  }
+
+  assert.equal(fixture.state.devices.length, 6);
+  assert.equal(Date.parse(fixture.state.license.expires_at), Date.parse("2059-05-30T00:00:00.000Z"));
 });
 
 test("automatic trial starts without a code and blocks a new key with the same fingerprint", async () => {

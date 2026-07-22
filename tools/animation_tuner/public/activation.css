@@ -23,6 +23,11 @@
   content: "PRO";
 }
 
+.activationManageLaunch[data-active="true"] {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+
 .activationPanel {
   position: fixed;
   z-index: 1500;
@@ -101,6 +106,14 @@
 .activationBody > p {
   color: var(--muted);
   font: 750 12px/1.65 var(--data-font);
+}
+
+.activationCurrent {
+  padding: 10px 12px;
+  border: 2px solid color-mix(in srgb, var(--accent-2) 50%, var(--line));
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--ink) !important;
 }
 
 .activationFeatures {

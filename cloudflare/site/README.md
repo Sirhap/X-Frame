@@ -49,13 +49,19 @@ VALUES ('license-opaque-id', '64-character-sha256-hash');
 
 Each code can be configured independently:
 
-- `duration_days`: days after first activation; defaults to `3`. Permanent licenses keep a valid
+- `duration_days`: any positive whole-number duration that produces an expiry before year 9999;
+  defaults to `3`. Permanent licenses keep a valid
   fallback duration and store `expires_at` as year 9999, so no schema exception is required.
 - `redeem_by`: optional last time an unused code may be redeemed, as an ISO-8601 timestamp.
 - `expires_at`: optional fixed license expiry; when absent it is calculated from `duration_days`.
 - `revoked_at`: setting an ISO-8601 timestamp immediately revokes the license.
-- `max_devices`: simultaneous active device slots, from `1` to `100`. Existing codes remain at `1`
-  after migration. All devices share the license's first-activation and expiry timestamps.
+- `max_devices`: a positive whole-number active-device limit, or `NULL` for unlimited devices.
+  Existing codes retain their configured limit after migration. All devices share the license's
+  first-activation and expiry timestamps.
+
+Activation codes are case-insensitive after trimming leading and trailing whitespace. Administrators
+may use Unicode text, internal spaces, and symbols in any format. A 512-character transport limit
+protects bounded Worker requests but does not impose a prefix or pattern.
 
 The same browser key reuses its existing slot. A new key occupies a slot atomically only while the
 active-device count is below `max_devices`. Revoked devices stop consuming active capacity; the
@@ -110,9 +116,11 @@ account and back up the database before applying migrations remotely:
 wrangler d1 migrations apply xsxb-frame-tuner-licenses --remote
 ```
 
-The console creates standard codes with a finite or permanent activation duration, a `1`–`100` device
-limit, and an unused-code redemption deadline that defaults to year 9999 (displayed as permanent).
-It lists bound devices and supports per-device revocation, restoration, and slot reset. D1 stores the
+The console creates standard codes with a custom finite or permanent activation duration, a finite or
+unlimited device policy, and an unused-code redemption deadline that defaults to year 9999 (displayed
+as permanent). The workbench license manager lets users enter or replace a code and inspect the active
+expiry. The administrator console groups device IDs, names, locations, first-binding and last-seen
+times under the exact code they use, with per-device revocation, restoration, and slot reset. D1 stores the
 normalized SHA-256 hash for redemption lookup and an AES-GCM authenticated ciphertext for
 administrator display. The
 encryption key is domain-separated from the persistent `XSXB_ACTIVATION_SECRET`; rotating that secret
@@ -126,6 +134,9 @@ block that client for fifteen minutes.
 npm run check:cloudflare
 wrangler deploy
 ```
+
+Migration `0005_flexible_licenses.sql` removes the old 3650-day and 100-device schema ceilings and
+uses `NULL` as the explicit unlimited-device value. Back up D1 before applying it remotely.
 
 The validation command builds the protected workbench, audits generated artifacts, runs Worker and
 browser-identity tests, validates generated Worker types, and performs a deployment dry run. It does
