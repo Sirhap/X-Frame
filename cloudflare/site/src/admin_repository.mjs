@@ -15,6 +15,7 @@ export function createAdminRepository(database) {
         .bind(fingerprintHash)
         .first();
     },
+
     /** @param {object} attempt Login attempt state. @returns {Promise<object>} Mutation result. */
     saveLoginAttempt(attempt) {
       return database
@@ -37,6 +38,7 @@ export function createAdminRepository(database) {
         )
         .run();
     },
+
     /** @param {string} fingerprintHash Hashed client fingerprint. @returns {Promise<object>} Mutation result. */
     clearLoginAttempt(fingerprintHash) {
       return database
@@ -44,12 +46,8 @@ export function createAdminRepository(database) {
         .bind(fingerprintHash)
         .run();
     },
-    /**
-     * Atomically records a TOTP counter and prunes old replay records.
-     * @param {number} counter Accepted TOTP counter.
-     * @param {string} usedAt ISO timestamp.
-     * @returns {Promise<boolean>} Whether the counter was unused.
-     */
+
+    /** @param {number} counter Accepted TOTP counter. @param {string} usedAt ISO timestamp. @returns {Promise<boolean>} Whether the counter was unused. */
     async consumeTotpCounter(counter, usedAt) {
       try {
         await database.batch([
@@ -64,22 +62,42 @@ export function createAdminRepository(database) {
         throw error;
       }
     },
-    /** @param {number} limit Maximum rows. @returns {Promise<object[]>} Recent licenses. */
+
+    /** @param {number} limit Maximum rows. @returns {Promise<object[]>} Recent code-based licenses. */
     async listLicenses(limit) {
       const result = await database
         .prepare(
-          `SELECT l.id, l.code_hash, l.code_ciphertext, l.plan, l.duration_days, l.redeem_by,
-                  l.first_activated_at, l.expires_at, l.revoked_at,
-                  d.device_name, d.last_seen_at
-             FROM licenses l
-             LEFT JOIN license_devices d ON d.license_id = l.id
-            ORDER BY l.rowid DESC
+          `SELECT id, code_hash, code_ciphertext, plan, duration_days, max_devices, redeem_by,
+                  first_activated_at, expires_at, revoked_at
+             FROM licenses
+            WHERE source = 'code'
+            ORDER BY rowid DESC
             LIMIT ?1`,
         )
         .bind(limit)
         .all();
       return result.results || [];
     },
+
+    /** @param {string[]} licenseIds License IDs. @returns {Promise<object[]>} Devices grouped by license. */
+    async listLicenseDevices(licenseIds) {
+      if (!licenseIds.length) return [];
+      const results = await database.batch(
+        licenseIds.map((licenseId) =>
+          database
+            .prepare(
+              `SELECT id, license_id, device_name, first_country, last_country,
+                      created_at, last_seen_at, revoked_at
+                 FROM license_devices
+                WHERE license_id = ?1
+                ORDER BY created_at ASC`,
+            )
+            .bind(licenseId),
+        ),
+      );
+      return results.flatMap((result) => result.results || []);
+    },
+
     /** @param {object[]} licenses New license records. @returns {Promise<object[]>} Batch results. */
     createLicenses(licenses) {
       return database.batch(
@@ -87,30 +105,32 @@ export function createAdminRepository(database) {
           database
             .prepare(
               `INSERT INTO licenses
-                 (id, code_hash, code_ciphertext, plan, duration_days, max_devices, redeem_by, expires_at)
-               VALUES (?1, ?2, ?3, 'standard', ?4, 1, ?5, ?6)`,
+                 (id, code_hash, code_ciphertext, source, plan, duration_days, max_devices, redeem_by, expires_at)
+               VALUES (?1, ?2, ?3, 'code', 'standard', ?4, ?5, ?6, ?7)`,
             )
             .bind(
               license.id,
               license.codeHash,
               license.codeCiphertext,
               license.durationDays,
+              license.maxDevices,
               license.redeemBy,
               license.expiresAt,
             ),
         ),
       );
     },
+
     /** @param {string[]} ids License IDs. @returns {Promise<object[]>} Matching license rows. */
     async findLicensesByIds(ids) {
       const results = await database.batch(
         ids.map((id) =>
           database
             .prepare(
-              `SELECT id, code_hash, code_ciphertext, plan, duration_days, redeem_by, first_activated_at,
-                      expires_at, revoked_at
+              `SELECT id, code_hash, code_ciphertext, plan, duration_days, max_devices, redeem_by,
+                      first_activated_at, expires_at, revoked_at
                  FROM licenses
-                WHERE id = ?1
+                WHERE id = ?1 AND source = 'code'
                 LIMIT 1`,
             )
             .bind(id),
@@ -118,6 +138,7 @@ export function createAdminRepository(database) {
       );
       return results.flatMap((result) => result.results || []);
     },
+
     /** @param {object[]} licenses Updated license records. @returns {Promise<object[]>} Batch results. */
     updateLicenses(licenses) {
       return database.batch(
@@ -125,24 +146,64 @@ export function createAdminRepository(database) {
           database
             .prepare(
               `UPDATE licenses
-                  SET duration_days = ?2, redeem_by = ?3, expires_at = ?4
-                WHERE id = ?1`,
+                  SET duration_days = ?2, max_devices = ?3, redeem_by = ?4, expires_at = ?5
+                WHERE id = ?1 AND source = 'code'`,
             )
-            .bind(license.id, license.durationDays, license.redeemBy, license.expiresAt),
+            .bind(license.id, license.durationDays, license.maxDevices, license.redeemBy, license.expiresAt),
         ),
       );
     },
+
     /** @param {string[]} ids License IDs. @param {string|null} revokedAt Revocation time. @returns {Promise<object[]>} Batch results. */
     setLicensesRevoked(ids, revokedAt) {
       return database.batch(
         ids.map((id) =>
-          database.prepare("UPDATE licenses SET revoked_at = ?2 WHERE id = ?1").bind(id, revokedAt),
+          database
+            .prepare("UPDATE licenses SET revoked_at = ?2 WHERE id = ?1 AND source = 'code'")
+            .bind(id, revokedAt),
         ),
       );
     },
+
     /** @param {string[]} ids License IDs. @returns {Promise<object[]>} Batch results. */
     deleteLicenses(ids) {
-      return database.batch(ids.map((id) => database.prepare("DELETE FROM licenses WHERE id = ?1").bind(id)));
+      return database.batch(
+        ids.map((id) => database.prepare("DELETE FROM licenses WHERE id = ?1 AND source = 'code'").bind(id)),
+      );
+    },
+
+    /** @param {string[]} ids Device IDs. @returns {Promise<object[]>} Matching code-license devices. */
+    async findDevicesByIds(ids) {
+      const results = await database.batch(
+        ids.map((id) =>
+          database
+            .prepare(
+              `SELECT d.id, d.license_id, d.revoked_at
+                 FROM license_devices d
+                 JOIN licenses l ON l.id = d.license_id
+                WHERE d.id = ?1 AND l.source = 'code'
+                LIMIT 1`,
+            )
+            .bind(id),
+        ),
+      );
+      return results.flatMap((result) => result.results || []);
+    },
+
+    /** @param {string[]} ids Device IDs. @param {string|null} revokedAt Revocation time. @returns {Promise<object[]>} Batch results. */
+    setDevicesRevoked(ids, revokedAt) {
+      return database.batch(
+        ids.map((id) =>
+          database.prepare("UPDATE license_devices SET revoked_at = ?2 WHERE id = ?1").bind(id, revokedAt),
+        ),
+      );
+    },
+
+    /** @param {string[]} ids Device IDs. @returns {Promise<object[]>} Batch results. */
+    deleteDevices(ids) {
+      return database.batch(
+        ids.map((id) => database.prepare("DELETE FROM license_devices WHERE id = ?1").bind(id)),
+      );
     },
   };
 }

@@ -8,6 +8,7 @@ import {
 
 export const MAX_LICENSE_BATCH_SIZE = 100;
 export const MAX_LICENSE_SELECTION_SIZE = 200;
+export const MAX_LICENSE_DEVICES = 100;
 export const PERMANENT_REDEEM_BY = "9999-12-31T23:59:59.999Z";
 
 /** @param {unknown} value Raw activation code. @returns {string} Normalized activation code. */
@@ -34,6 +35,17 @@ function normalizeDurationDays(value) {
     throw Object.assign(new Error("Duration must be between 1 and 3650 days."), { status: 400 });
   }
   return durationDays;
+}
+
+/** @param {unknown} value Raw device limit. @returns {number} Valid maximum devices. */
+function normalizeMaxDevices(value) {
+  const maxDevices = Number(value);
+  if (!Number.isInteger(maxDevices) || maxDevices < 1 || maxDevices > MAX_LICENSE_DEVICES) {
+    throw Object.assign(new Error(`Device limit must be between 1 and ${MAX_LICENSE_DEVICES}.`), {
+      status: 400,
+    });
+  }
+  return maxDevices;
 }
 
 /** @param {unknown} value Raw permanent flag. @returns {boolean} Valid permanent state. */
@@ -70,6 +82,20 @@ function normalizeIds(value) {
   const ids = [...new Set(value.map((id) => String(id || "").trim()))];
   if (ids.length !== value.length || ids.some((id) => !/^[a-zA-Z0-9-]{8,80}$/u.test(id))) {
     throw Object.assign(new Error("Activation code selection is invalid."), { status: 400 });
+  }
+  return ids;
+}
+
+/** @param {unknown} value Raw device IDs. @returns {string[]} Unique device IDs. */
+function normalizeDeviceIds(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_LICENSE_SELECTION_SIZE) {
+    throw Object.assign(new Error(`Select between 1 and ${MAX_LICENSE_SELECTION_SIZE} devices.`), {
+      status: 400,
+    });
+  }
+  const ids = [...new Set(value.map((id) => String(id || "").trim()))];
+  if (ids.length !== value.length || ids.some((id) => !/^[a-zA-Z0-9-]{8,80}$/u.test(id))) {
+    throw Object.assign(new Error("Device selection is invalid."), { status: 400 });
   }
   return ids;
 }
@@ -117,6 +143,15 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
     return ids.map((id) => rowsById.get(id));
   }
 
+  /** @param {string[]} ids Device IDs that must exist. @returns {Promise<object[]>} Stored devices. */
+  async function requireDevices(ids) {
+    const rows = await repository.findDevicesByIds(ids);
+    if (rows.length !== ids.length) {
+      throw Object.assign(new Error("One or more selected devices no longer exist."), { status: 404 });
+    }
+    return rows;
+  }
+
   return {
     /** @param {object} payload Create payload. @returns {Promise<object>} Created plaintext codes and rows. */
     async create(payload) {
@@ -132,6 +167,7 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
         throw Object.assign(new Error("The batch contains duplicate activation codes."), { status: 400 });
       }
       const durationDays = normalizeDurationDays(payload.durationDays ?? 3);
+      const maxDevices = normalizeMaxDevices(payload.maxDevices ?? 1);
       const permanent = Object.hasOwn(payload, "permanent") ? normalizePermanent(payload.permanent) : false;
       const redeemBy = normalizeRedeemBy(payload.redeemBy, now());
       const licenses = await Promise.all(
@@ -143,6 +179,7 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
             codeHash,
             codeCiphertext: await encryptActivationCode(code, codeHash, rootSecret, cryptoApi),
             durationDays,
+            maxDevices,
             redeemBy,
             expiresAt: permanent ? PERMANENT_LICENSE_EXPIRES_AT : null,
           };
@@ -161,12 +198,14 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
             code_ciphertext: license.codeCiphertext,
             plan: "standard",
             duration_days: license.durationDays,
+            max_devices: license.maxDevices,
             redeem_by: license.redeemBy,
             first_activated_at: null,
             expires_at: license.expiresAt,
             revoked_at: null,
             device_name: null,
             last_seen_at: null,
+            devices: [],
           },
           now(),
           license.code,
@@ -186,12 +225,16 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
       const hasDuration = Object.hasOwn(payload, "durationDays");
       const hasPermanent = Object.hasOwn(payload, "permanent");
       const hasRedeemBy = Object.hasOwn(payload, "redeemBy");
-      if (!hasDuration && !hasPermanent && !hasRedeemBy) {
-        throw Object.assign(new Error("Provide a duration or redeem deadline to update."), { status: 400 });
+      const hasMaxDevices = Object.hasOwn(payload, "maxDevices");
+      if (!hasDuration && !hasPermanent && !hasRedeemBy && !hasMaxDevices) {
+        throw Object.assign(new Error("Provide a duration, device limit, or redeem deadline to update."), {
+          status: 400,
+        });
       }
       const durationDays = hasDuration ? normalizeDurationDays(payload.durationDays) : null;
       const permanent = hasPermanent ? normalizePermanent(payload.permanent) : null;
       const redeemBy = hasRedeemBy ? normalizeRedeemBy(payload.redeemBy, now()) : null;
+      const maxDevices = hasMaxDevices ? normalizeMaxDevices(payload.maxDevices) : null;
       const rows = await requireLicenses(ids);
       const updates = rows.map((row) => {
         const nextDurationDays = durationDays ?? Number(row.duration_days);
@@ -202,6 +245,7 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
         return {
           id: row.id,
           durationDays: nextDurationDays,
+          maxDevices: maxDevices ?? Number(row.max_devices || 1),
           redeemBy: redeemBy ?? row.redeem_by ?? PERMANENT_REDEEM_BY,
           expiresAt: expiryChanged
             ? resolveLicenseExpiry(activatedAt, nextDurationDays, nextPermanent)
@@ -212,6 +256,7 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
       const updatedRows = rows.map((row, index) => ({
         ...row,
         duration_days: updates[index].durationDays,
+        max_devices: updates[index].maxDevices,
         redeem_by: updates[index].redeemBy,
         expires_at: updates[index].expiresAt,
       }));
@@ -234,6 +279,25 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
       const ids = normalizeIds(payload.ids);
       await requireLicenses(ids);
       await repository.deleteLicenses(ids);
+      return { count: ids.length };
+    },
+
+    /** @param {object} payload Device revocation payload. @returns {Promise<object>} Mutation summary. */
+    async setDevicesRevoked(payload) {
+      const ids = normalizeDeviceIds(payload.ids);
+      if (typeof payload.revoked !== "boolean") {
+        throw Object.assign(new Error("Device revocation state must be true or false."), { status: 400 });
+      }
+      await requireDevices(ids);
+      await repository.setDevicesRevoked(ids, payload.revoked ? new Date(now()).toISOString() : null);
+      return { count: ids.length, revoked: payload.revoked };
+    },
+
+    /** @param {object} payload Device reset payload. @returns {Promise<object>} Mutation summary. */
+    async deleteDevices(payload) {
+      const ids = normalizeDeviceIds(payload.ids);
+      await requireDevices(ids);
+      await repository.deleteDevices(ids);
       return { count: ids.length };
     },
   };

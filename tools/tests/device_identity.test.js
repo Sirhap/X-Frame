@@ -113,3 +113,49 @@ test("device identity does not call renewal API before a browser is bound", asyn
 
   assert.equal(await controller.renew(), null);
 });
+
+test("device identity starts a code-free trial with fingerprint signals", async () => {
+  const storage = createMemoryStorage();
+  let publicKey = null;
+  let receivedFingerprint = null;
+  const controller = deviceIdentityModule.createController({
+    cryptoApi: crypto,
+    storage,
+    navigatorRef: { platform: "Test Mac" },
+    fingerprintCollector: async () => ({ platform: "macOS", userAgent: "Test Browser/1.0" }),
+    async fetchImpl(pathname, options) {
+      const payload = JSON.parse(String(options?.body || "{}"));
+      if (pathname === "/api/activation/trial-challenge") {
+        receivedFingerprint = payload.fingerprint;
+        publicKey = await crypto.subtle.importKey(
+          "jwk",
+          payload.publicKey,
+          { name: "ECDSA", namedCurve: "P-256" },
+          false,
+          ["verify"],
+        );
+        return Response.json({ challenge: "trial-challenge" });
+      }
+      if (pathname === "/api/activation/verify") {
+        const valid = await crypto.subtle.verify(
+          { name: "ECDSA", hash: "SHA-256" },
+          publicKey,
+          base64UrlToBytes(payload.signature),
+          new TextEncoder().encode(payload.challenge),
+        );
+        return Response.json(
+          valid
+            ? { activated: true, deviceId: "trial-device", expiresAt: "2026-07-25T00:00:00.000Z" }
+            : { error: "bad signature" },
+          { status: valid ? 200 : 401 },
+        );
+      }
+      return Response.json({ error: "not found" }, { status: 404 });
+    },
+  });
+
+  const trial = await controller.startTrial();
+  assert.equal(trial.activated, true);
+  assert.deepEqual(receivedFingerprint, { platform: "macOS", userAgent: "Test Browser/1.0" });
+  assert.equal(storage.read().deviceId, "trial-device");
+});

@@ -167,19 +167,30 @@ function serializeLicense(row, now, code = "") {
       : row.first_activated_at
         ? "active"
         : "unused";
+  const devices = Array.isArray(row.devices)
+    ? row.devices.map((device) => ({
+        id: device.id,
+        name: device.device_name || "Browser device",
+        country: device.last_country || device.first_country || "",
+        createdAt: device.created_at || "",
+        lastSeenAt: device.last_seen_at || "",
+        revoked: Boolean(device.revoked_at),
+      }))
+    : [];
   return {
     id: row.id,
     code,
     codeAvailable: Boolean(code),
     codeHashPrefix: String(row.code_hash || "").slice(0, 12),
     durationDays: row.duration_days,
+    maxDevices: Number(row.max_devices || 1),
+    activeDeviceCount: devices.filter((device) => !device.revoked).length,
+    devices,
     permanent: isPermanentLicenseExpiry(row.expires_at),
     redeemBy: row.redeem_by || "",
     activatedAt: row.first_activated_at || "",
     expiresAt: row.expires_at || "",
     status,
-    deviceName: row.device_name || "",
-    lastSeenAt: row.last_seen_at || "",
   };
 }
 
@@ -291,7 +302,17 @@ export function createAdminService(env, options = {}) {
       if (!(await sessionPayload(request))) {
         throw Object.assign(new Error("Administrator session is required."), { status: 401 });
       }
-      return licenseService.list(await repository.listLicenses(200));
+      const rows = await repository.listLicenses(200);
+      const devices = await repository.listLicenseDevices(rows.map((row) => row.id));
+      const devicesByLicense = new Map();
+      for (const device of devices) {
+        const entries = devicesByLicense.get(device.license_id) || [];
+        entries.push(device);
+        devicesByLicense.set(device.license_id, entries);
+      }
+      return licenseService.list(
+        rows.map((row) => ({ ...row, devices: devicesByLicense.get(row.id) || [] })),
+      );
     },
     async createLicenses(payload, request) {
       if (!(await sessionPayload(request))) {
@@ -316,6 +337,18 @@ export function createAdminService(env, options = {}) {
         throw Object.assign(new Error("Administrator session is required."), { status: 401 });
       }
       return licenseService.delete(payload);
+    },
+    async setDevicesRevoked(payload, request) {
+      if (!(await sessionPayload(request))) {
+        throw Object.assign(new Error("Administrator session is required."), { status: 401 });
+      }
+      return licenseService.setDevicesRevoked(payload);
+    },
+    async deleteDevices(payload, request) {
+      if (!(await sessionPayload(request))) {
+        throw Object.assign(new Error("Administrator session is required."), { status: 401 });
+      }
+      return licenseService.deleteDevices(payload);
     },
     cookieHeader(token, request) {
       return [
@@ -393,6 +426,12 @@ export async function handleAdminRequest(request, env) {
     }
     if (request.method === "PATCH" && pathname === "/api/admin/licenses/revocation") {
       return jsonResponse(await service.setLicensesRevoked(payload, request));
+    }
+    if (request.method === "PATCH" && pathname === "/api/admin/licenses/devices/revocation") {
+      return jsonResponse(await service.setDevicesRevoked(payload, request));
+    }
+    if (request.method === "DELETE" && pathname === "/api/admin/licenses/devices") {
+      return jsonResponse(await service.deleteDevices(payload, request));
     }
     if (request.method === "DELETE" && pathname === "/api/admin/licenses") {
       return jsonResponse(await service.deleteLicenses(payload, request));

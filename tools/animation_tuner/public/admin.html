@@ -133,6 +133,18 @@
                     </button>
                   </div>
                 </div>
+                <label>
+                  <span>最多激活设备</span>
+                  <input
+                    id="adminMaxDevices"
+                    name="maxDevices"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value="1"
+                    required
+                  />
+                </label>
               </div>
 
               <label for="adminRedeemBy">最晚兑换时间</label>
@@ -199,6 +211,10 @@
                     max="9999-12-31T23:59"
                     value="9999-12-31T23:59"
                   />
+                </label>
+                <label>
+                  <span>最多激活设备</span>
+                  <input id="adminBulkMaxDevices" type="number" min="1" max="100" value="1" />
                 </label>
                 <button id="adminBulkApplyButton" type="button">应用设置</button>
                 <button id="adminBulkRevokeButton" type="button">撤销</button>

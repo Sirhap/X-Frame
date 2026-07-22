@@ -107,6 +107,21 @@
             activationStatus.activated = false;
           }
         }
+        if (!activationStatus.activated && activationStatus.configured && deviceIdentity?.startTrial) {
+          try {
+            const trial = await deviceIdentity.startTrial();
+            if (trial?.activated) {
+              activationStatus = {
+                activated: true,
+                configured: true,
+                expiresAt: String(trial.expiresAt || ""),
+                plan: "trial",
+              };
+            }
+          } catch (_error) {
+            activationStatus.activated = false;
+          }
+        }
       } catch (_error) {
         activationStatus = { activated: false, configured: false };
       }

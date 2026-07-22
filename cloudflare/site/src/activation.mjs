@@ -8,11 +8,14 @@ import {
   verifyToken,
 } from "./activation_crypto.mjs";
 import { createLicenseRepository } from "./license_repository.mjs";
+import { hashDeviceFingerprint, normalizeDeviceFingerprint } from "./trial_identity.mjs";
 
 const COOKIE_NAME = "xsxb_activation";
 const COOKIE_TTL_SECONDS = 24 * 60 * 60;
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const MAX_REQUEST_BYTES = 8192;
+const AUTOMATIC_TRIAL_DAYS = 3;
+const DAY_MS = 86_400_000;
 
 /** @param {string} code Activation code. @param {SubtleCrypto} subtle Web Crypto. @returns {Promise<string>} Normalized code hash. */
 export async function hashActivationCode(code, subtle) {
@@ -113,6 +116,24 @@ async function requestRiskSignals(request, secret, subtle) {
   return { ipHash: ip ? await hmacHex(`ip:${ip}`, secret, subtle) : "", country };
 }
 
+/** @param {object} payload Activation payload. @param {SubtleCrypto} subtle Web Crypto. @returns {Promise<{jwk:JsonWebKey,publicKeyHash:string}>} Validated device key. */
+async function prepareDeviceKey(payload, subtle) {
+  const { jwk, canonical } = canonicalPublicKey(payload.publicKey);
+  try {
+    await subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+  } catch (_error) {
+    throw Object.assign(new Error("A valid P-256 public key is required."), { status: 400 });
+  }
+  return { jwk, publicKeyHash: await sha256Hex(canonical, subtle) };
+}
+
+/** @param {object} payload Activation payload. @returns {string} Bounded device label. */
+function deviceNameFrom(payload) {
+  return String(payload.deviceName || "Browser device")
+    .trim()
+    .slice(0, 80);
+}
+
 /**
  * Creates the D1-backed device activation service.
  * @param {{LICENSE_DB?:D1Database,XSXB_ACTIVATION_SECRET?:string}} env Worker environment.
@@ -160,13 +181,7 @@ export function createActivationService(env, options = {}) {
       const code = String(payload.code || "").trim();
       if (!code || code.length > 160)
         throw Object.assign(new Error("Invalid activation code."), { status: 401 });
-      const { jwk, canonical } = canonicalPublicKey(payload.publicKey);
-      try {
-        await subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
-      } catch (_error) {
-        throw Object.assign(new Error("A valid P-256 public key is required."), { status: 400 });
-      }
-      const publicKeyHash = await sha256Hex(canonical, subtle);
+      const { jwk, publicKeyHash } = await prepareDeviceKey(payload, subtle);
       const license = await repository.findLicenseByCodeHash(await hashActivationCode(code, subtle));
       if (!license || license.revoked_at)
         throw Object.assign(new Error("Invalid activation code."), { status: 401 });
@@ -190,32 +205,39 @@ export function createActivationService(env, options = {}) {
       if (!license.first_activated_at || !license.expires_at) {
         await repository.activateLicense(license.id, activatedAt, expiresAt);
       }
-      let device = await repository.findDeviceByLicenseId(license.id);
-      if (device && (device.public_key_hash !== publicKeyHash || device.revoked_at)) {
-        throw Object.assign(new Error("This trial code is already bound to another device."), {
-          status: 409,
+      let device = await repository.findDeviceByLicenseAndPublicKeyHash(license.id, publicKeyHash);
+      if (device?.revoked_at) {
+        throw Object.assign(new Error("This device has been revoked for the activation code."), {
+          status: 403,
         });
       }
       if (!device) {
         const risk = await requestRiskSignals(request, secret, subtle);
         const deviceId = cryptoApi.randomUUID();
+        const fingerprint = payload.fingerprint
+          ? await hashDeviceFingerprint(payload.fingerprint, secret, subtle)
+          : { fingerprintHash: "" };
         try {
-          await repository.createDevice({
+          const result = await repository.createCodeDeviceWithinLimit({
             id: deviceId,
             licenseId: license.id,
             publicKey: JSON.stringify(jwk),
             publicKeyHash,
-            deviceName: String(payload.deviceName || "Browser device")
-              .trim()
-              .slice(0, 80),
+            fingerprintHash: fingerprint.fingerprintHash,
+            deviceName: deviceNameFrom(payload),
             ipHash: risk.ipHash,
             country: risk.country,
             createdAt: new Date(currentTime).toISOString(),
           });
+          if (Number(result?.meta?.changes ?? 1) < 1) {
+            throw Object.assign(new Error("This activation code has reached its device limit."), {
+              status: 409,
+            });
+          }
         } catch (_error) {
-          device = await repository.findDeviceByLicenseId(license.id);
-          if (!device || device.public_key_hash !== publicKeyHash) {
-            throw Object.assign(new Error("This trial code is already bound to another device."), {
+          device = await repository.findDeviceByLicenseAndPublicKeyHash(license.id, publicKeyHash);
+          if (!device) {
+            throw Object.assign(new Error("This activation code has reached its device limit."), {
               status: 409,
             });
           }
@@ -239,6 +261,67 @@ export function createActivationService(env, options = {}) {
         new URL(request.url).origin,
       );
     },
+    async automaticTrialChallenge(payload, request) {
+      if (!configured)
+        throw Object.assign(new Error("Activation verification is not configured."), { status: 503 });
+      const { jwk, publicKeyHash } = await prepareDeviceKey(payload, subtle);
+      const normalizedFingerprint = normalizeDeviceFingerprint(payload.fingerprint);
+      if (!normalizedFingerprint.platform || !normalizedFingerprint.userAgent) {
+        throw Object.assign(new Error("Device information is required to start the trial."), { status: 400 });
+      }
+      const fingerprint = await hashDeviceFingerprint(normalizedFingerprint, secret, subtle);
+      let authorization = await repository.findAutomaticTrialByPublicKeyHash(publicKeyHash);
+      if (authorization) {
+        return challengeFor(authorization, "trial", new URL(request.url).origin);
+      }
+      authorization = await repository.findAutomaticTrialByFingerprintHash(fingerprint.fingerprintHash);
+      if (authorization) {
+        throw Object.assign(new Error("The three-day trial has already been claimed on this device."), {
+          status: 409,
+        });
+      }
+      const currentTime = now();
+      const createdAt = new Date(currentTime).toISOString();
+      const risk = await requestRiskSignals(request, secret, subtle);
+      const trial = {
+        claimId: cryptoApi.randomUUID(),
+        licenseId: cryptoApi.randomUUID(),
+        deviceId: cryptoApi.randomUUID(),
+        codeHash: await sha256Hex(`automatic-trial:${cryptoApi.randomUUID()}`, subtle),
+        publicKey: JSON.stringify(jwk),
+        publicKeyHash,
+        fingerprintHash: fingerprint.fingerprintHash,
+        hardwareHash: fingerprint.hardwareHash,
+        displayHash: fingerprint.displayHash,
+        deviceName: deviceNameFrom(payload),
+        ipHash: risk.ipHash,
+        country: risk.country,
+        createdAt,
+        expiresAt: new Date(currentTime + AUTOMATIC_TRIAL_DAYS * DAY_MS).toISOString(),
+      };
+      try {
+        await repository.createAutomaticTrial(trial);
+      } catch (_error) {
+        authorization = await repository.findAutomaticTrialByPublicKeyHash(publicKeyHash);
+        if (!authorization) {
+          const claimed = await repository.findAutomaticTrialByFingerprintHash(fingerprint.fingerprintHash);
+          if (claimed) {
+            throw Object.assign(new Error("The three-day trial has already been claimed on this device."), {
+              status: 409,
+            });
+          }
+          throw _error;
+        }
+      }
+      authorization ||= {
+        device_id: trial.deviceId,
+        license_id: trial.licenseId,
+        public_key: trial.publicKey,
+        expires_at: trial.expiresAt,
+        plan: "trial",
+      };
+      return challengeFor(authorization, "trial", new URL(request.url).origin);
+    },
     async deviceChallenge(payload, request) {
       if (!configured)
         throw Object.assign(new Error("Activation verification is not configured."), { status: 503 });
@@ -254,7 +337,7 @@ export function createActivationService(env, options = {}) {
       const requestOrigin = new URL(request.url).origin;
       if (
         !challengePayload ||
-        !["activate", "renew"].includes(challengePayload.type) ||
+        !["activate", "renew", "trial"].includes(challengePayload.type) ||
         challengePayload.origin !== requestOrigin ||
         Number(challengePayload.exp || 0) <= now()
       ) {
@@ -367,6 +450,9 @@ export async function handleActivationRequest(request, env) {
     }
     if (pathname === "/api/activation/device-challenge") {
       return jsonResponse(await service.deviceChallenge(payload, request));
+    }
+    if (pathname === "/api/activation/trial-challenge") {
+      return jsonResponse(await service.automaticTrialChallenge(payload, request));
     }
     if (pathname === "/api/activation/verify") {
       const result = await service.verifyChallenge(payload, request);

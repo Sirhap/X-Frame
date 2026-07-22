@@ -20,6 +20,7 @@
     activationCode: document.querySelector("#adminActivationCode"),
     batchCount: document.querySelector("#adminBatchCount"),
     durationDays: document.querySelector("#adminDurationDays"),
+    maxDevices: document.querySelector("#adminMaxDevices"),
     permanentDurationButton: document.querySelector("#adminPermanentDurationButton"),
     redeemBy: document.querySelector("#adminRedeemBy"),
     permanentRedeemButton: document.querySelector("#adminPermanentRedeemButton"),
@@ -37,6 +38,7 @@
     selectAll: document.querySelector("#adminSelectAll"),
     selectedCount: document.querySelector("#adminSelectedCount"),
     bulkDurationDays: document.querySelector("#adminBulkDurationDays"),
+    bulkMaxDevices: document.querySelector("#adminBulkMaxDevices"),
     bulkPermanentButton: document.querySelector("#adminBulkPermanentButton"),
     bulkRedeemBy: document.querySelector("#adminBulkRedeemBy"),
     bulkApplyButton: document.querySelector("#adminBulkApplyButton"),
@@ -175,10 +177,15 @@
   /** @returns {void} */
   function updateCreationPreview() {
     const durationDays = Number(elements.durationDays.value);
+    const maxDevices = Number(elements.maxDevices.value);
     const batchCount = Math.min(100, Math.max(1, Number(elements.batchCount.value) || 1));
     elements.createButton.firstChild.textContent = `创建 ${batchCount} 个激活码 `;
+    if (!Number.isInteger(maxDevices) || maxDevices < 1 || maxDevices > 100) {
+      elements.expiryPreview.textContent = "请输入 1–100 之间的设备数量。";
+      return;
+    }
     if (isPermanentDuration(elements.permanentDurationButton)) {
-      elements.expiryPreview.textContent = "激活后永久有效，不会生成到期时间。";
+      elements.expiryPreview.textContent = `最多 ${maxDevices} 台设备；激活后永久有效。`;
       return;
     }
     if (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3650) {
@@ -186,7 +193,24 @@
       return;
     }
     const expectedExpiry = new Date(Date.now() + durationDays * MILLISECONDS_PER_DAY).toISOString();
-    elements.expiryPreview.textContent = `若现在激活，预计到期：${formatDate(expectedExpiry)}；实际从首次激活时开始计算。`;
+    elements.expiryPreview.textContent = `最多 ${maxDevices} 台设备；若现在首次激活，预计到期：${formatDate(expectedExpiry)}。`;
+  }
+
+  /** @param {string} deviceId Device ID. @param {string} method HTTP method. @param {string} path API path. @param {object} body Additional payload. @param {string} message Success message. @returns {Promise<void>} */
+  async function mutateDevice(deviceId, method, path, body, message) {
+    setStatus(elements.bulkStatus, "正在更新设备…");
+    try {
+      await requestJson(path, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [deviceId], ...body }),
+      });
+      setStatus(elements.bulkStatus, message, "success");
+      await loadLicenses();
+    } catch (error) {
+      if (error.status === 401) showAuthenticatedView(false);
+      setStatus(elements.bulkStatus, error.message, "error");
+    }
   }
 
   /** @returns {void} */
@@ -275,12 +299,49 @@
           ? `实际到期 ${formatDate(license.expiresAt)}`
           : "实际到期 激活后计算";
       const device = document.createElement("span");
-      device.textContent = license.deviceName ? `设备 ${license.deviceName}` : "设备 未绑定";
+      device.textContent = `设备 ${license.activeDeviceCount || 0} / ${license.maxDevices || 1}`;
       meta.append(duration, redeemBy, expiry, device);
       const actions = document.createElement("div");
       actions.className = "admin-license-actions";
       actions.append(state, copyButton);
       item.append(selection, header, actions, meta);
+      const devices = document.createElement("div");
+      devices.className = "admin-license-devices";
+      for (const boundDevice of Array.isArray(license.devices) ? license.devices : []) {
+        const row = document.createElement("section");
+        row.className = "admin-license-device";
+        const summary = document.createElement("p");
+        const location = boundDevice.country ? ` · ${boundDevice.country}` : "";
+        const stateLabel = boundDevice.revoked ? " · 已撤销" : "";
+        summary.textContent = `${boundDevice.name}${location} · 最后访问 ${formatDate(boundDevice.lastSeenAt)}${stateLabel}`;
+        const controls = document.createElement("div");
+        const revoke = document.createElement("button");
+        revoke.type = "button";
+        revoke.textContent = boundDevice.revoked ? "恢复" : "撤销";
+        revoke.addEventListener(
+          "click",
+          () =>
+            void mutateDevice(
+              boundDevice.id,
+              "PATCH",
+              "/api/admin/licenses/devices/revocation",
+              { revoked: !boundDevice.revoked },
+              boundDevice.revoked ? "设备已恢复。" : "设备已撤销。",
+            ),
+        );
+        const reset = document.createElement("button");
+        reset.type = "button";
+        reset.dataset.action = "reset";
+        reset.textContent = "重置槽位";
+        reset.addEventListener("click", () => {
+          if (!window.confirm(`确定移除设备“${boundDevice.name}”的绑定吗？`)) return;
+          void mutateDevice(boundDevice.id, "DELETE", "/api/admin/licenses/devices", {}, "设备槽位已重置。");
+        });
+        controls.append(revoke, reset);
+        row.append(summary, controls);
+        devices.append(row);
+      }
+      if (devices.childElementCount) item.append(devices);
       elements.licenseItems.append(item);
     }
     updateSelectionState();
@@ -422,6 +483,7 @@
     );
   });
   elements.durationDays.addEventListener("input", updateCreationPreview);
+  elements.maxDevices.addEventListener("input", updateCreationPreview);
   elements.batchCount.addEventListener("input", updateCreationPreview);
 
   elements.licenseForm.addEventListener("submit", async (event) => {
@@ -442,6 +504,7 @@
         body: JSON.stringify({
           codes,
           durationDays: Number(elements.durationDays.value),
+          maxDevices: Number(elements.maxDevices.value),
           permanent: isPermanentDuration(elements.permanentDurationButton),
           redeemBy: localDateToIso(elements.redeemBy.value),
         }),
@@ -489,6 +552,7 @@
         "/api/admin/licenses",
         {
           durationDays: Number(elements.bulkDurationDays.value),
+          maxDevices: Number(elements.bulkMaxDevices.value),
           permanent: isPermanentDuration(elements.bulkPermanentButton),
           redeemBy: localDateToIso(elements.bulkRedeemBy.value),
         },

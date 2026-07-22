@@ -248,6 +248,7 @@ const activationController = activationModule.createController({
   premiumFeatures,
   deviceIdentity,
 });
+if (browserOnlyMode) void activationController.refreshStatus();
 const ensurePremiumActivated = (featureIds) => activationController.ensureActivated(featureIds);
 
 /**

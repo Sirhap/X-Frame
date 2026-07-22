@@ -18,7 +18,7 @@ const fixedNow = Date.parse("2026-07-22T08:00:00.000Z");
 
 /** @returns {{repository:object,state:object}} In-memory administrator repository. */
 function createAdminRepositoryFixture() {
-  const state = { attempts: new Map(), consumedCounters: new Set(), licenses: [] };
+  const state = { attempts: new Map(), consumedCounters: new Set(), licenses: [], devices: [] };
   return {
     state,
     repository: {
@@ -45,6 +45,9 @@ function createAdminRepositoryFixture() {
       async listLicenses(limit) {
         return state.licenses.slice(-limit).reverse();
       },
+      async listLicenseDevices(licenseIds) {
+        return state.devices.filter((device) => licenseIds.includes(device.license_id));
+      },
       async createLicenses(licenses) {
         if (
           new Set(licenses.map((license) => license.codeHash)).size !== licenses.length ||
@@ -59,6 +62,7 @@ function createAdminRepositoryFixture() {
             code_ciphertext: license.codeCiphertext,
             plan: "standard",
             duration_days: license.durationDays,
+            max_devices: license.maxDevices,
             redeem_by: license.redeemBy,
             first_activated_at: null,
             expires_at: license.expiresAt,
@@ -77,6 +81,7 @@ function createAdminRepositoryFixture() {
           const stored = state.licenses.find((license) => license.id === update.id);
           Object.assign(stored, {
             duration_days: update.durationDays,
+            max_devices: update.maxDevices,
             redeem_by: update.redeemBy,
             expires_at: update.expiresAt,
           });
@@ -91,6 +96,20 @@ function createAdminRepositoryFixture() {
       },
       async deleteLicenses(ids) {
         state.licenses = state.licenses.filter((license) => !ids.includes(license.id));
+        state.devices = state.devices.filter((device) => !ids.includes(device.license_id));
+        return { success: true };
+      },
+      async findDevicesByIds(ids) {
+        return state.devices.filter((device) => ids.includes(device.id));
+      },
+      async setDevicesRevoked(ids, revokedAt) {
+        for (const device of state.devices.filter((entry) => ids.includes(entry.id))) {
+          device.revoked_at = revokedAt;
+        }
+        return { success: true };
+      },
+      async deleteDevices(ids) {
+        state.devices = state.devices.filter((device) => !ids.includes(device.id));
         return { success: true };
       },
     },
@@ -224,12 +243,14 @@ test("authenticated administrator batch creates standard licenses without storin
     {
       codes: [" xsxb-admin-test-01 ", "xsxb-admin-test-02"],
       durationDays: 90,
+      maxDevices: 5,
     },
     authenticatedRequest,
   );
 
   assert.deepEqual(result.codes, ["XSXB-ADMIN-TEST-01", "XSXB-ADMIN-TEST-02"]);
   assert.equal(result.license.durationDays, 90);
+  assert.equal(result.license.maxDevices, 5);
   assert.equal(result.license.status, "unused");
   assert.equal(result.license.plan, undefined);
   assert.equal(state.licenses.length, 2);
@@ -238,6 +259,7 @@ test("authenticated administrator batch creates standard licenses without storin
   assert.match(state.licenses[0].code_ciphertext, /^v1\./u);
   assert.equal(Object.values(state.licenses[0]).includes(result.code), false);
   assert.equal(state.licenses[0].plan, "standard");
+  assert.equal(state.licenses[0].max_devices, 5);
   assert.equal(state.licenses[0].redeem_by, "9999-12-31T23:59:59.999Z");
   const listedLicenses = await service.listLicenses(authenticatedRequest);
   assert.equal(listedLicenses[0].plan, undefined);
@@ -277,17 +299,29 @@ test("administrator batch updates active expiry, revokes, restores, and deletes 
     request,
   );
   state.licenses[0].first_activated_at = "2026-07-20T08:00:00.000Z";
+  state.devices.push({
+    id: "device-admin-test-01",
+    license_id: state.licenses[0].id,
+    device_name: "Test Mac",
+    first_country: "CN",
+    last_country: "CN",
+    created_at: "2026-07-20T08:00:00.000Z",
+    last_seen_at: "2026-07-22T08:00:00.000Z",
+    revoked_at: null,
+  });
 
   const updated = await service.updateLicenses(
     {
       ids: created.licenses.map((license) => license.id),
       durationDays: 10,
+      maxDevices: 3,
       redeemBy: "2027-01-01T00:00:00.000Z",
     },
     request,
   );
   assert.equal(updated.count, 2);
   assert.equal(state.licenses[0].expires_at, "2026-07-30T08:00:00.000Z");
+  assert.equal(state.licenses[0].max_devices, 3);
   assert.equal(state.licenses[1].expires_at, null);
 
   const permanent = await service.updateLicenses(
@@ -315,6 +349,42 @@ test("administrator batch updates active expiry, revokes, restores, and deletes 
   const deleted = await service.deleteLicenses({ ids: [created.licenses[1].id] }, request);
   assert.equal(deleted.count, 1);
   assert.equal(state.licenses.length, 1);
+});
+
+test("administrator lists, revokes, restores, and resets individual devices", async () => {
+  const { repository, state } = createAdminRepositoryFixture();
+  const service = configuredService(repository);
+  const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
+  const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
+  const loginRequest = adminRequest("/api/admin/login");
+  const login = await service.login({ username: adminUsername, code }, loginRequest);
+  const cookie = service.cookieHeader(login.token, loginRequest);
+  const request = adminRequest("/api/admin/licenses", { headers: { cookie } });
+  const created = await service.createLicenses(
+    { code: "XSXB-DEVICE-ADMIN", durationDays: 30, maxDevices: 3 },
+    request,
+  );
+  state.devices.push({
+    id: "device-admin-list-01",
+    license_id: created.license.id,
+    device_name: "MacBook Pro",
+    first_country: "CN",
+    last_country: "CN",
+    created_at: "2026-07-21T08:00:00.000Z",
+    last_seen_at: "2026-07-22T08:00:00.000Z",
+    revoked_at: null,
+  });
+
+  const listed = await service.listLicenses(request);
+  assert.equal(listed[0].activeDeviceCount, 1);
+  assert.equal(listed[0].devices[0].name, "MacBook Pro");
+
+  await service.setDevicesRevoked({ ids: ["device-admin-list-01"], revoked: true }, request);
+  assert.notEqual(state.devices[0].revoked_at, null);
+  await service.setDevicesRevoked({ ids: ["device-admin-list-01"], revoked: false }, request);
+  assert.equal(state.devices[0].revoked_at, null);
+  await service.deleteDevices({ ids: ["device-admin-list-01"] }, request);
+  assert.equal(state.devices.length, 0);
 });
 
 test("administrator API fails closed and rejects cross-origin login", async () => {
@@ -354,6 +424,8 @@ test("administrator control links to a dedicated non-modal management page", () 
   assert.doesNotMatch(landing, /<dialog/u);
   assert.doesNotMatch(landing, /landing-admin\.js/u);
   assert.match(admin, /id="adminBatchCount"/u);
+  assert.match(admin, /id="adminMaxDevices"/u);
+  assert.match(admin, /id="adminBulkMaxDevices"/u);
   assert.match(admin, /value="9999-12-31T23:59"/u);
   assert.match(admin, /id="adminCopySelectedButton"/u);
   assert.match(admin, /id="adminCopyAllButton"/u);

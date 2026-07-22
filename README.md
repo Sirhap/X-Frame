@@ -125,7 +125,9 @@ printf %s 'XSXB-PRO-示例激活码' | tr '[:lower:]' '[:upper:]' | shasum -a 25
 如果没有同时配置 `XSXB_ACTIVATION_CODE_HASHES` 和至少 32 字符的持久
 `XSXB_ACTIVATION_SECRET`，激活接口会安全地拒绝所有激活请求，不会生成临时签名密钥或使用开发环境万能码。
 
-Cloudflare 正式部署使用 D1 单设备授权，不使用 `XSXB_ACTIVATION_CODE_HASHES` 环境变量：浏览器会生成不可导出的 ECDSA P-256 私钥；D1 保存公钥、激活码哈希、管理员查看所需的 AES-GCM 密文和基础风险记录。授权期默认从首次激活起 3 天，也可按激活码设置永久有效、`duration_days` 与未使用兑换截止时间 `redeem_by`。完整配置见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
+Cloudflare 正式部署使用 D1 自动试用与多设备授权，不使用 `XSXB_ACTIVATION_CODE_HASHES` 环境变量：浏览器首次进入托管工作台时无需激活码即可领取独立的 3 天试用，并生成不可导出的 ECDSA P-256 私钥。服务端使用浏览器、硬件、地区和显示环境等信号的加盐哈希辅助识别重复试用，但授权始终依赖设备私钥签名，设备指纹不能证明真实人员身份。D1 不保存原始设备指纹或原始 IP。
+
+付费激活码可在管理后台设置 `1–100` 个设备槽位；同一设备重复激活不会占用新槽位，达到上限后拒绝新设备。所有设备共享该激活码从首次激活开始计算的有效期，也可设置永久有效与未使用兑换截止时间。管理员可以查看设备、撤销或恢复单个设备，并可删除绑定以重置槽位。完整配置见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
 
 Cloudflare 首页右上角链接到独立的 `/admin/licenses` 激活码管理页面，不使用悬浮弹窗，工具工作台也不会显示该入口。管理员使用用户名和 Google Authenticator 兼容的 6 位 TOTP 登录，不使用密码；用户名由 `XSXB_ADMIN_USERNAME` 配置（省略时为 `admin`）。验证后可以查看、单个复制或批量复制新建激活码；迁移前仅保存哈希的旧码无法恢复原文。`XSXB_ADMIN_TOTP_SECRET` 必须以 Base32 形式通过 Worker 环境密钥设置，不得写入源码、Wrangler 配置或 D1。Google Authenticator 固定每 30 秒更新验证码，服务端只接受当前时间窗口，并阻止同一计数器重复使用。管理会话、D1 迁移与远程配置步骤见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
 

@@ -94,6 +94,27 @@ test("activation controller silently renews an expired Cookie with the device ke
   assert.equal(renewCalls, 1);
 });
 
+test("activation controller automatically starts a three-day trial after renewal misses", async () => {
+  let trialCalls = 0;
+  const fixture = createControllerFixture({
+    fetchImpl: async () => Response.json({ activated: false, configured: true }),
+    deviceIdentity: {
+      async renew() {
+        return null;
+      },
+      async startTrial() {
+        trialCalls += 1;
+        return { activated: true, expiresAt: "2026-07-25T00:00:00.000Z" };
+      },
+    },
+  });
+
+  const status = await fixture.controller.refreshStatus();
+  assert.equal(status.activated, true);
+  assert.equal(status.plan, "trial");
+  assert.equal(trialCalls, 1);
+});
+
 test("activation form delegates code redemption to the browser device protocol", async () => {
   let activationCode = "";
   const fixture = createControllerFixture({

@@ -117,14 +117,23 @@
 
   /**
    * Creates the browser device activation protocol client.
-   * @param {{fetchImpl?:typeof fetch,cryptoApi?:Crypto,storage?:object,navigatorRef?:Navigator}} [dependencies] Runtime adapters.
-   * @returns {{activate:(code:string)=>Promise<object>,renew:()=>Promise<object|null>,ensureIdentity:()=>Promise<object>}} Device client.
+   * @param {{fetchImpl?:typeof fetch,cryptoApi?:Crypto,storage?:object,navigatorRef?:Navigator,fingerprintCollector?:()=>Promise<object>}} [dependencies] Runtime adapters.
+   * @returns {{activate:(code:string)=>Promise<object>,startTrial:()=>Promise<object>,renew:()=>Promise<object|null>,ensureIdentity:()=>Promise<object>}} Device client.
    */
   function createController(dependencies = {}) {
     const fetchImpl = dependencies.fetchImpl || root?.fetch;
     const cryptoApi = dependencies.cryptoApi || root?.crypto;
     const storage = dependencies.storage || createIndexedDbStorage(root?.indexedDB);
     const navigatorRef = dependencies.navigatorRef || root?.navigator;
+    const fingerprintCollector =
+      dependencies.fingerprintCollector ||
+      (() =>
+        root?.XSXBDeviceFingerprint?.collect?.({
+          navigatorRef,
+          screenRef: root?.screen,
+          documentRef: root?.document,
+          devicePixelRatio: root?.devicePixelRatio,
+        }));
     if (typeof fetchImpl !== "function" || !cryptoApi?.subtle || !cryptoApi?.randomUUID) {
       throw new TypeError("Web Crypto and fetch are required for device activation.");
     }
@@ -195,22 +204,55 @@
       }
     }
 
+    /** @returns {string} Bounded device label. */
+    function deviceName() {
+      return String(
+        navigatorRef?.userAgentData?.platform || navigatorRef?.platform || "Browser device",
+      ).slice(0, 80);
+    }
+
+    /** @returns {Promise<object|null>} Hashed-on-server browser fingerprint payload. */
+    async function collectFingerprint() {
+      if (typeof fingerprintCollector !== "function") return null;
+      try {
+        const fingerprint = await fingerprintCollector();
+        return fingerprint && typeof fingerprint === "object" ? fingerprint : null;
+      } catch (_error) {
+        return null;
+      }
+    }
+
     return Object.freeze({
       async activate(code) {
         try {
           const identity = await ensureIdentity();
-          const platform = String(
-            navigatorRef?.userAgentData?.platform || navigatorRef?.platform || "Browser device",
-          ).slice(0, 80);
           const challenge = await postJson("/api/activation/challenge", {
             code: String(code || ""),
             publicKey: identity.publicKey,
-            deviceName: platform,
+            deviceName: deviceName(),
+            fingerprint: await collectFingerprint(),
           });
           return await verify(identity, challenge);
         } catch (error) {
           if (error instanceof Error) throw error;
           throw new Error("Unable to activate this browser.", { cause: error });
+        }
+      },
+      async startTrial() {
+        try {
+          const identity = await ensureIdentity();
+          const fingerprint = await collectFingerprint();
+          if (!fingerprint)
+            throw new Error("Unable to collect the device information required for the trial.");
+          const challenge = await postJson("/api/activation/trial-challenge", {
+            publicKey: identity.publicKey,
+            deviceName: deviceName(),
+            fingerprint,
+          });
+          return await verify(identity, challenge);
+        } catch (error) {
+          if (error instanceof Error) throw error;
+          throw new Error("Unable to start the three-day trial.", { cause: error });
         }
       },
       async renew() {

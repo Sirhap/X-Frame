@@ -1,8 +1,8 @@
 # Cloudflare site deployment
 
-The production workbench uses a D1-backed single-browser license. A browser creates a
-non-extractable ECDSA P-256 private key in IndexedDB, while D1 stores only the public key, normalized
-activation-code hash, expiry configuration, and hashed IP risk signals.
+The production workbench uses D1-backed automatic trials and configurable multi-device licenses. A
+browser creates a non-extractable ECDSA P-256 private key in IndexedDB, while D1 stores only the
+public key, normalized activation-code hash, expiry configuration, and secret-keyed risk hashes.
 
 ## Create the D1 database
 
@@ -14,8 +14,21 @@ wrangler d1 create xsxb-frame-tuner-licenses
 wrangler d1 migrations apply xsxb-frame-tuner-licenses --remote
 ```
 
-The first migration creates `licenses` and `license_devices`. Do not run remote migrations without
-reviewing the target Cloudflare account and taking an appropriate backup.
+The first migration creates `licenses` and `license_devices`. Migration `0004` upgrades existing
+single-device records without changing their limit, then adds automatic-trial claims. Do not run
+remote migrations without reviewing the target Cloudflare account and taking an appropriate backup.
+
+## Automatic three-day trial
+
+The workbench starts a three-day trial when a browser first opens the hosted application. No code is
+required. Authorization uses the browser's non-extractable P-256 key. A bounded combination of browser,
+hardware, locale, display, WebGL, and User-Agent Client Hints is sent only to the Worker, normalized,
+and immediately HMAC-hashed with `XSXB_ACTIVATION_SECRET`; raw fingerprint values and raw IP addresses
+are not persisted.
+
+The private key is the authorization credential. The fingerprint is only a duplicate-trial risk
+signal after browser storage is cleared. Browser fingerprints can change or be spoofed, so they cannot
+prove a person's identity and must not replace signature verification.
 
 ## Configure trial licenses
 
@@ -41,10 +54,12 @@ Each code can be configured independently:
 - `redeem_by`: optional last time an unused code may be redeemed, as an ISO-8601 timestamp.
 - `expires_at`: optional fixed license expiry; when absent it is calculated from `duration_days`.
 - `revoked_at`: setting an ISO-8601 timestamp immediately revokes the license.
+- `max_devices`: simultaneous active device slots, from `1` to `100`. Existing codes remain at `1`
+  after migration. All devices share the license's first-activation and expiry timestamps.
 
-`license_devices.license_id` is unique, so the first version permits one browser device per code.
-Clearing browser storage removes its private key; device reset is intentionally deferred to a later
-admin flow.
+The same browser key reuses its existing slot. A new key occupies a slot atomically only while the
+active-device count is below `max_devices`. Revoked devices stop consuming active capacity; the
+administrator can restore them or delete the binding to reset the slot.
 
 ## Required Worker secret
 
@@ -87,16 +102,19 @@ administrator username.
 
 Migration `0002_admin_activation_codes.sql` adds bounded login-attempt state and one-time TOTP replay
 records. Migration `0003_encrypt_activation_codes.sql` adds authenticated ciphertext storage so a
-verified administrator can view and copy codes. Review the target account and back up the database
-before applying migrations remotely:
+verified administrator can view and copy codes. Migration `0004_multi_device_trials.sql` adds
+automatic trials, configurable device limits, and per-device administration. Review the target
+account and back up the database before applying migrations remotely:
 
 ```bash
 wrangler d1 migrations apply xsxb-frame-tuner-licenses --remote
 ```
 
-The console creates standard codes with a finite or permanent activation duration and an unused-code
-redemption deadline that defaults to year 9999 (displayed as permanent). D1 stores the normalized SHA-256 hash
-for redemption lookup and an AES-GCM authenticated ciphertext for administrator display. The
+The console creates standard codes with a finite or permanent activation duration, a `1`–`100` device
+limit, and an unused-code redemption deadline that defaults to year 9999 (displayed as permanent).
+It lists bound devices and supports per-device revocation, restoration, and slot reset. D1 stores the
+normalized SHA-256 hash for redemption lookup and an AES-GCM authenticated ciphertext for
+administrator display. The
 encryption key is domain-separated from the persistent `XSXB_ACTIVATION_SECRET`; rotating that secret
 makes previously encrypted display values unreadable. Codes created before migration `0003` continue
 to work but cannot have their plaintext recovered. Five failed login attempts within ten minutes
