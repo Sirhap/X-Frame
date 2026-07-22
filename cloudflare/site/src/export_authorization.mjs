@@ -4,6 +4,7 @@ import { bytesToBase64Url, signToken, verifyToken } from "./activation_crypto.mj
 const EXPORT_PERMIT_TTL_MS = 60 * 1000;
 const MAX_REQUEST_BYTES = 4096;
 const PREMIUM_FEATURE_IDS = new Set([
+  "organizer.output",
   "cutout.edge-refinement",
   "cutout.alpha-control",
   "cutout.color-protection",

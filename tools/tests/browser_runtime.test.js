@@ -53,6 +53,50 @@ test("browser runtime rejects frames without processed PNG data", async () => {
   );
 });
 
+test("browser runtime rejects organizer ZIP output without a verified permit", async () => {
+  await assert.rejects(
+    browserRuntime.exportAnimationPackage(
+      { animationName: "Idle" },
+      [{ data: "data:image/png;base64,AA==" }],
+      {
+        premiumFeatures: ["organizer.output"],
+        batchZip: { buildZip: async () => new Blob() },
+      },
+    ),
+    /verified Pro export permit/,
+  );
+});
+
+test("browser runtime creates organizer ZIP output after permit verification", async () => {
+  const verificationRequests = [];
+  const result = await browserRuntime.exportAnimationPackage(
+    { animationName: "Idle" },
+    [{ data: "data:image/png;base64,AA==" }],
+    {
+      authorization: { permit: "signed-permit" },
+      premiumFeatures: ["organizer.output"],
+      async fetchImpl(path, request) {
+        verificationRequests.push({ path, body: JSON.parse(request.body) });
+        return {
+          ok: true,
+          async json() {
+            return { authorized: true };
+          },
+        };
+      },
+      batchZip: { buildZip: async () => new Blob(["zip"]) },
+    },
+  );
+
+  assert.equal(result.frameCount, 1);
+  assert.deepEqual(verificationRequests, [
+    {
+      path: "/api/export/verify",
+      body: { features: ["organizer.output"], permit: "signed-permit" },
+    },
+  ]);
+});
+
 test("browser runtime builds uniquely named transient tuning groups", () => {
   const group = browserRuntime.createSessionAnimationGroup(
     {

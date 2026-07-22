@@ -315,13 +315,6 @@
       const usedPremiumFeatures =
         premiumFeatures?.normalizeFeatureIds?.(Array.from(state.premiumFeatures || [])) ||
         Array.from(state.premiumFeatures || []);
-      if (
-        usedPremiumFeatures.length &&
-        typeof hooks.ensurePremiumActivated === "function" &&
-        !(await hooks.ensurePremiumActivated(usedPremiumFeatures))
-      ) {
-        return;
-      }
       state.busy = true;
       renderCounts();
       try {

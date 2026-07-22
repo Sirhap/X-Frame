@@ -27,6 +27,9 @@ function createFixture(options = {}) {
       },
     },
     premiumFeatures: {
+      normalizeFeatureIds(featureIds) {
+        return [...new Set(featureIds)];
+      },
       detectExportFeatures(snapshot) {
         return snapshot.sourceFeatures || [];
       },
@@ -56,15 +59,17 @@ function createFixture(options = {}) {
   return { calls, controller };
 }
 
-test("basic workbench export does not request activation", async () => {
+test("basic workbench export requires activation and a server permit", async () => {
   const fixture = createFixture();
   const result = await fixture.controller.exportCurrentAnimation();
 
   assert.equal(result.frameCount, 1);
-  assert.deepEqual(fixture.calls.activation, []);
+  assert.deepEqual(fixture.calls.activation, [["organizer.output"]]);
   assert.equal(fixture.calls.exports.length, 1);
   assert.equal(fixture.calls.exports[0].workbench.attachmentAssets.length, 1);
-  assert.deepEqual(fixture.calls.authorization, []);
+  assert.deepEqual(fixture.calls.authorization, [
+    { path: "/api/export/authorize", request: { features: ["organizer.output"] } },
+  ]);
   assert.deepEqual(fixture.calls.statuses, ["exportPreparing:", "exportComplete:1"]);
 });
 
@@ -73,7 +78,7 @@ test("premium workbench export waits for activation and preserves the edit", asy
   const result = await fixture.controller.exportCurrentAnimation();
 
   assert.equal(result, null);
-  assert.deepEqual(fixture.calls.activation, [["tuner.collision-boxes"]]);
+  assert.deepEqual(fixture.calls.activation, [["organizer.output", "tuner.collision-boxes"]]);
   assert.equal(fixture.calls.exports.length, 0);
   assert.deepEqual(fixture.calls.authorization, []);
 });
@@ -85,7 +90,7 @@ test("activated premium export obtains and forwards a short-lived server permit"
 
   assert.deepEqual(fixture.calls.authorization[0], {
     path: "/api/export/authorize",
-    request: { features: ["tuner.collision-boxes"] },
+    request: { features: ["organizer.output", "tuner.collision-boxes"] },
   });
   assert.equal(fixture.calls.exports[0].dependencies.authorization.permit, "signed-export-permit");
 });

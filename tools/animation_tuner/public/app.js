@@ -16,7 +16,28 @@ if (browserOnlyMode) {
  */
 async function exportBrowserAnimation(metadata, items, options = {}) {
   if (!browserRuntime) throw new Error("Browser export runtime is unavailable.");
+  const requiredFeatures = premiumFeatures.normalizeFeatureIds([
+    "organizer.output",
+    ...Array.from(options.premiumFeatures || []),
+  ]);
+  let authorization = null;
+  if (browserOnlyMode) {
+    const exportModule = globalThis.XSXBWorkbenchExport;
+    if (typeof exportModule?.authorizeExport !== "function") {
+      throw new Error("Export authorization is unavailable.");
+    }
+    authorization = await exportModule.authorizeExport(
+      { ensureActivated: ensurePremiumActivated, fetchImpl: globalThis.fetch },
+      requiredFeatures,
+    );
+    if (!authorization) return null;
+  } else if (!(await ensurePremiumActivated(requiredFeatures))) {
+    return null;
+  }
   return browserRuntime.exportAnimationPackage(metadata, items, {
+    authorization,
+    fetchImpl: globalThis.fetch,
+    premiumFeatures: browserOnlyMode ? requiredFeatures : [],
     onProgress: (current) => options.onProgress?.(Math.min(current, items.length), items.length),
   });
 }

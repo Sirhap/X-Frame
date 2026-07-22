@@ -26,7 +26,7 @@ test("device-bound export authorization issues and verifies a short-lived permit
   };
   const env = { XSXB_ACTIVATION_SECRET: activationSecret };
   const authorized = await handleExportAuthorizationRequest(
-    exportRequest("/api/export/authorize", { features: ["tuner.collision-boxes"] }),
+    exportRequest("/api/export/authorize", { features: ["organizer.output", "tuner.collision-boxes"] }),
     env,
     options,
   );
@@ -38,7 +38,7 @@ test("device-bound export authorization issues and verifies a short-lived permit
 
   const verified = await handleExportAuthorizationRequest(
     exportRequest("/api/export/verify", {
-      features: ["tuner.collision-boxes"],
+      features: ["organizer.output", "tuner.collision-boxes"],
       permit: authorization.permit,
     }),
     env,

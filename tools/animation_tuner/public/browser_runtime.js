@@ -399,14 +399,20 @@
    * Builds a browser-downloadable animation package from processed PNG data URLs.
    * @param {object} metadata Animation metadata collected by the organizer.
    * @param {Array<{name?:string,data:string,flipped?:boolean}>} items Processed frame items.
-   * @param {{batchZip?:{buildZip:(entries:Array<object>,options?:object)=>Promise<Blob>},document?:Document,urlApi?:typeof URL,now?:()=>Date,onProgress?:(current:number,total:number)=>void}} [dependencies] Browser adapters.
-   * @returns {Promise<{filename:string,frameCount:number,blob:Blob}>} Export result.
+   * @param {{authorization?:{permit?:string}|null,fetchImpl?:typeof fetch,premiumFeatures?:string[],batchZip?:{buildZip:(entries:Array<object>,options?:object)=>Promise<Blob>},document?:Document,urlApi?:typeof URL,now?:()=>Date,onProgress?:(current:number,total:number)=>void}} [dependencies] Browser adapters.
+   * @returns {Promise<{filename:string,frameCount:number,blob:Blob,premiumFeatures:string[]}>} Export result.
    */
   async function exportAnimationPackage(metadata, items, dependencies = {}) {
     if (!metadata || typeof metadata !== "object") throw new TypeError("Animation metadata is required.");
     if (!Array.isArray(items) || !items.length) throw new Error("At least one processed frame is required.");
     const batchZip = dependencies.batchZip || root.BatchZip;
     if (!batchZip || typeof batchZip.buildZip !== "function") throw new Error("ZIP export is unavailable.");
+    const premiumFeatureIds = Array.from(dependencies.premiumFeatures || []);
+    await verifyPremiumExportAuthorization(
+      premiumFeatureIds,
+      dependencies.authorization || null,
+      dependencies.fetchImpl || root.fetch,
+    );
 
     const frameEntries = items.map((item, index) => {
       if (typeof item?.data !== "string" || !item.data.startsWith("data:image/png")) {
@@ -432,6 +438,7 @@
           flipped: items[index].flipped === true,
         })),
       },
+      premiumFeatures: premiumFeatureIds,
       godotImport: { enabled: false, status: "placeholder" },
     };
     const entries = [
@@ -462,7 +469,7 @@
         root.setTimeout?.(() => urlApi.revokeObjectURL(objectUrl), 1000);
       }
     }
-    return { filename, frameCount: items.length, blob };
+    return { filename, frameCount: items.length, blob, premiumFeatures: premiumFeatureIds };
   }
 
   /**
