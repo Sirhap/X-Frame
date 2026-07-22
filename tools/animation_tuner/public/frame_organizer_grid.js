@@ -48,6 +48,7 @@
       const included = includedFrames().length;
       const selected = selectedFrames().length;
       const animation = dependencies.getCurrentAnimation();
+      const canAddAssets = dependencies.canAddAssets();
       elements.organizerCount.textContent = text("workset", { included, total: state.frames.length });
       elements.organizerSelection.textContent = text("selected", { count: selected });
       elements.organizerApply.disabled =
@@ -60,13 +61,8 @@
       elements.organizerDeleteExcluded.disabled = included === state.frames.length || state.busy;
       elements.organizerFileInput.disabled = state.busy;
       elements.organizerVideoInput.disabled = state.busy;
-      elements.organizerAddAssets.hidden = state.mode !== "import";
-      elements.organizerAddAssets.disabled =
-        state.mode !== "import" ||
-        !included ||
-        state.busy ||
-        !animation?.frames?.length ||
-        !dependencies.canAddAssets();
+      elements.organizerAddAssets.hidden = !canAddAssets;
+      elements.organizerAddAssets.disabled = !included || state.busy || !canAddAssets;
       elements.organizerReduce.disabled = !included || state.busy;
       elements.organizerAutoSort.disabled = state.frames.length < 2 || state.busy;
       elements.organizerFindJump.disabled = included < 3 || state.busy || state.sequenceAnalyzing;
@@ -76,6 +72,7 @@
         button.disabled = state.busy;
       });
       elements.organizerReduce.title = included ? "" : text("needFrames");
+      elements.organizerAddAssets.title = included ? "" : text("needFrames");
       elements.organizerFindJump.title = included >= 3 ? "" : text("needThreeFrames");
       elements.organizerFindDuplicate.title = included >= 3 ? "" : text("needThreeFrames");
       elements.organizerFindLoop.title = included >= 4 ? "" : text("needFourFrames");
