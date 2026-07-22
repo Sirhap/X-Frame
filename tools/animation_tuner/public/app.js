@@ -11,11 +11,14 @@ if (browserOnlyMode) {
  * Exports processed organizer frames without calling the local project API.
  * @param {object} metadata Animation export metadata.
  * @param {Array<object>} items Processed PNG frame records.
+ * @param {{onProgress?:(current:number,total:number)=>void}} [options] Export progress callbacks.
  * @returns {Promise<object>} Browser ZIP export result.
  */
-async function exportBrowserAnimation(metadata, items) {
+async function exportBrowserAnimation(metadata, items, options = {}) {
   if (!browserRuntime) throw new Error("Browser export runtime is unavailable.");
-  return browserRuntime.exportAnimationPackage(metadata, items);
+  return browserRuntime.exportAnimationPackage(metadata, items, {
+    onProgress: (current) => options.onProgress?.(Math.min(current, items.length), items.length),
+  });
 }
 
 /**
@@ -2765,6 +2768,10 @@ frameOrganizer =
             name: groupLabel(currentGroup),
             profileId: currentGroup.profileId,
             animationId: currentGroup.animationId,
+            profileLabel: currentGroup.profileLabel,
+            animationType: currentGroup.type,
+            fps: currentGroup.speed,
+            anchorMode: currentGroup.anchorMode,
             frames: currentGroup.frames,
             images,
           }
@@ -2772,6 +2779,7 @@ frameOrganizer =
     applyPlan: browserOnlyMode ? applyBrowserFrameOrganizerPlan : applyFrameOrganizerPlan,
     createAnimation: browserOnlyMode ? exportBrowserAnimation : createAnimationFromOrganizer,
     createSessionAnimation: browserOnlyMode ? createBrowserSessionAnimation : undefined,
+    exportAnimation: exportBrowserAnimation,
     addAssets: addImagesToCurrentGroupAssets,
     editCutout: (workset) => {
       if (!batchCutout?.openWorkset) throw new Error("Batch cutout is unavailable.");

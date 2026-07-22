@@ -6,7 +6,7 @@ const { createController } = require("../animation_tuner/public/frame_organizer_
 
 /**
  * Creates the minimal state and element fixture used by count rendering tests.
- * @param {{mode?:"edit"|"import",included?:boolean,busy?:boolean,canAddAssets?:boolean}} [options]
+ * @param {{mode?:"edit"|"import",included?:boolean,busy?:boolean,canAddAssets?:boolean,canExport?:boolean}} [options]
  * Fixture overrides.
  * @returns {{controller:ReturnType<typeof createController>,elements:Record<string,object>,state:Record<string,unknown>}}
  */
@@ -30,6 +30,7 @@ function createFixture(options = {}) {
     organizerFileInput: button(),
     organizerVideoInput: button(),
     organizerAddAssets: button(),
+    organizerExport: button(),
     organizerReduce: button(),
     organizerAutoSort: button(),
     organizerFindJump: button(),
@@ -43,6 +44,7 @@ function createFixture(options = {}) {
     text: (key) => key,
     getCurrentAnimation: () => null,
     canAddAssets: () => options.canAddAssets !== false,
+    canExport: () => options.canExport !== false,
     editImportCutout: async () => {},
     renderPreview: () => {},
     restartPreview: () => {},
@@ -58,6 +60,8 @@ test("attached-assets action remains available while editing an existing animati
 
   assert.equal(fixture.elements.organizerAddAssets.hidden, false);
   assert.equal(fixture.elements.organizerAddAssets.disabled, false);
+  assert.equal(fixture.elements.organizerExport.hidden, false);
+  assert.equal(fixture.elements.organizerExport.disabled, false);
 });
 
 test("attached-assets action can report a missing target instead of becoming inert", () => {
@@ -79,4 +83,9 @@ test("attached-assets action is disabled without frames and hidden without host 
   unsupportedFixture.controller.renderCounts();
   assert.equal(unsupportedFixture.elements.organizerAddAssets.hidden, true);
   assert.equal(unsupportedFixture.elements.organizerAddAssets.disabled, true);
+
+  const exportUnsupportedFixture = createFixture({ canExport: false });
+  exportUnsupportedFixture.controller.renderCounts();
+  assert.equal(exportUnsupportedFixture.elements.organizerExport.hidden, true);
+  assert.equal(exportUnsupportedFixture.elements.organizerExport.disabled, true);
 });

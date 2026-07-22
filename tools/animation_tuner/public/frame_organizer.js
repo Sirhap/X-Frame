@@ -12,6 +12,7 @@
    *   applyPlan?:(items:Array<object>)=>Promise<void>,
    *   createAnimation?:(metadata:object,items:Array<object>)=>Promise<void>,
    *   createSessionAnimation?:(metadata:object,items:Array<object>)=>Promise<void>,
+   *   exportAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<object|null>,
    *   addAssets?:(items:Array<{name:string,image:HTMLCanvasElement}>)=>Promise<number>,
    *   editCutout?:(workset:{name:string,onLiveApply?:(outputs:Array<object>)=>void,items:Array<{name:string,image:HTMLCanvasElement,frame:object}>})=>Promise<Array<{canvas?:HTMLCanvasElement,data?:string,frame?:object}>|null>,
    *   onOpen?:(mode:"edit"|"import")=>void,
@@ -139,6 +140,7 @@
       "organizerReset",
       "organizerAddAssets",
       "organizerGodotPlaceholder",
+      "organizerExport",
       "organizerApply",
       "organizerGrid",
       "organizerStatus",
@@ -216,6 +218,11 @@
       return organizerActionCall("addIncludedFramesToAssets", ...args);
     }
 
+    /** Exports the included workset through the host ZIP boundary. @returns {Promise<void>} */
+    function exportIncludedFrames(...args) {
+      return organizerActionCall("exportIncludedFrames", ...args);
+    }
+
     const previewController = previewModule.createController({
       elements,
       state,
@@ -233,6 +240,7 @@
       text,
       getCurrentAnimation: () => hooks.getCurrentAnimation?.(),
       canAddAssets: () => typeof hooks.addAssets === "function",
+      canExport: () => typeof hooks.exportAnimation === "function",
       browserExportOnly: hooks.browserExportOnly === true,
       editImportCutout,
       renderPreview,
@@ -710,6 +718,7 @@
       applyPlan,
       importIntoSession,
       addIncludedFramesToAssets,
+      exportIncludedFrames,
       selectFrame,
       imageImporter,
       videoImporter,

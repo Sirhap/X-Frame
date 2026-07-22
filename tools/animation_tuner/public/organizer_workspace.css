@@ -459,9 +459,8 @@
   gap: 8px;
 }
 
+.organizerFooterActions #organizerExport,
 .organizerFooterActions #organizerApply {
-  grid-column: 1 / -1;
-  width: 100%;
   min-height: 46px;
 }
 

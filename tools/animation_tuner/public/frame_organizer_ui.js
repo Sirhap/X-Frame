@@ -49,6 +49,7 @@
    *   applyPlan:()=>Promise<void>,
    *   importIntoSession:()=>Promise<void>,
    *   addIncludedFramesToAssets:()=>Promise<void>,
+   *   exportIncludedFrames:()=>Promise<void>,
    *   selectFrame:(index:number,event:object)=>void,
    *   imageImporter:{importFiles:(files:File[])=>Promise<void>},
    *   videoImporter:{close:()=>void,bindEvents:()=>void},
@@ -90,6 +91,7 @@
       applyPlan,
       importIntoSession,
       addIncludedFramesToAssets,
+      exportIncludedFrames,
       selectFrame,
       imageImporter,
       videoImporter,
@@ -420,6 +422,7 @@
       elements.organizerApply.addEventListener("click", applyPlan);
       elements.organizerGodotPlaceholder.addEventListener("click", importIntoSession);
       elements.organizerAddAssets.addEventListener("click", addIncludedFramesToAssets);
+      elements.organizerExport.addEventListener("click", exportIncludedFrames);
       elements.organizerProjectSelect.addEventListener("change", syncImportProjectField);
       elements.organizerSpeed.addEventListener("input", schedulePreviewFrame);
       elements.organizerApplyTag.addEventListener("click", () => {

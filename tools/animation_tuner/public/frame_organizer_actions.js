@@ -18,7 +18,7 @@
    *   elements:Record<string,any>,
    *   state:Record<string,any>,
    *   text:(key:string,variables?:Record<string,string|number>)=>string,
-   *   hooks?:{browserExportOnly?:boolean,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,createSessionAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
+   *   hooks?:{browserExportOnly?:boolean,getCurrentAnimation?:()=>object|null,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,createSessionAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,exportAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<object|null>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
    *   includedFrames:()=>object[],
    *   imageCanvas:(image:CanvasImageSource)=>HTMLCanvasElement,
    *   renderCounts:()=>void,
@@ -36,7 +36,7 @@
    *   cssEscape?:(value:string)=>string,
    *   premiumFeatures?:{normalizeFeatureIds?:(featureIds:Iterable<string>)=>string[]}
    * }} dependencies Organizer state and host callbacks.
-   * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,applyPlan:()=>Promise<void>,importIntoSession:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>}}
+   * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,applyPlan:()=>Promise<void>,importIntoSession:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>,exportIncludedFrames:()=>Promise<void>}}
    */
   function createController(dependencies = {}) {
     const {
@@ -270,6 +270,7 @@
           })),
         );
         setStatus(text("assetsAdded", { count }), "success");
+        if (count > 0 && typeof closeOrganizer === "function") closeOrganizer();
       } catch (error) {
         setStatus(text("failed", { message: error.message }), "error");
       } finally {
@@ -278,7 +279,80 @@
       }
     }
 
-    return { editImportCutout, applyPlan, importIntoSession, addIncludedFramesToAssets };
+    /**
+     * Downloads the included processed frames as an animation ZIP.
+     * @returns {Promise<void>}
+     */
+    async function exportIncludedFrames() {
+      const frames = includedFrames();
+      if (!frames.length || typeof hooks.exportAnimation !== "function") return;
+      let metadata;
+      try {
+        const animation = hooks.getCurrentAnimation?.() || {};
+        metadata =
+          state.mode === "import"
+            ? importMetadata()
+            : {
+                animationName: animation.name || state.animationName || "animation",
+                profileLabel: animation.profileLabel || animation.profileId || "",
+                animationType: animation.animationType || "actor",
+                fps: Number(animation.fps || 12),
+                anchorMode: animation.anchorMode || "canvas_bottom_center",
+              };
+      } catch (error) {
+        setStatus(error.message, "error");
+        return;
+      }
+      const controller = uiController();
+      const details = [
+        [text("detailAnimation"), metadata.animationName],
+        [text("detailFrames"), frames.length],
+        [text("detailFps"), metadata.fps],
+      ];
+      if (!(await controller.requestConfirmation(text("exportConfirm", { count: frames.length }), details))) {
+        return;
+      }
+      const usedPremiumFeatures =
+        premiumFeatures?.normalizeFeatureIds?.(Array.from(state.premiumFeatures || [])) ||
+        Array.from(state.premiumFeatures || []);
+      if (
+        usedPremiumFeatures.length &&
+        typeof hooks.ensurePremiumActivated === "function" &&
+        !(await hooks.ensurePremiumActivated(usedPremiumFeatures))
+      ) {
+        return;
+      }
+      state.busy = true;
+      renderCounts();
+      try {
+        const result = await hooks.exportAnimation(
+          metadata,
+          frames.map((frame) => ({
+            name: frame.name,
+            flipped: frame.flipped,
+            data: frame.editedCanvas.toDataURL("image/png"),
+          })),
+          {
+            premiumFeatures: usedPremiumFeatures,
+            onProgress: (current, total) => setStatus(text("exportingZip", { current, total }), "busy"),
+          },
+        );
+        if (result) setStatus(text("exportedZip", { count: frames.length }), "success");
+      } catch (error) {
+        setStatus(text("failed", { message: error.message }), "error");
+      } finally {
+        state.busy = false;
+        renderCounts();
+      }
+    }
+
+    return {
+      editImportCutout,
+      applyPlan,
+      importIntoSession,
+      addIncludedFramesToAssets,
+      exportIncludedFrames,
+    };
   }
 
   return { createController };

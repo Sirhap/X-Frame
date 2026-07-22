@@ -19,6 +19,7 @@ function createFixture() {
   const state = { frames: [frame], mode: "edit", animationName: "demo", busy: false, previewTimer: 0 };
   const calls = {
     assets: null,
+    exported: null,
     animation: null,
     sessionAnimation: null,
     status: [],
@@ -38,6 +39,18 @@ function createFixture() {
       addAssets: async (items) => {
         calls.assets = items;
         return items.length;
+      },
+      getCurrentAnimation: () => ({
+        name: "demo",
+        profileLabel: "Hero",
+        animationType: "actor",
+        fps: 12,
+        anchorMode: "canvas_bottom_center",
+      }),
+      exportAnimation: async (metadata, items, options) => {
+        calls.exported = { metadata, items, options };
+        options.onProgress(1, items.length);
+        return { filename: "demo-xsxb.zip", frameCount: items.length };
       },
       createAnimation: async (metadata, items) => {
         if (state.createError) throw state.createError;
@@ -89,6 +102,25 @@ test("organizer actions add included frames without changing host payloads", asy
   assert.equal(fixture.state.busy, false);
   assert.deepEqual(fixture.calls.status, ["assetsAdded"]);
   assert.equal(fixture.calls.counts, 2);
+  assert.equal(fixture.calls.closes, 1);
+});
+
+test("organizer actions export the edited workset as PNG frames", async () => {
+  const fixture = createFixture();
+  fixture.state.confirmApply = true;
+
+  await fixture.controller.exportIncludedFrames();
+
+  assert.equal(fixture.calls.exported.metadata.animationName, "demo");
+  assert.deepEqual(fixture.calls.exported.items, [
+    {
+      name: "frame.png",
+      flipped: false,
+      data: "data:image/png;base64,frame",
+    },
+  ]);
+  assert.deepEqual(fixture.calls.status, ["exportingZip", "exportedZip"]);
+  assert.equal(fixture.state.busy, false);
 });
 
 test("organizer actions reject an unknown cutout target without side effects", async () => {

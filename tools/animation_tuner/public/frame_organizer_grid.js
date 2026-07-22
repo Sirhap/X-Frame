@@ -15,6 +15,7 @@
    *   text:(key:string,variables?:Record<string,string|number>)=>string,
    *   getCurrentAnimation:()=>object|null,
    *   canAddAssets:()=>boolean,
+   *   canExport:()=>boolean,
    *   browserExportOnly?:boolean,
    *   editImportCutout:(frame:object)=>Promise<void>,
    *   renderPreview:()=>void,
@@ -49,6 +50,7 @@
       const selected = selectedFrames().length;
       const animation = dependencies.getCurrentAnimation();
       const canAddAssets = dependencies.canAddAssets();
+      const canExport = dependencies.canExport();
       elements.organizerCount.textContent = text("workset", { included, total: state.frames.length });
       elements.organizerSelection.textContent = text("selected", { count: selected });
       elements.organizerApply.disabled =
@@ -63,6 +65,8 @@
       elements.organizerVideoInput.disabled = state.busy;
       elements.organizerAddAssets.hidden = !canAddAssets;
       elements.organizerAddAssets.disabled = !included || state.busy || !canAddAssets;
+      elements.organizerExport.hidden = !canExport;
+      elements.organizerExport.disabled = !included || state.busy || !canExport;
       elements.organizerReduce.disabled = !included || state.busy;
       elements.organizerAutoSort.disabled = state.frames.length < 2 || state.busy;
       elements.organizerFindJump.disabled = included < 3 || state.busy || state.sequenceAnalyzing;
@@ -73,6 +77,7 @@
       });
       elements.organizerReduce.title = included ? "" : text("needFrames");
       elements.organizerAddAssets.title = included ? "" : text("needFrames");
+      elements.organizerExport.title = included ? "" : text("needFrames");
       elements.organizerFindJump.title = included >= 3 ? "" : text("needThreeFrames");
       elements.organizerFindDuplicate.title = included >= 3 ? "" : text("needThreeFrames");
       elements.organizerFindLoop.title = included >= 4 ? "" : text("needFourFrames");
