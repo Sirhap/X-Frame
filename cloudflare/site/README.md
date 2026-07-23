@@ -131,9 +131,18 @@ block that client for fifteen minutes.
 ## Validate and deploy
 
 ```bash
-npm run check:cloudflare
-wrangler deploy
+# Validate the complete deployment pipeline without uploading.
+npm run deploy:cloudflare:dry-run
+
+# Deploy a committed, clean working tree and verify production routes.
+npm run deploy:cloudflare
 ```
+
+The deployment script uses the repository-local Wrangler version, preserves dashboard-managed
+variables, tags the Worker version with the current Git commit, and refuses a dirty working tree by
+default. Use `bash scripts/deploy-cloudflare.sh --help` to view optional staging, shortened validation,
+and health-check controls. `--skip-checks` still performs the protected production build and final
+artifact audit.
 
 Migration `0005_flexible_licenses.sql` removes the old 3650-day and 100-device schema ceilings and
 uses `NULL` as the explicit unlimited-device value. Back up D1 before applying it remotely.
