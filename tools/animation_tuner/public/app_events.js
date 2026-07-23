@@ -15,6 +15,20 @@
     (typeof require === "function" ? require("./app_events_stage_pointer") : null);
 
   /**
+   * Resolves browser storage without letting a restricted-origin getter abort initialization.
+   * @param {Storage|null|undefined} explicitStorage Injected storage implementation.
+   * @returns {Storage|null} Available storage or null.
+   */
+  function resolveStorage(explicitStorage) {
+    if (explicitStorage) return explicitStorage;
+    try {
+      return root.localStorage || null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  /**
    * Creates DOM and pointer event bindings for the Frame Tuner workbench.
    *
    * The event code is intentionally kept behaviorally identical to app.js.
@@ -30,7 +44,7 @@
     const handlers = dependencies.handlers || {};
     const constants = dependencies.constants || {};
     const documentRef = dependencies.documentRef || root.document;
-    const storage = dependencies.storage || root.localStorage;
+    const storage = resolveStorage(dependencies.storage);
     const getDevicePixelRatio = dependencies.getDevicePixelRatio || (() => root.devicePixelRatio || 1);
     const structuredCloneImpl = dependencies.structuredCloneImpl || root.structuredClone;
     const els = elements;
@@ -144,6 +158,7 @@
       setAdjustmentMode,
       audioFileFromList,
       initPanelState,
+      writePreference,
     } = inputHelpersModule.createController({
       elements: els,
       state,
@@ -247,31 +262,31 @@
       for (const button of els.languageButtons) {
         button.addEventListener("click", () => {
           state.language = button.dataset.language === "en" ? "en" : "zh";
-          localStorage.setItem("xsxbFrameTuner.language", state.language);
           applyLanguage();
+          writePreference("xsxbFrameTuner.language", state.language);
         });
       }
       for (const button of els.themeButtons) {
         button.addEventListener("click", () => {
           state.uiTheme = normalizeTheme(button.dataset.theme);
-          localStorage.setItem("xsxbFrameTuner.theme", state.uiTheme);
           applyUiTheme();
+          writePreference("xsxbFrameTuner.theme", state.uiTheme);
         });
       }
       if (els.canvasColor) {
         els.canvasColor.addEventListener("input", () => {
           state.canvasColor = normalizeColor(els.canvasColor.value);
-          localStorage.setItem("xsxbFrameTuner.canvasColor", state.canvasColor);
           applyCanvasColor();
           draw();
+          writePreference("xsxbFrameTuner.canvasColor", state.canvasColor);
         });
       }
       if (els.sceneSelect) {
         els.sceneSelect.addEventListener("change", () => {
           state.selectedSceneId = els.sceneSelect.value || "";
-          if (state.selectedSceneId) localStorage.setItem("xsxbFrameTuner.scene", state.selectedSceneId);
           syncSceneInputs();
           draw();
+          if (state.selectedSceneId) writePreference("xsxbFrameTuner.scene", state.selectedSceneId);
         });
       }
       if (els.sceneScale) {
@@ -284,7 +299,7 @@
       );
       els.groupSearch.addEventListener("input", () => {
         state.groupSearch = els.groupSearch.value || "";
-        localStorage.setItem("animationTuner.groupSearch", state.groupSearch);
+        writePreference("animationTuner.groupSearch", state.groupSearch);
         const groups = renderGroupSelect(state.currentGroup?.uiId);
         const currentVisible = groups.some((group) => group.uiId === state.currentGroup?.uiId);
         if (!currentVisible && groups[0]) selectGroup(groups[0]);

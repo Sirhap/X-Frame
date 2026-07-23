@@ -92,3 +92,38 @@ test("input helpers preserve adjustment, undo, audio, and panel behavior", () =>
   helpers.initPanelState();
   assert.equal(panel.open, true);
 });
+
+test("input helpers keep UI behavior when browser storage is unavailable", () => {
+  const panel = createElement();
+  panel.dataset.panel = "playback";
+  panel.open = false;
+  const state = { baseEditSnapshot: {}, boxEditSnapshot: {} };
+  let adjustmentUpdates = 0;
+  const helpers = createController({
+    state,
+    constants: { ADJUSTMENT_MODE_KEY: "adjustment-mode" },
+    documentRef: { querySelectorAll: () => [panel] },
+    storage: {
+      getItem() {
+        throw new Error("storage denied");
+      },
+      setItem() {
+        throw new Error("storage quota exceeded");
+      },
+    },
+    handlers: {
+      normalizeAdjustmentMode: (mode) => mode,
+      syncAdjustmentInputs: () => {
+        adjustmentUpdates += 1;
+      },
+    },
+  });
+
+  assert.doesNotThrow(() => helpers.setAdjustmentMode("frame"));
+  assert.equal(state.adjustmentMode, "frame");
+  assert.equal(adjustmentUpdates, 1);
+  assert.equal(helpers.readPreference("missing"), null);
+  assert.equal(helpers.writePreference("key", "value"), false);
+  assert.doesNotThrow(() => helpers.initPanelState());
+  assert.doesNotThrow(() => panel.dispatch("toggle"));
+});

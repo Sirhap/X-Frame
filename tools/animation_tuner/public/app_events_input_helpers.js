@@ -21,6 +21,8 @@
    *   setAdjustmentMode: (mode: string) => void,
    *   audioFileFromList: (fileList?: FileList|ArrayLike<File>) => File|null,
    *   initPanelState: () => void,
+   *   readPreference: (key: string) => string|null,
+   *   writePreference: (key: string, value: string) => boolean,
    * }} Input helper functions.
    */
   function createController(dependencies = {}) {
@@ -29,12 +31,49 @@
     const handlers = dependencies.handlers || {};
     const constants = dependencies.constants || {};
     const documentRef = dependencies.documentRef || root.document;
-    const storage = dependencies.storage || root.localStorage;
+    let storage = dependencies.storage;
+    if (!storage) {
+      try {
+        storage = root.localStorage;
+      } catch (_error) {
+        storage = null;
+      }
+    }
     const els = elements;
     const document = documentRef;
     const localStorage = storage;
     const { ADJUSTMENT_MODE_KEY } = constants;
     const { cloneState, normalizeAdjustmentMode, syncAdjustmentInputs, updateHistoryControls } = handlers;
+
+    /**
+     * Reads an optional UI preference without making storage availability fatal.
+     *
+     * @param {string} key Preference key.
+     * @returns {string|null} Stored value, when storage is available.
+     */
+    function readPreference(key) {
+      try {
+        return localStorage?.getItem?.(key) ?? null;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    /**
+     * Persists a UI preference on a best-effort basis.
+     *
+     * @param {string} key Preference key.
+     * @param {string} value Preference value.
+     * @returns {boolean} Whether the value was persisted.
+     */
+    function writePreference(key, value) {
+      try {
+        localStorage?.setItem?.(key, value);
+        return Boolean(localStorage?.setItem);
+      } catch (_error) {
+        return false;
+      }
+    }
 
     /**
      * Arms a text input with one undo snapshot for each focused edit.
@@ -97,8 +136,8 @@
       state.adjustmentMode = normalizeAdjustmentMode(mode);
       state.baseEditSnapshot = null;
       state.boxEditSnapshot = null;
-      localStorage.setItem(ADJUSTMENT_MODE_KEY, state.adjustmentMode);
       syncAdjustmentInputs();
+      writePreference(ADJUSTMENT_MODE_KEY, state.adjustmentMode);
     }
 
     /**
@@ -126,10 +165,10 @@
     function initPanelState() {
       document.querySelectorAll(".panel[data-panel]").forEach((panel) => {
         const key = `animationTuner.panel.${panel.dataset.panel}`;
-        const saved = localStorage.getItem(key);
+        const saved = readPreference(key);
         if (saved) panel.open = saved === "open";
         panel.addEventListener("toggle", () => {
-          localStorage.setItem(key, panel.open ? "open" : "closed");
+          writePreference(key, panel.open ? "open" : "closed");
         });
       });
     }
@@ -141,6 +180,8 @@
       setAdjustmentMode,
       audioFileFromList,
       initPanelState,
+      readPreference,
+      writePreference,
     };
   }
 

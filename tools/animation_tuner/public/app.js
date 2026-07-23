@@ -88,7 +88,9 @@ async function createBrowserSessionAnimation(metadata, items, options = {}) {
 }
 
 const ctx = els.stage.getContext("2d");
-const { constants: appConstants } = globalThis.XSXBAppState;
+const appStateModule = globalThis.XSXBAppState;
+const { constants: appConstants } = appStateModule;
+const browserStorage = appStateModule.resolveStorage();
 const {
   FRAME_DURATION_STEP_MS,
   MIN_FRAME_DURATION_MS,
@@ -1168,7 +1170,7 @@ projectStateController = projectStateModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
   confirm: requestAppConfirmation,
-  storage: globalThis.localStorage,
+  storage: browserStorage,
   projectLabel,
   groupLabel,
   escapeHtml,
@@ -1362,7 +1364,7 @@ adjustmentInputsController = adjustmentInputsModule.createController({
   overrideStore,
   round,
   documentRef: globalThis.document,
-  localStorageRef: globalThis.localStorage,
+  localStorageRef: browserStorage,
 });
 
 const frameEditStateModule = globalThis.XSXBAppFrameEditState;
@@ -1726,6 +1728,23 @@ function normalizeAdjustmentMode(...args) {
   return adjustmentInputsCall("normalizeAdjustmentMode", ...args);
 }
 
+/**
+ * Applies one adjustment scope for controllers that activate frame editing programmatically.
+ * @param {string} mode Requested adjustment scope.
+ * @returns {void}
+ */
+function setAdjustmentMode(mode) {
+  adjustmentMode = normalizeAdjustmentMode(mode);
+  baseEditSnapshot = null;
+  boxEditSnapshot = null;
+  syncAdjustmentInputs();
+  try {
+    browserStorage?.setItem(ADJUSTMENT_MODE_KEY, adjustmentMode);
+  } catch (_error) {
+    // The in-memory adjustment mode remains usable when persistence is blocked.
+  }
+}
+
 function adjustmentTransform(...args) {
   return adjustmentInputsCall("adjustmentTransform", ...args);
 }
@@ -2071,7 +2090,7 @@ appToolActionsController = appToolActionsModule.createController({
   },
   fetchImpl: globalThis.fetch,
   confirm: requestAppConfirmation,
-  storage: globalThis.localStorage,
+  storage: browserStorage,
   translate: t,
   status,
   outputCore: globalThis.BatchCutoutOutputCore,
@@ -2197,7 +2216,7 @@ projectSelectsController = projectSelectsModule.createController({
     if (els.groupSearch) els.groupSearch.value = value;
   },
   getCurrentGroup: () => currentGroup,
-  storage: globalThis.localStorage,
+  storage: browserStorage,
   escapeHtml,
   projectLabel,
   groupLabel,
@@ -2592,7 +2611,7 @@ const appEvents = appEventsModule.createController({
   constants: { ADJUSTMENT_MODE_KEY },
   documentRef: globalThis.document,
   windowRef: globalThis,
-  storage: globalThis.localStorage,
+  storage: browserStorage,
   getDevicePixelRatio: () => devicePixelRatio,
   structuredCloneImpl: globalThis.structuredClone,
   handlers: {

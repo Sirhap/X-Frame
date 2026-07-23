@@ -89,7 +89,7 @@ test("image import creates a persisted animation through the organizer", async (
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
   await page.locator("#organizerApply").click();
   await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
-  await expect(page.locator("#organizerConfirmMessage")).toContainText("应用为动画组");
+  await expect(page.locator("#organizerConfirmMessage")).toContainText("创建为动画");
   await page.locator("#organizerConfirmAccept").click();
   await expect(page).toHaveURL(/\/workspace/);
   await expect(page.locator("#organizerModal")).toBeHidden();
@@ -102,7 +102,8 @@ test("editor tuning, frame attachment, and audio survive save and reload", async
   await importProject(request, "editor-media");
   await page.goto("/workspace");
   await expect(page.locator(".thumb")).toHaveCount(2);
-  await page.locator("#adjustFrame").check();
+  await page.locator("label:has(#adjustFrame)").click();
+  await expect(page.locator("#adjustFrame")).toBeChecked();
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
   await page.locator("#frameReference").check({ force: true });
   await expect(page.locator("#frameReference")).toBeChecked();
@@ -141,6 +142,36 @@ test("editor tuning, frame attachment, and audio survive save and reload", async
   await expect(page.locator(".thumb.primary")).not.toHaveClass(/hasSfx/);
 });
 
+test("focused controls keep native Space behavior without starting playback", async ({ page }) => {
+  await page.goto("/workspace");
+  const secondFrame = page.locator('.thumb[data-frame-index="1"]');
+  await secondFrame.focus();
+  await page.keyboard.press("Space");
+  await expect(secondFrame).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL(/frame=1/);
+  await expect(page.locator("#playPause")).toHaveText("播放");
+
+  await page.getByRole("button", { name: "批量抠图" }).focus();
+  await page.keyboard.press("Space");
+  await expect(page.locator("#cutoutModal")).toBeVisible();
+  await expect(page.locator("#playPause")).toHaveText("播放");
+});
+
+test("workspace starts when browser storage access is denied", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("Storage access denied", "SecurityError");
+      },
+    });
+  });
+
+  await page.goto("/workspace");
+  await expect(page.locator(".app")).toBeVisible();
+  await expect(page.locator(".thumb")).toHaveCount(2);
+});
+
 test("mobile frame deletion and animation clearing remain explicit and bounded", async ({
   page,
   request,
@@ -150,7 +181,8 @@ test("mobile frame deletion and animation clearing remain explicit and bounded",
   await page.goto("/workspace");
   await expect(page.locator(".thumb")).toHaveCount(3);
 
-  await page.locator(".deleteSelectedFrames").click();
+  await page.locator(".frameActionsMenu > summary").click();
+  await page.locator("#deleteSelectedFrames").click();
   await expect(page.locator("#appConfirmPanel")).toBeVisible();
   await expect(page.locator("#appConfirmCancel")).toBeFocused();
   await expect(page.locator("#appConfirmAccept")).toHaveText("删除所选");
@@ -165,20 +197,22 @@ test("mobile frame deletion and animation clearing remain explicit and bounded",
   expect(dialogMetrics.top).toBeGreaterThanOrEqual(0);
   expect(dialogMetrics.bottom).toBeLessThanOrEqual(dialogMetrics.viewportHeight);
   expect(dialogMetrics.buttonHeights.every((height) => height >= 48)).toBe(true);
-  await page.keyboard.press("Escape");
+  await page.keyboard.press("Space");
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+  await expect(page.locator("#playPause")).toHaveText("播放");
   await expect(page.locator(".thumb")).toHaveCount(3);
 
-  await page.locator(".deleteSelectedFrames").click();
+  await page.locator("#deleteSelectedFrames").click();
   await page.locator("#appConfirmAccept").click();
   await expect(page.locator(".thumb")).toHaveCount(2);
 
-  await page.locator(".clearAnimation").click();
+  await page.locator("#clearAnimation").click();
   await expect(page.locator("#appConfirmCancel")).toBeFocused();
   await expect(page.locator("#appConfirmAccept")).toHaveText("清空动画");
   await page.keyboard.press("Escape");
   await expect(page.locator(".thumb")).toHaveCount(2);
 
-  await page.locator(".clearAnimation").click();
+  await page.locator("#clearAnimation").click();
   await page.locator("#appConfirmAccept").click();
   await expect(page.locator(".thumb")).toHaveCount(0);
   await expect(page.locator("#groupSelect")).toBeDisabled();
@@ -293,6 +327,7 @@ test("project switching, clearing, and deletion preserve explicit confirmation",
   const second = await importProject(request, "lifecycle-b");
   await page.goto("/workspace");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
+  await page.locator("#projectContext > summary").click();
   await page.locator("#projectSelect").focus();
   await page.locator("#projectSelect").selectOption(first.activeProjectId);
   await expect(page.locator("#appConfirmPanel")).toBeVisible();
@@ -346,4 +381,22 @@ test("@touch touch input can select and process a cutout frame", async ({ page }
   await expect(page.locator("#cutoutActiveToolTitle")).toHaveText("原图恢复笔");
   await page.locator("#cutoutResult").tap();
   await expect(page.locator("#cutoutStatus")).toContainText("已添加局部修正");
+});
+
+test("@touch touch controls can reorder an attached image layer", async ({ page, request }) => {
+  test.skip(!test.info().project.use.hasTouch, "Runs only in the touch-enabled project.");
+  await importProject(request, "touch-layer", 1);
+  await page.goto("/workspace");
+  await dropFileOnCurrentFrame(page, {
+    name: "touch-layer.png",
+    type: "image/png",
+    bytes: Array.from(ONE_PIXEL_PNG),
+  });
+  await expect(page.locator(".attachmentThumb")).toHaveCount(1);
+  const moveDownButton = page.locator(".attachmentThumb").getByRole("button", { name: "图层下移" });
+  const buttonBounds = await moveDownButton.boundingBox();
+  expect(buttonBounds?.width).toBeGreaterThanOrEqual(44);
+  expect(buttonBounds?.height).toBeGreaterThanOrEqual(44);
+  await moveDownButton.tap();
+  await expect(page.locator(".attachmentThumb")).toHaveClass(/layerBelow/);
 });

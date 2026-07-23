@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 
-  const DEFAULT_MODAL_IDS = ["cutoutModal", "organizerModal"];
+  const DEFAULT_MODAL_IDS = ["cutoutModal", "organizerModal", "appConfirmPanel"];
 
   /**
    * Creates the application keyboard shortcut controller.
@@ -79,7 +79,37 @@
 
     /** Returns whether a tool modal currently owns keyboard focus. */
     function isModalOpen() {
-      return modalIds.some((id) => !documentRef?.querySelector?.(`#${id}`)?.hidden);
+      return modalIds.some((id) => {
+        const modal = documentRef?.querySelector?.(`#${id}`);
+        return Boolean(modal && !modal.hidden);
+      });
+    }
+
+    /** Returns whether the event target owns native keyboard interaction. */
+    function isInteractiveShortcutTarget(event) {
+      const target = event?.target;
+      if (!target) return false;
+      if (target.isContentEditable) return true;
+      if (["A", "BUTTON", "INPUT", "SELECT", "SUMMARY", "TEXTAREA"].includes(target.tagName)) {
+        return true;
+      }
+      if (["button", "link", "menuitem", "option", "tab"].includes(target.getAttribute?.("role"))) {
+        return true;
+      }
+      return Boolean(
+        target.closest?.(
+          'a[href], button, input, select, summary, textarea, [contenteditable="true"], [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="tab"]',
+        ),
+      );
+    }
+
+    /** Returns whether the frame card itself, rather than a child control, owns the event. */
+    function isFrameCardTarget(event) {
+      const target = event?.target;
+      return Boolean(
+        target?.matches?.('.thumb[role="option"]') ||
+          (target?.classList?.contains?.("thumb") && target?.getAttribute?.("role") === "option"),
+      );
     }
 
     /** Handles editor-level shortcuts and frame navigation. */
@@ -88,29 +118,29 @@
 
       const command = Boolean(event.ctrlKey || event.metaKey);
       const key = String(event.key || "").toLowerCase();
+      const typing = Boolean(isTypingTarget(event));
       if (command && key === "s") {
         event.preventDefault?.();
         runAsync(save, "saveFailed");
         return;
       }
-      if (command && key === "z") {
+      if (!typing && command && key === "z") {
         event.preventDefault?.();
         if (event.shiftKey) redo();
         else undo();
         return;
       }
-      if (command && key === "c" && copyFrameImageAttachments()) {
+      if (!typing && command && key === "c" && copyFrameImageAttachments()) {
         event.preventDefault?.();
         event.stopPropagation?.();
         return;
       }
-      if (command && key === "v" && pasteFrameImageAttachments()) {
+      if (!typing && command && key === "v" && pasteFrameImageAttachments()) {
         event.preventDefault?.();
         event.stopPropagation?.();
         return;
       }
 
-      const typing = Boolean(isTypingTarget(event));
       const trackingAttachmentKey =
         (!typing || isNumberInputTarget(event)) && trackAttachmentTransformKey(event, true);
       if (trackingAttachmentKey && isNumberInputTarget(event)) event.preventDefault?.();
@@ -133,9 +163,12 @@
       }
       if (typing) return;
 
+      const interactiveTarget = isInteractiveShortcutTarget(event);
+      const frameCardTarget = isFrameCardTarget(event);
+      const canHandleApplicationShortcut = !interactiveTarget || frameCardTarget;
       const group = getCurrentGroup();
       const frameCount = group?.frames?.length || 0;
-      if (command && key === "a" && frameCount) {
+      if (canHandleApplicationShortcut && command && key === "a" && frameCount) {
         event.preventDefault?.();
         setSelectedFrames(new Set(group.frames.map((_frame, index) => index)));
         setSelectedFrame(Math.max(0, frameCount - 1));
@@ -145,29 +178,34 @@
         draw();
         return;
       }
-      if (!command && (event.key === "ArrowLeft" || event.key === "ArrowRight") && frameCount) {
+      if (
+        canHandleApplicationShortcut &&
+        !command &&
+        (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+        frameCount
+      ) {
         event.preventDefault?.();
         const direction = event.key === "ArrowLeft" ? -1 : 1;
         const nextIndex = Math.max(0, Math.min(frameCount - 1, getSelectedFrame() + direction));
         selectFilmstripFrame(nextIndex, event.shiftKey ? { shiftKey: true } : null);
-        documentRef
-          ?.querySelector?.(`.thumb[data-frame-index="${nextIndex}"]`)
-          ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+        const nextCard = documentRef?.querySelector?.(`.thumb[data-frame-index="${nextIndex}"]`);
+        nextCard?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+        if (frameCardTarget) nextCard?.focus?.();
         return;
       }
-      if (!command && key === "f") {
+      if (canHandleApplicationShortcut && !command && key === "f") {
         event.preventDefault?.();
         fitView();
         draw();
         return;
       }
-      if (!command && event.key === "0") {
+      if (canHandleApplicationShortcut && !command && event.key === "0") {
         event.preventDefault?.();
         centerStageContent(1, "actual");
         draw();
         return;
       }
-      if (event.key === " " && playPauseElement) {
+      if (!interactiveTarget && event.key === " " && playPauseElement) {
         event.preventDefault?.();
         playPauseElement.click?.();
       }
@@ -176,7 +214,7 @@
     /** Handles Ctrl/Cmd+1/2/3 workbench navigation. */
     function handleRouteKeydown(event) {
       if ((!event.metaKey && !event.ctrlKey) || event.altKey || event.shiftKey) return;
-      if (["INPUT", "SELECT", "TEXTAREA"].includes(event.target?.tagName)) return;
+      if (isInteractiveShortcutTarget(event) && !isFrameCardTarget(event)) return;
       const routeByKey = { 1: "import", 2: "organizer", 3: "cutout" };
       const route = routeByKey[event.key];
       if (!route || route === getCurrentWorkbenchRoute()) return;

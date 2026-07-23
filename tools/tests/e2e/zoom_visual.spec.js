@@ -23,6 +23,27 @@ const VISUAL_PAGES = Object.freeze([
 ]);
 
 /**
+ * Activates fresh deterministic content so prior end-to-end mutations cannot affect snapshots.
+ * @param {import("@playwright/test").APIRequestContext} request Playwright request context.
+ * @returns {Promise<void>}
+ */
+async function activateVisualFixture(request) {
+  const response = await request.post("/api/import-animation", {
+    data: {
+      projectLabel: "Visual Baseline",
+      profileLabel: "Hero",
+      animationName: "visual-idle",
+      fps: 12,
+      items: [1, 2, 3].map((index) => ({
+        name: `visual_${String(index).padStart(4, "0")}.png`,
+        data: `data:image/png;base64,${ONE_PIXEL_PNG.toString("base64")}`,
+      })),
+    },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+}
+
+/**
  * Converts a desktop browser zoom level into the CSS viewport seen by the page.
  * The device scale factor keeps the resulting screenshot close to 1600 × 900 physical pixels.
  * @param {number} scale Browser zoom multiplier.
@@ -112,7 +133,8 @@ for (const zoomCase of ZOOM_CASES) {
     });
 
     for (const visualPage of VISUAL_PAGES) {
-      test(`${visualPage.name} remains stable`, async ({ page }) => {
+      test(`${visualPage.name} remains stable`, async ({ page, request }) => {
+        await activateVisualFixture(request);
         await page.goto(visualPage.path, { waitUntil: "networkidle" });
         await expect(page.locator(visualPage.shell)).toBeVisible();
         await populateVisualPage(page, visualPage.name);

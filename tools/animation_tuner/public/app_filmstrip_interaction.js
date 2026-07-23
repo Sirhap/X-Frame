@@ -25,7 +25,8 @@
    * @returns {{
    *   renderFilmstrip:()=>void,
    *   renderFilmstripGroup:(group:object,label:string)=>void,
-   *   moveFrameLayerCardToIndex:(dragInfo:object,insertionIndex:number)=>void,
+   *   moveFrameLayerCardToIndex:(dragInfo:object,insertionIndex:number)=>boolean,
+   *   moveFrameLayerCardByOffset:(layerInfo:object,offset:number)=>boolean,
    * }} Filmstrip interaction operations.
    */
   function createController(dependencies = {}) {
@@ -233,6 +234,21 @@
     }
 
     /**
+     * Activates a layer card only when the card itself owns Enter or Space.
+     * Nested buttons retain their native keyboard behavior.
+     * @param {KeyboardEvent} event Keyboard event.
+     * @param {HTMLElement} card Layer card.
+     * @returns {boolean} Whether the card handled the event.
+     */
+    function activateLayerCardFromKeyboard(event, card) {
+      if (event.target !== event.currentTarget) return false;
+      if (event.key !== "Enter" && event.key !== " ") return false;
+      event.preventDefault();
+      card.click();
+      return true;
+    }
+
+    /**
      * Installs drag handlers on one layer card.
      * @param {HTMLElement} card Layer card.
      * @param {object} info Layer descriptor.
@@ -244,8 +260,9 @@
       card.draggable = true;
       card.classList.add("layerDraggable");
       card.dataset.layerCardKey = layerCardDomKey(info);
+      setupLayerOrderActions(card, info);
       card.addEventListener("dragstart", (event) => {
-        if (event.target?.closest?.(".attachmentAction, .durationStep, .frameSfxBadge")) {
+        if (event.target?.closest?.(".attachmentAction, .durationStep, .frameSfxBadge, .layerOrderAction")) {
           event.preventDefault();
           return;
         }
@@ -301,20 +318,20 @@
      * Applies a layer-card reorder and refreshes the workbench.
      * @param {object} dragInfo Dragged layer descriptor.
      * @param {number} insertionIndex Target insertion index.
-     * @returns {void}
+     * @returns {boolean} Whether the layer order changed.
      */
     function moveFrameLayerCardToIndex(dragInfo, insertionIndex) {
       const currentGroup = getCurrentGroup();
-      if (!currentGroup || dragInfo.groupUiId !== currentGroup.uiId) return;
+      if (!currentGroup || dragInfo.groupUiId !== currentGroup.uiId) return false;
       const frameIndex = clampFrameIndex(dragInfo.frameIndex, currentGroup);
       const order = movedLayerCardOrder(dragInfo, insertionIndex, currentGroup);
-      if (!order) return;
+      if (!order) return false;
       const { before, after } = order;
-      if (before.map(layerCardKey).join("|") === after.map(layerCardKey).join("|")) return;
+      if (before.map(layerCardKey).join("|") === after.map(layerCardKey).join("|")) return false;
       const previousRects = captureLayerCardRects();
       clearLayerDragPreview();
       pushUndo("reorder frame layers");
-      if (!applyFrameLayerCardOrder(frameIndex, currentGroup, after)) return;
+      if (!applyFrameLayerCardOrder(frameIndex, currentGroup, after)) return false;
       if (dragInfo.type === "attachment") setSelectedAttachmentId(dragInfo.attachmentId);
       else clearSelectedAttachment();
       setSingleFrameSelection(frameIndex, currentGroup);
@@ -322,6 +339,78 @@
       renderFilmstrip();
       animateLayerCardRects(previousRects);
       draw();
+      return true;
+    }
+
+    /**
+     * Moves one layer by a single visual slot and restores keyboard focus after rendering.
+     * @param {object} layerInfo Layer descriptor.
+     * @param {number} offset Negative to move up, positive to move down.
+     * @returns {boolean} Whether the layer order changed.
+     */
+    function moveFrameLayerCardByOffset(layerInfo, offset) {
+      const currentGroup = getCurrentGroup();
+      if (!currentGroup || layerInfo.groupUiId !== currentGroup.uiId) return false;
+      const frameIndex = clampFrameIndex(layerInfo.frameIndex, currentGroup);
+      const infos = layerCardInfosForFrame(frameIndex, currentGroup);
+      const currentIndex = infos.findIndex(
+        (candidate) => layerCardKey(candidate) === layerCardKey(layerInfo),
+      );
+      const direction = Math.sign(Number(offset) || 0);
+      const nextIndex = currentIndex + direction;
+      if (!direction || currentIndex < 0 || nextIndex < 0 || nextIndex >= infos.length) return false;
+      const insertionIndex = direction < 0 ? nextIndex : nextIndex + 1;
+      if (!moveFrameLayerCardToIndex(layerInfo, insertionIndex)) return false;
+      documentRef
+        ?.querySelector?.(`[data-layer-card-key="${cssEscape(layerCardDomKey(layerInfo))}"]`)
+        ?.focus?.();
+      return true;
+    }
+
+    /**
+     * Adds explicit touch and keyboard controls for reordering one layer card.
+     * @param {HTMLElement} card Layer card.
+     * @param {object} info Layer descriptor.
+     * @returns {void}
+     */
+    function setupLayerOrderActions(card, info) {
+      const currentGroup = getCurrentGroup();
+      if (!currentGroup || info.groupUiId !== currentGroup.uiId) return;
+      const infos = layerCardInfosForFrame(info.frameIndex, currentGroup);
+      if (infos.length < 2) return;
+      const currentIndex = infos.findIndex((candidate) => layerCardKey(candidate) === layerCardKey(info));
+      if (currentIndex < 0) return;
+
+      const actions = documentRef.createElement("span");
+      actions.className = "layerOrderActions";
+      const actionDefinitions = [
+        { direction: -1, label: translate("frameLayerMoveUp"), symbol: "↑" },
+        { direction: 1, label: translate("frameLayerMoveDown"), symbol: "↓" },
+      ];
+      for (const actionDefinition of actionDefinitions) {
+        const button = documentRef.createElement("button");
+        button.type = "button";
+        button.className = "layerOrderAction";
+        button.textContent = actionDefinition.symbol;
+        button.title = actionDefinition.label;
+        button.setAttribute("aria-label", actionDefinition.label);
+        button.disabled =
+          (actionDefinition.direction < 0 && currentIndex === 0) ||
+          (actionDefinition.direction > 0 && currentIndex === infos.length - 1);
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          moveFrameLayerCardByOffset(info, actionDefinition.direction);
+        });
+        actions.appendChild(button);
+      }
+      card.prepend(actions);
+      card.addEventListener("keydown", (event) => {
+        if (!event.altKey || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        moveFrameLayerCardByOffset(info, event.key === "ArrowUp" ? -1 : 1);
+      });
     }
 
     /**
@@ -371,11 +460,7 @@
         }
         selectFrameImageAttachment(attachment, index, group);
       });
-      card.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        card.click();
-      });
+      card.addEventListener("keydown", (event) => activateLayerCardFromKeyboard(event, card));
       setupLayerCardDrag(card, layerCardInfoForAttachment(attachment, index, group));
       return card;
     }
@@ -513,11 +598,7 @@
           }
           selectFilmstripFrame(index, event);
         });
-        item.addEventListener("keydown", (event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          item.click();
-        });
+        item.addEventListener("keydown", (event) => activateLayerCardFromKeyboard(event, item));
         setupLayerCardDrag(item, layerCardInfoForMain(index, group));
         for (const stackItem of stackItems) {
           if (stackItem.type === "main") stack.appendChild(item);
@@ -545,6 +626,7 @@
     }
 
     return {
+      activateLayerCardFromKeyboard,
       animateLayerCardRects,
       captureLayerCardRects,
       clearLayerDropClasses,
@@ -552,11 +634,13 @@
       createFrameImageAttachmentCard,
       isLayerCardDragEvent,
       layerInsertionIndexFromPoint,
+      moveFrameLayerCardByOffset,
       moveFrameLayerCardToIndex,
       previewLayerCardMove,
       renderFilmstrip,
       renderFilmstripGroup,
       setupLayerCardDrag,
+      setupLayerOrderActions,
       setupLayerStackDrag,
     };
   }

@@ -360,6 +360,59 @@
   display: block;
 }
 
+.thumb:has(.layerOrderActions) .frameSfxBadge {
+  left: auto;
+  right: 5px;
+}
+
+.layerOrderActions {
+  display: flex;
+  gap: 4px;
+  left: 4px;
+  position: absolute;
+  top: 4px;
+  z-index: 4;
+}
+
+.layerOrderAction {
+  align-items: center;
+  background: var(--control-bg);
+  border: 2px solid var(--line);
+  border-radius: 5px;
+  box-shadow: 2px 2px 0 var(--line);
+  color: var(--control-ink);
+  display: inline-flex;
+  font: 900 15px/1 var(--data-font);
+  height: 32px;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0;
+  width: 32px;
+}
+
+.layerOrderAction:hover,
+.layerOrderAction:focus-visible {
+  background: var(--accent-2);
+  color: #05070a;
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px #111111;
+}
+
+.layerOrderAction:disabled {
+  box-shadow: none;
+  cursor: default;
+  opacity: 0.35;
+}
+
+@media (pointer: coarse) {
+  .layerOrderAction {
+    height: 44px;
+    min-height: 44px;
+    width: 44px;
+  }
+}
+
 .attachmentThumb {
   background: var(--surface-2);
   border-color: var(--line);

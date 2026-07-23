@@ -5,6 +5,19 @@ const test = require("node:test");
 const { createController } = require("../animation_tuner/public/app_keyboard");
 
 /**
+ * Creates a frame option target with the DOM methods used by the shortcut controller.
+ * @returns {object} Frame-card-like event target.
+ */
+function createFrameCardTarget() {
+  return {
+    tagName: "DIV",
+    matches: (selector) => selector === '.thumb[role="option"]',
+    classList: { contains: (className) => className === "thumb" },
+    getAttribute: (name) => (name === "role" ? "option" : null),
+  };
+}
+
+/**
  * Creates a browser-independent keyboard controller fixture.
  * @param {object} [overrides] Dependency overrides.
  * @returns {{controller: object, listeners: Map<string, Set<Function>>, state: object}}
@@ -17,6 +30,9 @@ function createFixture(overrides = {}) {
     selectedFrame: 0,
     referenceHidden: false,
     drawCalls: 0,
+    playCalls: 0,
+    undoCalls: 0,
+    copyCalls: 0,
     ...overrides.state,
   };
   const windowRef = {
@@ -50,6 +66,18 @@ function createFixture(overrides = {}) {
     },
     draw: () => {
       state.drawCalls += 1;
+    },
+    playPauseElement: {
+      click: () => {
+        state.playCalls += 1;
+      },
+    },
+    undo: () => {
+      state.undoCalls += 1;
+    },
+    copyFrameImageAttachments: () => {
+      state.copyCalls += 1;
+      return true;
     },
     ...overrides.dependencies,
   });
@@ -119,4 +147,152 @@ test("reference-frame H shortcut is released on keyup", () => {
   controller.handleKeyup({ key: "h" });
   assert.equal(state.referenceHidden, false);
   assert.equal(state.drawCalls, 2);
+});
+
+test("missing modal elements do not suspend keyboard shortcuts", () => {
+  let fitCalls = 0;
+  const { controller } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => null },
+      fitView: () => {
+        fitCalls += 1;
+      },
+    },
+  });
+
+  controller.handleEditorKeydown({
+    key: "f",
+    ctrlKey: false,
+    metaKey: false,
+    target: { tagName: "BODY" },
+    preventDefault() {},
+  });
+
+  assert.equal(fitCalls, 1);
+});
+
+test("application confirmation suspends global Space playback", () => {
+  const { controller, state } = createFixture({
+    dependencies: {
+      documentRef: {
+        querySelector: (selector) => ({ hidden: selector !== "#appConfirmPanel" }),
+      },
+    },
+  });
+
+  controller.handleEditorKeydown({
+    key: " ",
+    ctrlKey: false,
+    metaKey: false,
+    target: { tagName: "BUTTON" },
+    preventDefault() {},
+  });
+
+  assert.equal(state.playCalls, 0);
+});
+
+test("Space on native controls is left to the focused control", () => {
+  const { controller, state } = createFixture({
+    dependencies: { documentRef: { querySelector: () => ({ hidden: true }) } },
+  });
+  let prevented = false;
+
+  controller.handleEditorKeydown({
+    key: " ",
+    ctrlKey: false,
+    metaKey: false,
+    target: { tagName: "BUTTON" },
+    preventDefault: () => {
+      prevented = true;
+    },
+  });
+
+  assert.equal(prevented, false);
+  assert.equal(state.playCalls, 0);
+});
+
+test("Space on a frame option selects the card without toggling playback", () => {
+  const { controller, state } = createFixture({
+    dependencies: { documentRef: { querySelector: () => ({ hidden: true }) } },
+  });
+  let prevented = false;
+
+  controller.handleEditorKeydown({
+    key: " ",
+    ctrlKey: false,
+    metaKey: false,
+    target: createFrameCardTarget(),
+    preventDefault: () => {
+      prevented = true;
+    },
+  });
+
+  assert.equal(prevented, false);
+  assert.equal(state.playCalls, 0);
+});
+
+test("frame option retains select-all and route shortcuts while focused", () => {
+  let selectedFrames = new Set();
+  const { controller, state } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      getCurrentGroup: () => ({ frames: [{}, {}] }),
+      setSelectedFrames: (nextSelection) => {
+        selectedFrames = nextSelection;
+      },
+    },
+  });
+  const selectAllEvent = {
+    key: "a",
+    ctrlKey: true,
+    metaKey: false,
+    target: createFrameCardTarget(),
+    preventDefault() {
+      this.prevented = true;
+    },
+  };
+  const routeEvent = {
+    key: "3",
+    ctrlKey: true,
+    metaKey: false,
+    altKey: false,
+    shiftKey: false,
+    target: createFrameCardTarget(),
+    preventDefault() {
+      this.prevented = true;
+    },
+  };
+
+  controller.handleEditorKeydown(selectAllEvent);
+  controller.handleRouteKeydown(routeEvent);
+
+  assert.deepEqual([...selectedFrames], [0, 1]);
+  assert.equal(selectAllEvent.prevented, true);
+  assert.equal(state.route, "cutout");
+  assert.equal(routeEvent.prevented, true);
+});
+
+test("native text editing keeps undo and copy shortcuts", () => {
+  const { controller, state } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      isTypingTarget: () => true,
+    },
+  });
+  let prevented = false;
+  const baseEvent = {
+    ctrlKey: true,
+    metaKey: false,
+    target: { tagName: "INPUT" },
+    preventDefault: () => {
+      prevented = true;
+    },
+  };
+
+  controller.handleEditorKeydown({ ...baseEvent, key: "z" });
+  controller.handleEditorKeydown({ ...baseEvent, key: "c" });
+
+  assert.equal(prevented, false);
+  assert.equal(state.undoCalls, 0);
+  assert.equal(state.copyCalls, 0);
 });

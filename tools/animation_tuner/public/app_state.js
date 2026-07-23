@@ -192,5 +192,5 @@
     }
   }
 
-  return { constants, createInitialState, parseBoxSelection };
+  return { constants, createInitialState, parseBoxSelection, resolveStorage };
 });
