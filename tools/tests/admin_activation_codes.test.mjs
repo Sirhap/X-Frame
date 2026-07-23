@@ -60,6 +60,7 @@ function createAdminRepositoryFixture() {
             id: license.id,
             code_hash: license.codeHash,
             code_ciphertext: license.codeCiphertext,
+            source: "code",
             plan: "standard",
             duration_days: license.durationDays,
             max_devices: license.maxDevices,
@@ -74,7 +75,9 @@ function createAdminRepositoryFixture() {
         return { success: true };
       },
       async findLicensesByIds(ids) {
-        return state.licenses.filter((license) => ids.includes(license.id));
+        return state.licenses.filter(
+          (license) => license.source !== "automatic_trial" && ids.includes(license.id),
+        );
       },
       async updateLicenses(licenses) {
         for (const update of licenses) {
@@ -409,13 +412,45 @@ test("administrator lists, revokes, restores, and resets individual devices", as
   const listed = await service.listLicenses(request);
   assert.equal(listed[0].activeDeviceCount, 1);
   assert.equal(listed[0].devices[0].name, "MacBook Pro");
+  assert.equal(listed[0].source, "code");
+
+  state.licenses.push({
+    id: "trial-license-list-01",
+    code_hash: "trial-code-hash-list-01",
+    code_ciphertext: null,
+    source: "automatic_trial",
+    plan: "trial",
+    duration_days: 3,
+    max_devices: 1,
+    redeem_by: "2026-07-22T08:00:00.000Z",
+    first_activated_at: "2026-07-22T08:00:00.000Z",
+    expires_at: "2026-07-25T08:00:00.000Z",
+    revoked_at: null,
+  });
+  state.devices.push({
+    id: "device-trial-list-01",
+    license_id: "trial-license-list-01",
+    device_name: "Trial Mac",
+    first_country: "CN",
+    last_country: "CN",
+    created_at: "2026-07-22T08:00:00.000Z",
+    last_seen_at: "2026-07-22T08:00:00.000Z",
+    revoked_at: null,
+  });
+
+  const listedWithTrial = await service.listLicenses(request);
+  assert.equal(listedWithTrial[0].source, "automatic_trial");
+  assert.equal(listedWithTrial[0].codeAvailable, false);
+  assert.equal(listedWithTrial[0].devices[0].name, "Trial Mac");
 
   await service.setDevicesRevoked({ ids: ["device-admin-list-01"], revoked: true }, request);
   assert.notEqual(state.devices[0].revoked_at, null);
   await service.setDevicesRevoked({ ids: ["device-admin-list-01"], revoked: false }, request);
   assert.equal(state.devices[0].revoked_at, null);
   await service.deleteDevices({ ids: ["device-admin-list-01"] }, request);
-  assert.equal(state.devices.length, 0);
+  assert.equal(state.devices.length, 1);
+  await service.setDevicesRevoked({ ids: ["device-trial-list-01"], revoked: true }, request);
+  assert.notEqual(state.devices[0].revoked_at, null);
 });
 
 test("administrator API fails closed and rejects cross-origin login", async () => {
@@ -463,7 +498,10 @@ test("administrator control links to a dedicated non-modal management page", () 
   assert.match(admin, /id="adminUnlimitedDevices"/u);
   assert.match(admin, /id="adminBulkMaxDevices"/u);
   assert.match(admin, /id="adminBulkUnlimitedDevices"/u);
+  assert.match(admin, /data-source-filter="automatic_trial"/u);
+  assert.match(admin, /id="adminLicenseSearch"/u);
   assert.match(adminScript, /设备 ID.*首次绑定.*最后使用/u);
+  assert.match(adminScript, /license\.source === "automatic_trial"/u);
   assert.match(workbench, /id="activationManage"/u);
   assert.match(workbench, /id="activationCurrent"/u);
   assert.match(admin, /value="9999-12-31T23:59"/u);

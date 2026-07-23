@@ -63,39 +63,42 @@ export function createAdminRepository(database) {
       }
     },
 
-    /** @param {number} limit Maximum rows. @returns {Promise<object[]>} Recent code-based licenses. */
+    /** @param {number} limit Maximum rows. @returns {Promise<object[]>} Recent licenses and trials. */
     async listLicenses(limit) {
-      const result = await database
-        .prepare(
-          `SELECT id, code_hash, code_ciphertext, plan, duration_days, max_devices, redeem_by,
-                  first_activated_at, expires_at, revoked_at
-             FROM licenses
-            WHERE source = 'code'
-            ORDER BY rowid DESC
-            LIMIT ?1`,
-        )
-        .bind(limit)
-        .all();
-      return result.results || [];
+      const results = await database.batch(
+        ["code", "automatic_trial"].map((source) =>
+          database
+            .prepare(
+              `SELECT rowid AS source_rowid, id, code_hash, code_ciphertext, source, plan,
+                      duration_days, max_devices, redeem_by, first_activated_at, expires_at, revoked_at
+                 FROM licenses
+                WHERE source = ?1
+                ORDER BY rowid DESC
+                LIMIT ?2`,
+            )
+            .bind(source, limit),
+        ),
+      );
+      return results
+        .flatMap((result) => result.results || [])
+        .sort((left, right) => Number(right.source_rowid) - Number(left.source_rowid));
     },
 
     /** @param {string[]} licenseIds License IDs. @returns {Promise<object[]>} Devices grouped by license. */
     async listLicenseDevices(licenseIds) {
       if (!licenseIds.length) return [];
-      const results = await database.batch(
-        licenseIds.map((licenseId) =>
-          database
-            .prepare(
-              `SELECT id, license_id, device_name, first_country, last_country,
-                      created_at, last_seen_at, revoked_at
-                 FROM license_devices
-                WHERE license_id = ?1
-                ORDER BY created_at ASC`,
-            )
-            .bind(licenseId),
-        ),
-      );
-      return results.flatMap((result) => result.results || []);
+      const placeholders = licenseIds.map((_licenseId, index) => `?${index + 1}`).join(", ");
+      const result = await database
+        .prepare(
+          `SELECT id, license_id, device_name, first_country, last_country,
+                  created_at, last_seen_at, revoked_at
+             FROM license_devices
+            WHERE license_id IN (${placeholders})
+            ORDER BY created_at ASC`,
+        )
+        .bind(...licenseIds)
+        .all();
+      return result.results || [];
     },
 
     /** @param {object[]} licenses New license records. @returns {Promise<object[]>} Batch results. */
@@ -127,7 +130,7 @@ export function createAdminRepository(database) {
         ids.map((id) =>
           database
             .prepare(
-              `SELECT id, code_hash, code_ciphertext, plan, duration_days, max_devices, redeem_by,
+              `SELECT id, code_hash, code_ciphertext, source, plan, duration_days, max_devices, redeem_by,
                       first_activated_at, expires_at, revoked_at
                  FROM licenses
                 WHERE id = ?1 AND source = 'code'
@@ -172,7 +175,7 @@ export function createAdminRepository(database) {
       );
     },
 
-    /** @param {string[]} ids Device IDs. @returns {Promise<object[]>} Matching code-license devices. */
+    /** @param {string[]} ids Device IDs. @returns {Promise<object[]>} Matching managed devices. */
     async findDevicesByIds(ids) {
       const results = await database.batch(
         ids.map((id) =>
@@ -180,8 +183,7 @@ export function createAdminRepository(database) {
             .prepare(
               `SELECT d.id, d.license_id, d.revoked_at
                  FROM license_devices d
-                 JOIN licenses l ON l.id = d.license_id
-                WHERE d.id = ?1 AND l.source = 'code'
+                WHERE d.id = ?1
                 LIMIT 1`,
             )
             .bind(id),

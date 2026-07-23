@@ -179,6 +179,7 @@ function serializeLicense(row, now, code = "") {
     : [];
   return {
     id: row.id,
+    source: row.source === "automatic_trial" ? "automatic_trial" : "code",
     code,
     codeAvailable: Boolean(code),
     codeHashPrefix: String(row.code_hash || "").slice(0, 12),

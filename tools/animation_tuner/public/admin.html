@@ -80,6 +80,29 @@
             <button id="adminLogoutButton" type="button">退出登录</button>
           </div>
 
+          <section class="admin-overview" aria-label="授权概览">
+            <article>
+              <span>激活码</span>
+              <strong id="adminCodeCount">—</strong>
+              <small>可管理授权</small>
+            </article>
+            <article>
+              <span>试用设备</span>
+              <strong id="adminTrialCount">—</strong>
+              <small>自动领取试用</small>
+            </article>
+            <article>
+              <span>活跃授权</span>
+              <strong id="adminActiveCount">—</strong>
+              <small>当前有效</small>
+            </article>
+            <article>
+              <span>设备绑定</span>
+              <strong id="adminDeviceCount">—</strong>
+              <small>未撤销设备</small>
+            </article>
+          </section>
+
           <div class="admin-dashboard-grid">
             <form id="adminLicenseForm" class="admin-license-form">
               <header>
@@ -97,7 +120,7 @@
                   maxlength="512"
                   autocomplete="off"
                   spellcheck="false"
-                  placeholder="可输入任意自定义文本"
+                  placeholder="例如 XSXB-TEAM-2026…"
                 />
                 <button id="adminGenerateCodeButton" type="button">随机生成</button>
               </div>
@@ -177,10 +200,31 @@
               <header>
                 <div>
                   <p>LICENSE MANAGEMENT / 02</p>
-                  <h2 id="adminLicenseListTitle">全部激活码</h2>
+                  <h2 id="adminLicenseListTitle">授权与设备</h2>
                 </div>
-                <button id="adminRefreshButton" type="button" aria-label="刷新激活码列表">↻</button>
+                <button id="adminRefreshButton" type="button" aria-label="刷新授权与设备列表">↻</button>
               </header>
+              <div class="admin-list-tools">
+                <div class="admin-source-tabs" role="group" aria-label="授权类型筛选">
+                  <button type="button" data-source-filter="code" aria-pressed="true">
+                    激活码 <span id="adminCodeTabCount">0</span>
+                  </button>
+                  <button type="button" data-source-filter="automatic_trial" aria-pressed="false">
+                    试用设备 <span id="adminTrialTabCount">0</span>
+                  </button>
+                </div>
+                <label class="admin-search-field">
+                  <span class="visually-hidden">搜索授权或设备</span>
+                  <span aria-hidden="true">⌕</span>
+                  <input
+                    id="adminLicenseSearch"
+                    name="licenseSearch"
+                    type="search"
+                    autocomplete="off"
+                    placeholder="搜索激活码、设备或地区…"
+                  />
+                </label>
+              </div>
               <div class="admin-selection-bar">
                 <label><input id="adminSelectAll" type="checkbox" /> 全选当前列表</label>
                 <div>
@@ -189,7 +233,7 @@
                   <button id="adminCopyAllButton" type="button">复制全部</button>
                 </div>
               </div>
-              <div class="admin-bulk-editor" aria-label="批量编辑选中的激活码">
+              <div class="admin-bulk-editor" aria-label="批量编辑选中的激活码" hidden>
                 <div class="admin-bulk-duration-field">
                   <span>有效天数</span>
                   <div class="admin-duration-input">

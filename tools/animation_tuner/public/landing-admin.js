@@ -36,9 +36,19 @@
     copySelectedButton: document.querySelector("#adminCopySelectedButton"),
     copyAllButton: document.querySelector("#adminCopyAllButton"),
     licenseItems: document.querySelector("#adminLicenseItems"),
+    licenseSearch: document.querySelector("#adminLicenseSearch"),
     refreshButton: document.querySelector("#adminRefreshButton"),
     selectAll: document.querySelector("#adminSelectAll"),
     selectedCount: document.querySelector("#adminSelectedCount"),
+    selectionBar: document.querySelector(".admin-selection-bar"),
+    bulkEditor: document.querySelector(".admin-bulk-editor"),
+    sourceTabs: [...document.querySelectorAll("[data-source-filter]")],
+    codeCount: document.querySelector("#adminCodeCount"),
+    trialCount: document.querySelector("#adminTrialCount"),
+    activeCount: document.querySelector("#adminActiveCount"),
+    deviceCount: document.querySelector("#adminDeviceCount"),
+    codeTabCount: document.querySelector("#adminCodeTabCount"),
+    trialTabCount: document.querySelector("#adminTrialTabCount"),
     bulkDurationDays: document.querySelector("#adminBulkDurationDays"),
     bulkMaxDevices: document.querySelector("#adminBulkMaxDevices"),
     bulkUnlimitedDevices: document.querySelector("#adminBulkUnlimitedDevices"),
@@ -56,6 +66,10 @@
   let countdownTimer = 0;
   let licenses = [];
   let periodSeconds = 30;
+  let activeSourceFilter =
+    new URLSearchParams(window.location.search).get("source") === "automatic_trial"
+      ? "automatic_trial"
+      : "code";
 
   /** @param {HTMLElement|null} element Status element. @param {string} message Message. @param {string} [tone] Visual tone. @returns {void} */
   function setStatus(element, message, tone = "") {
@@ -96,7 +110,7 @@
 
   /** @param {unknown} value Date-like value. @returns {string} Local display text. */
   function formatDate(value) {
-    const timestamp = Date.parse(String(value || ""));
+    const timestamp = typeof value === "number" ? value : Date.parse(String(value || ""));
     if (!Number.isFinite(timestamp)) return "—";
     return new Intl.DateTimeFormat("zh-CN", {
       dateStyle: "medium",
@@ -229,9 +243,58 @@
     }
   }
 
+  /** @returns {object[]} Licenses matching the current source and text filters. */
+  function visibleLicenses() {
+    const query = elements.licenseSearch.value.trim().toLocaleLowerCase("zh-CN");
+    return licenses.filter((license) => {
+      if (license.source !== activeSourceFilter) return false;
+      if (!query) return true;
+      const deviceText = Array.isArray(license.devices)
+        ? license.devices
+            .map((device) => `${device.name} ${device.id} ${device.country}`)
+            .join(" ")
+            .toLocaleLowerCase("zh-CN")
+        : "";
+      return `${license.code || ""} ${license.codeHashPrefix || ""} ${license.id} ${deviceText}`
+        .toLocaleLowerCase("zh-CN")
+        .includes(query);
+    });
+  }
+
+  /** @returns {void} Updates summary metrics from the loaded administrator records. */
+  function updateOverview() {
+    const codeLicenses = licenses.filter((license) => license.source === "code");
+    const trialLicenses = licenses.filter((license) => license.source === "automatic_trial");
+    const activeLicenses = licenses.filter((license) => license.status === "active");
+    const activeDevices = licenses.reduce(
+      (count, license) =>
+        count +
+        (Array.isArray(license.devices) ? license.devices.filter((device) => !device.revoked).length : 0),
+      0,
+    );
+    elements.codeCount.textContent = String(codeLicenses.length);
+    elements.trialCount.textContent = String(trialLicenses.length);
+    elements.activeCount.textContent = String(activeLicenses.length);
+    elements.deviceCount.textContent = String(activeDevices);
+    elements.codeTabCount.textContent = String(codeLicenses.length);
+    elements.trialTabCount.textContent = String(trialLicenses.length);
+  }
+
+  /** @returns {void} Persists the current list view in the address bar. */
+  function syncListUrl() {
+    const url = new URL(window.location.href);
+    if (activeSourceFilter === "code") url.searchParams.delete("source");
+    else url.searchParams.set("source", activeSourceFilter);
+    const query = elements.licenseSearch.value.trim();
+    if (query) url.searchParams.set("q", query);
+    else url.searchParams.delete("q");
+    window.history.replaceState(null, "", url);
+  }
+
   /** @returns {void} */
   function updateSelectionState() {
-    const visibleIds = licenses.map((license) => license.id);
+    const visibleRows = visibleLicenses();
+    const visibleIds = visibleRows.map((license) => license.id);
     const selectedVisibleCount = visibleIds.filter((id) => selectedLicenseIds.has(id)).length;
     elements.selectedCount.textContent = `已选择 ${selectedLicenseIds.size} 个`;
     elements.selectAll.checked = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
@@ -247,6 +310,9 @@
     ]) {
       button.disabled = selectedLicenseIds.size === 0;
     }
+    const managesCodes = activeSourceFilter === "code";
+    elements.selectionBar.hidden = !managesCodes;
+    elements.bulkEditor.hidden = !managesCodes || selectedLicenseIds.size === 0;
   }
 
   /** @param {object[]} nextLicenses License records. @returns {void} */
@@ -257,42 +323,68 @@
       if (!visibleIds.has(id)) selectedLicenseIds.delete(id);
     }
     elements.licenseItems.replaceChildren();
-    if (!licenses.length) {
+    updateOverview();
+    for (const tab of elements.sourceTabs) {
+      tab.setAttribute("aria-pressed", String(tab.dataset.sourceFilter === activeSourceFilter));
+    }
+    const filteredLicenses = visibleLicenses();
+    if (!filteredLicenses.length) {
       const empty = document.createElement("p");
       empty.className = "admin-license-empty";
-      empty.textContent = "还没有激活码";
+      const hasSearch = Boolean(elements.licenseSearch.value.trim());
+      empty.textContent = hasSearch
+        ? "没有匹配的授权或设备，请调整搜索关键词。"
+        : activeSourceFilter === "automatic_trial"
+          ? "还没有设备领取自动试用。"
+          : "还没有创建激活码。";
       elements.licenseItems.append(empty);
       updateSelectionState();
       return;
     }
     const statusLabels = { active: "使用中", expired: "已过期", revoked: "已撤销", unused: "未使用" };
-    for (const license of licenses) {
+    for (const license of filteredLicenses) {
+      const isTrial = license.source === "automatic_trial";
       const item = document.createElement("article");
       item.className = "admin-license-item";
+      item.dataset.source = license.source;
 
-      const selection = document.createElement("input");
-      selection.className = "admin-license-select";
-      selection.type = "checkbox";
-      selection.checked = selectedLicenseIds.has(license.id);
-      selection.setAttribute("aria-label", `选择激活码 ${license.codeHashPrefix}`);
-      selection.addEventListener("change", () => {
-        if (selection.checked) selectedLicenseIds.add(license.id);
-        else selectedLicenseIds.delete(license.id);
-        updateSelectionState();
-      });
+      let selection;
+      if (isTrial) {
+        selection = document.createElement("span");
+        selection.className = "admin-trial-marker";
+        selection.setAttribute("aria-hidden", "true");
+        selection.textContent = "T";
+      } else {
+        selection = document.createElement("input");
+        selection.className = "admin-license-select";
+        selection.type = "checkbox";
+        selection.checked = selectedLicenseIds.has(license.id);
+        selection.setAttribute("aria-label", `选择激活码 ${license.codeHashPrefix}`);
+        selection.addEventListener("change", () => {
+          if (selection.checked) selectedLicenseIds.add(license.id);
+          else selectedLicenseIds.delete(license.id);
+          updateSelectionState();
+        });
+      }
 
       const header = document.createElement("header");
       const code = document.createElement("strong");
-      code.textContent = license.code || `旧码不可恢复 · ${license.codeHashPrefix}…`;
-      code.title = license.code || "该激活码创建于加密存储上线之前，无法从哈希恢复原文。";
+      const primaryDevice = Array.isArray(license.devices) ? license.devices[0] : null;
+      code.textContent = isTrial
+        ? primaryDevice?.name || "自动试用设备"
+        : license.code || `旧码不可恢复 · ${license.codeHashPrefix}…`;
+      code.title = isTrial
+        ? "该设备通过自动试用流程创建"
+        : license.code || "该激活码创建于加密存储上线之前，无法从哈希恢复原文。";
       const identity = document.createElement("small");
-      identity.textContent = license.id;
+      identity.textContent = isTrial ? `TRIAL · ${license.id}` : license.id;
       header.append(code, identity);
 
       const state = document.createElement("span");
       state.className = "admin-license-state";
-      state.dataset.state = license.status;
-      state.textContent = statusLabels[license.status] || license.status;
+      const displayStatus = isTrial && primaryDevice?.revoked ? "revoked" : license.status;
+      state.dataset.state = displayStatus;
+      state.textContent = statusLabels[displayStatus] || displayStatus;
 
       const copyButton = document.createElement("button");
       copyButton.className = "admin-license-copy";
@@ -305,21 +397,26 @@
       const meta = document.createElement("div");
       meta.className = "admin-license-meta";
       const duration = document.createElement("span");
-      duration.textContent = license.permanent ? "激活后 永久" : `激活后 ${license.durationDays} 天`;
+      duration.textContent = license.permanent
+        ? "授权周期 · 永久"
+        : `${isTrial ? "试用周期" : "激活后"} · ${license.durationDays} 天`;
       const redeemBy = document.createElement("span");
-      redeemBy.textContent = `兑换截止 ${formatRedeemBy(license.redeemBy)}`;
+      redeemBy.textContent = isTrial
+        ? `领取时间 · ${formatDate(license.activatedAt)}`
+        : `兑换截止 · ${formatRedeemBy(license.redeemBy)}`;
       const expiry = document.createElement("span");
       expiry.textContent = license.permanent
-        ? "实际到期 永久"
+        ? "实际到期 · 永久"
         : license.expiresAt
-          ? `实际到期 ${formatDate(license.expiresAt)}`
-          : "实际到期 激活后计算";
+          ? `实际到期 · ${formatDate(license.expiresAt)}`
+          : "实际到期 · 激活后计算";
       const device = document.createElement("span");
-      device.textContent = `设备 ${license.activeDeviceCount || 0} / ${license.unlimitedDevices ? "不限" : license.maxDevices || 1}`;
+      device.textContent = `设备绑定 · ${license.activeDeviceCount || 0} / ${license.unlimitedDevices ? "不限" : license.maxDevices || 1}`;
       meta.append(duration, redeemBy, expiry, device);
       const actions = document.createElement("div");
       actions.className = "admin-license-actions";
-      actions.append(state, copyButton);
+      actions.append(state);
+      if (!isTrial) actions.append(copyButton);
       item.append(selection, header, actions, meta);
       const devices = document.createElement("div");
       devices.className = "admin-license-devices";
@@ -439,6 +536,7 @@
 
   elements.redeemBy.value ||= PERMANENT_LOCAL_DATE;
   elements.bulkRedeemBy.value ||= PERMANENT_LOCAL_DATE;
+  elements.licenseSearch.value = new URLSearchParams(window.location.search).get("q") || "";
   updateCreationPreview();
   startCountdown();
   void loadSession();
@@ -555,7 +653,7 @@
   );
 
   elements.selectAll.addEventListener("change", () => {
-    for (const license of licenses) {
+    for (const license of visibleLicenses()) {
       if (elements.selectAll.checked) selectedLicenseIds.add(license.id);
       else selectedLicenseIds.delete(license.id);
     }
@@ -568,9 +666,22 @@
     void copyText(codes.join("\n"), elements.bulkStatus);
   });
   elements.copyAllButton.addEventListener("click", () => {
-    const codes = licenses.filter((license) => license.code).map((license) => license.code);
+    const codes = visibleLicenses()
+      .filter((license) => license.code)
+      .map((license) => license.code);
     void copyText(codes.join("\n"), elements.bulkStatus);
   });
+  elements.licenseSearch.addEventListener("input", () => {
+    syncListUrl();
+    renderLicenses(licenses);
+  });
+  for (const tab of elements.sourceTabs) {
+    tab.addEventListener("click", () => {
+      activeSourceFilter = tab.dataset.sourceFilter;
+      syncListUrl();
+      renderLicenses(licenses);
+    });
+  }
   elements.bulkApplyButton.addEventListener(
     "click",
     () =>
