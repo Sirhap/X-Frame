@@ -8,6 +8,7 @@ import {
   hashActivationCode,
   sanitizeActivationResult,
 } from "../../cloudflare/site/src/activation.mjs";
+import { hashDeviceFingerprint } from "../../cloudflare/site/src/trial_identity.mjs";
 
 const activationSecret = "test-secret-with-at-least-thirty-two-characters";
 const dayMs = 86_400_000;
@@ -44,6 +45,7 @@ async function createRepositoryFixture(overrides = {}) {
     license: {
       id: "license-test",
       code_hash: await hashActivationCode("XSXB-TRIAL-TEST", crypto.subtle),
+      source: "code",
       plan: "trial",
       duration_days: 3,
       max_devices: 1,
@@ -82,6 +84,7 @@ async function createRepositoryFixture(overrides = {}) {
         public_key: device.public_key,
         public_key_hash: device.public_key_hash,
         device_revoked_at: device.revoked_at,
+        source: license.source,
         plan: license.plan,
         expires_at: license.expires_at,
         license_revoked_at: license.revoked_at,
@@ -94,6 +97,19 @@ async function createRepositoryFixture(overrides = {}) {
     async findAutomaticTrialByFingerprintHash(fingerprintHash) {
       const trial = state.automaticTrials.find((entry) => entry.fingerprintHash === fingerprintHash);
       return trial ? repository.findAuthorizationByDeviceId(trial.device.id) : null;
+    },
+    async findAutomaticTrialByDeviceSignature(hardwareHash, displayHash) {
+      const trial = state.automaticTrials.find(
+        (entry) => entry.hardwareHash === hardwareHash && entry.displayHash === displayHash,
+      );
+      return trial ? repository.findAuthorizationByDeviceId(trial.device.id) : null;
+    },
+    async updateAutomaticTrialDeviceSignature(deviceId, hardwareHash, displayHash) {
+      const trial = state.automaticTrials.find((entry) => entry.device.id === deviceId);
+      if (!trial) return { meta: { changes: 0 } };
+      trial.hardwareHash = hardwareHash;
+      trial.displayHash = displayHash;
+      return { meta: { changes: 1 } };
     },
     async activateLicense(_licenseId, activatedAt, expiresAt) {
       state.license.first_activated_at ||= activatedAt;
@@ -138,7 +154,8 @@ async function createRepositoryFixture(overrides = {}) {
         state.automaticTrials.some(
           (entry) =>
             entry.fingerprintHash === trial.fingerprintHash ||
-            entry.device.public_key_hash === trial.publicKeyHash,
+            entry.device.public_key_hash === trial.publicKeyHash ||
+            (entry.hardwareHash === trial.hardwareHash && entry.displayHash === trial.displayHash),
         )
       ) {
         throw new Error("unique constraint");
@@ -166,7 +183,13 @@ async function createRepositoryFixture(overrides = {}) {
         revoked_at: null,
       };
       state.devices.push(device);
-      state.automaticTrials.push({ device, license, fingerprintHash: trial.fingerprintHash });
+      state.automaticTrials.push({
+        device,
+        license,
+        fingerprintHash: trial.fingerprintHash,
+        hardwareHash: trial.hardwareHash,
+        displayHash: trial.displayHash,
+      });
       return [{ success: true }];
     },
     async touchDevice(deviceId, seenAt, ipHash, country) {
@@ -430,6 +453,24 @@ test("automatic trial starts without a code and blocks a new key with the same f
   assert.equal(Date.parse(challenge.expiresAt), now + 3 * dayMs);
   assert.equal(fixture.state.automaticTrials.length, 1);
 
+  fixture.state.automaticTrials[0].hardwareHash = "legacy-hardware-hash";
+  fixture.state.automaticTrials[0].displayHash = "legacy-display-hash";
+  const renewalChallenge = await service.deviceChallenge(
+    { deviceId: challenge.deviceId },
+    activationRequest("/api/activation/device-challenge"),
+  );
+  const renewal = await service.verifyChallenge(
+    {
+      challenge: renewalChallenge.challenge,
+      signature: await signChallenge(firstDevice.keyPair.privateKey, renewalChallenge.challenge),
+      fingerprint: deviceFingerprint(),
+    },
+    activationRequest("/api/activation/verify"),
+  );
+  assert.equal(renewal.activated, true);
+  assert.notEqual(fixture.state.automaticTrials[0].hardwareHash, "legacy-hardware-hash");
+  assert.notEqual(fixture.state.automaticTrials[0].displayHash, "legacy-display-hash");
+
   const repeated = await service.automaticTrialChallenge(
     { publicKey: firstDevice.publicKey, fingerprint: deviceFingerprint() },
     request,
@@ -444,6 +485,91 @@ test("automatic trial starts without a code and blocks a new key with the same f
     ),
     (error) => error.status === 409 && /already been claimed/u.test(error.message),
   );
+});
+
+test("automatic trial recognizes one physical device across different browsers", async () => {
+  const now = Date.parse("2026-07-22T00:00:00.000Z");
+  const fixture = await createRepositoryFixture();
+  const service = createActivationService(
+    { XSXB_ACTIVATION_SECRET: activationSecret },
+    { repository: fixture.repository, now: () => now },
+  );
+  const chromeFingerprint = deviceFingerprint({
+    platform: "macOS",
+    userAgent: "Mozilla/5.0 Chrome/140.0.0.0",
+    deviceMemory: 16,
+    screen: { width: 1728, height: 1117, colorDepth: 30, pixelRatio: 2 },
+    userAgentData: {
+      architecture: "arm",
+      bitness: "64",
+      platformVersion: "15.0",
+      brands: [{ brand: "Google Chrome", version: "140" }],
+    },
+    webgl: {
+      vendor: "Google Inc. (Apple)",
+      renderer: "ANGLE (Apple, Apple M4 Pro, OpenGL 4.1)",
+    },
+  });
+  const safariFingerprint = deviceFingerprint({
+    platform: "MacIntel",
+    userAgent: "Mozilla/5.0 Version/18.5 Safari/605.1.15",
+    deviceMemory: 0,
+    userAgentData: {},
+    webgl: { vendor: "Apple Inc.", renderer: "Apple M4 Pro" },
+  });
+  const [chromeHashes, safariHashes] = await Promise.all([
+    hashDeviceFingerprint(chromeFingerprint, activationSecret, crypto.subtle),
+    hashDeviceFingerprint(safariFingerprint, activationSecret, crypto.subtle),
+  ]);
+  assert.notEqual(chromeHashes.fingerprintHash, safariHashes.fingerprintHash);
+  assert.equal(chromeHashes.hardwareHash, safariHashes.hardwareHash);
+  assert.equal(chromeHashes.displayHash, safariHashes.displayHash);
+
+  await service.automaticTrialChallenge(
+    { publicKey: (await createDeviceKey()).publicKey, fingerprint: chromeFingerprint },
+    activationRequest("/api/activation/trial-challenge"),
+  );
+
+  await assert.rejects(
+    service.automaticTrialChallenge(
+      { publicKey: (await createDeviceKey()).publicKey, fingerprint: safariFingerprint },
+      activationRequest("/api/activation/trial-challenge"),
+    ),
+    (error) => error.status === 409 && /already been claimed/u.test(error.message),
+  );
+  assert.equal(fixture.state.automaticTrials.length, 1);
+});
+
+test("automatic trial does not merge devices when only one stable signature component matches", async () => {
+  const now = Date.parse("2026-07-22T00:00:00.000Z");
+  const fixture = await createRepositoryFixture();
+  const service = createActivationService(
+    { XSXB_ACTIVATION_SECRET: activationSecret },
+    { repository: fixture.repository, now: () => now },
+  );
+  await service.automaticTrialChallenge(
+    { publicKey: (await createDeviceKey()).publicKey, fingerprint: deviceFingerprint() },
+    activationRequest("/api/activation/trial-challenge"),
+  );
+
+  await service.automaticTrialChallenge(
+    {
+      publicKey: (await createDeviceKey()).publicKey,
+      fingerprint: deviceFingerprint({
+        screen: { width: 2560, height: 1440, colorDepth: 24, pixelRatio: 2 },
+      }),
+    },
+    activationRequest("/api/activation/trial-challenge"),
+  );
+  await service.automaticTrialChallenge(
+    {
+      publicKey: (await createDeviceKey()).publicKey,
+      fingerprint: deviceFingerprint({ hardwareConcurrency: 12 }),
+    },
+    activationRequest("/api/activation/trial-challenge"),
+  );
+
+  assert.equal(fixture.state.automaticTrials.length, 3);
 });
 
 test("license duration, fixed expiry, and unused-code redemption deadline are configurable", async () => {

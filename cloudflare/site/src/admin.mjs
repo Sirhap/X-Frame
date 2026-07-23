@@ -4,7 +4,9 @@ import { createAdminRepository } from "./admin_repository.mjs";
 import { isPermanentLicenseExpiry } from "./license_duration.mjs";
 
 const ADMIN_COOKIE_NAME = "xsxb_admin";
-const ADMIN_SESSION_TTL_SECONDS = 15 * 60;
+const DEFAULT_ADMIN_SESSION_MINUTES = 4 * 60;
+const MIN_ADMIN_SESSION_MINUTES = 15;
+const MAX_ADMIN_SESSION_MINUTES = 24 * 60;
 const LOGIN_BLOCK_MS = 15 * 60 * 1000;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const MAX_LOGIN_FAILURES = 5;
@@ -17,6 +19,22 @@ const textEncoder = new TextEncoder();
 /** @param {unknown} value Username-like value. @returns {string} Trimmed administrator username. */
 function normalizeAdminUsername(value) {
   return String(value || "").trim();
+}
+
+/** @param {unknown} value Configured session duration in minutes. @returns {number} Valid session duration in seconds. */
+function resolveAdminSessionTtlSeconds(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return DEFAULT_ADMIN_SESSION_MINUTES * 60;
+  }
+  const minutes = Number(value);
+  if (
+    !Number.isSafeInteger(minutes) ||
+    minutes < MIN_ADMIN_SESSION_MINUTES ||
+    minutes > MAX_ADMIN_SESSION_MINUTES
+  ) {
+    return DEFAULT_ADMIN_SESSION_MINUTES * 60;
+  }
+  return minutes * 60;
 }
 
 /** @param {string} value Base32 text. @returns {Uint8Array} Decoded secret bytes. */
@@ -198,7 +216,7 @@ function serializeLicense(row, now, code = "") {
 
 /**
  * Creates the TOTP-protected administrator service.
- * @param {{LICENSE_DB?:D1Database,XSXB_ACTIVATION_SECRET?:string,XSXB_ADMIN_TOTP_SECRET?:string,XSXB_ADMIN_USERNAME?:string}} env Worker environment.
+ * @param {{LICENSE_DB?:D1Database,XSXB_ACTIVATION_SECRET?:string,XSXB_ADMIN_SESSION_MINUTES?:string|number,XSXB_ADMIN_TOTP_SECRET?:string,XSXB_ADMIN_USERNAME?:string}} env Worker environment.
  * @param {{cryptoApi?:Crypto,now?:()=>number,repository?:object}} [options] Test adapters.
  * @returns {object} Administrator operations.
  */
@@ -208,6 +226,7 @@ export function createAdminService(env, options = {}) {
   const now = options.now || Date.now;
   const sessionSecret = String(env?.XSXB_ACTIVATION_SECRET || "");
   const adminUsername = normalizeAdminUsername(env?.XSXB_ADMIN_USERNAME || DEFAULT_ADMIN_USERNAME);
+  const adminSessionTtlSeconds = resolveAdminSessionTtlSeconds(env?.XSXB_ADMIN_SESSION_MINUTES);
   let totpSecret = null;
   try {
     totpSecret = decodeBase32Secret(env?.XSXB_ADMIN_TOTP_SECRET || "");
@@ -287,7 +306,7 @@ export function createAdminService(env, options = {}) {
         throw Object.assign(new Error("This verification code has already been used."), { status: 409 });
       }
       await repository.clearLoginAttempt(fingerprintHash);
-      const expiresAt = currentTime + ADMIN_SESSION_TTL_SECONDS * 1000;
+      const expiresAt = currentTime + adminSessionTtlSeconds * 1000;
       const token = await signToken(
         { type: "admin-session", username: adminUsername, exp: expiresAt },
         sessionSecret,
@@ -356,7 +375,7 @@ export function createAdminService(env, options = {}) {
       return [
         `${ADMIN_COOKIE_NAME}=${encodeURIComponent(token)}`,
         "Path=/api/admin",
-        `Max-Age=${ADMIN_SESSION_TTL_SECONDS}`,
+        `Max-Age=${adminSessionTtlSeconds}`,
         "HttpOnly",
         "SameSite=Strict",
         new URL(request.url).protocol === "https:" ? "Secure" : "",

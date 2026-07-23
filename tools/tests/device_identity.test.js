@@ -32,6 +32,7 @@ test("device identity creates a non-extractable P-256 key and renews by signatur
   const paths = [];
   let publicKey = null;
   let challengeIndex = 0;
+  const verifiedFingerprints = [];
 
   /** @param {string} input Request path. @param {RequestInit} options Fetch options. @returns {Promise<Response>} Mock response. */
   async function fetchImpl(input, options) {
@@ -56,6 +57,7 @@ test("device identity creates a non-extractable P-256 key and renews by signatur
         return Response.json({ challenge: `renewal-challenge-${challengeIndex}` });
       }
       if (pathname === "/api/activation/verify") {
+        verifiedFingerprints.push(payload.fingerprint);
         const valid = await crypto.subtle.verify(
           { name: "ECDSA", hash: "SHA-256" },
           publicKey,
@@ -83,6 +85,7 @@ test("device identity creates a non-extractable P-256 key and renews by signatur
     cryptoApi: crypto,
     storage,
     navigatorRef: { platform: "Test browser" },
+    fingerprintCollector: async () => ({ platform: "macOS", userAgent: "Test Browser/1.0" }),
   });
   const activation = await controller.activate("XSXB-TRIAL-TEST");
   assert.equal(activation.activated, true);
@@ -98,6 +101,10 @@ test("device identity creates a non-extractable P-256 key and renews by signatur
     "/api/activation/verify",
     "/api/activation/device-challenge",
     "/api/activation/verify",
+  ]);
+  assert.deepEqual(verifiedFingerprints, [
+    { platform: "macOS", userAgent: "Test Browser/1.0" },
+    { platform: "macOS", userAgent: "Test Browser/1.0" },
   ]);
 });
 

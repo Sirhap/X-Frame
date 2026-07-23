@@ -178,8 +178,14 @@
       }
     }
 
-    /** @param {object} identity Device identity. @param {object} challengeResult Challenge response. @returns {Promise<object>} Verified session. */
-    async function verify(identity, challengeResult) {
+    /**
+     * Verifies a challenge and sends current device signals for authenticated signature upgrades.
+     * @param {object} identity Device identity.
+     * @param {object} challengeResult Challenge response.
+     * @param {object|null} fingerprint Current device fingerprint.
+     * @returns {Promise<object>} Verified session.
+     */
+    async function verify(identity, challengeResult, fingerprint = null) {
       try {
         const challenge = String(challengeResult.challenge || "");
         if (!challenge) throw new Error("Activation challenge is missing.");
@@ -191,6 +197,7 @@
         const result = await postJson("/api/activation/verify", {
           challenge,
           signature: bytesToBase64Url(signature),
+          ...(fingerprint ? { fingerprint } : {}),
         });
         if (!result.activated) throw new Error("Activation verification failed.");
         if (result.deviceId && identity.deviceId !== result.deviceId) {
@@ -226,13 +233,14 @@
       async activate(code) {
         try {
           const identity = await ensureIdentity();
+          const fingerprint = await collectFingerprint();
           const challenge = await postJson("/api/activation/challenge", {
             code: String(code || ""),
             publicKey: identity.publicKey,
             deviceName: deviceName(),
-            fingerprint: await collectFingerprint(),
+            fingerprint,
           });
-          return await verify(identity, challenge);
+          return await verify(identity, challenge, fingerprint);
         } catch (error) {
           if (error instanceof Error) throw error;
           throw new Error("Unable to activate this browser.", { cause: error });
@@ -249,7 +257,7 @@
             deviceName: deviceName(),
             fingerprint,
           });
-          return await verify(identity, challenge);
+          return await verify(identity, challenge, fingerprint);
         } catch (error) {
           if (error instanceof Error) throw error;
           throw new Error("Unable to start the three-day trial.", { cause: error });
@@ -262,7 +270,7 @@
           const challenge = await postJson("/api/activation/device-challenge", {
             deviceId: identity.deviceId,
           });
-          return await verify(identity, challenge);
+          return await verify(identity, challenge, await collectFingerprint());
         } catch (error) {
           if (error instanceof Error) throw error;
           throw new Error("Unable to renew this browser session.", { cause: error });

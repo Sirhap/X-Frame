@@ -173,7 +173,7 @@ test("administrator username defaults to admin when the optional variable is omi
   assert.equal(login.username, "admin");
 });
 
-test("administrator login creates a short HttpOnly session and rejects code replay", async () => {
+test("administrator login creates a four-hour HttpOnly session and rejects code replay", async () => {
   const { repository } = createAdminRepositoryFixture();
   const service = configuredService(repository);
   const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
@@ -186,6 +186,8 @@ test("administrator login creates a short HttpOnly session and rejects code repl
   assert.match(cookie, /HttpOnly/u);
   assert.match(cookie, /SameSite=Strict/u);
   assert.match(cookie, /Path=\/api\/admin/u);
+  assert.match(cookie, /Max-Age=14400/u);
+  assert.equal(Date.parse(login.expiresAt), fixedNow + 4 * 60 * 60 * 1000);
   assert.equal(
     (await service.status(adminRequest("/api/admin/session", { headers: { cookie } }))).authenticated,
     true,
@@ -197,6 +199,37 @@ test("administrator login creates a short HttpOnly session and rejects code repl
     service.login({ username: adminUsername, code }, request),
     (error) => error.status === 409,
   );
+});
+
+test("administrator session duration accepts bounded configuration and rejects unsafe values", async () => {
+  for (const [configuredMinutes, expectedMinutes] of [
+    [60, 60],
+    ["1440", 1440],
+    [1, 240],
+    [1441, 240],
+    ["invalid", 240],
+  ]) {
+    const { repository } = createAdminRepositoryFixture();
+    const service = createAdminService(
+      {
+        XSXB_ACTIVATION_SECRET: activationSecret,
+        XSXB_ADMIN_SESSION_MINUTES: configuredMinutes,
+        XSXB_ADMIN_TOTP_SECRET: adminTotpSecret,
+        XSXB_ADMIN_USERNAME: adminUsername,
+      },
+      { repository, now: () => fixedNow },
+    );
+    const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
+    const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
+    const request = adminRequest("/api/admin/login");
+    const login = await service.login({ username: adminUsername, code }, request);
+
+    assert.equal(Date.parse(login.expiresAt), fixedNow + expectedMinutes * 60 * 1000);
+    assert.match(
+      service.cookieHeader(login.token, request),
+      new RegExp(`Max-Age=${expectedMinutes * 60}`, "u"),
+    );
+  }
 });
 
 test("administrator login requires the configured username without revealing which field failed", async () => {

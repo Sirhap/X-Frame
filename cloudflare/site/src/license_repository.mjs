@@ -7,7 +7,7 @@ export function createLicenseRepository(database) {
   if (!database?.prepare) throw Object.assign(new Error("License database is unavailable."), { status: 503 });
 
   const authorizationSelect = `SELECT d.id AS device_id, d.license_id, d.public_key, d.public_key_hash,
-                                      d.revoked_at AS device_revoked_at, l.plan, l.expires_at,
+                                      d.revoked_at AS device_revoked_at, l.source, l.plan, l.expires_at,
                                       l.revoked_at AS license_revoked_at
                                  FROM license_devices d
                                  JOIN licenses l ON l.id = d.license_id`;
@@ -70,6 +70,45 @@ export function createLicenseRepository(database) {
         )
         .bind(fingerprintHash)
         .first();
+    },
+
+    /**
+     * Finds a trial claimed by the same browser-independent device signature.
+     * Both hashes must match to avoid treating similar hardware on a shared network as one device.
+     * @param {string} hardwareHash Hashed hardware core.
+     * @param {string} displayHash Hashed display environment.
+     * @returns {Promise<object|null>} Automatic-trial authorization.
+     */
+    findAutomaticTrialByDeviceSignature(hardwareHash, displayHash) {
+      return database
+        .prepare(
+          `${authorizationSelect}
+             JOIN automatic_trial_claims t ON t.device_id = d.id
+            WHERE t.hardware_hash = ?1
+              AND t.display_hash = ?2
+              AND l.source = 'automatic_trial'
+            LIMIT 1`,
+        )
+        .bind(hardwareHash, displayHash)
+        .first();
+    },
+
+    /**
+     * Lazily upgrades an existing trial from an older fingerprint algorithm.
+     * @param {string} deviceId Device ID.
+     * @param {string} hardwareHash Current browser-independent hardware hash.
+     * @param {string} displayHash Current browser-independent display hash.
+     * @returns {Promise<object>} Mutation result.
+     */
+    updateAutomaticTrialDeviceSignature(deviceId, hardwareHash, displayHash) {
+      return database
+        .prepare(
+          `UPDATE automatic_trial_claims
+              SET hardware_hash = ?2, display_hash = ?3
+            WHERE device_id = ?1`,
+        )
+        .bind(deviceId, hardwareHash, displayHash)
+        .run();
     },
 
     /** @param {string} licenseId License ID. @param {string} activatedAt ISO timestamp. @param {string} expiresAt ISO timestamp. @returns {Promise<object>} Mutation result. */

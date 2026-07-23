@@ -22,6 +22,27 @@ function normalizeBoolean(value) {
 }
 
 /**
+ * Maps browser-specific platform labels onto an operating-system family.
+ * @param {object} fingerprint Normalized fingerprint.
+ * @returns {string} Browser-independent platform family.
+ */
+function platformFamily(fingerprint) {
+  const platform = `${fingerprint.platform} ${fingerprint.userAgent}`.toLowerCase();
+  if (
+    /(iphone|ipad|ipod)/u.test(platform) ||
+    (/(mac|macintosh)/u.test(platform) && fingerprint.maxTouchPoints > 1)
+  ) {
+    return "ios";
+  }
+  if (/(mac|macintosh)/u.test(platform)) return "macos";
+  if (/(windows|win32|win64)/u.test(platform)) return "windows";
+  if (/android/u.test(platform)) return "android";
+  if (/cros/u.test(platform)) return "chromeos";
+  if (/linux/u.test(platform)) return "linux";
+  return fingerprint.platform.toLowerCase();
+}
+
+/**
  * Normalizes privacy-sensitive browser signals before hashing.
  * @param {unknown} value Raw fingerprint payload.
  * @returns {object} Stable bounded fingerprint components.
@@ -81,20 +102,23 @@ export function normalizeDeviceFingerprint(value) {
  */
 export async function hashDeviceFingerprint(value, secret, subtle) {
   const fingerprint = normalizeDeviceFingerprint(value);
+  const screenEdges = [fingerprint.screen.width, fingerprint.screen.height].sort(
+    (left, right) => left - right,
+  );
   const hardware = {
-    platform: fingerprint.platform,
-    userAgent: fingerprint.userAgent,
+    version: 2,
+    platformFamily: platformFamily(fingerprint),
     hardwareConcurrency: fingerprint.hardwareConcurrency,
-    deviceMemory: fingerprint.deviceMemory,
     maxTouchPoints: fingerprint.maxTouchPoints,
-    userAgentData: fingerprint.userAgentData,
-    webgl: fingerprint.webgl,
   };
   const display = {
-    language: fingerprint.language,
-    languages: fingerprint.languages,
-    timeZone: fingerprint.timeZone,
-    screen: fingerprint.screen,
+    version: 2,
+    language: fingerprint.language.toLowerCase(),
+    timeZone: fingerprint.timeZone.toLowerCase(),
+    screen: {
+      shortEdge: screenEdges[0],
+      longEdge: screenEdges[1],
+    },
   };
   const [fingerprintHash, hardwareHash, displayHash] = await Promise.all([
     hmacHex(`trial-fingerprint:${JSON.stringify(fingerprint)}`, secret, subtle),

@@ -175,6 +175,33 @@ export function createActivationService(env, options = {}) {
     };
   }
 
+  /**
+   * Updates an automatic trial only after the request has proved possession of its private key.
+   * @param {string} deviceId Verified device ID.
+   * @param {unknown} fingerprintPayload Current raw fingerprint payload.
+   * @returns {Promise<void>}
+   */
+  async function upgradeAutomaticTrialSignature(deviceId, fingerprintPayload) {
+    const normalizedFingerprint = normalizeDeviceFingerprint(fingerprintPayload);
+    if (!normalizedFingerprint.platform || !normalizedFingerprint.userAgent) return;
+    const fingerprint = await hashDeviceFingerprint(normalizedFingerprint, secret, subtle);
+    try {
+      await repository.updateAutomaticTrialDeviceSignature(
+        deviceId,
+        fingerprint.hardwareHash,
+        fingerprint.displayHash,
+      );
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: "automatic_trial_signature_upgrade_failed",
+          deviceId,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
+
   return {
     configured,
     async activationChallenge(payload, request) {
@@ -281,9 +308,19 @@ export function createActivationService(env, options = {}) {
       const fingerprint = await hashDeviceFingerprint(normalizedFingerprint, secret, subtle);
       let authorization = await repository.findAutomaticTrialByPublicKeyHash(publicKeyHash);
       if (authorization) {
+        await upgradeAutomaticTrialSignature(authorization.device_id, normalizedFingerprint);
         return challengeFor(authorization, "trial", new URL(request.url).origin);
       }
       authorization = await repository.findAutomaticTrialByFingerprintHash(fingerprint.fingerprintHash);
+      if (authorization) {
+        throw Object.assign(new Error("The three-day trial has already been claimed on this device."), {
+          status: 409,
+        });
+      }
+      authorization = await repository.findAutomaticTrialByDeviceSignature(
+        fingerprint.hardwareHash,
+        fingerprint.displayHash,
+      );
       if (authorization) {
         throw Object.assign(new Error("The three-day trial has already been claimed on this device."), {
           status: 409,
@@ -315,6 +352,15 @@ export function createActivationService(env, options = {}) {
         if (!authorization) {
           const claimed = await repository.findAutomaticTrialByFingerprintHash(fingerprint.fingerprintHash);
           if (claimed) {
+            throw Object.assign(new Error("The three-day trial has already been claimed on this device."), {
+              status: 409,
+            });
+          }
+          const deviceClaimed = await repository.findAutomaticTrialByDeviceSignature(
+            fingerprint.hardwareHash,
+            fingerprint.displayHash,
+          );
+          if (deviceClaimed) {
             throw Object.assign(new Error("The three-day trial has already been claimed on this device."), {
               status: 409,
             });
@@ -360,6 +406,9 @@ export function createActivationService(env, options = {}) {
       const publicKey = JSON.parse(authorization.public_key);
       if (!(await verifyDeviceSignature(challenge, String(payload.signature || ""), publicKey, subtle))) {
         throw Object.assign(new Error("Device signature is invalid."), { status: 401 });
+      }
+      if (authorization.source === "automatic_trial" && payload.fingerprint) {
+        await upgradeAutomaticTrialSignature(authorization.device_id, payload.fingerprint);
       }
       const risk = await requestRiskSignals(request, secret, subtle);
       await repository.touchDevice(

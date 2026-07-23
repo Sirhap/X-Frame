@@ -26,9 +26,13 @@ hardware, locale, display, WebGL, and User-Agent Client Hints is sent only to th
 and immediately HMAC-hashed with `XSXB_ACTIVATION_SECRET`; raw fingerprint values and raw IP addresses
 are not persisted.
 
-The private key is the authorization credential. The fingerprint is only a duplicate-trial risk
-signal after browser storage is cleared. Browser fingerprints can change or be spoofed, so they cannot
-prove a person's identity and must not replace signature verification.
+The private key is the authorization credential. The full fingerprint is only a duplicate-trial risk
+signal after browser storage is cleared. A second browser is checked against a browser-independent
+signature made from the normalized operating-system family, CPU concurrency, touch capability,
+primary language, time zone, and screen dimensions. Both the hardware and display hashes must match,
+and migration `0006` enforces that match atomically. Existing claims are upgraded lazily when their
+original browser returns. Browser fingerprints can change or be spoofed, so they cannot prove a
+person's identity and must not replace signature verification.
 
 ## Configure trial licenses
 
@@ -82,7 +86,7 @@ keys remain usable after the browser performs a new challenge.
 The public landing page exposes an **Activation code management** link in its top-right corner. It
 opens the dedicated `/admin/licenses` page instead of a floating dialog. The workbench routes do not
 include this control. Administrator access uses a configurable username,
-a six-digit TOTP from Google Authenticator, and a 15-minute HttpOnly session. Google Authenticator uses a fixed 30-second
+a six-digit TOTP from Google Authenticator, and a four-hour HttpOnly session by default. Google Authenticator uses a fixed 30-second
 period, and the Worker accepts only the current window. An expired or successfully used counter cannot
 be replayed.
 
@@ -98,6 +102,17 @@ and accepts 1-64 ASCII letters, digits, dots, underscores, or hyphens:
 ```toml
 [vars]
 XSXB_ADMIN_USERNAME = "sirhao"
+```
+
+Set `XSXB_ADMIN_SESSION_MINUTES` to a whole number from `15` through `1440` to adjust the administrator
+session without changing code. Missing or invalid values safely use the four-hour default:
+
+```jsonc
+{
+  "vars": {
+    "XSXB_ADMIN_SESSION_MINUTES": 240,
+  },
+}
 ```
 
 For local Wrangler development, copy `.dev.vars.example` to `.dev.vars`. Both files containing real
@@ -146,6 +161,8 @@ artifact audit.
 
 Migration `0005_flexible_licenses.sql` removes the old 3650-day and 100-device schema ceilings and
 uses `NULL` as the explicit unlimited-device value. Back up D1 before applying it remotely.
+Migration `0006_unique_trial_device_signatures.sql` prevents concurrent browsers with the same stable
+hardware and display signature from creating multiple automatic trials.
 
 The validation command builds the protected workbench, audits generated artifacts, runs Worker and
 browser-identity tests, validates generated Worker types, and performs a deployment dry run. It does
