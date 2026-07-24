@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0b0d0c" />
     <title>XSXB Frame Tuner</title>
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/layout.css" />
     <link rel="stylesheet" href="/controls_inputs.css" />
@@ -50,16 +50,6 @@
           <span>WEB MODE / LOCAL PROCESSING</span>
           <strong>素材只在当前浏览器处理</strong>
           <p>导入后可在当前会话继续调参或下载动画包；直接写入 Godot 暂未开放。</p>
-        </section>
-        <section id="updatePanel" class="updatePanel" aria-live="polite" hidden>
-          <div class="updateHeading">
-            <strong data-i18n="updateAvailable">发现新版本</strong>
-            <span id="updateVersion" class="updateVersion"></span>
-          </div>
-          <p id="updateMessage" class="updateMessage"></p>
-          <button id="updateButton" type="button" class="updateButton" data-i18n="updateNow">
-            更新并重启
-          </button>
         </section>
         <details id="projectContext" class="projectContext">
           <summary>
@@ -2731,7 +2721,6 @@
     <script src="/app_box_transform.js"></script>
     <script src="/app_canvas_coordinates.js"></script>
     <script src="/app_playback.js"></script>
-    <script src="/app_update.js"></script>
     <script src="/app_project_mutations.js"></script>
     <script src="/app_attachment_state.js"></script>
     <script src="/app_layer_stack.js"></script>

@@ -12,6 +12,7 @@ test("static handler serves workbench routes and rejects missing files", () => {
   fs.writeFileSync(path.join(root, "index.html"), "index");
   fs.writeFileSync(path.join(root, "landing.html"), "landing");
   fs.writeFileSync(path.join(root, "app.js"), "script");
+  fs.writeFileSync(path.join(root, "favicon.ico"), "icon");
   fs.mkdirSync(path.join(root, "assets", "landing"), { recursive: true });
   fs.writeFileSync(path.join(root, "assets", "landing", "hero.webp"), "webp");
   const responses = [];
@@ -32,6 +33,7 @@ test("static handler serves workbench routes and rejects missing files", () => {
   handler({}, {}, "/workspace");
   handler({}, {}, "/tools/organizer");
   handler({}, {}, "/app.js");
+  handler({}, {}, "/favicon.ico");
   handler({}, {}, "/assets/landing/hero.webp");
   handler({}, {}, "/missing.js");
   assert.deepEqual(responses, [
@@ -39,6 +41,7 @@ test("static handler serves workbench routes and rejects missing files", () => {
     { status: 200, body: "index", contentType: "text/html" },
     { status: 200, body: "index", contentType: "text/html" },
     { status: 200, body: "script", contentType: "application/javascript" },
+    { status: 200, body: "icon", contentType: "image/x-icon" },
     { status: 200, body: "webp", contentType: "image/webp" },
     { status: 404, body: "Not found", contentType: "text/plain" },
   ]);

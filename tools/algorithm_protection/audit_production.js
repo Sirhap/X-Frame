@@ -144,7 +144,7 @@ function auditArtifacts(manifest, failures) {
     assetPaths.add(assetPath);
     assertAudit(
       failures,
-      /^assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm)$/.test(assetPath),
+      /^assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm|ico)$/.test(assetPath),
       `invalid manifest asset path: ${assetPath}`,
     );
     assertAudit(failures, /^[a-f0-9]{64}$/.test(asset.sha256 || ""), `invalid SHA-256: ${assetPath}`);
@@ -206,13 +206,13 @@ function auditHtml(manifest, failures) {
   for (const asset of externalAssets) {
     assertAudit(
       failures,
-      /^\/assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm)$/.test(asset),
+      /^\/assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm|ico)$/.test(asset),
       `unhashed or non-asset HTML reference: ${asset}`,
     );
   }
   const htmlAssetPaths = externalAssets.map((asset) => asset.slice(1));
   const expectedHtmlAssets = (manifest?.assets || [])
-    .filter((asset) => ["ui", "styles"].includes(asset.role))
+    .filter((asset) => ["ui", "styles", "favicon"].includes(asset.role))
     .map((asset) => asset.path)
     .sort();
   assertAudit(
@@ -244,12 +244,13 @@ function auditFinalPosture(manifest, failures) {
     ["frame-analysis", { extension: ".js", mediaType: "application/javascript" }],
     ["protected-core", { extension: ".wasm", mediaType: "application/wasm" }],
     ["styles", { extension: ".css", mediaType: "text/css" }],
+    ["favicon", { extension: ".ico", mediaType: "image/x-icon" }],
   ]);
 
   assertAudit(
     failures,
     assets.length === expectedAssets.size,
-    "final build must contain only the approved UI, worker glue, WASM core, and styles assets",
+    "final build must contain only the approved UI, worker glue, WASM core, styles, and favicon assets",
   );
   for (const [role, policy] of expectedAssets) {
     const matches = assets.filter((asset) => asset.role === role);

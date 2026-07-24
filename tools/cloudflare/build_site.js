@@ -41,6 +41,7 @@ function buildSite() {
   fs.copyFileSync(path.join(publicRoot, "landing.css"), path.join(siteDist, "landing.css"));
   fs.copyFileSync(path.join(publicRoot, "landing-admin.css"), path.join(siteDist, "landing-admin.css"));
   fs.copyFileSync(path.join(publicRoot, "landing-admin.js"), path.join(siteDist, "landing-admin.js"));
+  fs.copyFileSync(path.join(publicRoot, "favicon.ico"), path.join(siteDist, "favicon.ico"));
   fs.cpSync(landingAssetsSource, path.join(siteDist, "assets/landing"), { recursive: true });
   fs.copyFileSync(staticHeadersSource, path.join(siteDist, "_headers"));
   process.stdout.write(`Built Cloudflare site at ${path.relative(projectRoot, siteDist)}.\n`);

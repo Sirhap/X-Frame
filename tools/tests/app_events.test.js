@@ -76,7 +76,6 @@ function createElements() {
     "undo",
     "undoTop",
     "redoTop",
-    "updateButton",
   ];
   const elements = Object.fromEntries(names.map((name) => [name, createElement()]));
   elements.languageButtons = [];

@@ -127,7 +127,6 @@ module.exports = [
       "tools/self_test_cutout_protection.js",
       "tools/self_test_cutout_tracking.js",
       "tools/self_test_server_integration.js",
-      "tools/updater.js",
     ],
     languageOptions: {
       ecmaVersion: 2023,

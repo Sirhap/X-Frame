@@ -38,7 +38,7 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 只提供 Agent 安装方式。把下面这段话交给 Codex 或其他支持 skills 的 Agent：
 
 ```text
-请从 https://github.com/sparklecatta-lang/XSXB-Frame-Tuner 安装并启用 `skills/xsxb-frame-tuner`。
+请从本地项目目录安装并启用 `skills/xsxb-frame-tuner`。
 安装后把仓库克隆到本机作为 XSXB Frame Tuner 工具根目录。
 以后处理 Godot 帧动画角色导入、动画追加、碰撞框调参、音效/挂件同步时，默认使用 `$xsxb-frame-tuner`。
 ```
@@ -148,14 +148,6 @@ npm run start:local
 node tools\validate_import.js --project <xsxb_project_id> --project-root "<Godot项目路径>" --require-gameplay --strict
 ```
 
-## 自动更新
-
-Tuner 页面每次打开后会检查官方 GitHub `main` 分支。发现新版本时，页面顶部会显示“更新并重启”按钮；点击后会快进更新本地 Tuner、同步仓库自带的 `xsxb-frame-tuner` skill、重启本地服务并自动重新连接。
-
-为保护本地工作，自动更新只接受官方仓库、`main` 分支和没有未提交代码修改的工作区；Tuner 内有未保存的调参时按钮也会保持禁用。运行时项目数据和未跟踪素材不会被覆盖。
-
 ## License
 
 MIT
-
-<!-- updater smoke-test marker -->

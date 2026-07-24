@@ -203,7 +203,7 @@ body.theme-kunkun :is(input, select, textarea):focus {
   box-shadow: 0 0 0 2px rgba(66, 232, 223, 0.12);
 }
 
-body.theme-kunkun :is(.panel, .projectContext, .sidebarSection, .updatePanel) {
+body.theme-kunkun :is(.panel, .projectContext, .sidebarSection) {
   border-width: 1px;
   box-shadow: none;
 }
@@ -217,8 +217,7 @@ body.theme-kunkun :is(.panel, .projectContext)[open] > summary {
 }
 
 body.theme-kunkun .save,
-body.theme-kunkun .importAnimationButton,
-body.theme-kunkun .updateButton {
+body.theme-kunkun .importAnimationButton {
   border-color: #ffad63;
   background: linear-gradient(105deg, #ff7621, #ff9f31);
   color: #160a02;
@@ -226,7 +225,7 @@ body.theme-kunkun .updateButton {
   box-shadow: 3px 3px 0 #3b1703;
 }
 
-body.theme-kunkun :is(.save, .importAnimationButton, .updateButton):hover:not(:disabled) {
+body.theme-kunkun :is(.save, .importAnimationButton):hover:not(:disabled) {
   border-color: #ffd1a2;
   background: linear-gradient(105deg, #ff8a24, #ffb34f);
   box-shadow: 4px 4px 0 #3b1703;
@@ -635,11 +634,6 @@ body.theme-kunkun .status {
 body.theme-kunkun .browserModeBanner {
   border-color: var(--ok);
   background: rgba(66, 232, 223, 0.06);
-}
-
-body.theme-kunkun .updatePanel {
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
-  background: linear-gradient(125deg, rgba(255, 138, 36, 0.13), transparent 54%), var(--panel-2);
 }
 
 body.theme-kunkun :is(.appConfirmPanel, .activationPanel) {

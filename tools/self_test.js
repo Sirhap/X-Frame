@@ -22,7 +22,6 @@ const { importAnimation, mirrorBoxes, remapBindings, remapIndexedDictionary } = 
 const { createProjectStore } = require("./project_store");
 const { parseBatchArgs } = require("./import_batch");
 const { runtimeScript } = require("./godot_runtime");
-const { candidateSkillTargets, resolveSkillTarget, syncSkillDirectory, trustedRemote } = require("./updater");
 
 runCutoutCoreSelfTests();
 
@@ -164,41 +163,6 @@ assert.match(
   playFrameAnimationSource,
   /_frame_visit_serial \+= 1\n\t_record_entered_hitbox_snapshot\(\)\n\t_play_current_frame_audio\(\)\n\t_apply_frame_visual\(\)/,
 );
-
-assert.equal(trustedRemote("https://github.com/sparklecatta-lang/XSXB-Frame-Tuner.git"), true);
-assert.equal(trustedRemote("git@github.com:sparklecatta-lang/XSXB-Frame-Tuner.git"), true);
-assert.equal(trustedRemote("https://github.com/example/XSXB-Frame-Tuner.git"), false);
-assert.equal(trustedRemote("https://evilgithub.com/sparklecatta-lang/XSXB-Frame-Tuner.git"), false);
-const candidates = candidateSkillTargets({ USERPROFILE: "C:\\Users\\demo" }, "C:\\Users\\fallback");
-assert.equal(candidates[0], path.resolve("C:\\Users\\demo", ".codex", "skills", "xsxb-frame-tuner"));
-const customCandidates = candidateSkillTargets(
-  { CODEX_HOME: "D:\\Codex", USERPROFILE: "C:\\Users\\demo" },
-  "C:\\Users\\fallback",
-);
-assert.equal(customCandidates[0], path.resolve("D:\\Codex", "skills", "xsxb-frame-tuner"));
-assert.equal(
-  resolveSkillTarget({ CODEX_HOME: "D:\\Codex", USERPROFILE: "C:\\Users\\demo" }),
-  customCandidates[0],
-);
-
-const updateTestRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-updater-test-"));
-try {
-  const skillSource = path.join(updateTestRoot, "source");
-  const skillTarget = path.join(updateTestRoot, "target", "xsxb-frame-tuner");
-  fs.mkdirSync(skillSource, { recursive: true });
-  fs.mkdirSync(skillTarget, { recursive: true });
-  fs.writeFileSync(path.join(skillSource, "SKILL.md"), "new skill\n", "utf8");
-  fs.writeFileSync(path.join(skillSource, "reference.md"), "new reference\n", "utf8");
-  fs.writeFileSync(path.join(skillTarget, "SKILL.md"), "old skill\n", "utf8");
-  fs.writeFileSync(path.join(skillTarget, "stale.md"), "stale\n", "utf8");
-  const synced = syncSkillDirectory(skillSource, skillTarget);
-  assert.equal(synced.changed, true);
-  assert.equal(fs.readFileSync(path.join(skillTarget, "SKILL.md"), "utf8"), "new skill\n");
-  assert.equal(fs.existsSync(path.join(skillTarget, "reference.md")), true);
-  assert.equal(fs.existsSync(path.join(skillTarget, "stale.md")), false);
-} finally {
-  fs.rmSync(updateTestRoot, { recursive: true, force: true });
-}
 
 assert.equal(crc32(new TextEncoder().encode("abc")), 0x352441c2);
 const goldenPngDataUrl =

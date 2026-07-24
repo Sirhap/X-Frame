@@ -93,7 +93,6 @@
       groupOwnsFrameKey,
       hitTestBoxes,
       hitTestDirectManipulationAttachment,
-      installTunerUpdate,
       isCollisionBox,
       keyboardController,
       loadChainImages,
@@ -665,7 +664,6 @@
       els.save.addEventListener("click", () =>
         save().catch((error) => status(t("saveFailed", { message: error.message }))),
       );
-      if (els.updateButton) els.updateButton.addEventListener("click", installTunerUpdate);
       if (els.fps) {
         armInputUndo(els.fps, "group fps");
         els.fps.addEventListener("input", updateGroupPlaybackFromInputs);

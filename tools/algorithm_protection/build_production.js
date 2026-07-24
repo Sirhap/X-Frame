@@ -156,6 +156,7 @@ async function buildProduction() {
     throw new Error("Protected WASM core is missing. Run npm run build:protected-core first.");
   }
   const sourceHtml = fs.readFileSync(path.join(PUBLIC_ROOT, "index.html"), "utf8");
+  const favicon = fs.readFileSync(path.join(PUBLIC_ROOT, "favicon.ico"));
   const scriptUrls = extractAssetUrls(sourceHtml, SCRIPT_EXPRESSION);
   const productionScriptUrls = scriptUrls.filter((url) => !SENSITIVE_PUBLIC_SCRIPTS.includes(url));
   const stylesheetUrls = extractAssetUrls(sourceHtml, STYLESHEET_EXPRESSION);
@@ -182,6 +183,7 @@ async function buildProduction() {
       rawCutoutWorker,
       rawFrameWorker,
       cssSource,
+      sha256(favicon),
       sha256(protectedCore),
     ].join("\n\0\n"),
   );
@@ -233,16 +235,19 @@ async function buildProduction() {
 
   const styles = await minify(cssSource, "css");
   const stylesName = hashedFilename("styles", "css", styles);
+  const faviconName = hashedFilename("favicon", "ico", favicon);
 
   writeArtifact(TEMPORARY_ROOT, `assets/${uiName}`, ui);
   writeArtifact(TEMPORARY_ROOT, `assets/${cutoutWorkerName}`, cutoutWorker);
   writeArtifact(TEMPORARY_ROOT, `assets/${frameWorkerName}`, frameWorker);
   writeArtifact(TEMPORARY_ROOT, `assets/${protectedCoreName}`, protectedCore);
   writeArtifact(TEMPORARY_ROOT, `assets/${stylesName}`, styles);
+  writeArtifact(TEMPORARY_ROOT, `assets/${faviconName}`, favicon);
 
   const productionHtml = sourceHtml
     .replace(STYLESHEET_EXPRESSION, "")
     .replace(SCRIPT_EXPRESSION, "")
+    .replace('href="/favicon.ico"', `href="/assets/${faviconName}"`)
     .replace("</head>", `    <link rel="stylesheet" href="/assets/${stylesName}" />\n  </head>`)
     .replace("</body>", `    <script src="/assets/${uiName}"></script>\n  </body>`);
   writeArtifact(TEMPORARY_ROOT, "index.html", productionHtml);
@@ -253,6 +258,7 @@ async function buildProduction() {
     manifestAsset("frame-analysis", frameWorkerName, frameWorker, "application/javascript"),
     manifestAsset("protected-core", protectedCoreName, protectedCore, "application/wasm"),
     manifestAsset("styles", stylesName, styles, "text/css"),
+    manifestAsset("favicon", faviconName, favicon, "image/x-icon"),
   ];
   const manifest = {
     schemaVersion: 1,

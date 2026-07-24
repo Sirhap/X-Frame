@@ -31,6 +31,7 @@ function createFinalManifest(overrides) {
         mediaType: "application/wasm",
       },
       { role: "styles", path: "assets/styles.5555555555555555.css", mediaType: "text/css" },
+      { role: "favicon", path: "assets/favicon.6666666666666666.ico", mediaType: "image/x-icon" },
     ],
   };
 }
@@ -71,7 +72,7 @@ test("final audit rejects an additional JavaScript fallback", () => {
   const manifest = createFinalManifest();
   manifest.assets.push({
     role: "algorithm-fallback",
-    path: "assets/algorithm-fallback.6666666666666666.js",
+    path: "assets/algorithm-fallback.7777777777777777.js",
     mediaType: "application/javascript",
   });
 

@@ -26,10 +26,6 @@
     }
 
     return {
-      updatePanel: documentRef.querySelector("#updatePanel"),
-      updateVersion: documentRef.querySelector("#updateVersion"),
-      updateMessage: documentRef.querySelector("#updateMessage"),
-      updateButton: documentRef.querySelector("#updateButton"),
       projectContext: documentRef.querySelector("#projectContext"),
       currentProjectLabel: documentRef.querySelector("#currentProjectLabel"),
       projectSelect: documentRef.querySelector("#projectSelect"),

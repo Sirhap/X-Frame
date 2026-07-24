@@ -868,14 +868,6 @@ const {
   syncSceneInputs,
   updateSceneScaleFromInput,
 } = sceneSettingsController;
-const tunerUpdate = globalThis.XSXBAppUpdate.createController({
-  elements: els,
-  getDirty: () => dirty,
-  translate: t,
-  fetchImpl: globalThis.fetch,
-  windowRef: globalThis,
-});
-const { check: checkTunerUpdate, install: installTunerUpdate, render: renderTunerUpdateStatus } = tunerUpdate;
 const projectMutations = globalThis.XSXBProjectMutations.createController({
   elements: els,
   getConfig: () => config,
@@ -1178,7 +1170,6 @@ projectStateController = projectStateModule.createController({
   normalizeFrameImageAttachment,
   newLocalId,
   groupPlaybackFrame: GROUP_PLAYBACK_FRAME,
-  renderTunerUpdateStatus: () => renderTunerUpdateStatus(),
   renderHomeHub: () => renderHomeHub(),
   renderSceneSelect: () => renderSceneSelect(),
   renderProfileSelect: () => renderProfileSelect(),
@@ -2655,7 +2646,6 @@ const appEvents = appEventsModule.createController({
     groupOwnsFrameKey,
     hitTestBoxes,
     hitTestDirectManipulationAttachment,
-    installTunerUpdate,
     isCollisionBox,
     keyboardController,
     loadChainImages,
@@ -2900,7 +2890,6 @@ applyLanguage();
 loadConfig()
   .then(async () => {
     resizeCanvas();
-    if (!browserOnlyMode) checkTunerUpdate();
     await applyWorkbenchRoute();
   })
   .catch((error) => status(t("loadFailed", { message: error.message })));

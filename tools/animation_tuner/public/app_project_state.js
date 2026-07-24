@@ -58,7 +58,6 @@
       newLocalId = (prefix) => `${prefix}-${Date.now()}`,
       updateSaveStateImpl = () => updateSaveState(),
       updateHistoryControls = () => {},
-      renderTunerUpdateStatus = () => {},
       renderHomeHub = () => {},
       renderSceneSelect = () => {},
       renderProfileSelect = () => {},
@@ -259,7 +258,6 @@
       elements.save.disabled = saveInFlight;
       elements.save.textContent = saveInFlight ? t("saving") : dirty ? t("saveTuningDirty") : t("saveTuning");
       documentRef.body?.classList.toggle("hasUnsavedChanges", dirty);
-      renderTunerUpdateStatus();
     }
 
     /**
