@@ -41,7 +41,7 @@ const REAL_PROJECT_DIRECTORY = path.resolve(
   process.env.XSXB_PERF_PROJECT_DIR || path.join(ROOT, "workspace/projects/Goblin_Run_Test"),
 );
 const REAL_EXTRACTOR_SCRIPT = path.resolve(
-  process.env.XSXB_PERF_EXTRACTOR || path.join(ROOT, "..", "scripts", "extract_sprite_animation.py"),
+  process.env.XSXB_PERF_EXTRACTOR || path.join(ROOT, "scripts", "extract_sprite_animation.py"),
 );
 const PYTHON_RGBA_DECODER = [
   "from PIL import Image",
