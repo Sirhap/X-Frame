@@ -7,6 +7,26 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
+  /** @type {readonly ["home","kunkun","dark","light"]} Supported workbench themes. */
+  const UI_THEMES = Object.freeze(["home", "kunkun", "dark", "light"]);
+
+  /** @type {Readonly<Record<"home"|"kunkun"|"dark"|"light", string>>} Browser chrome colors by theme. */
+  const THEME_COLORS = Object.freeze({
+    home: "#0b0d0c",
+    kunkun: "#09080d",
+    dark: "#141922",
+    light: "#edf1f4",
+  });
+
+  /**
+   * Normalizes persisted or user-selected theme values.
+   * @param {unknown} theme Raw theme value.
+   * @returns {"home"|"kunkun"|"dark"|"light"} Supported theme, defaulting to the homepage style.
+   */
+  function normalizeThemePreference(theme) {
+    return UI_THEMES.includes(theme) ? theme : "home";
+  }
+
   /**
    * Creates the small state, localization, and project-key helpers used by the
    * workbench. Mutable editor state stays in app.js and is accessed through the
@@ -30,7 +50,7 @@
         typeof root?.structuredClone === "function"
           ? root.structuredClone(value)
           : JSON.parse(JSON.stringify(value)),
-      normalizeThemeValue = (theme) => (theme === "light" ? "light" : "dark"),
+      normalizeThemeValue = normalizeThemePreference,
       normalizeColorValue = (value, fallback = "#000000") => {
         const text = String(value || "").trim();
         return /^#[0-9a-f]{6}$/i.test(text) ? text : fallback;
@@ -141,7 +161,7 @@
     /**
      * Normalizes a theme preference.
      * @param {unknown} theme Raw theme value.
-     * @returns {"light"|"dark"} Valid theme.
+     * @returns {"home"|"kunkun"|"dark"|"light"} Valid theme.
      */
     function normalizeTheme(theme) {
       return normalizeThemeValue(theme);
@@ -162,13 +182,12 @@
      * @returns {void}
      */
     function applyUiTheme() {
-      const theme = normalizeTheme(readState("uiTheme", "dark"));
+      const theme = normalizeTheme(readState("uiTheme", "home"));
       state.uiTheme = theme;
-      documentRef.body?.classList.toggle("theme-light", theme === "light");
-      documentRef.body?.classList.toggle("theme-dark", theme !== "light");
-      documentRef
-        .querySelector?.('meta[name="theme-color"]')
-        ?.setAttribute("content", theme === "light" ? "#edf1f4" : "#141922");
+      for (const themeName of UI_THEMES) {
+        documentRef.body?.classList.toggle(`theme-${themeName}`, theme === themeName);
+      }
+      documentRef.querySelector?.('meta[name="theme-color"]')?.setAttribute("content", THEME_COLORS[theme]);
       for (const button of elements.themeButtons || []) {
         const active = button.dataset.theme === theme;
         button.classList.toggle("active", active);

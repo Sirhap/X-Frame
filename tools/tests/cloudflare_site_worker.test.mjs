@@ -58,6 +58,7 @@ async function createRepositoryFixture(overrides = {}) {
     device: null,
     devices: [],
     automaticTrials: [],
+    trialBrowserBindings: [],
   };
   const repository = {
     async findLicenseByCodeHash(codeHash) {
@@ -72,27 +73,33 @@ async function createRepositoryFixture(overrides = {}) {
     },
     async findAuthorizationByDeviceId(deviceId) {
       const device = state.devices.find((entry) => entry.id === deviceId);
-      if (!device) return null;
-      const license =
-        device.license_id === state.license.id
-          ? state.license
-          : state.automaticTrials.find((entry) => entry.license.id === device.license_id)?.license;
-      if (!license) return null;
+      const browserBinding = state.trialBrowserBindings.find((entry) => entry.id === deviceId);
+      const trial = browserBinding
+        ? state.automaticTrials.find((entry) => entry.claimId === browserBinding.claim_id)
+        : state.automaticTrials.find((entry) => entry.device.id === deviceId);
+      const primaryDevice = browserBinding ? trial?.device : device;
+      if (!primaryDevice) return null;
+      const license = trial?.license || state.license;
       return {
-        device_id: device.id,
+        device_id: browserBinding?.id || primaryDevice.id,
         license_id: license.id,
-        public_key: device.public_key,
-        public_key_hash: device.public_key_hash,
-        device_revoked_at: device.revoked_at,
+        public_key: browserBinding?.public_key || primaryDevice.public_key,
+        public_key_hash: browserBinding?.public_key_hash || primaryDevice.public_key_hash,
+        device_revoked_at: browserBinding?.revoked_at || primaryDevice.revoked_at,
         source: license.source,
         plan: license.plan,
         expires_at: license.expires_at,
         license_revoked_at: license.revoked_at,
+        trial_claim_id: trial?.claimId,
       };
     },
     async findAutomaticTrialByPublicKeyHash(publicKeyHash) {
       const trial = state.automaticTrials.find((entry) => entry.device.public_key_hash === publicKeyHash);
-      return trial ? repository.findAuthorizationByDeviceId(trial.device.id) : null;
+      if (trial) return repository.findAuthorizationByDeviceId(trial.device.id);
+      const browserBinding = state.trialBrowserBindings.find(
+        (entry) => entry.public_key_hash === publicKeyHash,
+      );
+      return browserBinding ? repository.findAuthorizationByDeviceId(browserBinding.id) : null;
     },
     async findAutomaticTrialByFingerprintHash(fingerprintHash) {
       const trial = state.automaticTrials.find((entry) => entry.fingerprintHash === fingerprintHash);
@@ -105,7 +112,11 @@ async function createRepositoryFixture(overrides = {}) {
       return trial ? repository.findAuthorizationByDeviceId(trial.device.id) : null;
     },
     async updateAutomaticTrialDeviceSignature(deviceId, hardwareHash, displayHash) {
-      const trial = state.automaticTrials.find((entry) => entry.device.id === deviceId);
+      const browserBinding = state.trialBrowserBindings.find((entry) => entry.id === deviceId);
+      const trial = state.automaticTrials.find(
+        (entry) =>
+          entry.device.id === deviceId || (browserBinding && entry.claimId === browserBinding.claim_id),
+      );
       if (!trial) return { meta: { changes: 0 } };
       trial.hardwareHash = hardwareHash;
       trial.displayHash = displayHash;
@@ -123,12 +134,18 @@ async function createRepositoryFixture(overrides = {}) {
       if (state.license.max_devices !== null && activeCount >= state.license.max_devices) {
         return { meta: { changes: 0 } };
       }
-      if (
-        state.devices.some(
-          (entry) => entry.license_id === device.licenseId && entry.public_key_hash === device.publicKeyHash,
-        )
-      ) {
-        throw new Error("unique constraint");
+      const existing = state.devices.find(
+        (entry) => entry.license_id === device.licenseId && entry.public_key_hash === device.publicKeyHash,
+      );
+      if (existing) {
+        existing.public_key = device.publicKey;
+        existing.fingerprint_hash = device.fingerprintHash;
+        existing.device_name = device.deviceName;
+        existing.last_ip_hash = device.ipHash;
+        existing.last_country = device.country;
+        existing.last_seen_at = device.createdAt;
+        existing.revoked_at = null;
+        return { meta: { changes: 1 } };
       }
       const storedDevice = {
         id: device.id,
@@ -147,6 +164,49 @@ async function createRepositoryFixture(overrides = {}) {
       };
       state.devices.push(storedDevice);
       state.device ||= storedDevice;
+      return { meta: { changes: 1 } };
+    },
+    async listActiveCodeDevices(licenseId, limit, offset) {
+      const devices = state.devices
+        .filter((entry) => entry.license_id === licenseId && !entry.revoked_at)
+        .sort(
+          (left, right) =>
+            left.last_seen_at.localeCompare(right.last_seen_at) ||
+            left.created_at.localeCompare(right.created_at) ||
+            left.id.localeCompare(right.id),
+        );
+      return devices.slice(offset, offset + limit).map((device) => ({
+        id: device.id,
+        device_name: device.device_name,
+        created_at: device.created_at,
+        last_seen_at: device.last_seen_at,
+        total_count: devices.length,
+      }));
+    },
+    async replaceCodeDeviceWithinLimit(device, replacementDeviceId, revokedAt) {
+      const replaced = state.devices.find(
+        (entry) =>
+          entry.id === replacementDeviceId &&
+          entry.license_id === device.licenseId &&
+          entry.public_key_hash !== device.publicKeyHash &&
+          !entry.revoked_at,
+      );
+      if (replaced) replaced.revoked_at = revokedAt;
+      try {
+        const result = await repository.createCodeDeviceWithinLimit(device);
+        if (Number(result?.meta?.changes || 0) < 1 && replaced) replaced.revoked_at = null;
+        return [result, { meta: { changes: replaced ? 1 : 0 } }];
+      } catch (error) {
+        if (replaced) replaced.revoked_at = null;
+        throw error;
+      }
+    },
+    async revokeCodeDevice(deviceId, licenseId, revokedAt) {
+      const device = state.devices.find(
+        (entry) => entry.id === deviceId && entry.license_id === licenseId && !entry.revoked_at,
+      );
+      if (!device || state.license.source !== "code") return { meta: { changes: 0 } };
+      device.revoked_at = revokedAt;
       return { meta: { changes: 1 } };
     },
     async createAutomaticTrial(trial) {
@@ -184,6 +244,7 @@ async function createRepositoryFixture(overrides = {}) {
       };
       state.devices.push(device);
       state.automaticTrials.push({
+        claimId: trial.claimId,
         device,
         license,
         fingerprintHash: trial.fingerprintHash,
@@ -192,11 +253,51 @@ async function createRepositoryFixture(overrides = {}) {
       });
       return [{ success: true }];
     },
+    async createAutomaticTrialBrowserBinding(binding) {
+      if (
+        state.trialBrowserBindings.some((entry) => entry.public_key_hash === binding.publicKeyHash) ||
+        state.automaticTrials.some((entry) => entry.device.public_key_hash === binding.publicKeyHash)
+      ) {
+        throw new Error("unique constraint");
+      }
+      const trial = state.automaticTrials.find((entry) => entry.claimId === binding.claimId);
+      const activeBindings = state.trialBrowserBindings.filter(
+        (entry) => entry.claim_id === binding.claimId && !entry.revoked_at,
+      );
+      if (
+        !trial ||
+        trial.device.revoked_at ||
+        trial.license.revoked_at ||
+        Date.parse(trial.license.expires_at) <= Date.parse(binding.createdAt) ||
+        activeBindings.length >= binding.maxBindings
+      ) {
+        return { meta: { changes: 0 } };
+      }
+      state.trialBrowserBindings.push({
+        id: binding.id,
+        claim_id: binding.claimId,
+        public_key: binding.publicKey,
+        public_key_hash: binding.publicKeyHash,
+        device_name: binding.deviceName,
+        first_ip_hash: binding.ipHash,
+        last_ip_hash: binding.ipHash,
+        first_country: binding.country,
+        last_country: binding.country,
+        created_at: binding.createdAt,
+        last_seen_at: binding.createdAt,
+        revoked_at: null,
+      });
+      return { meta: { changes: 1 } };
+    },
     async touchDevice(deviceId, seenAt, ipHash, country) {
       const device = state.devices.find((entry) => entry.id === deviceId);
-      device.last_seen_at = seenAt;
-      device.last_ip_hash = ipHash;
-      device.last_country = country;
+      const browserBinding = state.trialBrowserBindings.find((entry) => entry.id === deviceId);
+      const target = browserBinding || device;
+      if (target) {
+        target.last_seen_at = seenAt;
+        target.last_ip_hash = ipHash;
+        target.last_country = country;
+      }
       return { success: true };
     },
   };
@@ -375,7 +476,7 @@ test("a trial rejects another browser and forged device signatures", async () =>
   );
 });
 
-test("a multi-device activation code occupies distinct slots and reuses an existing device", async () => {
+test("a multi-device code replaces only the device explicitly selected by the user", async () => {
   const fixture = await createRepositoryFixture({ max_devices: 2 });
   const service = createActivationService(
     { XSXB_ACTIVATION_SECRET: activationSecret },
@@ -385,7 +486,11 @@ test("a multi-device activation code occupies distinct slots and reuses an exist
   const request = activationRequest("/api/activation/challenge");
 
   const first = await service.activationChallenge(
-    { code: "XSXB-TRIAL-TEST", publicKey: devices[0].publicKey },
+    {
+      code: "XSXB-TRIAL-TEST",
+      publicKey: devices[0].publicKey,
+      deviceName: "Studio Mac",
+    },
     request,
   );
   const repeated = await service.activationChallenge(
@@ -393,17 +498,120 @@ test("a multi-device activation code occupies distinct slots and reuses an exist
     request,
   );
   const second = await service.activationChallenge(
-    { code: "XSXB-TRIAL-TEST", publicKey: devices[1].publicKey },
+    {
+      code: "XSXB-TRIAL-TEST",
+      publicKey: devices[1].publicKey,
+      deviceName: "Render PC",
+    },
     request,
   );
 
   assert.equal(first.deviceId, repeated.deviceId);
   assert.notEqual(first.deviceId, second.deviceId);
   assert.equal(fixture.state.devices.length, 2);
-  await assert.rejects(
-    service.activationChallenge({ code: "XSXB-TRIAL-TEST", publicKey: devices[2].publicKey }, request),
-    (error) => error.status === 409 && /device limit/u.test(error.message),
+  let limitError = null;
+  try {
+    await service.activationChallenge({ code: "XSXB-TRIAL-TEST", publicKey: devices[2].publicKey }, request);
+  } catch (error) {
+    limitError = error;
+  }
+  assert.equal(limitError?.status, 409);
+  assert.equal(limitError?.code, "DEVICE_LIMIT_REACHED");
+  assert.deepEqual(limitError?.details.devices.map((device) => device.name).sort(), [
+    "Render PC",
+    "Studio Mac",
+  ]);
+
+  const third = await service.activationChallenge(
+    {
+      code: "XSXB-TRIAL-TEST",
+      publicKey: devices[2].publicKey,
+      deviceName: "Travel Mac",
+      replaceDeviceId: first.deviceId,
+    },
+    request,
   );
+  assert.notEqual(third.deviceId, first.deviceId);
+  assert.equal(
+    fixture.state.devices.find((device) => device.id === first.deviceId)?.revoked_at,
+    "2026-07-22T00:00:00.000Z",
+  );
+  assert.equal(fixture.state.devices.find((device) => device.id === second.deviceId)?.revoked_at, null);
+  assert.equal(fixture.state.devices.filter((device) => !device.revoked_at).length, 2);
+  await assert.rejects(
+    service.deviceChallenge(
+      { deviceId: first.deviceId },
+      activationRequest("/api/activation/device-challenge"),
+    ),
+    (error) => error.status === 403,
+  );
+});
+
+test("a stale replacement selection never unbinds another code device", async () => {
+  const fixture = await createRepositoryFixture({ max_devices: 1 });
+  const service = createActivationService(
+    { XSXB_ACTIVATION_SECRET: activationSecret },
+    { repository: fixture.repository, now: () => Date.parse("2026-07-22T00:00:00.000Z") },
+  );
+  const firstDevice = await createDeviceKey();
+  const secondDevice = await createDeviceKey();
+  const request = activationRequest("/api/activation/challenge");
+  const first = await service.activationChallenge(
+    { code: "XSXB-TRIAL-TEST", publicKey: firstDevice.publicKey },
+    request,
+  );
+
+  await assert.rejects(
+    service.activationChallenge(
+      {
+        code: "XSXB-TRIAL-TEST",
+        publicKey: secondDevice.publicKey,
+        replaceDeviceId: "stale-or-foreign-device",
+      },
+      request,
+    ),
+    (error) =>
+      error.status === 409 &&
+      error.code === "DEVICE_LIMIT_REACHED" &&
+      error.details.devices[0].id === first.deviceId,
+  );
+  assert.equal(fixture.state.devices.filter((device) => !device.revoked_at).length, 1);
+  assert.equal(fixture.state.devices[0].id, first.deviceId);
+});
+
+test("a user can unbind the current code device and later restore its free slot", async () => {
+  const now = Date.parse("2026-07-22T00:00:00.000Z");
+  const fixture = await createRepositoryFixture({ max_devices: 1 });
+  const service = createActivationService(
+    { XSXB_ACTIVATION_SECRET: activationSecret },
+    { repository: fixture.repository, now: () => now },
+  );
+  const device = await createDeviceKey();
+  const request = activationRequest("/api/activation/challenge");
+  const challenge = await service.activationChallenge(
+    { code: "XSXB-TRIAL-TEST", publicKey: device.publicKey },
+    request,
+  );
+  const activation = await service.verifyChallenge(
+    {
+      challenge: challenge.challenge,
+      signature: await signChallenge(device.keyPair.privateKey, challenge.challenge),
+    },
+    activationRequest("/api/activation/verify"),
+  );
+  const cookie = service.cookieHeader(activation.token, request);
+  const unbound = await service.unbindCurrentDevice(activationRequest("/api/activation/unbind", { cookie }));
+  assert.equal(unbound.unbound, true);
+  assert.ok(fixture.state.devices[0].revoked_at);
+  assert.equal((await service.status(activationRequest("/api/activation", { cookie }))).activated, false);
+
+  const restored = await service.activationChallenge(
+    { code: "XSXB-TRIAL-TEST", publicKey: device.publicKey },
+    request,
+  );
+  assert.equal(restored.deviceId, challenge.deviceId);
+  assert.equal(fixture.state.devices[0].revoked_at, null);
+  assert.equal(fixture.state.devices.length, 1);
 });
 
 test("an unlimited activation code accepts custom text and any number of devices", async () => {
@@ -430,7 +638,7 @@ test("an unlimited activation code accepts custom text and any number of devices
   assert.equal(Date.parse(fixture.state.license.expires_at), Date.parse("2059-05-30T00:00:00.000Z"));
 });
 
-test("automatic trial starts without a code and blocks a new key with the same fingerprint", async () => {
+test("automatic trial starts without a code and reuses its expiry for a new browser key", async () => {
   const now = Date.parse("2026-07-22T00:00:00.000Z");
   const fixture = await createRepositoryFixture();
   const service = createActivationService(
@@ -478,13 +686,23 @@ test("automatic trial starts without a code and blocks a new key with the same f
   assert.equal(repeated.deviceId, challenge.deviceId);
 
   const replacementKey = await createDeviceKey();
-  await assert.rejects(
-    service.automaticTrialChallenge(
-      { publicKey: replacementKey.publicKey, fingerprint: deviceFingerprint() },
-      request,
-    ),
-    (error) => error.status === 409 && /already been claimed/u.test(error.message),
+  const inheritedChallenge = await service.automaticTrialChallenge(
+    { publicKey: replacementKey.publicKey, fingerprint: deviceFingerprint() },
+    request,
   );
+  assert.notEqual(inheritedChallenge.deviceId, challenge.deviceId);
+  assert.equal(inheritedChallenge.expiresAt, challenge.expiresAt);
+  const inheritedActivation = await service.verifyChallenge(
+    {
+      challenge: inheritedChallenge.challenge,
+      signature: await signChallenge(replacementKey.keyPair.privateKey, inheritedChallenge.challenge),
+    },
+    activationRequest("/api/activation/verify"),
+  );
+  assert.equal(inheritedActivation.activated, true);
+  assert.equal(inheritedActivation.expiresAt, challenge.expiresAt);
+  assert.equal(fixture.state.automaticTrials.length, 1);
+  assert.equal(fixture.state.trialBrowserBindings.length, 1);
 });
 
 test("automatic trial recognizes one physical device across different browsers", async () => {
@@ -525,19 +743,98 @@ test("automatic trial recognizes one physical device across different browsers",
   assert.equal(chromeHashes.hardwareHash, safariHashes.hardwareHash);
   assert.equal(chromeHashes.displayHash, safariHashes.displayHash);
 
-  await service.automaticTrialChallenge(
-    { publicKey: (await createDeviceKey()).publicKey, fingerprint: chromeFingerprint },
+  const chromeDevice = await createDeviceKey();
+  const safariDevice = await createDeviceKey();
+  const chromeChallenge = await service.automaticTrialChallenge(
+    { publicKey: chromeDevice.publicKey, fingerprint: chromeFingerprint },
     activationRequest("/api/activation/trial-challenge"),
   );
 
+  const safariChallenge = await service.automaticTrialChallenge(
+    { publicKey: safariDevice.publicKey, fingerprint: safariFingerprint },
+    activationRequest("/api/activation/trial-challenge"),
+  );
+  assert.notEqual(safariChallenge.deviceId, chromeChallenge.deviceId);
+  assert.equal(safariChallenge.expiresAt, chromeChallenge.expiresAt);
+  const safariActivation = await service.verifyChallenge(
+    {
+      challenge: safariChallenge.challenge,
+      signature: await signChallenge(safariDevice.keyPair.privateKey, safariChallenge.challenge),
+      fingerprint: safariFingerprint,
+    },
+    activationRequest("/api/activation/verify"),
+  );
+  assert.equal(safariActivation.activated, true);
+  assert.equal(safariActivation.expiresAt, chromeChallenge.expiresAt);
+  assert.equal(fixture.state.devices.length, 1);
+  assert.equal(fixture.state.automaticTrials.length, 1);
+  assert.equal(fixture.state.trialBrowserBindings.length, 1);
+
+  fixture.state.automaticTrials[0].device.revoked_at = "2026-07-22T00:01:00.000Z";
+  await assert.rejects(
+    service.deviceChallenge(
+      { deviceId: safariChallenge.deviceId },
+      activationRequest("/api/activation/device-challenge"),
+    ),
+    (error) => error.status === 403,
+  );
+});
+
+test("automatic trial bounds inherited browser keys without creating another trial", async () => {
+  const now = Date.parse("2026-07-22T00:00:00.000Z");
+  const fixture = await createRepositoryFixture();
+  const service = createActivationService(
+    { XSXB_ACTIVATION_SECRET: activationSecret },
+    { repository: fixture.repository, now: () => now },
+  );
+  const request = activationRequest("/api/activation/trial-challenge");
+  const firstChallenge = await service.automaticTrialChallenge(
+    { publicKey: (await createDeviceKey()).publicKey, fingerprint: deviceFingerprint() },
+    request,
+  );
+
+  for (let browserIndex = 0; browserIndex < 8; browserIndex += 1) {
+    const inheritedChallenge = await service.automaticTrialChallenge(
+      { publicKey: (await createDeviceKey()).publicKey, fingerprint: deviceFingerprint() },
+      request,
+    );
+    assert.equal(inheritedChallenge.expiresAt, firstChallenge.expiresAt);
+  }
+
   await assert.rejects(
     service.automaticTrialChallenge(
-      { publicKey: (await createDeviceKey()).publicKey, fingerprint: safariFingerprint },
-      activationRequest("/api/activation/trial-challenge"),
+      { publicKey: (await createDeviceKey()).publicKey, fingerprint: deviceFingerprint() },
+      request,
     ),
-    (error) => error.status === 409 && /already been claimed/u.test(error.message),
+    (error) => error.status === 409 && /8-browser limit/u.test(error.message),
   );
   assert.equal(fixture.state.automaticTrials.length, 1);
+  assert.equal(fixture.state.trialBrowserBindings.length, 8);
+});
+
+test("automatic trial never revives an expired physical-device trial", async () => {
+  let now = Date.parse("2026-07-22T00:00:00.000Z");
+  const fixture = await createRepositoryFixture();
+  const service = createActivationService(
+    { XSXB_ACTIVATION_SECRET: activationSecret },
+    { repository: fixture.repository, now: () => now },
+  );
+  const request = activationRequest("/api/activation/trial-challenge");
+  await service.automaticTrialChallenge(
+    { publicKey: (await createDeviceKey()).publicKey, fingerprint: deviceFingerprint() },
+    request,
+  );
+
+  now += 3 * dayMs + 1;
+  await assert.rejects(
+    service.automaticTrialChallenge(
+      { publicKey: (await createDeviceKey()).publicKey, fingerprint: deviceFingerprint() },
+      request,
+    ),
+    (error) => error.status === 402,
+  );
+  assert.equal(fixture.state.automaticTrials.length, 1);
+  assert.equal(fixture.state.trialBrowserBindings.length, 0);
 });
 
 test("automatic trial does not merge devices when only one stable signature component matches", async () => {

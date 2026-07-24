@@ -16,12 +16,17 @@ function createElement() {
     inert: false,
     value: "",
     textContent: "",
+    children: [],
     offsetParent: {},
     addEventListener(type, listener) {
       listeners.set(type, listener);
     },
-    append() {},
-    replaceChildren() {},
+    append(...children) {
+      this.children.push(...children);
+    },
+    replaceChildren(...children) {
+      this.children = children;
+    },
     querySelectorAll() {
       return [];
     },
@@ -53,6 +58,20 @@ function createDocumentFixture() {
     "#activationStatus",
     "#activationCancel",
     "#activationSubmit",
+    "#activationTransfer",
+    "#activationTransferSummary",
+    "#activationTransferList",
+    "#activationTransferPrevious",
+    "#activationTransferNext",
+    "#activationTransferBack",
+    "#activationDeviceActions",
+    "#activationDeviceActionsMessage",
+    "#activationUnbind",
+    "#activationUnbindConfirm",
+    "#activationUnbindTitle",
+    "#activationUnbindMessage",
+    "#activationUnbindCancel",
+    "#activationUnbindAccept",
     "#activationManage",
     "#activationManageLabel",
     "#activationManageStatus",
@@ -145,6 +164,7 @@ test("activation controller warns when a trial has less than six hours remaining
       Response.json({
         activated: true,
         configured: true,
+        source: "automatic_trial",
         plan: "trial",
         expiresAt: "2026-07-23T04:00:00.000Z",
       }),
@@ -183,13 +203,19 @@ test("license manager stays available for replacement and shows the expiry", asy
       Response.json({
         activated: true,
         configured: true,
+        source: "automatic_trial",
         plan: "trial",
         expiresAt: "2026-07-25T00:00:00.000Z",
       }),
     deviceIdentity: {
       async activate(code) {
         activationCode = code;
-        return { activated: true, plan: "standard", expiresAt: "2027-07-25T00:00:00.000Z" };
+        return {
+          activated: true,
+          source: "code",
+          plan: "trial",
+          expiresAt: "2027-07-25T00:00:00.000Z",
+        };
       },
     },
   });
@@ -204,5 +230,104 @@ test("license manager stays available for replacement and shows the expiry", asy
   assert.equal(activationCode, "自定义 激活码 / 夏季✨");
   assert.equal(fixture.elements["#activationPanel"].hidden, false);
   assert.match(fixture.elements["#activationCurrent"].textContent, /当前授权有效期至/u);
+  assert.match(fixture.elements["#activationMessage"].textContent, /可随时输入新的激活码/u);
+  assert.equal(fixture.elements["#activationManageLabel"].textContent, "授权管理");
+  assert.equal(fixture.elements["#activationPlanBadge"].textContent, "已激活");
   assert.equal(fixture.elements["#activationStatus"].dataset.tone, "success");
+});
+
+test("activation form requires the user to select the exact device to replace", async () => {
+  const calls = [];
+  const fixture = createControllerFixture({
+    fetchImpl: async () => Response.json({ activated: false, configured: true }),
+    deviceIdentity: {
+      async activate(code, options) {
+        calls.push({ code, options });
+        if (!options?.replaceDeviceId) {
+          throw Object.assign(new Error("设备名额已满"), {
+            code: "DEVICE_LIMIT_REACHED",
+            details: {
+              devices: [
+                {
+                  id: "device-studio",
+                  name: "Studio Mac",
+                  createdAt: "2026-07-20T08:00:00.000Z",
+                  lastSeenAt: "2026-07-23T09:00:00.000Z",
+                },
+                {
+                  id: "device-render",
+                  name: "Render PC",
+                  createdAt: "2026-07-21T08:00:00.000Z",
+                  lastSeenAt: "2026-07-23T10:00:00.000Z",
+                },
+              ],
+              total: 2,
+              offset: 0,
+              pageSize: 20,
+              hasPrevious: false,
+              hasMore: false,
+            },
+          });
+        }
+        return {
+          activated: true,
+          deviceId: "device-current-5678ABCD",
+          source: "code",
+          plan: "standard",
+          expiresAt: "2027-07-25T00:00:00.000Z",
+        };
+      },
+    },
+  });
+  await fixture.controller.openManager();
+  fixture.elements["#activationCode"].value = "XSXB-MULTI";
+  await fixture.elements["#activationForm"].listener("submit")({ preventDefault() {} });
+
+  assert.equal(fixture.elements["#activationTransfer"].hidden, false);
+  assert.equal(fixture.elements["#activationTransferList"].children.length, 2);
+  assert.match(fixture.elements["#activationTransferSummary"].textContent, /2 台设备/u);
+
+  const renderPcChoice = fixture.elements["#activationTransferList"].children[1];
+  assert.match(renderPcChoice.children[1].textContent, /设备 E-RENDER/u);
+  renderPcChoice.listener("click")();
+  await fixture.elements["#activationForm"].listener("submit")({ preventDefault() {} });
+
+  assert.deepEqual(calls[1], {
+    code: "XSXB-MULTI",
+    options: { replaceDeviceId: "device-render" },
+  });
+  assert.equal(fixture.controller.isActivated(), true);
+  assert.match(fixture.elements["#activationStatus"].textContent, /所选设备已解绑/u);
+});
+
+test("license manager unbinds only the current code device after explicit confirmation", async () => {
+  let unbindCalls = 0;
+  const fixture = createControllerFixture({
+    fetchImpl: async () =>
+      Response.json({
+        activated: true,
+        configured: true,
+        deviceId: "device-current-1234ABCD",
+        source: "code",
+        plan: "standard",
+        expiresAt: "2027-07-25T00:00:00.000Z",
+      }),
+    deviceIdentity: {
+      async unbind() {
+        unbindCalls += 1;
+        return { activated: false, configured: true, unbound: true };
+      },
+    },
+  });
+
+  await fixture.controller.openManager();
+  assert.equal(fixture.elements["#activationDeviceActions"].hidden, false);
+  assert.match(fixture.elements["#activationDeviceActionsMessage"].textContent, /1234ABCD/u);
+  fixture.elements["#activationUnbind"].listener("click")();
+  assert.equal(fixture.elements["#activationUnbindConfirm"].hidden, false);
+  await fixture.elements["#activationUnbindAccept"].listener("click")();
+
+  assert.equal(unbindCalls, 1);
+  assert.equal(fixture.controller.isActivated(), false);
+  assert.match(fixture.elements["#activationStatus"].textContent, /其他设备不受影响/u);
 });

@@ -29,10 +29,13 @@ are not persisted.
 The private key is the authorization credential. The full fingerprint is only a duplicate-trial risk
 signal after browser storage is cleared. A second browser is checked against a browser-independent
 signature made from the normalized operating-system family, CPU concurrency, touch capability,
-primary language, time zone, and screen dimensions. Both the hardware and display hashes must match,
-and migration `0006` enforces that match atomically. Existing claims are upgraded lazily when their
-original browser returns. Browser fingerprints can change or be spoofed, so they cannot prove a
-person's identity and must not replace signature verification.
+primary language, time zone, and screen dimensions. Both the hardware and display hashes must match.
+Migration `0006` enforces one physical-device trial atomically, while migration `0007` lets up to
+eight browser-specific signing keys inherit that trial's original expiry. These bindings do not add
+physical devices to the administrator count, and revoking or resetting the primary trial device
+invalidates every associated browser. Existing claims are upgraded lazily when their original
+browser returns. Browser fingerprints can change or be spoofed, so they cannot prove a person's
+identity and must not replace signature verification.
 
 ## Configure trial licenses
 
@@ -69,7 +72,12 @@ protects bounded Worker requests but does not impose a prefix or pattern.
 
 The same browser key reuses its existing slot. A new key occupies a slot atomically only while the
 active-device count is below `max_devices`. Revoked devices stop consuming active capacity; the
-administrator can restore them or delete the binding to reset the slot.
+administrator can restore them or delete the binding to reset the slot. When a finite-device code is
+full, the workbench returns the code's active device list and requires the user to explicitly select
+the one device to replace. The selected binding is revoked atomically with the new binding; every
+unselected device remains active. A stale or foreign selection is rejected without revoking any
+device. Users can also explicitly unbind only their current code-licensed device from the license
+manager. Automatic-trial devices cannot use this self-service code-transfer flow.
 
 ## Required Worker secret
 
@@ -149,6 +157,12 @@ block that client for fifteen minutes.
 # Validate the complete deployment pipeline without uploading.
 npm run deploy:cloudflare:dry-run
 
+# With a local Worker running on port 8799, verify two isolated browsers inherit one trial.
+node tools/cloudflare/verify_local_trial_inheritance.mjs
+
+# Verify a multi-device code replaces only the selected device and supports self-unbind.
+XSXB_LOCAL_TEST_CODE='your-local-code' node tools/cloudflare/verify_local_device_transfer.mjs
+
 # Deploy a committed, clean working tree and verify production routes.
 npm run deploy:cloudflare
 ```
@@ -163,6 +177,8 @@ Migration `0005_flexible_licenses.sql` removes the old 3650-day and 100-device s
 uses `NULL` as the explicit unlimited-device value. Back up D1 before applying it remotely.
 Migration `0006_unique_trial_device_signatures.sql` prevents concurrent browsers with the same stable
 hardware and display signature from creating multiple automatic trials.
+Migration `0007_automatic_trial_browser_bindings.sql` stores per-browser signing keys that share the
+original physical-device trial and expiry without increasing its administrator-visible device count.
 
 The validation command builds the protected workbench, audits generated artifacts, runs Worker and
 browser-identity tests, validates generated Worker types, and performs a deployment dry run. It does

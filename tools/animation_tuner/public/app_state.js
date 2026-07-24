@@ -29,6 +29,7 @@
     LAYER_CARD_DRAG_TYPE: "application/x-xsxb-layer-card",
     ATTACHMENT_ASSET_DRAG_TYPE: "application/x-xsxb-attachment-asset",
     GROUP_PLAYBACK_FRAME: "__group",
+    UI_THEME_DEFAULT: "home",
   });
 
   /**
@@ -90,7 +91,9 @@
     return {
       config: null,
       language: readStorage(storage, "xsxbFrameTuner.language", "zh") || "zh",
-      uiTheme: readStorage(storage, "xsxbFrameTuner.theme", "dark") || "dark",
+      uiTheme:
+        readStorage(storage, "xsxbFrameTuner.theme", constants.UI_THEME_DEFAULT) ||
+        constants.UI_THEME_DEFAULT,
       canvasColor: readStorage(storage, "xsxbFrameTuner.canvasColor", "#000000") || "#000000",
       selectedProjectId: initialUrlState.get("project") || readStorage(storage, "xsxbFrameTuner.project"),
       selectedSceneId: readStorage(storage, "xsxbFrameTuner.scene"),

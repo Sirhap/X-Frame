@@ -18,6 +18,9 @@ const MAX_REQUEST_BYTES = 8192;
 const AUTOMATIC_TRIAL_DAYS = 3;
 const DAY_MS = 86_400_000;
 const MAX_ACTIVATION_CODE_LENGTH = 512;
+const MAX_AUTOMATIC_TRIAL_BROWSER_BINDINGS = 8;
+const REPLACEMENT_DEVICE_PAGE_SIZE = 20;
+const MAX_REPLACEMENT_DEVICE_OFFSET = 10_000;
 
 /** @param {string} code Activation code. @param {SubtleCrypto} subtle Web Crypto. @returns {Promise<string>} Normalized code hash. */
 export async function hashActivationCode(code, subtle) {
@@ -136,6 +139,22 @@ function deviceNameFrom(payload) {
     .slice(0, 80);
 }
 
+/** @param {unknown} value Raw page offset. @returns {number} Bounded replacement-device offset. */
+function replacementDeviceOffsetFrom(value) {
+  const offset = Number(value || 0);
+  return Number.isSafeInteger(offset) && offset >= 0 && offset <= MAX_REPLACEMENT_DEVICE_OFFSET ? offset : 0;
+}
+
+/** @param {unknown} value Raw replacement device ID. @returns {string} Bounded device ID. */
+function replacementDeviceIdFrom(value) {
+  const deviceId = String(value || "").trim();
+  if (!deviceId) return "";
+  if (deviceId.length > 80) {
+    throw Object.assign(new Error("The selected device is invalid."), { status: 400 });
+  }
+  return deviceId;
+}
+
 /**
  * Creates the D1-backed device activation service.
  * @param {{LICENSE_DB?:D1Database,XSXB_ACTIVATION_SECRET?:string}} env Worker environment.
@@ -202,6 +221,97 @@ export function createActivationService(env, options = {}) {
     }
   }
 
+  /**
+   * Gives another browser on the same physical device its own signing key while preserving the trial.
+   * @param {object} authorization Existing automatic-trial authorization.
+   * @param {JsonWebKey} publicKey Validated browser public key.
+   * @param {string} publicKeyHash Browser public-key hash.
+   * @param {object} payload Activation payload.
+   * @param {Request} request Incoming request.
+   * @returns {Promise<object>} Signed challenge using the original trial expiry.
+   */
+  async function inheritAutomaticTrial(authorization, publicKey, publicKeyHash, payload, request) {
+    const currentTime = now();
+    assertAuthorizationActive(authorization, currentTime);
+    if (!authorization.trial_claim_id) {
+      throw Object.assign(new Error("Automatic trial binding is unavailable."), { status: 500 });
+    }
+    const risk = await requestRiskSignals(request, secret, subtle);
+    const browserDeviceId = cryptoApi.randomUUID();
+    const browserAuthorization = {
+      ...authorization,
+      device_id: browserDeviceId,
+      public_key: JSON.stringify(publicKey),
+      public_key_hash: publicKeyHash,
+      device_revoked_at: null,
+    };
+    try {
+      const result = await repository.createAutomaticTrialBrowserBinding({
+        id: browserDeviceId,
+        claimId: authorization.trial_claim_id,
+        publicKey: browserAuthorization.public_key,
+        publicKeyHash,
+        deviceName: deviceNameFrom(payload),
+        ipHash: risk.ipHash,
+        country: risk.country,
+        createdAt: new Date(currentTime).toISOString(),
+        maxBindings: MAX_AUTOMATIC_TRIAL_BROWSER_BINDINGS,
+      });
+      if (Number(result?.meta?.changes ?? 1) > 0) {
+        return challengeFor(browserAuthorization, "trial", new URL(request.url).origin);
+      }
+    } catch (error) {
+      const existingAuthorization = await repository.findAutomaticTrialByPublicKeyHash(publicKeyHash);
+      if (existingAuthorization) {
+        return challengeFor(existingAuthorization, "trial", new URL(request.url).origin);
+      }
+      throw error;
+    }
+    const existingAuthorization = await repository.findAutomaticTrialByPublicKeyHash(publicKeyHash);
+    if (existingAuthorization) {
+      return challengeFor(existingAuthorization, "trial", new URL(request.url).origin);
+    }
+    const currentAuthorization = await repository.findAuthorizationByDeviceId(authorization.device_id);
+    assertAuthorizationActive(currentAuthorization, now());
+    throw Object.assign(
+      new Error(`This trial has reached its ${MAX_AUTOMATIC_TRIAL_BROWSER_BINDINGS}-browser limit.`),
+      { status: 409 },
+    );
+  }
+
+  /**
+   * Builds a bounded conflict response so the code owner can choose one active device to replace.
+   * @param {string} licenseId License ID.
+   * @param {number} offset Requested page offset.
+   * @returns {Promise<Error>} Structured device-limit error.
+   */
+  async function deviceLimitError(licenseId, offset) {
+    const devices = await repository.listActiveCodeDevices(licenseId, REPLACEMENT_DEVICE_PAGE_SIZE, offset);
+    if (!devices.length && offset > 0) return deviceLimitError(licenseId, 0);
+    const total = Number(devices[0]?.total_count || devices.length);
+    const safeDevices = devices.map((device) => ({
+      id: String(device.id || ""),
+      name: String(device.device_name || "Browser device").slice(0, 80),
+      createdAt: String(device.created_at || ""),
+      lastSeenAt: String(device.last_seen_at || ""),
+    }));
+    return Object.assign(
+      new Error("This activation code has reached its device limit. Select one device to unbind."),
+      {
+        status: 409,
+        code: "DEVICE_LIMIT_REACHED",
+        details: {
+          devices: safeDevices,
+          total,
+          offset,
+          pageSize: REPLACEMENT_DEVICE_PAGE_SIZE,
+          hasPrevious: offset > 0,
+          hasMore: offset + safeDevices.length < total,
+        },
+      },
+    );
+  }
+
   return {
     configured,
     async activationChallenge(payload, request) {
@@ -242,41 +352,38 @@ export function createActivationService(env, options = {}) {
         await repository.activateLicense(license.id, activatedAt, expiresAt);
       }
       let device = await repository.findDeviceByLicenseAndPublicKeyHash(license.id, publicKeyHash);
-      if (device?.revoked_at) {
-        throw Object.assign(new Error("This device has been revoked for the activation code."), {
-          status: 403,
-        });
-      }
-      if (!device) {
+      if (!device || device.revoked_at) {
         const risk = await requestRiskSignals(request, secret, subtle);
         const deviceId = cryptoApi.randomUUID();
         const fingerprint = payload.fingerprint
           ? await hashDeviceFingerprint(payload.fingerprint, secret, subtle)
           : { fingerprintHash: "" };
+        const createdAt = new Date(currentTime).toISOString();
+        const requestedReplacementId = replacementDeviceIdFrom(payload.replaceDeviceId);
+        const requestedDeviceOffset = replacementDeviceOffsetFrom(payload.deviceOffset);
+        const deviceBinding = {
+          id: device?.id || deviceId,
+          licenseId: license.id,
+          publicKey: JSON.stringify(jwk),
+          publicKeyHash,
+          fingerprintHash: fingerprint.fingerprintHash,
+          deviceName: deviceNameFrom(payload),
+          ipHash: risk.ipHash,
+          country: risk.country,
+          createdAt,
+        };
         try {
-          const result = await repository.createCodeDeviceWithinLimit({
-            id: deviceId,
-            licenseId: license.id,
-            publicKey: JSON.stringify(jwk),
-            publicKeyHash,
-            fingerprintHash: fingerprint.fingerprintHash,
-            deviceName: deviceNameFrom(payload),
-            ipHash: risk.ipHash,
-            country: risk.country,
-            createdAt: new Date(currentTime).toISOString(),
-          });
-          if (Number(result?.meta?.changes ?? 1) < 1) {
-            throw Object.assign(new Error("This activation code has reached its device limit."), {
-              status: 409,
-            });
+          if (requestedReplacementId) {
+            await repository.replaceCodeDeviceWithinLimit(deviceBinding, requestedReplacementId, createdAt);
+          } else {
+            await repository.createCodeDeviceWithinLimit(deviceBinding);
           }
         } catch (_error) {
-          device = await repository.findDeviceByLicenseAndPublicKeyHash(license.id, publicKeyHash);
-          if (!device) {
-            throw Object.assign(new Error("This activation code has reached its device limit."), {
-              status: 409,
-            });
-          }
+          // A concurrent request can win the same binding. Re-read before reporting the limit.
+        }
+        device = await repository.findDeviceByLicenseAndPublicKeyHash(license.id, publicKeyHash);
+        if (!device || device.revoked_at) {
+          throw await deviceLimitError(license.id, requestedDeviceOffset);
         }
         device ||= {
           id: deviceId,
@@ -313,18 +420,14 @@ export function createActivationService(env, options = {}) {
       }
       authorization = await repository.findAutomaticTrialByFingerprintHash(fingerprint.fingerprintHash);
       if (authorization) {
-        throw Object.assign(new Error("The three-day trial has already been claimed on this device."), {
-          status: 409,
-        });
+        return inheritAutomaticTrial(authorization, jwk, publicKeyHash, payload, request);
       }
       authorization = await repository.findAutomaticTrialByDeviceSignature(
         fingerprint.hardwareHash,
         fingerprint.displayHash,
       );
       if (authorization) {
-        throw Object.assign(new Error("The three-day trial has already been claimed on this device."), {
-          status: 409,
-        });
+        return inheritAutomaticTrial(authorization, jwk, publicKeyHash, payload, request);
       }
       const currentTime = now();
       const createdAt = new Date(currentTime).toISOString();
@@ -352,18 +455,14 @@ export function createActivationService(env, options = {}) {
         if (!authorization) {
           const claimed = await repository.findAutomaticTrialByFingerprintHash(fingerprint.fingerprintHash);
           if (claimed) {
-            throw Object.assign(new Error("The three-day trial has already been claimed on this device."), {
-              status: 409,
-            });
+            return inheritAutomaticTrial(claimed, jwk, publicKeyHash, payload, request);
           }
           const deviceClaimed = await repository.findAutomaticTrialByDeviceSignature(
             fingerprint.hardwareHash,
             fingerprint.displayHash,
           );
           if (deviceClaimed) {
-            throw Object.assign(new Error("The three-day trial has already been claimed on this device."), {
-              status: 409,
-            });
+            return inheritAutomaticTrial(deviceClaimed, jwk, publicKeyHash, payload, request);
           }
           throw _error;
         }
@@ -433,6 +532,7 @@ export function createActivationService(env, options = {}) {
         configured: true,
         deviceId: authorization.device_id,
         plan: authorization.plan,
+        source: authorization.source,
         expiresAt: new Date(licenseExpiresAt).toISOString(),
         sessionExpiresAt: new Date(sessionExpiresAt).toISOString(),
         token,
@@ -453,6 +553,7 @@ export function createActivationService(env, options = {}) {
           configured: true,
           deviceId: authorization.device_id,
           plan: authorization.plan,
+          source: authorization.source,
           expiresAt: new Date(expiresAt).toISOString(),
           sessionExpiresAt: new Date(Number(payload.exp)).toISOString(),
         };
@@ -460,11 +561,54 @@ export function createActivationService(env, options = {}) {
         return { activated: false, configured: true, expiresAt: "" };
       }
     },
+    async unbindCurrentDevice(request) {
+      if (!configured)
+        throw Object.assign(new Error("Activation verification is not configured."), { status: 503 });
+      const session = await verifyToken(readCookieToken(request), secret, subtle);
+      if (!session || session.type !== "session" || Number(session.exp || 0) <= now()) {
+        throw Object.assign(new Error("The current device session is invalid or expired."), {
+          status: 401,
+        });
+      }
+      const authorization = await repository.findAuthorizationByDeviceId(session.deviceId);
+      assertAuthorizationActive(authorization, now());
+      if (authorization.license_id !== session.licenseId || authorization.source !== "code") {
+        throw Object.assign(new Error("Only activation-code devices can be unbound."), {
+          status: 400,
+        });
+      }
+      const result = await repository.revokeCodeDevice(
+        authorization.device_id,
+        authorization.license_id,
+        new Date(now()).toISOString(),
+      );
+      if (Number(result?.meta?.changes ?? 0) < 1) {
+        throw Object.assign(new Error("This device could not be unbound."), { status: 409 });
+      }
+      return {
+        activated: false,
+        configured: true,
+        unbound: true,
+        deviceId: authorization.device_id,
+      };
+    },
     cookieHeader(token, request) {
       return [
         `${COOKIE_NAME}=${encodeURIComponent(token)}`,
         "Path=/",
         `Max-Age=${COOKIE_TTL_SECONDS}`,
+        "HttpOnly",
+        "SameSite=Strict",
+        new URL(request.url).protocol === "https:" ? "Secure" : "",
+      ]
+        .filter(Boolean)
+        .join("; ");
+    },
+    clearCookieHeader(request) {
+      return [
+        `${COOKIE_NAME}=`,
+        "Path=/",
+        "Max-Age=0",
         "HttpOnly",
         "SameSite=Strict",
         new URL(request.url).protocol === "https:" ? "Secure" : "",
@@ -519,6 +663,11 @@ export async function handleActivationRequest(request, env) {
         "Set-Cookie": service.cookieHeader(result.token, request),
       });
     }
+    if (pathname === "/api/activation/unbind") {
+      return jsonResponse(await service.unbindCurrentDevice(request), 200, {
+        "Set-Cookie": service.clearCookieHeader(request),
+      });
+    }
     return jsonResponse({ error: "Not Found" }, 404);
   } catch (error) {
     const status = Number(error?.status || 500);
@@ -535,6 +684,8 @@ export async function handleActivationRequest(request, env) {
         activated: false,
         configured: service.configured,
         error: status >= 500 ? "Activation service unavailable." : error.message,
+        ...(status < 500 && typeof error?.code === "string" ? { code: error.code } : {}),
+        ...(status < 500 && error?.details ? { details: error.details } : {}),
       },
       status,
     );

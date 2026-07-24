@@ -23,8 +23,10 @@ test("project state helpers preserve localization and dirty-state semantics", ()
   });
 
   assert.equal(controller.t("greeting", { name: "Codex" }), "你好，Codex");
+  assert.equal(controller.normalizeTheme("home"), "home");
+  assert.equal(controller.normalizeTheme("kunkun"), "kunkun");
   assert.equal(controller.normalizeTheme("light"), "light");
-  assert.equal(controller.normalizeTheme("unknown"), "dark");
+  assert.equal(controller.normalizeTheme("unknown"), "home");
   assert.equal(controller.normalizeColor("#123456"), "#123456");
   assert.equal(controller.normalizeColor("invalid"), "#000000");
   assert.equal(controller.keyFor("idle", 2), "idle:2");
@@ -32,6 +34,62 @@ test("project state helpers preserve localization and dirty-state semantics", ()
   controller.markDirty();
   assert.equal(state.dirty, true);
   assert.equal(state.editRevision, 1);
+});
+
+test("applyUiTheme keeps one supported class active and updates browser chrome", () => {
+  const activeClasses = new Set(["theme-dark"]);
+  const metaAttributes = {};
+  const themeButtons = ["home", "kunkun", "dark", "light"].map((theme) => ({
+    dataset: { theme },
+    classList: {
+      toggle(className, active) {
+        this[className] = active;
+      },
+    },
+    setAttribute(name, value) {
+      this[name] = value;
+    },
+  }));
+  const state = { uiTheme: "home" };
+  const controller = createController({
+    state,
+    elements: { themeButtons },
+    documentRef: {
+      body: {
+        classList: {
+          toggle(className, active) {
+            if (active) activeClasses.add(className);
+            else activeClasses.delete(className);
+          },
+        },
+      },
+      querySelector() {
+        return {
+          setAttribute(name, value) {
+            metaAttributes[name] = value;
+          },
+        };
+      },
+    },
+    storage: null,
+  });
+
+  controller.applyUiTheme();
+
+  assert.deepEqual([...activeClasses], ["theme-home"]);
+  assert.equal(metaAttributes.content, "#0b0d0c");
+  assert.equal(themeButtons[0]["aria-pressed"], "true");
+  assert.equal(themeButtons[1]["aria-pressed"], "false");
+  assert.equal(themeButtons[2]["aria-pressed"], "false");
+  assert.equal(themeButtons[3]["aria-pressed"], "false");
+
+  state.uiTheme = "kunkun";
+  controller.applyUiTheme();
+
+  assert.deepEqual([...activeClasses], ["theme-kunkun"]);
+  assert.equal(metaAttributes.content, "#09080d");
+  assert.equal(themeButtons[0]["aria-pressed"], "false");
+  assert.equal(themeButtons[1]["aria-pressed"], "true");
 });
 
 test("markClean refreshes save controls without an injected UI callback", () => {

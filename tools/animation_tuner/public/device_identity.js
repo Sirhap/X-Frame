@@ -118,7 +118,7 @@
   /**
    * Creates the browser device activation protocol client.
    * @param {{fetchImpl?:typeof fetch,cryptoApi?:Crypto,storage?:object,navigatorRef?:Navigator,fingerprintCollector?:()=>Promise<object>}} [dependencies] Runtime adapters.
-   * @returns {{activate:(code:string)=>Promise<object>,startTrial:()=>Promise<object>,renew:()=>Promise<object|null>,ensureIdentity:()=>Promise<object>}} Device client.
+   * @returns {{activate:(code:string,options?:object)=>Promise<object>,startTrial:()=>Promise<object>,renew:()=>Promise<object|null>,unbind:()=>Promise<object>,ensureIdentity:()=>Promise<object>}} Device client.
    */
   function createController(dependencies = {}) {
     const fetchImpl = dependencies.fetchImpl || root?.fetch;
@@ -170,7 +170,13 @@
           body: JSON.stringify(payload),
         });
         const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(String(result.error || "Activation request failed."));
+        if (!response.ok) {
+          throw Object.assign(new Error(String(result.error || "Activation request failed.")), {
+            status: response.status,
+            code: String(result.code || ""),
+            details: result.details && typeof result.details === "object" ? result.details : null,
+          });
+        }
         return result;
       } catch (error) {
         if (error instanceof Error) throw error;
@@ -211,11 +217,35 @@
       }
     }
 
-    /** @returns {string} Bounded device label. */
+    /** @returns {string} Human-readable browser family without exposing the full User-Agent. */
+    function browserName() {
+      const brands = Array.isArray(navigatorRef?.userAgentData?.brands)
+        ? navigatorRef.userAgentData.brands
+        : [];
+      const preferredBrand = brands
+        .map((entry) => String(entry?.brand || ""))
+        .find((brand) => brand && !/chromium|not.?a.?brand/iu.test(brand));
+      const brand = preferredBrand || "";
+      if (/microsoft edge/iu.test(brand)) return "Edge";
+      if (/google chrome/iu.test(brand)) return "Chrome";
+      if (/opera/iu.test(brand)) return "Opera";
+      if (/firefox/iu.test(brand)) return "Firefox";
+
+      const userAgent = String(navigatorRef?.userAgent || "");
+      if (/\bEdg\//u.test(userAgent)) return "Edge";
+      if (/\bOPR\//u.test(userAgent)) return "Opera";
+      if (/\bFirefox\//u.test(userAgent)) return "Firefox";
+      if (/\bChrome\//u.test(userAgent)) return "Chrome";
+      if (/\bSafari\//u.test(userAgent)) return "Safari";
+      return "";
+    }
+
+    /** @returns {string} Bounded device label that distinguishes browsers on the same platform. */
     function deviceName() {
-      return String(
+      const platform = String(
         navigatorRef?.userAgentData?.platform || navigatorRef?.platform || "Browser device",
-      ).slice(0, 80);
+      ).trim();
+      return [browserName(), platform].filter(Boolean).join(" · ").slice(0, 80);
     }
 
     /** @returns {Promise<object|null>} Hashed-on-server browser fingerprint payload. */
@@ -230,7 +260,7 @@
     }
 
     return Object.freeze({
-      async activate(code) {
+      async activate(code, options = {}) {
         try {
           const identity = await ensureIdentity();
           const fingerprint = await collectFingerprint();
@@ -239,6 +269,8 @@
             publicKey: identity.publicKey,
             deviceName: deviceName(),
             fingerprint,
+            ...(options.replaceDeviceId ? { replaceDeviceId: String(options.replaceDeviceId) } : {}),
+            ...(Number.isSafeInteger(options.deviceOffset) ? { deviceOffset: options.deviceOffset } : {}),
           });
           return await verify(identity, challenge, fingerprint);
         } catch (error) {
@@ -274,6 +306,20 @@
         } catch (error) {
           if (error instanceof Error) throw error;
           throw new Error("Unable to renew this browser session.", { cause: error });
+        }
+      },
+      async unbind() {
+        try {
+          const result = await postJson("/api/activation/unbind", {});
+          const identity = await storage.get();
+          if (isUsableIdentity(identity) && identity.deviceId) {
+            identity.deviceId = "";
+            await storage.put(identity);
+          }
+          return result;
+        } catch (error) {
+          if (error instanceof Error) throw error;
+          throw new Error("Unable to unbind this browser.", { cause: error });
         }
       },
       ensureIdentity,

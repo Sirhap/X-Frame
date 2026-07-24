@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#141922" />
+    <meta name="theme-color" content="#0b0d0c" />
     <title>XSXB Frame Tuner</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/tokens.css" />
@@ -26,8 +26,10 @@
     <link rel="stylesheet" href="/app_confirm.css" />
     <link rel="stylesheet" href="/activation.css" />
     <link rel="stylesheet" href="/responsive.css" />
+    <link rel="stylesheet" href="/theme-home.css" />
+    <link rel="stylesheet" href="/theme-kunkun.css" />
   </head>
-  <body>
+  <body class="theme-home">
     <a class="skipLink" href="#mainWorkbench" data-i18n="skipToMain">跳到主要内容</a>
     <main id="mainWorkbench" class="app" tabindex="-1">
       <aside class="sidebar">
@@ -453,6 +455,10 @@
       </aside>
 
       <section class="workspace">
+        <div class="kunkunBackdrop" aria-hidden="true">
+          <strong>KUN</strong>
+          <span>全民制作人 / STAGE 025</span>
+        </div>
         <div class="toolbar">
           <div class="toolbarMain">
             <strong id="canvasTitle" data-i18n="canvas">画布</strong>
@@ -460,12 +466,22 @@
               >拖动画布可平移。选中附加帧：拖动移动，按住 R 滚轮旋转，按住 Z 滚轮缩放。</span
             >
             <div id="selectionHud" class="selectionHud">帧 -</div>
+            <div class="kunkunSignature" aria-hidden="true">
+              <span>唱</span>
+              <span>跳</span>
+              <span>RAP</span>
+              <span class="kunkunBasketball">篮球</span>
+              <b>练习时长 <em>2.5Y</em></b>
+              <small>只因你太美</small>
+            </div>
           </div>
           <div class="toolbarActions">
             <div class="appearanceControls" aria-label="UI appearance">
-              <div class="themeSwitch" aria-label="Theme">
-                <button type="button" class="themeButton" data-theme="dark" title="黑色 UI">黑</button>
-                <button type="button" class="themeButton" data-theme="light" title="白色 UI">白</button>
+              <div class="themeSwitch" role="group" aria-label="界面主题">
+                <button type="button" class="themeButton" data-theme="home" title="首页风格 UI">首页</button>
+                <button type="button" class="themeButton" data-theme="kunkun" title="坤坤彩蛋 UI">坤</button>
+                <button type="button" class="themeButton" data-theme="dark" title="经典黑色 UI">黑</button>
+                <button type="button" class="themeButton" data-theme="light" title="经典白色 UI">白</button>
               </div>
               <label class="canvasColorControl" title="画布颜色">
                 <input id="canvasColor" type="color" value="#000000" />
@@ -662,6 +678,12 @@
             <p data-cutout-i18n="subtitle">本地像素处理 · 图片不会上传</p>
           </div>
           <div class="workbenchHeaderActions">
+            <div class="themeSwitch workbenchThemeSwitch" role="group" aria-label="界面主题">
+              <button type="button" class="themeButton" data-theme="home" title="首页风格 UI">首</button>
+              <button type="button" class="themeButton" data-theme="kunkun" title="坤坤彩蛋 UI">坤</button>
+              <button type="button" class="themeButton" data-theme="dark" title="经典黑色 UI">黑</button>
+              <button type="button" class="themeButton" data-theme="light" title="经典白色 UI">白</button>
+            </div>
             <button id="cutoutCopyLink" class="workbenchLink" type="button" data-cutout-i18n="copyLink">
               复制链接
             </button>
@@ -1868,6 +1890,12 @@
             <p id="organizerSubtitle" data-organizer-i18n="subtitle">排序、删帧、单帧抠图与序列分析</p>
           </div>
           <div class="workbenchHeaderActions">
+            <div class="themeSwitch workbenchThemeSwitch" role="group" aria-label="界面主题">
+              <button type="button" class="themeButton" data-theme="home" title="首页风格 UI">首</button>
+              <button type="button" class="themeButton" data-theme="kunkun" title="坤坤彩蛋 UI">坤</button>
+              <button type="button" class="themeButton" data-theme="dark" title="经典黑色 UI">黑</button>
+              <button type="button" class="themeButton" data-theme="light" title="经典白色 UI">白</button>
+            </div>
             <button
               id="organizerActivationManage"
               class="secondary activationManageLaunch organizerActivationLaunch"
@@ -2559,6 +2587,28 @@
             <p id="activationCurrent" class="activationCurrent">正在读取当前授权状态…</p>
           </section>
           <ul id="activationFeatures" class="activationFeatures"></ul>
+          <section
+            id="activationTransfer"
+            class="activationTransfer"
+            aria-labelledby="activationTransferSummary"
+            hidden
+          >
+            <header>
+              <span>DEVICE LIMIT / SELECT TO REPLACE</span>
+              <strong id="activationTransferSummary"></strong>
+            </header>
+            <div
+              id="activationTransferList"
+              class="activationTransferList"
+              role="radiogroup"
+              aria-label="选择要解绑的设备"
+            ></div>
+            <nav class="activationTransferNavigation" aria-label="设备列表翻页">
+              <button id="activationTransferPrevious" class="secondary" type="button">上一页</button>
+              <button id="activationTransferNext" class="secondary" type="button">下一页</button>
+              <button id="activationTransferBack" class="secondary" type="button">返回输入激活码</button>
+            </nav>
+          </section>
           <form id="activationForm" class="activationForm">
             <label class="srOnly" for="activationCode">激活码</label>
             <input
@@ -2573,6 +2623,23 @@
             <button id="activationSubmit" class="activationSubmit" type="submit">激活并继续</button>
           </form>
           <p id="activationStatus" class="activationStatus" aria-live="polite"></p>
+          <section id="activationDeviceActions" class="activationDeviceActions" hidden>
+            <div>
+              <span>CURRENT DEVICE / SELF SERVICE</span>
+              <p id="activationDeviceActionsMessage">仅解绑当前设备，其他已绑定设备不会受到影响。</p>
+            </div>
+            <button id="activationUnbind" class="activationUnbind" type="button">解绑此设备</button>
+            <div id="activationUnbindConfirm" class="activationUnbindConfirm" role="alert" hidden>
+              <strong id="activationUnbindTitle">确认解绑当前设备？</strong>
+              <p id="activationUnbindMessage">解绑后本机授权立即失效；之后可重新输入激活码并选择设备名额。</p>
+              <div>
+                <button id="activationUnbindCancel" class="secondary" type="button">取消</button>
+                <button id="activationUnbindAccept" class="activationUnbindAccept" type="button">
+                  确认解绑
+                </button>
+              </div>
+            </div>
+          </section>
           <div class="activationLinks">
             <a
               class="activationBuyLink"

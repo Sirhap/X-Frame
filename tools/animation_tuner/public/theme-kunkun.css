@@ -1,0 +1,714 @@
+/*
+ * Kunkun easter-egg theme.
+ *
+ * The theme stays usable as a production workbench: its references are carried
+ * by color, rhythm, and a CSS-drawn basketball rather than external imagery.
+ */
+
+.kunkunBackdrop,
+.kunkunSignature {
+  display: none;
+}
+
+.workbenchThemeSwitch {
+  flex: 0 0 auto;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-3);
+}
+
+.workbenchThemeSwitch .themeButton {
+  min-width: 27px;
+  min-height: 29px;
+  padding: 0 5px;
+  border-width: 0;
+  border-radius: 999px;
+  box-shadow: none;
+  font-size: 9px;
+}
+
+body.theme-kunkun {
+  color-scheme: dark;
+  --bg: #09080d;
+  --panel: #121017;
+  --panel-2: #1a1720;
+  --panel-3: #0c0b10;
+  --surface: #17141c;
+  --surface-2: #211d28;
+  --line: #37313f;
+  --line-strong: #766a81;
+  --ink: #f7f3ee;
+  --muted: #b5aebd;
+  --control-bg: #17141c;
+  --control-ink: #f7f3ee;
+  --control-muted: #b5aebd;
+  --accent: #ff8a24;
+  --accent-text: #ffad63;
+  --accent-dark: #c95c08;
+  --accent-2: #ff8a24;
+  --accent-3: #f4eff8;
+  --ok: #42e8df;
+  --danger: #ff4b71;
+  --danger-ink: #13080c;
+  --shadow: rgba(0, 0, 0, 0.58);
+  --hard-shadow: 4px 4px 0 #030204;
+  --soft-shadow: 0 22px 54px rgba(0, 0, 0, 0.38);
+  --radius: 7px;
+  --ui-font: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --data-font: "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono CJK SC", monospace;
+  background:
+    radial-gradient(circle at 82% -6%, rgba(201, 68, 255, 0.19), transparent 34%),
+    radial-gradient(circle at 52% 112%, rgba(66, 232, 223, 0.12), transparent 36%),
+    linear-gradient(112deg, transparent 0 46%, rgba(255, 138, 36, 0.035) 46% 47%, transparent 47%), var(--bg);
+}
+
+body.theme-kunkun::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.024) 1px, transparent 1px) 0 0 / 42px 42px,
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px) 0 0 / 42px 42px;
+  content: "";
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, black, transparent 75%);
+}
+
+body.theme-kunkun ::selection {
+  background: var(--accent);
+  color: #130802;
+}
+
+body.theme-kunkun :focus-visible {
+  outline-color: var(--ok);
+}
+
+body.theme-kunkun .sidebar {
+  border-right: 1px solid var(--line);
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0 22px,
+      rgba(247, 243, 238, 0.035) 22px 31px,
+      transparent 31px calc(100% - 31px),
+      rgba(247, 243, 238, 0.035) calc(100% - 31px) calc(100% - 22px),
+      transparent calc(100% - 22px)
+    ),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.018) 0 5px, transparent 5px 14px),
+    color-mix(in srgb, var(--panel) 97%, transparent);
+  box-shadow: 16px 0 42px rgba(0, 0, 0, 0.24);
+}
+
+body.theme-kunkun .brand {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+body.theme-kunkun .mark {
+  position: relative;
+  overflow: hidden;
+  border: 2px solid #2b1406;
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent 46%, #3c1c09 47% 53%, transparent 54%),
+    linear-gradient(12deg, transparent 46%, #3c1c09 47% 53%, transparent 54%),
+    radial-gradient(circle at 32% 25%, #ffc27d 0 7%, transparent 8%), #ff8a24;
+  box-shadow:
+    inset -7px -9px 0 rgba(114, 45, 2, 0.2),
+    0 0 0 3px rgba(255, 138, 36, 0.11);
+  transform: rotate(-9deg);
+}
+
+body.theme-kunkun .mark::before {
+  position: absolute;
+  inset: -5px 8px;
+  border: 2px solid #3c1c09;
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  content: "";
+  transform: rotate(23deg);
+}
+
+body.theme-kunkun .brand:hover .mark {
+  animation: kunkun-ball-step 720ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+body.theme-kunkun .brandMain::after {
+  width: max-content;
+  max-width: 100%;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-radius: 999px;
+  background: rgba(255, 138, 36, 0.08);
+  color: var(--accent-text);
+  content: "PRACTICE ID / KUN-025";
+  font: 700 7px/1 var(--data-font);
+  letter-spacing: 0.09em;
+}
+
+body.theme-kunkun h1 {
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: 0.075em;
+  text-shadow: 2px 2px 0 rgba(201, 68, 255, 0.2);
+}
+
+body.theme-kunkun h2,
+body.theme-kunkun .sectionEyebrow,
+body.theme-kunkun .panelTitle small {
+  letter-spacing: 0.11em;
+}
+
+body.theme-kunkun .sidebarSectionHeader .sectionEyebrow::after {
+  color: var(--accent);
+  content: " · KUN MODE";
+}
+
+body.theme-kunkun :is(.brandMain p, .sectionEyebrow, .panelTitle small, .selectionHud, .coordHud) {
+  font-family: var(--data-font);
+}
+
+body.theme-kunkun :is(button, input, select, textarea) {
+  border-width: 1px;
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+body.theme-kunkun button {
+  letter-spacing: 0.035em;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+body.theme-kunkun button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--line));
+  box-shadow: 0 0 0 2px rgba(255, 138, 36, 0.08);
+  transform: translateY(-1px);
+}
+
+body.theme-kunkun button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+body.theme-kunkun :is(input, select, textarea):focus {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 2px rgba(66, 232, 223, 0.12);
+}
+
+body.theme-kunkun :is(.panel, .projectContext, .sidebarSection, .updatePanel) {
+  border-width: 1px;
+  box-shadow: none;
+}
+
+body.theme-kunkun :is(.panel, .projectContext) {
+  background: linear-gradient(115deg, rgba(255, 138, 36, 0.035), transparent 36%), rgba(26, 23, 32, 0.9);
+}
+
+body.theme-kunkun :is(.panel, .projectContext)[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+body.theme-kunkun .save,
+body.theme-kunkun .importAnimationButton,
+body.theme-kunkun .updateButton {
+  border-color: #ffad63;
+  background: linear-gradient(105deg, #ff7621, #ff9f31);
+  color: #160a02;
+  font-weight: 900;
+  box-shadow: 3px 3px 0 #3b1703;
+}
+
+body.theme-kunkun :is(.save, .importAnimationButton, .updateButton):hover:not(:disabled) {
+  border-color: #ffd1a2;
+  background: linear-gradient(105deg, #ff8a24, #ffb34f);
+  box-shadow: 4px 4px 0 #3b1703;
+}
+
+body.theme-kunkun .dangerAction,
+body.theme-kunkun .appConfirmAccept,
+body.theme-kunkun .activationUnbindAccept {
+  border-color: var(--danger);
+}
+
+body.theme-kunkun .workspace {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 18% -10%, rgba(255, 255, 255, 0.09), transparent 31%),
+    radial-gradient(ellipse at 78% -5%, rgba(201, 68, 255, 0.08), transparent 34%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px) 0 0 / 42px 42px,
+    transparent;
+}
+
+body.theme-kunkun .kunkunBackdrop {
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+body.theme-kunkun .kunkunBackdrop strong {
+  position: absolute;
+  right: -0.03em;
+  bottom: -0.24em;
+  opacity: 0.04;
+  font: 900 clamp(150px, 25vw, 420px) / 0.8 var(--ui-font);
+  letter-spacing: -0.1em;
+  transform: skewX(-9deg);
+}
+
+body.theme-kunkun .kunkunBackdrop span {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  opacity: 0.24;
+  color: var(--accent);
+  font: 800 8px/1 var(--data-font);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transform: rotate(90deg) translateX(50%);
+  transform-origin: right center;
+}
+
+body.theme-kunkun .toolbar {
+  position: relative;
+  z-index: 21;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(110deg, rgba(255, 138, 36, 0.075), transparent 34%),
+    color-mix(in srgb, var(--panel) 93%, transparent);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(16px);
+}
+
+body.theme-kunkun .kunkunSignature {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 2px;
+}
+
+body.theme-kunkun .kunkunSignature > span {
+  min-width: 22px;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--panel-3);
+  color: var(--ink);
+  font: 850 8px/1 var(--ui-font);
+  text-align: center;
+}
+
+body.theme-kunkun .kunkunSignature > span:nth-child(1) {
+  border-color: #c944ff;
+  color: #e7a6ff;
+}
+
+body.theme-kunkun .kunkunSignature > span:nth-child(2) {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+body.theme-kunkun .kunkunSignature > span:nth-child(3) {
+  border-color: var(--ink);
+}
+
+body.theme-kunkun .kunkunSignature > .kunkunBasketball {
+  border-color: var(--accent);
+  background: linear-gradient(90deg, transparent 47%, #3c1c09 48% 52%, transparent 53%), var(--accent);
+  color: #2e1304;
+}
+
+body.theme-kunkun .kunkunSignature b {
+  margin-left: 3px;
+  color: var(--muted);
+  font: 700 8px/1 var(--data-font);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+body.theme-kunkun .kunkunSignature em {
+  color: var(--accent);
+  font-size: 10px;
+  font-style: normal;
+}
+
+body.theme-kunkun .kunkunSignature small {
+  color: #e7a6ff;
+  font: 700 8px/1 var(--ui-font);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+body.theme-kunkun .toolbarMain strong::before {
+  display: inline-grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  margin-right: 7px;
+  border: 1px solid #3c1c09;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #2c1204;
+  content: "K";
+  font: 900 10px/1 var(--ui-font);
+  transform: rotate(-8deg);
+}
+
+body.theme-kunkun .toolbarMain strong::after {
+  margin-left: 8px;
+  color: var(--muted);
+  content: "STAGE 2.5";
+  font: 700 9px/1 var(--data-font);
+  letter-spacing: 0.12em;
+}
+
+body.theme-kunkun .themeSwitch {
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-3);
+}
+
+body.theme-kunkun .themeButton {
+  min-width: 32px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: 800 10px/1 var(--data-font);
+  letter-spacing: 0.08em;
+}
+
+body.theme-kunkun .themeButton.active {
+  background: var(--accent);
+  color: #1f0d02;
+  box-shadow: inset 0 0 0 1px #ffc17b;
+}
+
+body.theme-kunkun .canvasColorControl input {
+  border-width: 1px;
+  box-shadow: none;
+}
+
+body.theme-kunkun :is(.stage, .canvasWrap, .previewCanvasWrap, .organizerPreviewStage) {
+  border-color: var(--line);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
+    0 0 36px rgba(201, 68, 255, 0.04);
+}
+
+body.theme-kunkun :is(.selectionHud, .coordHud) {
+  border-width: 1px;
+  background: rgba(9, 8, 13, 0.86);
+  backdrop-filter: blur(9px);
+}
+
+body.theme-kunkun :is(.filmstrip, .cutoutShell, .organizerShell) {
+  border-color: var(--line);
+  background: var(--panel);
+}
+
+body.theme-kunkun :is(.filmstripHeader, .cutoutHeader, .organizerHeader) {
+  border-color: var(--line);
+  background: linear-gradient(100deg, rgba(255, 138, 36, 0.12), transparent 30%), var(--panel-3);
+}
+
+body.theme-kunkun :is(.cutoutWorkbench, .organizerWorkbench) {
+  position: relative;
+  isolation: isolate;
+  border-color: var(--line);
+  background:
+    radial-gradient(circle at 78% -8%, rgba(201, 68, 255, 0.12), transparent 31%),
+    radial-gradient(circle at 15% 110%, rgba(66, 232, 223, 0.08), transparent 30%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.012) 0 5px, transparent 5px 15px), var(--panel-3);
+}
+
+body.theme-kunkun .cutoutWorkbench::before,
+body.theme-kunkun .organizerWorkbench::before {
+  position: absolute;
+  z-index: 35;
+  right: -0.04em;
+  bottom: -0.16em;
+  opacity: 0.035;
+  color: var(--ink);
+  content: "KUN";
+  font: 900 clamp(180px, 30vw, 520px) / 0.8 var(--ui-font);
+  letter-spacing: -0.11em;
+  pointer-events: none;
+  transform: skewX(-9deg);
+}
+
+body.theme-kunkun .cutoutWorkbench::after,
+body.theme-kunkun .organizerWorkbench::after {
+  position: absolute;
+  z-index: 36;
+  top: 50%;
+  right: 5px;
+  opacity: 0.34;
+  color: var(--accent);
+  font: 800 8px/1 var(--data-font);
+  letter-spacing: 0.13em;
+  pointer-events: none;
+  text-transform: uppercase;
+  transform: rotate(90deg) translateX(50%);
+  transform-origin: right center;
+}
+
+body.theme-kunkun .cutoutWorkbench::after {
+  content: "全民制作人 / ALPHA TEAM 025";
+}
+
+body.theme-kunkun .organizerWorkbench::after {
+  content: "全民制作人 / SEQUENCE TEAM 025";
+}
+
+body.theme-kunkun :is(.cutoutHeader, .organizerHeader) {
+  position: relative;
+  z-index: 40;
+  border-bottom-width: 1px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+}
+
+body.theme-kunkun .cutoutEyebrow::after,
+body.theme-kunkun .organizerEyebrow::after {
+  color: #e7a6ff;
+  content: " / 唱 · 跳 · RAP · 篮球 / 2.5Y";
+}
+
+body.theme-kunkun .cutoutHeader h2::after,
+body.theme-kunkun .organizerHeader h2::after {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 4px 7px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: rgba(255, 138, 36, 0.1);
+  color: var(--accent);
+  content: "KUN";
+  font: 850 8px/1 var(--data-font);
+  letter-spacing: 0.12em;
+  vertical-align: middle;
+}
+
+body.theme-kunkun :is(.cutoutBody, .organizerBody, .organizerImportSetup, .organizerToolbar) {
+  position: relative;
+  z-index: 38;
+}
+
+body.theme-kunkun .cutoutControls {
+  border-right-width: 1px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0 18px,
+      rgba(247, 243, 238, 0.035) 18px 25px,
+      transparent 25px calc(100% - 25px),
+      rgba(247, 243, 238, 0.035) calc(100% - 25px) calc(100% - 18px),
+      transparent calc(100% - 18px)
+    ),
+    var(--panel);
+}
+
+body.theme-kunkun .cutoutDropzone strong::before {
+  color: var(--accent);
+  content: "KUN / ";
+  font-family: var(--data-font);
+  letter-spacing: 0.08em;
+}
+
+body.theme-kunkun .organizerImportSetup {
+  border-bottom-width: 1px;
+  background: linear-gradient(100deg, rgba(255, 138, 36, 0.12), transparent 34%), var(--panel);
+}
+
+body.theme-kunkun .organizerImportIntro span::after {
+  color: #e7a6ff;
+  content: " / 练习生入场 · 2.5Y";
+}
+
+body.theme-kunkun :is(.cutoutPreview, .organizerPreviewPanel, .organizerFramesPanel) {
+  outline: 1px solid rgba(255, 138, 36, 0.15);
+  outline-offset: -6px;
+}
+
+body.theme-kunkun :is(.cutoutPreviewHeader, .organizerPanelHeader)::after {
+  color: color-mix(in srgb, var(--accent) 78%, var(--ink));
+  content: "PRODUCER 025";
+  font: 750 8px/1 var(--data-font);
+  letter-spacing: 0.1em;
+}
+
+body.theme-kunkun .workbenchThemeSwitch {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background: rgba(9, 8, 13, 0.82);
+}
+
+body.theme-kunkun .filmstripPanel {
+  position: relative;
+  z-index: 21;
+}
+
+body.theme-kunkun .filmstripHeader::after {
+  margin-left: auto;
+  color: color-mix(in srgb, var(--accent) 76%, var(--ink));
+  content: "全民制作人 · FRAME PRODUCER 025";
+  font: 750 8px/1 var(--data-font);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+body.theme-kunkun #stage {
+  position: relative;
+  z-index: 21;
+  outline: 1px solid rgba(255, 138, 36, 0.2);
+  outline-offset: -7px;
+}
+
+body.theme-kunkun
+  :is(
+    .homeHubCard,
+    .filmCard,
+    .cutoutSettingsCard,
+    .cutoutQueueItem,
+    .organizerFrame,
+    .organizerPanel,
+    .activationCard,
+    .appConfirmCard
+  ) {
+  border-width: 1px;
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+body.theme-kunkun :is(.homeHubCard, .filmCard, .cutoutSettingsCard, .organizerPanel) {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.022), transparent 42%), var(--panel-2);
+}
+
+body.theme-kunkun :is(.homeHubCard, .organizerFrame, .cutoutQueueItem):hover {
+  border-color: var(--accent);
+}
+
+body.theme-kunkun :is(.homeHubCard, .organizerFrame, .cutoutQueueItem).active,
+body.theme-kunkun :is(.homeHubCard, .organizerFrame, .cutoutQueueItem).selected {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+body.theme-kunkun :is(.tag, .badge, .chip, .statusBadge, .frameIndex) {
+  font-family: var(--data-font);
+  letter-spacing: 0.07em;
+}
+
+body.theme-kunkun input[type="checkbox"],
+body.theme-kunkun input[type="radio"],
+body.theme-kunkun input[type="range"] {
+  accent-color: var(--accent);
+}
+
+body.theme-kunkun .filmCard.selected,
+body.theme-kunkun .organizerFrame.selected {
+  outline-color: var(--ok);
+}
+
+body.theme-kunkun .status {
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 138, 36, 0.07);
+}
+
+body.theme-kunkun .browserModeBanner {
+  border-color: var(--ok);
+  background: rgba(66, 232, 223, 0.06);
+}
+
+body.theme-kunkun .updatePanel {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  background: linear-gradient(125deg, rgba(255, 138, 36, 0.13), transparent 54%), var(--panel-2);
+}
+
+body.theme-kunkun :is(.appConfirmPanel, .activationPanel) {
+  background: rgba(4, 3, 6, 0.84);
+  backdrop-filter: blur(12px);
+}
+
+body.theme-kunkun .activationRail {
+  background: var(--accent);
+  color: #1a0a01;
+}
+
+@media (max-width: 1180px) {
+  body.theme-kunkun .kunkunSignature small,
+  body.theme-kunkun .filmstripHeader::after {
+    display: none;
+  }
+
+  .workbenchThemeSwitch .themeButton {
+    min-width: 25px;
+    padding-inline: 4px;
+  }
+}
+
+@media (max-width: 920px) {
+  body.theme-kunkun .kunkunSignature b {
+    display: none;
+  }
+
+  body.theme-kunkun .cutoutEyebrow::after,
+  body.theme-kunkun .organizerEyebrow::after {
+    content: " / RAP · 篮球 / 2.5Y";
+  }
+}
+
+@media (max-width: 720px) {
+  .workbenchThemeSwitch {
+    order: 10;
+    width: 100%;
+    justify-content: center;
+  }
+
+  body.theme-kunkun .cutoutHeader h2::after,
+  body.theme-kunkun .organizerHeader h2::after {
+    display: none;
+  }
+}
+
+@keyframes kunkun-ball-step {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-9deg);
+  }
+
+  35% {
+    transform: translateY(-5px) rotate(7deg);
+  }
+
+  68% {
+    transform: translateY(1px) rotate(-15deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.theme-kunkun .brand:hover .mark {
+    animation: none;
+  }
+
+  body.theme-kunkun button {
+    transition: none;
+  }
+}

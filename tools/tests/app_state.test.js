@@ -61,7 +61,7 @@ test("createInitialState falls back safely when storage access throws", () => {
   });
 
   assert.equal(state.language, "zh");
-  assert.equal(state.uiTheme, "dark");
+  assert.equal(state.uiTheme, "home");
   assert.equal(state.canvasColor, "#000000");
   assert.equal(state.adjustmentMode, "group");
   assert.equal(constants.FRAME_AUDIO_DB_VERSION, 1);
