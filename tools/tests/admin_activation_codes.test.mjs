@@ -10,6 +10,7 @@ import {
   TOTP_PERIOD_SECONDS,
   verifyTotp,
 } from "../../cloudflare/site/src/admin.mjs";
+import { createAdminRepository } from "../../cloudflare/site/src/admin_repository.mjs";
 
 const adminTotpSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 const adminUsername = "frame-admin";
@@ -118,6 +119,42 @@ function createAdminRepositoryFixture() {
     },
   };
 }
+
+test("administrator repository batches device lookups within the D1 parameter limit", async () => {
+  const preparedStatements = [];
+  const database = {
+    prepare(query) {
+      return {
+        bind(...values) {
+          return { query, values };
+        },
+      };
+    },
+    async batch(statements) {
+      preparedStatements.push(...statements);
+      return statements.map((statement) => ({
+        results: statement.values.map((licenseId) => ({
+          id: `device-${licenseId}`,
+          license_id: licenseId,
+        })),
+      }));
+    },
+  };
+  const licenseIds = Array.from({ length: 101 }, (_value, index) => `license-${index + 1}`);
+
+  const devices = await createAdminRepository(database).listLicenseDevices(licenseIds);
+
+  assert.deepEqual(
+    preparedStatements.map((statement) => statement.values.length),
+    [100, 1],
+  );
+  assert.match(preparedStatements[0].query, /\?100/u);
+  assert.doesNotMatch(preparedStatements[0].query, /\?101/u);
+  assert.deepEqual(
+    devices.map((device) => device.license_id),
+    licenseIds,
+  );
+});
 
 /** @param {string} pathname API path. @param {object} [options] Request overrides. @returns {Request} Same-origin request. */
 function adminRequest(pathname, options = {}) {

@@ -1,3 +1,5 @@
+const MAX_D1_BIND_PARAMETERS = 100;
+
 /**
  * Creates the D1 persistence boundary for administrator authentication and licenses.
  * @param {D1Database} database D1 binding.
@@ -87,18 +89,24 @@ export function createAdminRepository(database) {
     /** @param {string[]} licenseIds License IDs. @returns {Promise<object[]>} Devices grouped by license. */
     async listLicenseDevices(licenseIds) {
       if (!licenseIds.length) return [];
-      const placeholders = licenseIds.map((_licenseId, index) => `?${index + 1}`).join(", ");
-      const result = await database
-        .prepare(
-          `SELECT id, license_id, device_name, first_country, last_country,
-                  created_at, last_seen_at, revoked_at
-             FROM license_devices
-            WHERE license_id IN (${placeholders})
-            ORDER BY created_at ASC`,
-        )
-        .bind(...licenseIds)
-        .all();
-      return result.results || [];
+      const statements = [];
+      for (let offset = 0; offset < licenseIds.length; offset += MAX_D1_BIND_PARAMETERS) {
+        const batchIds = licenseIds.slice(offset, offset + MAX_D1_BIND_PARAMETERS);
+        const placeholders = batchIds.map((_licenseId, index) => `?${index + 1}`).join(", ");
+        statements.push(
+          database
+            .prepare(
+              `SELECT id, license_id, device_name, first_country, last_country,
+                      created_at, last_seen_at, revoked_at
+                 FROM license_devices
+                WHERE license_id IN (${placeholders})
+                ORDER BY created_at ASC`,
+            )
+            .bind(...batchIds),
+        );
+      }
+      const results = await database.batch(statements);
+      return results.flatMap((result) => result.results || []);
     },
 
     /** @param {object[]} licenses New license records. @returns {Promise<object[]>} Batch results. */
