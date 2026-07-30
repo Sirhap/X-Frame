@@ -16,6 +16,9 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 - 碰撞框调节：支持 hurtbox、hitbox、collisionbox，在画布中直接拖动和变形。
 - 播放调节：支持组级时长、单帧时长、禁用帧，以及调参后的实际播放节奏。
 - 帧音效和图片挂件：可以给指定帧绑定 SFX 或附加图片，保存后同步到 Godot 项目。
+- 攻击拖尾：可在画布中编辑拖尾棍子、前后图层、纹理、渐变和持续时间，并把数据、纹理、Shader 与渲染器同步到 Godot。
+- Lite 工作流：提供独立的帧序列/精灵表导入、预设保存，以及按持续时间驱动的拖尾与音频导出。
+- Codex Pets：可读取内置和自定义宠物图集，在工作台调参，并将可写的自定义宠物安全回写且保留备份。
 - Godot 同步：导入 PNG 序列或 SpriteFrames 后，会生成/刷新 `res://xsxb_frame_tuner/` 下的运行时数据和基础 runtime。
 - 完整验证：可检查每帧框体、游戏本地数据、SFX、附加帧、场景系数、框体缩放和实际 gameplay 接线。
 
@@ -24,6 +27,8 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 ## 仓库内容
 
 - `tools/animation_tuner/`：本地 Webapp，默认服务地址是 `http://127.0.0.1:5179`。
+- `tools/frame_tuner_lite/`：与完整 Godot 工作流隔离的 Lite 服务、导入器和数据存储。
+- `tools/attack_trails.js` 与 `tools/runtime/xsxb_attack_trail_*`：拖尾数据校验、纹理同步和 Godot 运行时。
 - `docs/cutout-roadmap.md`：本地批量抠图的模块边界、当前覆盖范围和后续功能优先级。
 - `tools/import_frames.js`：Agent 用来导入 PNG 序列的内部工具。
 - `tools/import_batch.js`：Agent 用来一次导入多组 PNG 动画的内部工具。
@@ -46,6 +51,8 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 ## 使用方式
 
 macOS 可双击 `start_xsxb_frame_tuner.command` 启动本地服务和页面。使用期间需要保持启动器打开的终端窗口；关闭终端会同时停止本地服务。
+
+需要隔离的 Lite 工作流时运行 `npm run start:lite`；可用 `npm run validate:lite` 检查 Lite 数据。
 
 服务启动后的站点入口：
 

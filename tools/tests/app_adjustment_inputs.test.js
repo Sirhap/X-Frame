@@ -17,6 +17,8 @@ function createElements() {
     adjustCharacter: { checked: false },
     adjustGroup: { checked: false },
     adjustFrame: { checked: false },
+    clearGroup: { hidden: true, disabled: false },
+    clearFrame: { hidden: true, disabled: false },
     applyBaseToFrame: { hidden: false, disabled: false },
     characterBaseScale: input("characterBaseScale"),
     characterBaseSource: input("characterBaseSource"),
@@ -95,6 +97,8 @@ test("adjustment input controller preserves mode, transform, and step semantics"
   controller.syncAdjustmentInputs();
   assert.equal(elements.adjustGroup.checked, true);
   assert.equal(elements.baseScale.disabled, false);
+  assert.equal(elements.clearGroup.hidden, false);
+  assert.equal(elements.clearFrame.hidden, true);
   controller.stepAdjustmentInput(elements.baseScale, 1, 2);
   assert.equal(elements.baseScale.value, 3);
   assert.equal(elements.baseScaleX.value, 3);

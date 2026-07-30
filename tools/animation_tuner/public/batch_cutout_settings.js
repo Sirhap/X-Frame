@@ -7,6 +7,45 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 
+  const PREVIEW_BACKGROUND_MODES = Object.freeze(["light", "dark", "white"]);
+
+  /**
+   * Normalizes a preview background without allowing it to affect processing state.
+   * @param {string} mode Requested preview background.
+   * @returns {"light"|"dark"|"white"} Supported preview background.
+   */
+  function normalizePreviewBackground(mode) {
+    return PREVIEW_BACKGROUND_MODES.includes(mode) ? mode : "light";
+  }
+
+  /**
+   * Applies a display-only preview background and synchronizes its toggle buttons.
+   * Canvas pixels and automatic processing parameters are intentionally untouched.
+   * @param {object} elements Batch-cutout DOM adapter.
+   * @param {object} state Mutable batch-cutout session state.
+   * @param {string} mode Requested preview background.
+   * @returns {"light"|"dark"|"white"} Applied preview background.
+   */
+  function applyPreviewBackground(elements, state, mode) {
+    if (!elements?.cutoutModal || !state) {
+      throw new TypeError("Preview background requires modal elements and state.");
+    }
+    const normalizedMode = normalizePreviewBackground(mode);
+    state.previewBackground = normalizedMode;
+    elements.cutoutModal.dataset.previewBackground = normalizedMode;
+    [
+      [elements.cutoutBackgroundLight, "light"],
+      [elements.cutoutBackgroundDark, "dark"],
+      [elements.cutoutBackgroundWhite, "white"],
+    ].forEach(([button, buttonMode]) => {
+      if (!button) return;
+      const active = normalizedMode === buttonMode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    return normalizedMode;
+  }
+
   /**
    * Resolves whether the current edit can be propagated and explains unavailable states.
    * Automatic parameters in batch sessions are already shared, while local repairs
@@ -64,6 +103,7 @@
       renderPreview,
       schedulePreview,
       renderAdvancedMode,
+      previewLatestRepairAcrossBatch = () => false,
       advancedSummary,
       advancedPresets = {},
     } = dependencies;
@@ -243,7 +283,6 @@
         elements.cutoutRepairBrush,
         elements.cutoutRepairEraser,
         elements.cutoutRepairSource,
-        elements.cutoutRepairFill,
         elements.cutoutRepairRecolor,
         elements.cutoutAreaTransparentQuick,
         elements.cutoutRepairClear,
@@ -398,7 +437,6 @@
         [elements.cutoutRepairBrush, "brush"],
         [elements.cutoutRepairEraser, "eraser"],
         [elements.cutoutRepairSource, "restore-source"],
-        [elements.cutoutRepairFill, "fill"],
         [elements.cutoutRepairRecolor, "recolor"],
         [elements.cutoutRepairClear, "clear"],
         [elements.cutoutRepairRestore, "restore"],
@@ -413,19 +451,17 @@
           ? "none"
           : ["brush", "eraser", "restore-source"].includes(mode)
             ? "brush"
-            : ["fill", "recolor"].includes(mode)
+            : mode === "recolor"
               ? "area"
               : "selection";
       elements.cutoutLocalSettings.querySelectorAll("[data-cutout-options]").forEach((panel) => {
         panel.hidden = panel.dataset.cutoutOptions !== optionKind;
       });
       elements.cutoutLocalSettings.querySelector(".cutoutBrushColor").hidden = mode !== "brush";
-      elements.cutoutLocalSettings.querySelector(".cutoutAreaScope").hidden = mode === "fill";
       elements.cutoutActiveToolTitle.textContent = text(repairModeTextKey(mode));
       if (optionKind === "area") {
-        elements.cutoutAreaScope.disabled = mode === "fill";
-        if (mode === "fill") elements.cutoutAreaScope.value = "connected";
-        elements.cutoutAreaHint.textContent = text(mode === "fill" ? "fillHint" : "recolorHint");
+        elements.cutoutAreaScope.disabled = false;
+        elements.cutoutAreaHint.textContent = text("recolorHint");
       } else if (optionKind === "selection") {
         const modeKey =
           mode === "clear"
@@ -447,13 +483,19 @@
         );
       }
       const protectionActive = mode === "protect";
-      elements.cutoutProtectionControls.hidden = !protectionActive;
-      elements.cutoutProtectionRangeOptions.hidden =
-        !protectionActive || elements.cutoutProtectionType.value !== "range";
-      elements.cutoutProtectionColorOptions.hidden =
-        !protectionActive || elements.cutoutProtectionType.value !== "color";
-      setSettingsMode(mode === "automatic" ? "automatic" : "tool");
+      elements.cutoutProtectionRangeOptions.hidden = elements.cutoutProtectionType.value !== "range";
+      elements.cutoutProtectionColorOptions.hidden = elements.cutoutProtectionType.value !== "color";
+      setSettingsMode(mode === "automatic" || protectionActive ? "automatic" : "tool");
       renderPreview();
+    }
+
+    /**
+     * Selects the display-only background behind transparent preview pixels.
+     * @param {string} mode Requested preview background.
+     * @returns {"light"|"dark"|"white"} Applied preview background.
+     */
+    function setPreviewBackground(mode) {
+      return applyPreviewBackground(elements, state, mode);
     }
 
     /**
@@ -494,6 +536,7 @@
       item.undoneRepairs = [];
       invalidateItem(item);
       renderPreview();
+      previewLatestRepairAcrossBatch(item);
       return true;
     }
 
@@ -524,6 +567,7 @@
       renderStatus,
       setSettingsMode,
       setRepairMode,
+      setPreviewBackground,
       selectedAreaColor,
       setAreaColorTransparent,
       updateLatestAreaRepair,
@@ -531,5 +575,11 @@
     };
   }
 
-  return { createController, resolveRepairPropagationState };
+  return {
+    PREVIEW_BACKGROUND_MODES,
+    normalizePreviewBackground,
+    applyPreviewBackground,
+    createController,
+    resolveRepairPropagationState,
+  };
 });

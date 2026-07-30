@@ -636,12 +636,13 @@
       // Keep the regular replacement controls byte-compatible with FramePacker.
       // Chroma cleanup belongs to the perceptual key path and must not silently
       // rewrite the tolerance shown in the regular panel.
-      const baseTolerance = Math.trunc(clamp(options.tolerance ?? 18, 0, 100));
+      const baseTolerance = Math.trunc(clamp(options.tolerance ?? 18, -1, 100));
       const edgeEnhance = Math.trunc(clamp(options.edgeBoost ?? 0, 0, 100));
       const edgeRecoveryStrength = clamp(options.edgeRecoveryStrength ?? 0, 0, 100);
       const protectedColors = Array.isArray(options.protectedColors) ? options.protectedColors : [];
       const edgeRestoreRadius = Math.max(0, Math.trunc(options.edgeDespillRadius || 0));
-      const mode = referenceDespillMode(options.despillMode);
+      const blendMode = referenceDespillMode(options.blendMode ?? options.despillMode ?? "blend");
+      const edgeRestoreMode = referenceDespillMode(options.despillMode ?? "general");
       const seedPoints = Array.isArray(options.seedPoints) ? options.seedPoints : [];
       const connected = options.connected !== false;
       let data = new Uint8ClampedArray(source);
@@ -656,11 +657,11 @@
           referenceColor,
           edgeEnhance,
           blendStrength: clamp(options.blendStrength ?? edgeRecoveryStrength, 0, 100),
-          despillMode: mode,
+          despillMode: blendMode,
           despillRefColor: backgroundColor,
           despillStrength: clamp(options.despillStrength ?? 0, 0, 100),
           edgeRestoreRadius,
-          edgeRestoreMode: mode,
+          edgeRestoreMode,
           alphaThresholdHigh: clamp(options.alphaHigh ?? 255, 0, 255),
           alphaThresholdLow: clamp(options.alphaLow ?? 0, 0, 255),
         };
@@ -817,6 +818,7 @@
      *   maximumPixels?:number,
      *   edgeBoost?:number,
      *   blendStrength?:number,
+     *   blendMode?:"general"|"blend"|"chroma",
      *   alphaLow?:number,
      *   alphaHigh?:number,
      *   despillStrength?:number,

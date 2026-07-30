@@ -9,6 +9,7 @@
   /**
    * Creates the attachment asset and frame-instance controller.
    * @param {object} dependencies Explicit application dependencies.
+   * @param {(assets:object[],context:{projectId:string,baseRevision:string})=>Promise<object|void>} [dependencies.persistAssetLibrary] Optional browser-session persistence adapter.
    * @returns {object} Attachment operations used by the application.
    */
   function createController(dependencies) {
@@ -47,7 +48,17 @@
       draw,
       status,
       translate,
+      buildOneToOneSequencePlan,
+      requestConfirmation = async () => true,
+      persistAssetLibrary,
     } = dependencies;
+
+    let assetRemovalSnapshot = null;
+    let assetLibraryMutationGeneration = 0;
+
+    if (typeof buildOneToOneSequencePlan !== "function") {
+      throw new TypeError("Attachment sequence planner is required.");
+    }
 
     /**
      * Reads a browser file as a data URL.
@@ -134,19 +145,186 @@
     }
 
     /**
+     * Captures the project identity and optimistic-concurrency token for one asset-library write.
+     * @param {string} [groupKey=attachmentAssetGroupKey()] Animation asset-library key.
+     * @returns {{projectId:string,groupKey:string,baseRevision:string,config:object|null}} Immutable write context.
+     */
+    function captureAttachmentAssetLibraryContext(groupKey = attachmentAssetGroupKey()) {
+      const config = getConfig();
+      return {
+        projectId: String(getActiveProjectId() || ""),
+        groupKey: String(groupKey || ""),
+        baseRevision: String(config?.dataRevision || ""),
+        config: config || null,
+      };
+    }
+
+    /**
+     * Reports whether an optimistic library replacement still owns the visible project state.
+     * @param {{projectId:string}} context Captured write context.
+     * @param {object[]} optimisticAssets Array installed before persistence began.
+     * @param {number} generation Controller mutation generation.
+     * @returns {boolean} Whether rollback or success UI may safely touch the current state.
+     */
+    function ownsVisibleAttachmentAssetLibrary(context, optimisticAssets, generation) {
+      return (
+        String(getActiveProjectId() || "") === context.projectId &&
+        assetLibraryMutationGeneration === generation &&
+        getAttachmentAssets() === optimisticAssets
+      );
+    }
+
+    /**
      * Persists the current project asset library immediately.
+     * @param {{assets?:object[],projectId?:string,baseRevision?:string,config?:object|null}} [options] Frozen write payload.
      * @returns {Promise<void>}
      */
-    async function persistAttachmentAssets() {
+    async function persistAttachmentAssets(options = {}) {
+      const config = options.config === undefined ? getConfig() : options.config;
+      const assets = options.assets || getAttachmentAssets();
+      const projectId =
+        options.projectId === undefined
+          ? String(getActiveProjectId() || "")
+          : String(options.projectId || "");
+      const baseRevision =
+        options.baseRevision === undefined
+          ? String(config?.dataRevision || "")
+          : String(options.baseRevision || "");
+      if (typeof persistAssetLibrary === "function") {
+        const result = await persistAssetLibrary(assets, { projectId, baseRevision });
+        if (result?.dataRevision && config) config.dataRevision = result.dataRevision;
+        return;
+      }
       const response = await fetchImpl("/api/attachment-assets", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId: getActiveProjectId(), assets: getAttachmentAssets() }),
+        body: JSON.stringify({ projectId, baseRevision, assets }),
       });
       if (!response.ok) throw new Error(await response.text());
       const result = await response.json();
-      const config = getConfig();
       if (result.dataRevision && config) config.dataRevision = result.dataRevision;
+    }
+
+    /**
+     * Returns whether the current project and animation group can restore the latest asset-library removal.
+     * @param {string} [groupKey=attachmentAssetGroupKey()] Current animation asset-library key.
+     * @returns {boolean} Whether an in-scope removal snapshot exists.
+     */
+    function canUndoAttachmentAssetRemoval(groupKey = attachmentAssetGroupKey()) {
+      return Boolean(
+        assetRemovalSnapshot?.entries?.length &&
+          assetRemovalSnapshot.projectId === String(getActiveProjectId() || "") &&
+          assetRemovalSnapshot.groupKey === String(groupKey || ""),
+      );
+    }
+
+    /**
+     * Replaces the asset-library list and rolls browser state back when persistence fails.
+     * Physical content-addressed image files and placed frame instances are intentionally untouched.
+     * @param {object[]} nextAssets Next reusable asset list.
+     * @param {object[]} previousAssets Rollback asset list.
+     * @param {{projectId:string,groupKey:string,baseRevision:string,config:object|null}} context Frozen write context.
+     * @returns {Promise<boolean>} Whether the optimistic replacement still owns the visible project state.
+     */
+    async function commitAttachmentAssetLibrary(nextAssets, previousAssets, context) {
+      const generation = ++assetLibraryMutationGeneration;
+      setAttachmentAssets(nextAssets);
+      const optimisticAssets = getAttachmentAssets();
+      try {
+        await persistAttachmentAssets({
+          assets: optimisticAssets,
+          projectId: context.projectId,
+          baseRevision: context.baseRevision,
+          config: context.config,
+        });
+      } catch (error) {
+        if (ownsVisibleAttachmentAssetLibrary(context, optimisticAssets, generation)) {
+          assetLibraryMutationGeneration += 1;
+          setAttachmentAssets(previousAssets);
+          renderFilmstrip();
+        }
+        throw error;
+      }
+      return ownsVisibleAttachmentAssetLibrary(context, optimisticAssets, generation);
+    }
+
+    /**
+     * Removes reusable asset references from one animation group without changing placed frame attachments.
+     * @param {Iterable<string>} assetIds Stable reusable asset identifiers.
+     * @param {string} [groupKey=attachmentAssetGroupKey()] Animation asset-library key.
+     * @returns {Promise<number>} Number of removed reusable asset references.
+     */
+    async function removeAttachmentAssets(assetIds, groupKey = attachmentAssetGroupKey()) {
+      const normalizedGroupKey = String(groupKey || "");
+      const context = captureAttachmentAssetLibraryContext(normalizedGroupKey);
+      const sourceIds = typeof assetIds === "string" ? [assetIds] : assetIds || [];
+      const ids = new Set(Array.from(sourceIds, (id) => String(id || "")).filter(Boolean));
+      if (!normalizedGroupKey || !ids.size) return 0;
+
+      const previousAssets = getAttachmentAssets().slice();
+      const entries = [];
+      const nextAssets = previousAssets.filter((asset, index) => {
+        const remove =
+          String(asset?.groupKey || "") === normalizedGroupKey && ids.has(String(asset?.id || ""));
+        if (remove) entries.push({ asset, index });
+        return !remove;
+      });
+      if (!entries.length) return 0;
+
+      const ownsVisibleState = await commitAttachmentAssetLibrary(nextAssets, previousAssets, context);
+      if (
+        assetRemovalSnapshot?.projectId === context.projectId &&
+        assetRemovalSnapshot?.groupKey === context.groupKey
+      ) {
+        assetRemovalSnapshot = null;
+      }
+      if (ownsVisibleState) {
+        assetRemovalSnapshot = {
+          projectId: context.projectId,
+          groupKey: normalizedGroupKey,
+          entries,
+        };
+        renderFilmstrip();
+        status(translate("assetRemovedFromLibrary", { count: entries.length }));
+      }
+      return entries.length;
+    }
+
+    /**
+     * Restores the latest in-scope asset-library removal while preserving assets added afterward.
+     * @param {string} [groupKey=attachmentAssetGroupKey()] Animation asset-library key.
+     * @returns {Promise<number>} Number of restored reusable asset references.
+     */
+    async function undoAttachmentAssetRemoval(groupKey = attachmentAssetGroupKey()) {
+      if (!canUndoAttachmentAssetRemoval(groupKey)) return 0;
+      const snapshot = assetRemovalSnapshot;
+      const context = captureAttachmentAssetLibraryContext(snapshot.groupKey);
+      const previousAssets = getAttachmentAssets().slice();
+      const nextAssets = previousAssets.slice();
+      const existingKeys = new Set(
+        nextAssets.map((asset) => `${String(asset?.groupKey || "")}\u0000${String(asset?.id || "")}`),
+      );
+      let restored = 0;
+      for (const entry of snapshot.entries.slice().sort((left, right) => left.index - right.index)) {
+        const assetKey = `${String(entry.asset?.groupKey || "")}\u0000${String(entry.asset?.id || "")}`;
+        if (existingKeys.has(assetKey)) continue;
+        nextAssets.splice(Math.min(Math.max(0, entry.index), nextAssets.length), 0, entry.asset);
+        existingKeys.add(assetKey);
+        restored += 1;
+      }
+      if (!restored) {
+        assetRemovalSnapshot = null;
+        renderFilmstrip();
+        return 0;
+      }
+
+      const ownsVisibleState = await commitAttachmentAssetLibrary(nextAssets, previousAssets, context);
+      if (assetRemovalSnapshot === snapshot) assetRemovalSnapshot = null;
+      if (ownsVisibleState) {
+        renderFilmstrip();
+        status(translate("assetRestoredToLibrary", { count: restored }));
+      }
+      return restored;
     }
 
     /**
@@ -165,6 +343,7 @@
           normalizeFrameImageAttachment({
             ...asset,
             id: newLocalId("layer"),
+            assetId: asset.id,
             key: frameImageAttachmentKey(frameIndex, group),
             metadata: frameImageAttachmentMetadata(frameIndex, group),
             layer: "above",
@@ -180,6 +359,92 @@
       draw();
       status(translate("assetApplied", { count: frameIndexes.length }));
       return frameIndexes.length;
+    }
+
+    /**
+     * Applies naturally sorted assets to selected frames as one undoable sequence.
+     * @param {object[]} assets Selected reusable image assets.
+     * @param {number[]} [frameIndexes=selectedFrameIndexes()] Target owner frames.
+     * @param {object|null} [group=getCurrentGroup()] Target animation group.
+     * @returns {Promise<number>} Number of created attachment instances.
+     */
+    async function applyAttachmentAssetSequence(
+      assets,
+      frameIndexes = selectedFrameIndexes(),
+      group = getCurrentGroup(),
+    ) {
+      const plan = buildOneToOneSequencePlan({ assets, frameIndexes, ownerFrames: group?.frames });
+      if (!plan.ok) {
+        const messageKey =
+          plan.code === "no_assets"
+            ? "assetSequenceNoAssets"
+            : plan.code === "no_frames"
+              ? "assetSequenceNoFrames"
+              : "assetSequenceCountMismatch";
+        status(
+          translate(messageKey, {
+            assetCount: plan.assetCount,
+            frameCount: plan.frameCount,
+          }),
+        );
+        return 0;
+      }
+
+      const existingAttachments = getFrameImageAttachments();
+      const targetKeys = new Set(
+        plan.entries.map((entry) => frameImageAttachmentKey(entry.frameIndex, group)),
+      );
+      const existingCount = existingAttachments.filter((attachment) =>
+        targetKeys.has(String(attachment.key || attachment.frameKey || "")),
+      ).length;
+      const canvasMessageKey =
+        plan.canvas.mode === "shared"
+          ? "assetSequenceCanvasShared"
+          : plan.canvas.mode === "review"
+            ? "assetSequenceCanvasReview"
+            : "assetSequenceCanvasUnknown";
+      const firstEntry = plan.entries[0];
+      const lastEntry = plan.entries.at(-1);
+      const confirmed = await requestConfirmation(
+        translate("assetSequenceConfirmMessage", { count: plan.entries.length }),
+        [
+          [translate("assetSequenceFrameRange"), `${firstEntry.frameIndex + 1}–${lastEntry.frameIndex + 1}`],
+          [translate("assetSequenceAssetCount"), plan.assetCount],
+          [translate("assetSequenceAlignment"), translate(canvasMessageKey)],
+          [translate("assetSequenceMapping"), `${firstEntry.asset.name} → ${lastEntry.asset.name}`],
+          [translate("assetSequenceExisting"), existingCount],
+        ],
+        {
+          title: translate("assetSequenceConfirmTitle"),
+          confirmLabel: translate("assetSequenceConfirmApply"),
+          cancelLabel: translate("cancel"),
+          tone: "warning",
+        },
+      );
+      if (!confirmed) return 0;
+
+      pushUndo("apply attachment sequence");
+      for (const entry of plan.entries) {
+        existingAttachments.push(
+          normalizeFrameImageAttachment({
+            ...entry.asset,
+            id: newLocalId("layer"),
+            assetId: entry.asset.id,
+            key: frameImageAttachmentKey(entry.frameIndex, group),
+            metadata: frameImageAttachmentMetadata(entry.frameIndex, group),
+            layer: "above",
+            layerOrder: nextAboveAttachmentLayerOrder(entry.frameIndex, group),
+            transform: entry.transform,
+          }),
+        );
+        loadImageCached(entry.asset).catch(() => null);
+      }
+      clearSelectedAttachment();
+      markDirty();
+      renderFilmstrip();
+      draw();
+      status(translate("assetSequenceApplied", { count: plan.entries.length }));
+      return plan.entries.length;
     }
 
     /**
@@ -326,13 +591,17 @@
     return {
       addImagesToCurrentGroupAssets,
       applyAttachmentAsset,
+      applyAttachmentAssetSequence,
       attachmentAssetGroupKey,
       bindFrameImageAttachmentFile,
+      canUndoAttachmentAssetRemoval,
       collectFrameImageAttachmentsForSave,
       imageSizeFromDataUrl,
       persistAttachmentAssets,
       readFileAsDataUrl,
+      removeAttachmentAssets,
       removeFrameImageAttachment,
+      undoAttachmentAssetRemoval,
       uploadFrameAttachmentData,
       uploadFrameAttachmentImage,
     };

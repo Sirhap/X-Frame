@@ -30,6 +30,9 @@
     if (!repairReplayCore) throw new Error("BatchCutoutRepairReplayCore is required.");
     const backgroundController = root.BatchCutoutBackgroundController;
     if (!backgroundController) throw new Error("BatchCutoutBackgroundController is required.");
+    /** Public pixel estimator used by organizer-owned automatic worksets. */
+    const cutoutCore = root.BatchCutoutCore;
+    if (!cutoutCore?.estimateBackgroundColor) throw new Error("BatchCutoutCore is required.");
     const protectedRuntimeModule = root.ProtectedAlgorithmRuntime;
     if (!protectedRuntimeModule) throw new Error("ProtectedAlgorithmRuntime is required.");
     const protectedRuntime = protectedRuntimeModule.getDefaultRuntime(root);
@@ -78,6 +81,10 @@
     /** @returns {void} Selects the active repair mode. */
     function setRepairMode(...args) {
       return settingsCall("setRepairMode", ...args);
+    }
+    /** @returns {"light"|"dark"|"white"} Selected preview background. */
+    function setPreviewBackground(...args) {
+      return settingsCall("setPreviewBackground", ...args);
     }
     /** @returns {{r:number,g:number,b:number,a?:number}} Selected area color. */
     function selectedAreaColor(...args) {
@@ -277,8 +284,17 @@
         state.thumbnailRevision += 1;
         for (const item of state.items) {
           if (options.recordHistory !== false) recordItemEdit(item);
-          item.processingParameters = { ...currentParameters };
-          resetItemProcessing(item);
+        }
+        const sourceItem = selectedItem();
+        if (sourceItem) {
+          sessionCore.synchronizeBatchAutomaticProcessing(state.items, sourceItem, currentParameters, {
+            mapSeedPoints: true,
+          });
+        } else {
+          for (const item of state.items) {
+            item.processingParameters = { ...currentParameters };
+            resetItemProcessing(item);
+          }
         }
         refreshQualityAnalysis();
       }
@@ -319,6 +335,28 @@
       toggleBatchPlayback,
       scheduleBatchThumbnails,
     } = navigationController;
+
+    /**
+     * Refreshes every frame with the latest recolor without committing target repairs.
+     * @param {object|null} [sourceItem] Frame that owns the latest recolor.
+     * @returns {boolean} Whether batch preview state changed.
+     */
+    function previewLatestRepairAcrossBatch(sourceItem = selectedItem()) {
+      const previouslyActive = Boolean(state.batchPreviewRepair);
+      const active = sessionCore.stageBatchRepairPreview(state, sourceItem);
+      if (!active && !previouslyActive) return false;
+      state.batchPreviewRevision += 1;
+      state.thumbnailRevision += 1;
+      elements.cutoutModal.dataset.batchPreview = String(active);
+      elements.cutoutRepairBatch.classList.toggle("previewPending", active);
+      elements.cutoutRepairBatch.setAttribute("aria-pressed", String(active));
+      for (const item of state.items) {
+        if (item !== sourceItem) resetItemProcessing(item);
+      }
+      renderQueue();
+      scheduleBatchThumbnails();
+      return true;
+    }
 
     const queueModule = root.BatchCutoutQueue;
     if (!queueModule) throw new Error("BatchCutoutQueue is required.");
@@ -422,6 +460,7 @@
       advancedSummary,
       advancedPresetButtons,
       advancedPresets,
+      previewLatestRepairAcrossBatch,
     });
     const processControllerModule = globalThis.BatchCutoutProcessController;
     if (!processControllerModule) {
@@ -453,6 +492,7 @@
       batchZip,
       updateQueueCard,
       selectedItem,
+      previewRepairsForItem: (item) => sessionCore.previewRepairsForItem(state, item),
       requestConfirmation,
       close: (...args) => close(...args),
       host: hooks,
@@ -590,6 +630,8 @@
       renderQueue,
       setStatus,
       requestConfirmation,
+      estimateBackgroundColor: cutoutCore.estimateBackgroundColor,
+      backgroundController,
     });
     const { clear, deleteSelectedItems, open, openWorkset, close, requestClose, hasWorksetChanges } =
       sessionController;
@@ -616,6 +658,7 @@
       selectBatchIndex,
       toggleBatchPlayback,
       setPreviewMode,
+      setPreviewBackground,
       renderStatus,
       selectedItem,
       hasQualityIssue,
@@ -656,6 +699,7 @@
       applyProcessingParametersToControls,
       refreshQualityAnalysis,
       propagateLatestRepair,
+      previewLatestRepairAcrossBatch,
       applyAdvancedPreset,
       trapModalFocus,
       isEditableTarget,
@@ -668,6 +712,7 @@
     eventController.bind();
     renderLanguage();
     renderAdvancedMode();
+    setPreviewBackground(state.previewBackground);
     setRepairMode("automatic");
     renderPreview();
     return {

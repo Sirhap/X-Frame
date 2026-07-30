@@ -1,11 +1,16 @@
 (function attachFrameOrganizerImageImport(root, factory) {
   "use strict";
 
-  const api = factory(root);
+  const sequenceOrder =
+    root?.FrameSequenceOrder ||
+    (typeof module === "object" && module.exports ? require("./frame_sequence_order") : null);
+  const api = factory(root, sequenceOrder);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.FrameOrganizerImageImport = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (root, sequenceOrder) => {
   "use strict";
+
+  if (!sequenceOrder?.orderImageBatch) throw new Error("FrameSequenceOrder is required.");
 
   const DEFAULT_MAX_WORKSET_FRAMES = 240;
   const DEFAULT_MAX_FILE_BYTES = 48 * 1024 * 1024;
@@ -94,27 +99,30 @@
 
     /**
      * Loads files with bounded concurrency while preserving input order.
-     * @param {File[]} files Validated local image files.
+     * @param {Array<{item:File,selectionIndex:number,filenameIndex:number}>} entries Ordered file entries.
      * @returns {Promise<Array<{status:"fulfilled",value:HTMLImageElement}|{status:"rejected",reason:Error}>>}
      */
-    async function loadImageFiles(files) {
-      const results = new Array(files.length);
+    async function loadImageFiles(entries) {
+      const results = new Array(entries.length);
       let cursor = 0;
       async function worker() {
-        while (cursor < files.length) {
+        while (cursor < entries.length) {
           const index = cursor;
           cursor += 1;
           try {
-            results[index] = { status: "fulfilled", value: await loadFileImage(files[index]) };
+            results[index] = {
+              status: "fulfilled",
+              value: await loadFileImage(entries[index].item),
+            };
           } catch (error) {
             results[index] = {
               status: "rejected",
-              reason: normalizeError(error, `Cannot read ${files[index].name}`),
+              reason: normalizeError(error, `Cannot read ${entries[index].item.name}`),
             };
           }
         }
       }
-      await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, () => worker()));
+      await Promise.all(Array.from({ length: Math.min(concurrency, entries.length) }, () => worker()));
       return results;
     }
 
@@ -129,9 +137,9 @@
         dependencies.setStatus(text("importBusy"), "error");
         return;
       }
-      const candidates = Array.from(fileList || []);
+      const candidates = sequenceOrder.describeImageBatch(Array.from(fileList || []));
       const supported = candidates.filter(
-        (file) =>
+        ({ item: file }) =>
           SUPPORTED_MIME_TYPES.has(String(file.type || "").toLowerCase()) ||
           SUPPORTED_FILE_EXTENSION.test(file.name || ""),
       );
@@ -146,7 +154,7 @@
       }
       let totalBytes = 0;
       let skipped = candidates.length - supported.length;
-      const sizeAccepted = supported.filter((file) => {
+      const sizeAccepted = supported.filter(({ item: file }) => {
         if (file.size > maxFileBytes || totalBytes + file.size > maxImportBytes) {
           skipped += 1;
           return false;
@@ -154,30 +162,51 @@
         totalBytes += file.size;
         return true;
       });
-      const files = sizeAccepted.slice(0, remaining);
-      skipped += Math.max(0, sizeAccepted.length - files.length);
-      if (!files.length) {
+      const acceptedEntries = sizeAccepted.slice(0, remaining);
+      skipped += Math.max(0, sizeAccepted.length - acceptedEntries.length);
+      if (!acceptedEntries.length) {
         dependencies.setStatus(text("importOversized", { count: skipped }), "error");
         return;
       }
+      const batchIndex = Number.isInteger(state.nextImportBatchIndex)
+        ? state.nextImportBatchIndex
+        : sequenceOrder.nextImportBatchIndex(state.frames);
+      state.nextImportBatchIndex = batchIndex + 1;
+      const orderedEntries = sequenceOrder
+        .orderImageBatch(
+          acceptedEntries.map((entry) => entry.item),
+          state.importOrderStrategy,
+        )
+        .map((entry) => {
+          const originalEntry = acceptedEntries[entry.selectionIndex];
+          return {
+            item: entry.item,
+            selectionIndex: originalEntry.selectionIndex,
+            filenameIndex: entry.filenameIndex,
+          };
+        });
       state.busy = true;
       dependencies.renderCounts();
       dependencies.setStatus(text("importBusy"), "busy");
       try {
-        const results = await loadImageFiles(files);
+        const results = await loadImageFiles(orderedEntries);
         const additions = [];
         let rejectionMessage = "";
         let retainedPixels = dependencies.imagePixelBudget.totalPixels(
           state.frames.map((frame) => frame.originalCanvas),
         );
         results.forEach((result, index) => {
+          const entry = orderedEntries[index];
           if (result.status === "fulfilled") {
             try {
               const budget = dependencies.assertImagePixelBudget(result.value, retainedPixels);
               additions.push(
                 dependencies.createFrame(result.value, {
-                  originalIndex: Number.MAX_SAFE_INTEGER - files.length + index,
-                  name: files[index].name,
+                  sourceType: sequenceOrder.SOURCE_TYPES.IMAGE,
+                  importBatchIndex: batchIndex,
+                  importSelectionIndex: entry.selectionIndex,
+                  importFilenameIndex: entry.filenameIndex,
+                  name: entry.item.name,
                   imported: true,
                 }),
               );

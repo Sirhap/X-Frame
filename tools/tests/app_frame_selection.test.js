@@ -8,6 +8,7 @@ function createFixture() {
   let selectedFrame = 0;
   let selectedFrames = new Set();
   let selectionAnchorFrame = 0;
+  const primaryFrameChanges = [];
   const controller = createController({
     getCurrentGroup: () => group,
     getSelectedFrame: () => selectedFrame,
@@ -22,8 +23,15 @@ function createFixture() {
     setSelectionAnchorFrame: (value) => {
       selectionAnchorFrame = value;
     },
+    onPrimaryFrameChanged: (value) => {
+      primaryFrameChanges.push(value);
+    },
   });
-  return { controller, getState: () => ({ selectedFrame, selectedFrames, selectionAnchorFrame }) };
+  return {
+    controller,
+    getPrimaryFrameChanges: () => [...primaryFrameChanges],
+    getState: () => ({ selectedFrame, selectedFrames, selectionAnchorFrame }),
+  };
 }
 
 test("frame selection clamps indexes and keeps one primary frame", () => {
@@ -49,4 +57,11 @@ test("frame selection repairs an empty selection on read", () => {
   const { controller, getState } = createFixture();
   assert.deepEqual(controller.selectedFrameIndexes(), [0]);
   assert.deepEqual(getState().selectedFrames, new Set([0]));
+});
+
+test("frame selection notifies frame-dependent editors after changing the primary frame", () => {
+  const { controller, getPrimaryFrameChanges } = createFixture();
+  controller.setSingleFrameSelection(2);
+  controller.setFrameSelection([0, 1], 1);
+  assert.deepEqual(getPrimaryFrameChanges(), [2, 1]);
 });

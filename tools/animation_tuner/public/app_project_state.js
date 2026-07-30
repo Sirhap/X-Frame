@@ -7,24 +7,24 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
-  /** @type {readonly ["home","kunkun","dark","light"]} Supported workbench themes. */
-  const UI_THEMES = Object.freeze(["home", "kunkun", "dark", "light"]);
+  /** @type {readonly ["dark","light","kunkun"]} Supported workbench themes. */
+  const UI_THEMES = Object.freeze(["dark", "light", "kunkun"]);
 
-  /** @type {Readonly<Record<"home"|"kunkun"|"dark"|"light", string>>} Browser chrome colors by theme. */
+  /** @type {Readonly<Record<"dark"|"light"|"kunkun", string>>} Browser chrome colors by theme. */
   const THEME_COLORS = Object.freeze({
-    home: "#0b0d0c",
+    dark: "#0c1117",
+    light: "#e7edf1",
     kunkun: "#09080d",
-    dark: "#141922",
-    light: "#edf1f4",
   });
 
   /**
    * Normalizes persisted or user-selected theme values.
    * @param {unknown} theme Raw theme value.
-   * @returns {"home"|"kunkun"|"dark"|"light"} Supported theme, defaulting to the homepage style.
+   * @returns {"dark"|"light"|"kunkun"} Supported theme, defaulting to the professional dark style.
    */
   function normalizeThemePreference(theme) {
-    return UI_THEMES.includes(theme) ? theme : "home";
+    if (theme === "home") return "dark";
+    return UI_THEMES.includes(theme) ? theme : "dark";
   }
 
   /**
@@ -58,7 +58,6 @@
       newLocalId = (prefix) => `${prefix}-${Date.now()}`,
       updateSaveStateImpl = () => updateSaveState(),
       updateHistoryControls = () => {},
-      renderHomeHub = () => {},
       renderSceneSelect = () => {},
       renderProfileSelect = () => {},
       renderGroupSelect = () => {},
@@ -154,13 +153,12 @@
         renderFilmstrip();
         status(loadedStatusText());
       }
-      renderHomeHub();
     }
 
     /**
      * Normalizes a theme preference.
      * @param {unknown} theme Raw theme value.
-     * @returns {"home"|"kunkun"|"dark"|"light"} Valid theme.
+     * @returns {"dark"|"light"|"kunkun"} Valid theme.
      */
     function normalizeTheme(theme) {
       return normalizeThemeValue(theme);
@@ -181,7 +179,7 @@
      * @returns {void}
      */
     function applyUiTheme() {
-      const theme = normalizeTheme(readState("uiTheme", "home"));
+      const theme = normalizeTheme(readState("uiTheme", "dark"));
       state.uiTheme = theme;
       for (const themeName of UI_THEMES) {
         documentRef.body?.classList.toggle(`theme-${themeName}`, theme === themeName);
@@ -273,7 +271,6 @@
         // Memory state remains authoritative when storage is unavailable.
       }
       updateSaveStateImpl();
-      renderHomeHub();
     }
 
     /**

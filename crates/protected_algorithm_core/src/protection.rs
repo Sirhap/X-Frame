@@ -305,14 +305,20 @@ fn filter_by_full_image(
     }
 }
 
-/// Builds a one-byte directional protection mask for at most 32 colors.
-pub(crate) fn protection_mask(
+/// Fills a reusable one-byte directional protection mask for at most 32 colors.
+///
+/// Returns `false` and clears the output when no protection colors are supplied.
+/// Reusing the caller-owned buffer avoids allocating one pixel-sized mask for
+/// every preview and exported frame.
+pub(crate) fn fill_protection_mask(
     source: &[u8],
     background: [u8; 3],
     colors: &[[u8; 3]],
-) -> Option<Vec<u8>> {
+    result: &mut Vec<u8>,
+) -> bool {
     if colors.is_empty() {
-        return None;
+        result.clear();
+        return false;
     }
     let background = descriptor(background[0], background[1], background[2]);
     let candidates = colors
@@ -320,7 +326,8 @@ pub(crate) fn protection_mask(
         .take(32)
         .map(|color| descriptor(color[0], color[1], color[2]))
         .collect::<Vec<_>>();
-    let mut result = vec![0_u8; source.len() / 4];
+    result.resize(source.len() / 4, 0);
+    result.fill(0);
     for (pixel, rgba) in source.chunks_exact(4).enumerate() {
         if rgba[3] == 0 {
             continue;
@@ -333,7 +340,7 @@ pub(crate) fn protection_mask(
             result[pixel] = 1;
         }
     }
-    Some(result)
+    true
 }
 
 fn append_group_candidates(

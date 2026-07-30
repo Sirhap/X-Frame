@@ -29,6 +29,10 @@ For batch cutout, video extraction, frame organization, visual tuning, playback 
 
 When modifying the tuner web UI, save payload, or direct-manipulation behavior, also read [references/ui-contract.md](references/ui-contract.md).
 
+For the isolated Lite importer/exporter, preset storage, duration-driven trail sampling, or Lite audio export, read [references/lite-contract.md](references/lite-contract.md).
+
+For character concept simplification, target-style conversion, pose transfer, action exploration, or green-screen idle generation, use the vendored [2DCS skill](../2dcs/SKILL.md) first, then continue with the XSXB media workflow. Read [references/character-generation-workflow.md](references/character-generation-workflow.md) before connecting generated images to cutout or animation import.
+
 ## Completion Contract
 
 Treat a request such as “add these animation folders to this character” as authorization to complete the entire in-scope local integration. Unless the user explicitly asks for tuner-only import, success requires all of the following:
@@ -96,6 +100,21 @@ For cutout, video extraction, frame organization, or existing-project tuning wit
 5. Save the tuner state and allow its normal Godot synchronization to complete.
 6. Recheck frame counts, frame-indexed tuning, boxes, SFX, attachments, and validation warnings.
 
+### Attachment Sequence Automation
+
+For a main character attack animation plus an ordered attachment sequence such as slash effects, use this low-freedom workflow:
+
+1. Inspect the exact project, profile, animation, frame count, existing attachments, and local attachment folder or asset-library selection.
+2. Run `auto_align_attachments.js` in plan mode. Planning must not modify project JSON or copy external assets.
+3. Read the generated summary and plan entries. Confirm natural filename order, target frame range, canvas compatibility, existing attachment preservation, and every proposed transform. Strict one-to-one mapping remains the default. For different sequence lengths, use explicit `--strategy resample` or `--strategy active`; both require visual review and never apply automatically.
+4. When canvases are shared, identity transforms are the deterministic default. When the plan reports `requiresVisualReview`, inspect representative owner/effect pairs and edit only the proposed per-entry transform values needed for correct placement. Do not guess spatial alignment from filenames alone.
+5. Show the user the mapping and visual-review summary. Obtain explicit confirmation before applying; the apply command must include `--confirm` only after that confirmation.
+6. Apply the reviewed plan. If the CLI reports a revision conflict, stop and generate a fresh plan instead of bypassing the guard. Do not delete or replace existing attachments silently.
+7. Run validate mode for the target animation. Require valid frame ownership, paths, finite transforms, positive scales, non-zero layer order, asset identity, and no duplicate plan instances.
+8. Start or reuse the workbench, then use the signed-in Microsoft Edge Codex plugin for final rendered inspection. Correct only exceptional frames in the workbench, save, and validate again.
+
+Do not use MCP for this local attachment workflow. The Core/CLI owns deterministic data operations; Codex owns orchestration and visual judgment; the browser plugin is reserved for rendered QA and exceptional-frame tuning.
+
 ## Agent-Facing Commands
 
 Run commands from the resolved tuner root. For several PNG groups, place global options before the first `--animation` block:
@@ -118,6 +137,48 @@ For SpriteFrames:
 ```powershell
 node "<tuner_root>\tools\import_spriteframes.js" --project-root "<godot_project_root>" --project <xsxb_project_id> --all
 ```
+
+Plan an attachment sequence from a local PNG folder (frame ranges are one-based):
+
+```bash
+node "<tuner_root>/tools/auto_align_attachments.js" \
+  --project <xsxb_project_id> \
+  --profile <profile_id> \
+  --animation <animation_id> \
+  --assets "<attachment_png_folder>" \
+  --frames <all_or_range> \
+  --plan "<review_plan.json>"
+```
+
+For a longer VFX sequence mapped onto a reviewed active-frame range, request Alpha-activity sampling and spatial proposals explicitly:
+
+```bash
+node "<tuner_root>/tools/auto_align_attachments.js" \
+  --project <xsxb_project_id> \
+  --profile <profile_id> \
+  --animation <animation_id> \
+  --assets "<attachment_png_folder>" \
+  --frames <active_range> \
+  --strategy active \
+  --spatial auto \
+  --direction <auto|left|right> \
+  --plan "<review_plan.json>"
+```
+
+`active` trims low-Alpha tails and samples representative effect phases. `resample` preserves the full source endpoints. `spatial auto` uses robust owner-body and effect Alpha bounds to propose scale and offset; it always sets `requiresVisualReview`.
+
+After reviewing the plan and receiving explicit user confirmation:
+
+```bash
+node "<tuner_root>/tools/auto_align_attachments.js" --apply "<review_plan.json>" --confirm
+node "<tuner_root>/tools/auto_align_attachments.js" \
+  --project <xsxb_project_id> \
+  --profile <profile_id> \
+  --animation <animation_id> \
+  --validate
+```
+
+Use `--assets group`, `--assets group:<profile>/<animation>`, or `--assets ids:<id1>,<id2>` when the images are already in the local attachment asset library. Reapplying an already completed plan must return `already_applied` without creating another instance.
 
 Validate the complete integration:
 

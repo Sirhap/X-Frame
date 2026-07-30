@@ -125,7 +125,8 @@ function createServerIoOperations(dependencies = {}) {
       paths.frameAudio,
       paths.frameImageAttachments,
       paths.attachmentAssets,
-    ];
+      paths.attackTrails,
+    ].filter(Boolean);
     const hash = crypto.createHash("sha256");
     for (const filePath of files) {
       hash.update(path.basename(filePath));
@@ -228,9 +229,10 @@ function createServerIoOperations(dependencies = {}) {
       paths.tuning,
       paths.frameAudio,
       paths.frameImageAttachments,
+      paths.attackTrails,
       godotOutput,
       ...runtimeProjectIdFiles(project),
-    ];
+    ].filter(Boolean);
   }
 
   return {

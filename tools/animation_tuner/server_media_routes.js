@@ -8,7 +8,7 @@
  * project write queues, and Godot synchronization in the route body preserves
  * the behavior of the original handlers while making the HTTP entry point
  * easier to navigate and test.
- * @param {{send:Function,readJsonBody:Function,assertPremiumAccess?:(request:object,pathname:string,payload:object)=>unknown,withProjectWrite:Function,projectStore:object,projectFromRequest:Function,requiredProjectFromRequest:Function,projectDataRevision:Function,createFilesystemSnapshot:Function,managedProjectPaths:Function,rollbackFilesystemSnapshot:Function,fs:object,path:object,root:string,decodeDataUrl:Function,saveFrameAudioBindings:Function,saveFrameAttachmentImage:Function,saveAttachmentAssets:Function,replaceFrameImage:Function,replaceAnimationImages:Function,deleteAnimation:Function,importAnimation:Function,reorganizeAnimation:Function,syncGodotProjectAsync:Function,syncFrameAudioAsync:Function,syncGodotRuntimeProjectId:Function,godotMirrorPath:Function,validateProject:Function}} dependencies Route dependencies.
+ * @param {{send:Function,readJsonBody:Function,assertPremiumAccess?:(request:object,pathname:string,payload:object)=>unknown,withProjectWrite:Function,projectStore:object,projectFromRequest:Function,requiredProjectFromRequest:Function,projectDataRevision:Function,createFilesystemSnapshot:Function,managedProjectPaths:Function,rollbackFilesystemSnapshot:Function,fs:object,path:object,root:string,decodeDataUrl:Function,saveFrameAudioBindings:Function,saveFrameAttachmentImage:Function,saveAttachmentAssets:Function,replaceFrameImage:Function,replaceAnimationImages:Function,deleteAnimation:Function,importAnimation:Function,reorganizeAnimation:Function,syncGodotProjectAsync:Function,syncFrameAudioAsync:Function,syncGodotRuntimeProjectId:Function,godotMirrorPath:Function,validateProject:Function,godotHandoffService?:{status:(project:object)=>object}}} dependencies Route dependencies.
  * @returns {{handleMediaRoute:(req:object,res:object,parsed:URL)=>Promise<boolean>}} Media route dispatcher.
  */
 function createMediaRoutes(dependencies = {}) {
@@ -41,6 +41,7 @@ function createMediaRoutes(dependencies = {}) {
     syncGodotRuntimeProjectId,
     godotMirrorPath,
     validateProject,
+    godotHandoffService = { status: () => ({ state: "local_only" }) },
   } = dependencies;
 
   /**
@@ -76,6 +77,7 @@ function createMediaRoutes(dependencies = {}) {
             frameAudioCount: bindings.length,
             godotAudioSync,
             dataRevision: projectDataRevision(project),
+            godotHandoff: godotHandoffService.status(project),
           });
         } catch (error) {
           return rollbackFilesystemSnapshot(
@@ -96,6 +98,7 @@ function createMediaRoutes(dependencies = {}) {
           ok: true,
           image: saveFrameAttachmentImage(payload, project),
           dataRevision: projectDataRevision(project),
+          godotHandoff: godotHandoffService.status(project),
         }),
       );
       return true;
@@ -104,13 +107,22 @@ function createMediaRoutes(dependencies = {}) {
       const payload = await readJsonBody(req, parsed.pathname);
       assertPremiumAccess(req, parsed.pathname, payload);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      await withProjectWrite(project.id, () =>
-        send(res, 200, {
+      await withProjectWrite(project.id, () => {
+        const currentRevision = projectDataRevision(project);
+        if (payload.baseRevision && payload.baseRevision !== currentRevision) {
+          return send(res, 409, {
+            error: "Project data changed in another window. Reload before updating attachment assets.",
+            code: "revision_conflict",
+            dataRevision: currentRevision,
+          });
+        }
+        return send(res, 200, {
           ok: true,
           assets: saveAttachmentAssets(payload.assets, project),
           dataRevision: projectDataRevision(project),
-        }),
-      );
+          godotHandoff: godotHandoffService.status(project),
+        });
+      });
       return true;
     }
     if (req.method === "POST" && parsed.pathname === "/api/replace-frame") {
@@ -121,6 +133,8 @@ function createMediaRoutes(dependencies = {}) {
         send(res, 200, {
           ok: true,
           frame: replaceFrameImage(payload, project),
+          dataRevision: projectDataRevision(project),
+          godotHandoff: godotHandoffService.status(project),
         }),
       );
       return true;
@@ -141,7 +155,13 @@ function createMediaRoutes(dependencies = {}) {
           replacement = replaceAnimationImages(frames, files, project);
           const godotSync = await syncGodotProjectAsync(project);
           await transaction.dispose();
-          return send(res, 200, { ok: true, frames: replacement.frames, godotSync });
+          return send(res, 200, {
+            ok: true,
+            frames: replacement.frames,
+            godotSync,
+            dataRevision: projectDataRevision(project),
+            godotHandoff: godotHandoffService.status(project),
+          });
         } catch (error) {
           try {
             replacement?.rollback();
@@ -189,14 +209,17 @@ function createMediaRoutes(dependencies = {}) {
             tuning: deleted.tuning,
             frameAudioBindings: deleted.frameAudioBindings,
             frameImageAttachments: deleted.frameImageAttachments,
+            attackTrails: deleted.attackTrails,
           });
           const dataRevision = projectDataRevision(project);
           await transaction.dispose();
           return send(res, 200, {
             ok: true,
             removedFrames: deleted.removedFrames,
+            attackTrails: deleted.attackTrails,
             dataRevision,
             godotSync,
+            godotHandoff: godotHandoffService.status(project),
           });
         } catch (error) {
           return rollbackFilesystemSnapshot(
@@ -274,6 +297,8 @@ function createMediaRoutes(dependencies = {}) {
           animationId: imported.animationId,
           frameCount: imported.frameCount,
           godotSync,
+          godotHandoff: godotHandoffService.status(project),
+          dataRevision: projectDataRevision(project),
           runtimeProjectIdFiles,
           warnings: validateProject(project, imported.manifest),
         });
@@ -321,6 +346,7 @@ function createMediaRoutes(dependencies = {}) {
             frameCount: organized.frameCount,
             dataRevision,
             godotSync,
+            godotHandoff: godotHandoffService.status(project),
             runtimeProjectIdFiles,
             warnings: validateProject(project, organized.manifest),
           });

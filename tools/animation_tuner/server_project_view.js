@@ -6,7 +6,7 @@ const DEFAULT_GDSCRIPT_SKIP_DIRS = new Set([".git", ".godot", "addons", "node_mo
 
 /**
  * Creates project view and runtime-id synchronization operations.
- * @param {{root:string,projectStore:object,projectFromRequest:Function,emptyTuning:object,tuningForClient:Function,readManifest:Function,readTuningFile:Function,buildGroups:Function,validateProject:Function,profileForClient:Function,listSceneFiles:Function,readFrameAudioBindings:Function,readFrameImageAttachments:Function,readAttachmentAssets:Function,projectDataRevision:Function,relativeProjectPath?:(filePath:string,projectRoot:string)=>string,fs?:object,path?:object}} dependencies Project view dependencies.
+ * @param {object} dependencies Project view dependencies.
  * @returns {{syncGodotRuntimeProjectId:Function,configResponse:Function,projectsResponse:Function}} Project view operations.
  */
 function createProjectView(dependencies = {}) {
@@ -25,7 +25,18 @@ function createProjectView(dependencies = {}) {
     readFrameAudioBindings,
     readFrameImageAttachments,
     readAttachmentAssets,
+    readAttackTrails,
+    emptyAttackTrails,
+    syncCodexPetProject,
     projectDataRevision,
+    godotHandoffForProject = () => ({
+      state: "local_only",
+      projectRoot: "",
+      message: "Project is not bound to a Godot project.",
+      blockers: [],
+      warnings: [],
+      lastSync: null,
+    }),
     relativeProjectPath: relativeProjectPathApi,
     fs: fsApi = defaultFs,
     path: pathApi = defaultPath,
@@ -81,6 +92,7 @@ function createProjectView(dependencies = {}) {
   function configResponse(projectId) {
     const { registry, project } = projectFromRequest(projectId, { activate: true });
     if (!project) {
+      const godotHandoff = godotHandoffForProject(null);
       return {
         root,
         workspaceRoot: path.join(root, "workspace"),
@@ -94,6 +106,14 @@ function createProjectView(dependencies = {}) {
         frameAudioBindings: [],
         frameImageAttachments: [],
         attachmentAssets: [],
+        attackTrails: emptyAttackTrails,
+        projectKind: "godot",
+        godotSync: {
+          ok: false,
+          projectRoot: "",
+          reason: godotHandoff.message || "No bound Godot project root",
+        },
+        godotHandoff,
         dataRevision: "",
         tuning: tuningForClient(emptyTuning),
         tuningDefaults: {},
@@ -119,14 +139,18 @@ function createProjectView(dependencies = {}) {
         groups: [],
       };
     }
+    const petSync =
+      project.kind === "codex_pets" ? syncCodexPetProject(root, projectStore, project) : { warnings: [] };
     const manifest = readManifest(project);
     const tuningFile = readTuningFile(project);
     const groups = buildGroups(manifest, tuningFile);
-    const warnings = validateProject(project, manifest);
+    const warnings = [...(petSync.warnings || []), ...validateProject(project, manifest)];
     if (!groups.length) {
       warnings.unshift("当前项目没有动画组。点击“导入动画”可导入 PNG 序列或本地视频。");
     }
     const projectClient = projectStore.projectForClient(project);
+    const godotHandoff = godotHandoffForProject(project);
+    const godotSyncReady = ["synced", "gameplay_ready"].includes(godotHandoff.state);
     return {
       root,
       workspaceRoot: projectStore.projectWorkspaceDir(project),
@@ -135,11 +159,19 @@ function createProjectView(dependencies = {}) {
       activeProjectId: project.id,
       activeProject: projectClient,
       projects: registry.projects.map(projectStore.projectForClient),
-      scenes: listSceneFiles(project.projectRoot),
+      scenes: project.kind === "codex_pets" ? [] : listSceneFiles(project.projectRoot, manifest.profiles),
       profiles: manifest.profiles.map(profileForClient),
       frameAudioBindings: readFrameAudioBindings(project),
       frameImageAttachments: readFrameImageAttachments(project),
       attachmentAssets: readAttachmentAssets(project),
+      attackTrails: readAttackTrails(project),
+      projectKind: project.kind || "godot",
+      godotSync: {
+        ok: godotSyncReady,
+        projectRoot: godotHandoff.projectRoot || project.projectRoot || "",
+        reason: godotSyncReady ? "" : godotHandoff.message || "Godot synchronization is required.",
+      },
+      godotHandoff,
       dataRevision: projectDataRevision(project),
       tuning: tuningForClient(tuningFile),
       tuningDefaults: {},

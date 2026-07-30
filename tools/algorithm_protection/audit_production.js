@@ -5,6 +5,18 @@ const path = require("node:path");
 const { DIST_ROOT, FORBIDDEN_CONTENT_PATTERNS, FORBIDDEN_PATH_PATTERNS } = require("./config");
 const { listFiles, resolveOutputAsset, sha256 } = require("./artifact_utils");
 
+const PRODUCTION_APP_ROUTES = new Set(["/workspace", "/tools/import", "/tools/organizer", "/tools/cutout"]);
+const HASHED_ASSET_REFERENCE = /^\/assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm|ico)$/;
+
+/**
+ * Distinguishes approved application deep links from content-addressed assets.
+ * @param {string} reference Root-relative HTML reference.
+ * @returns {boolean} Whether production HTML may retain the reference.
+ */
+function isAllowedProductionHtmlReference(reference) {
+  return HASHED_ASSET_REFERENCE.test(reference) || PRODUCTION_APP_ROUTES.has(reference);
+}
+
 /**
  * Adds one audit failure when a condition is not met.
  * @param {string[]} failures Failure accumulator.
@@ -202,15 +214,17 @@ function auditHtml(manifest, failures) {
   const htmlPath = path.join(DIST_ROOT, "index.html");
   if (!fs.existsSync(htmlPath)) return;
   const html = fs.readFileSync(htmlPath, "utf8");
-  const externalAssets = Array.from(html.matchAll(/(?:src|href)="(\/[^"#]+)"/g), (match) => match[1]);
-  for (const asset of externalAssets) {
+  const externalReferences = Array.from(html.matchAll(/(?:src|href)="(\/[^"#]+)"/g), (match) => match[1]);
+  for (const reference of externalReferences) {
     assertAudit(
       failures,
-      /^\/assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm|ico)$/.test(asset),
-      `unhashed or non-asset HTML reference: ${asset}`,
+      isAllowedProductionHtmlReference(reference),
+      `unhashed or non-asset HTML reference: ${reference}`,
     );
   }
-  const htmlAssetPaths = externalAssets.map((asset) => asset.slice(1));
+  const htmlAssetPaths = externalReferences
+    .filter((reference) => HASHED_ASSET_REFERENCE.test(reference))
+    .map((asset) => asset.slice(1));
   const expectedHtmlAssets = (manifest?.assets || [])
     .filter((asset) => ["ui", "styles", "favicon"].includes(asset.role))
     .map((asset) => asset.path)
@@ -305,6 +319,7 @@ if (require.main === module) main();
 module.exports = Object.freeze({
   auditFinalPosture,
   auditWasmAsset,
+  isAllowedProductionHtmlReference,
   readUnsignedLeb128,
   readWasmCustomSections,
 });

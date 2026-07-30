@@ -1,12 +1,14 @@
 "use strict";
 
+const CODEX_PETS_PROJECT_ID = "codex_pets";
+
 /**
  * Creates project registry and project lifecycle route handlers.
  *
  * The route order and response payloads intentionally mirror the handlers that
  * previously lived in server.js.  Dependencies are injected so this module
  * only delegates work and does not alter project-store or filesystem logic.
- * @param {{send:Function,readJsonBody:Function,withProjectWrite:Function,projectStore:object,requiredProjectFromRequest:Function,projectDataRevision:Function,createFilesystemSnapshot:Function,managedProjectPaths:Function,clearProjectContent:Function,rollbackFilesystemSnapshot:Function,projectsResponse:Function,fs:object}} dependencies Route dependencies.
+ * @param {{send:Function,readJsonBody:Function,withProjectWrite:Function,projectStore:object,requiredProjectFromRequest:Function,projectDataRevision:Function,createFilesystemSnapshot:Function,managedProjectPaths:Function,clearProjectContent:Function,rollbackFilesystemSnapshot:Function,projectsResponse:Function,godotHandoffService?:object,fs:object}} dependencies Route dependencies.
  * @returns {{handleProjectRoute:(req:object,res:object,parsed:URL)=>Promise<boolean>}} Project route dispatcher.
  */
 function createProjectRoutes(dependencies = {}) {
@@ -22,6 +24,7 @@ function createProjectRoutes(dependencies = {}) {
     clearProjectContent,
     rollbackFilesystemSnapshot,
     projectsResponse,
+    godotHandoffService,
     fs,
   } = dependencies;
 
@@ -61,6 +64,27 @@ function createProjectRoutes(dependencies = {}) {
       });
       return true;
     }
+    if (req.method === "POST" && parsed.pathname === "/api/projects/handoff") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const initial = requiredProjectFromRequest(payload.projectId);
+      await withProjectWrite(initial.project.id, () =>
+        withProjectWrite("__registry__", async () => {
+          const { project } = requiredProjectFromRequest(payload.projectId);
+          try {
+            const result = await godotHandoffService.execute(project, payload);
+            return send(res, 200, { ok: true, ...result });
+          } catch (error) {
+            if (!error?.status || !error?.code) throw error;
+            return send(res, Number(error.status), {
+              error: String(error.message || error),
+              code: String(error.code),
+              ...(error.details && typeof error.details === "object" ? error.details : {}),
+            });
+          }
+        }),
+      );
+      return true;
+    }
     if (req.method === "POST" && parsed.pathname === "/api/projects/clear") {
       const payload = await readJsonBody(req, parsed.pathname);
       const { project } = requiredProjectFromRequest(payload.projectId);
@@ -78,7 +102,13 @@ function createProjectRoutes(dependencies = {}) {
           const godotSync = await clearProjectContent(project);
           const dataRevision = projectDataRevision(project);
           await transaction.dispose();
-          return send(res, 200, { ok: true, projectId: project.id, dataRevision, godotSync });
+          return send(res, 200, {
+            ok: true,
+            projectId: project.id,
+            dataRevision,
+            godotSync,
+            godotHandoff: godotHandoffService?.status(project),
+          });
         } catch (error) {
           return rollbackFilesystemSnapshot(
             transaction,
@@ -95,6 +125,13 @@ function createProjectRoutes(dependencies = {}) {
       await withProjectWrite(initial.project.id, () =>
         withProjectWrite("__registry__", async () => {
           const { registry, project } = requiredProjectFromRequest(payload.projectId);
+          if (project.id === CODEX_PETS_PROJECT_ID || project.kind === "codex_pets") {
+            return send(res, 409, {
+              error:
+                "The Codex Pets system project cannot be deleted. Remove custom pets individually instead.",
+              code: "protected_system_project",
+            });
+          }
           const currentRevision = projectDataRevision(project);
           if (payload.baseRevision && payload.baseRevision !== currentRevision) {
             return send(res, 409, {
@@ -112,7 +149,12 @@ function createProjectRoutes(dependencies = {}) {
               await fs.promises.rm(targetPath, { recursive: true, force: true });
             }
             registry.projects = registry.projects.filter((entry) => entry.id !== project.id);
-            registry.activeProjectId = registry.projects[0]?.id || "";
+            if (
+              registry.activeProjectId === project.id ||
+              !registry.projects.some((entry) => entry.id === registry.activeProjectId)
+            ) {
+              registry.activeProjectId = registry.projects[0]?.id || "";
+            }
             const nextRegistry = projectStore.writeRegistry(registry);
             await transaction.dispose();
             return send(res, 200, {

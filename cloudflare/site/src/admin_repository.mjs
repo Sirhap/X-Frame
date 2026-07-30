@@ -189,8 +189,9 @@ export function createAdminRepository(database) {
         ids.map((id) =>
           database
             .prepare(
-              `SELECT d.id, d.license_id, d.revoked_at
+              `SELECT d.id, d.license_id, d.revoked_at, l.source AS license_source
                  FROM license_devices d
+                 JOIN licenses l ON l.id = d.license_id
                 WHERE d.id = ?1
                 LIMIT 1`,
             )

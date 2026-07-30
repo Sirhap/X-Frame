@@ -39,6 +39,7 @@
       batchZip,
       updateQueueCard,
       selectedItem,
+      previewRepairsForItem = (item) => item.repairs || [],
       requestConfirmation,
       close,
       host = {},
@@ -79,16 +80,26 @@
     /**
      * Processes one image and stores its result canvas.
      * @param {object} item Queue item.
+     * @param {{preview?:boolean}} [options] Whether staged batch recolor should be rendered.
      * @returns {Promise<object>}
      */
-    async function processItem(item) {
+    async function processItem(item, options = {}) {
+      const includeBatchPreview = options.preview !== false && Boolean(state.batchPreviewRepair);
+      const resultVariant = includeBatchPreview
+        ? `batch-preview:${Number(state.batchPreviewRevision || 0)}`
+        : "committed";
       if (
         item.status === "processed" &&
         item.thumbnailRevision === state.thumbnailRevision &&
+        item.resultVariant === resultVariant &&
         item.resultCanvas
       )
         return item;
-      if (item.processingPromise) return item.processingPromise;
+      if (item.processingPromise) {
+        await item.processingPromise;
+        if (item.resultVariant === resultVariant) return item;
+        return processItem(item, options);
+      }
       item.status = "processing";
       item.error = "";
       const processingRevision = Number(item.processingRevision || 0);
@@ -96,7 +107,8 @@
         const { width, height, data } = item.sourceImageData;
         const options = processingOptions(item);
         const automaticKey = repairReplayCore.automaticCacheKey(options);
-        const result = await cutoutExecutor.process(data, width, height, options, item.repairs || []);
+        const repairs = includeBatchPreview ? previewRepairsForItem(item) : item.repairs || [];
+        const result = await cutoutExecutor.process(data, width, height, options, repairs);
         if (processingRevision !== Number(item.processingRevision || 0)) {
           throw new DOMExceptionClass("Stale cutout result was discarded.", "AbortError");
         }
@@ -121,6 +133,7 @@
           partialPixels: result.partialPixels,
         };
         item.resultThumbnail = createThumbnailUrl(canvas);
+        item.resultVariant = resultVariant;
         item.thumbnailRevision = state.thumbnailRevision;
         item.status = "processed";
         refreshQualityAnalysis();
@@ -241,8 +254,29 @@
         setStatus(text("groupUnavailable"), "error");
         return;
       }
+      if (state.items.length) {
+        const repairCount = state.items.reduce(
+          (count, item) => count + (item.repairs?.length || 0) + (item.editUndo?.length || 0),
+          0,
+        );
+        const confirmed = await requestConfirmation(
+          text("loadGroupReplaceConfirm", { count: state.items.length, repairs: repairCount }),
+          [],
+          {
+            title: text("loadGroupReplaceTitle"),
+            confirmLabel: text("confirmLoadGroup"),
+            tone: "danger",
+          },
+        );
+        if (!confirmed) return;
+      }
       stopBatchPlayback();
       state.thumbnailJob += 1;
+      state.batchPreviewRepair = null;
+      state.batchPreviewRevision = Number(state.batchPreviewRevision || 0) + 1;
+      if (elements.cutoutModal) elements.cutoutModal.dataset.batchPreview = "false";
+      elements.cutoutRepairBatch?.classList.remove("previewPending");
+      elements.cutoutRepairBatch?.setAttribute("aria-pressed", "false");
       try {
         let retainedPixels = 0;
         state.items = animation.images.map((image, index) => {
@@ -316,7 +350,7 @@
             const artifactRevision = `${state.thumbnailRevision}:${Number(item.processingRevision || 0)}`;
             let outputData = resultArtifacts.get(item.id, artifactRevision);
             if (!outputData) {
-              await processItem(item);
+              await processItem(item, { preview: false });
               outputData =
                 resultArtifacts.get(item.id, artifactRevision) || item.resultCanvas.toDataURL("image/png");
               resultArtifacts.put(item.id, artifactRevision, outputData);
@@ -328,6 +362,11 @@
                 frame: item.frame,
                 data: outputData,
                 canvas: item.resultCanvas || null,
+                cutoutState: {
+                  processingParameters: item.processingParameters,
+                  backgroundSamples: item.backgroundSamples,
+                  seedPoints: item.seedPoints,
+                },
               }),
             );
           } catch (error) {

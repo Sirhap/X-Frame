@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0d0c" />
+    <meta
+      name="description"
+      content="XSXB Frame Tuner 是为 Godot 帧动画打造的本地工作台，覆盖导入、帧整理、批量抠图、碰撞框与播放节奏调校。"
+    />
+    <title>XSXB Frame Tuner — 把每一帧调到刚刚好</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/landing.css" />
+    <link rel="stylesheet" href="/landing-admin.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <header class="site-header">
+      <a class="wordmark" href="/" aria-label="XSXB Frame Tuner 首页">
+        <span class="wordmark-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><b>XSXB</b><small>FRAME TUNER</small></span>
+      </a>
+      <nav aria-label="主导航">
+        <a href="#capabilities">功能</a>
+        <a href="#workflow">流程</a>
+        <a href="#privacy">本地优先</a>
+      </nav>
+      <div class="header-actions">
+        <a id="adminOpenButton" class="admin-trigger" href="/admin/licenses">
+          <span aria-hidden="true">⌁</span> 激活码管理
+        </a>
+        <a class="button button-small" href="/tools/import">开始制作 <span aria-hidden="true">↗</span></a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span>LOCAL-FIRST</span> / BROWSER FRAME PIPELINE</p>
+          <h1 id="hero-title">把每一帧<br />调到<span>刚刚好。</span></h1>
+          <p class="hero-lede">
+            导入图片序列或视频，在浏览器内完成排序、删帧、抠图与序列分析，最后下载可复用的动画包。
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="/tools/import"
+              >导入第一组动画 <span aria-hidden="true">→</span></a
+            >
+            <a class="text-link" href="#workflow">查看处理流程 <span aria-hidden="true">↓</span></a>
+          </div>
+          <p class="hero-assurance"><i aria-hidden="true"></i> 无需上传素材 · 处理结果保留在本机</p>
+          <dl class="hero-facts">
+            <div>
+              <dt>素材处理</dt>
+              <dd>本机完成</dd>
+            </div>
+            <div>
+              <dt>工作流</dt>
+              <dd>导入 → 处理 → 导出</dd>
+            </div>
+            <div>
+              <dt>Godot 导入</dt>
+              <dd>即将开放</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="hero-console" aria-label="帧动画工作台示意图">
+          <div class="console-topbar">
+            <span><i></i><i></i><i></i></span>
+            <code>hero / blade_slash / frame_09</code>
+            <b>LIVE</b>
+          </div>
+          <div class="console-body">
+            <aside>
+              <span>TRANSFORM</span>
+              <label>缩放 <b>0.876</b></label>
+              <label>旋转 <b>0°</b></label>
+              <label>偏移 X <b>364</b></label>
+              <label>偏移 Y <b>4</b></label>
+              <hr />
+              <span>HITBOX LAYERS</span>
+              <label><i class="dot dot-mint"></i> 受击框 <b>ON</b></label>
+              <label><i class="dot dot-coral"></i> 攻击框 <b>ON</b></label>
+            </aside>
+            <div class="stage-demo">
+              <span class="axis axis-x"></span><span class="axis axis-y"></span>
+              <div class="frame-ghost frame-ghost-one"></div>
+              <div class="frame-ghost frame-ghost-two"></div>
+              <div class="fighter" aria-hidden="true">
+                <img
+                  src="/assets/landing/hero-fighter-v2.webp"
+                  alt=""
+                  width="1152"
+                  height="768"
+                  decoding="async"
+                  fetchpriority="high"
+                />
+              </div>
+              <div class="fighter-shadow" aria-hidden="true"></div>
+              <div class="hurtbox"><span>HURT</span></div>
+              <div class="hitbox"><span>HIT</span></div>
+              <code class="coordinate">X 364 · Y 4</code>
+            </div>
+          </div>
+          <ol class="timeline" aria-label="动画帧序列">
+            <li><span>01</span><i></i></li>
+            <li><span>02</span><i></i></li>
+            <li><span>03</span><i></i></li>
+            <li><span>04</span><i></i></li>
+            <li class="active"><span>05</span><i></i></li>
+          </ol>
+          <p class="console-note">09 FRAMES <span></span> 22MS / FRAME <span></span> LOOP ON</p>
+        </div>
+      </section>
+
+      <section id="capabilities" class="capabilities" aria-labelledby="capabilities-title">
+        <header class="section-heading">
+          <p class="eyebrow">01 / TOOLKIT</p>
+          <h2 id="capabilities-title">三个浏览器能力，一条轻量流水线。</h2>
+          <p>素材上下文停留在当前浏览器会话，减少来回上传、命名和对齐的重复劳动。</p>
+        </header>
+        <div class="capability-grid">
+          <a class="capability-card card-import" href="/tools/import">
+            <span class="card-index">01</span>
+            <span class="card-badge">建议从这里开始</span>
+            <div class="card-icon" aria-hidden="true">↧</div>
+            <p>INGEST</p>
+            <h3>导入动画</h3>
+            <span>选择图片序列或视频，保留源顺序与帧信息，不读取项目目录。</span>
+            <b>打开工具 →</b>
+          </a>
+          <a class="capability-card card-sequence" href="/tools/import">
+            <span class="card-index">02</span>
+            <div class="card-icon" aria-hidden="true">≋</div>
+            <p>SEQUENCE</p>
+            <h3>动画序列处理</h3>
+            <span>排序、删帧、翻转与循环分析，处理结果直接进入导出包。</span>
+            <b>开始整理 →</b>
+          </a>
+          <a class="capability-card card-alpha" href="/tools/cutout">
+            <span class="card-index">03</span>
+            <div class="card-icon" aria-hidden="true">◌</div>
+            <p>ALPHA</p>
+            <h3>批量抠图</h3>
+            <span>背景清除、边缘修复与整组传播，在浏览器内完成透明化。</span>
+            <b>打开工具 →</b>
+          </a>
+        </div>
+      </section>
+
+      <section id="workflow" class="workflow" aria-labelledby="workflow-title">
+        <div class="workflow-intro">
+          <p class="eyebrow">02 / WORKFLOW</p>
+          <h2 id="workflow-title">从散乱素材，<br />到可复用动画包。</h2>
+          <p>围绕浏览器内的帧动画预处理设计，不要求先配置本机项目。</p>
+          <a class="text-link" href="/tools/import">从一组素材开始 →</a>
+        </div>
+        <ol class="workflow-steps">
+          <li>
+            <span>01</span>
+            <div>
+              <h3>导入动画</h3>
+              <p>导入图片序列或截取视频帧，设置动画名称与 FPS。</p>
+            </div>
+          </li>
+          <li>
+            <span>02</span>
+            <div>
+              <h3>处理动画</h3>
+              <p>排序、删帧并进入单帧抠图，处理结果会保留在当前导入流程中。</p>
+            </div>
+          </li>
+          <li>
+            <span>03</span>
+            <div>
+              <h3>下载动画包</h3>
+              <p>确认处理结果后导出 PNG 序列与动画清单，无需读取本机项目目录。</p>
+            </div>
+          </li>
+          <li>
+            <span>04</span>
+            <div>
+              <h3>导入 Godot · 即将开放</h3>
+              <p>入口暂时禁用；当前动画包可保留，后续接入导入器时直接使用。</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section id="privacy" class="privacy" aria-labelledby="privacy-title">
+        <div class="privacy-signal" aria-hidden="true">
+          <span class="privacy-orbit orbit-one"></span><span class="privacy-orbit orbit-two"></span>
+          <span class="privacy-core">LOCAL<br /><b>ONLY</b></span>
+        </div>
+        <div class="privacy-copy">
+          <p class="eyebrow">03 / YOUR ASSETS STAY YOURS</p>
+          <h2 id="privacy-title">素材留在本机，<br />创作不必绕远路。</h2>
+          <p>网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理完成后直接下载动画包。</p>
+          <ul>
+            <li><span>✓</span> 批量抠图在浏览器内处理</li>
+            <li><span>✓</span> 不读取电脑里的项目目录</li>
+            <li><span>○</span> Godot 导入暂时禁用</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="final-cta" aria-labelledby="cta-title">
+        <p class="eyebrow">READY / FRAME 01</p>
+        <h2 id="cta-title">下一帧，<br /><span>由你定义。</span></h2>
+        <a class="button button-primary" href="/tools/import"
+          >导入第一组动画 <span aria-hidden="true">→</span></a
+        >
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="wordmark footer-wordmark" href="/"><b>XSXB</b><small>FRAME TUNER</small></a>
+      <p>为 Godot 帧动画制作而生。</p>
+      <p>LOCAL-FIRST · OPEN WORKFLOW</p>
+    </footer>
+  </body>
+</html>

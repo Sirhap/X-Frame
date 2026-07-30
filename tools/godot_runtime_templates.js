@@ -29,9 +29,10 @@ function runtimeScript(projectId) {
  * @returns {string} Godot scene source.
  */
 function actorScene(projectId, target) {
-  return `[gd_scene load_steps=5 format=3]
+  return `[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://xsxb_frame_tuner/runtime/xsxb_frame_actor.gd" id="1_script"]
+[ext_resource type="Script" path="res://xsxb_frame_tuner/runtime/xsxb_attack_trail_renderer.gd" id="2_trail"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
 size = Vector2(40, 90)
@@ -48,6 +49,9 @@ frame_project_id = ${gdString(projectId)}
 frame_profile_id = ${gdString(target.profileId)}
 frame_animation = ${gdString(target.animationId)}
 
+[node name="AttackTrailsBehind" type="Node2D" parent="."]
+script = ExtResource("2_trail")
+
 [node name="VisualOwner" type="Node2D" parent="."]
 
 [node name="AttachmentsBelow" type="Node2D" parent="VisualOwner"]
@@ -55,6 +59,9 @@ frame_animation = ${gdString(target.animationId)}
 [node name="FrameSprite" type="Sprite2D" parent="VisualOwner"]
 
 [node name="AttachmentsAbove" type="Node2D" parent="VisualOwner"]
+
+[node name="AttackTrailsFront" type="Node2D" parent="."]
+script = ExtResource("2_trail")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("RectangleShape2D_body")

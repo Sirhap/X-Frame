@@ -51,3 +51,29 @@ test("static handler serves workbench routes and rejects missing files", () => {
   ]);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("static handler supports a dedicated factory homepage without changing workbench routes", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-factory-static-test-"));
+  fs.writeFileSync(path.join(root, "animation_factory.html"), "factory");
+  fs.writeFileSync(path.join(root, "index.html"), "workbench");
+  const responses = [];
+  const handler = createStaticHandler({
+    publicRoot: root,
+    workbenchRoutes: new Set(["/workspace"]),
+    landingDocument: "animation_factory.html",
+    safeResolve: (base, requested) => path.resolve(base, requested),
+    send: (_response, status, body) => {
+      responses.push({ status, body: body.toString() });
+      return true;
+    },
+  });
+
+  handler({}, {}, "/");
+  handler({}, {}, "/workspace");
+
+  assert.deepEqual(responses, [
+    { status: 200, body: "factory" },
+    { status: 200, body: "workbench" },
+  ]);
+  fs.rmSync(root, { recursive: true, force: true });
+});

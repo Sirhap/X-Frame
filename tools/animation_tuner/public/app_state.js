@@ -29,7 +29,9 @@
     LAYER_CARD_DRAG_TYPE: "application/x-xsxb-layer-card",
     ATTACHMENT_ASSET_DRAG_TYPE: "application/x-xsxb-attachment-asset",
     GROUP_PLAYBACK_FRAME: "__group",
-    UI_THEME_DEFAULT: "home",
+    UI_THEME_DEFAULT: "dark",
+    UI_SIDEBAR_TABS: Object.freeze(["project", "transform", "boxes", "effects"]),
+    UI_FILMSTRIP_LAYOUTS: Object.freeze(["single", "grid"]),
   });
 
   /**
@@ -94,6 +96,20 @@
       uiTheme:
         readStorage(storage, "xsxbFrameTuner.theme", constants.UI_THEME_DEFAULT) ||
         constants.UI_THEME_DEFAULT,
+      sidebarCollapsed: readStorage(storage, "xsxbFrameTuner.sidebarCollapsed") === "true",
+      activePanelTab: constants.UI_SIDEBAR_TABS.includes(
+        readStorage(storage, "xsxbFrameTuner.activePanelTab"),
+      )
+        ? readStorage(storage, "xsxbFrameTuner.activePanelTab")
+        : "transform",
+      filmstripLayout: constants.UI_FILMSTRIP_LAYOUTS.includes(
+        readStorage(storage, "xsxbFrameTuner.filmstripLayout"),
+      )
+        ? readStorage(storage, "xsxbFrameTuner.filmstripLayout")
+        : "single",
+      kunkunUnlocked:
+        readStorage(storage, "xsxbFrameTuner.kunkunUnlocked") === "true" ||
+        readStorage(storage, "xsxbFrameTuner.theme") === "kunkun",
       canvasColor: readStorage(storage, "xsxbFrameTuner.canvasColor", "#000000") || "#000000",
       selectedProjectId: initialUrlState.get("project") || readStorage(storage, "xsxbFrameTuner.project"),
       selectedSceneId: readStorage(storage, "xsxbFrameTuner.scene"),
@@ -179,7 +195,6 @@
       batchCutout: null,
       frameOrganizer: null,
       cutoutReturnTool: "",
-      homeHubDismissed: true,
     };
   }
 

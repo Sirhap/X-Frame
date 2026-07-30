@@ -255,6 +255,15 @@
         input.disabled = !enabled;
         for (const button of adjustmentStepButtonsForInput(input)) button.disabled = !enabled;
       }
+      const editingAttachment = Boolean(getSelectedFrameAttachment());
+      if (elements.clearGroup) {
+        elements.clearGroup.hidden = mode !== "group" || editingAttachment;
+        elements.clearGroup.disabled = !enabled;
+      }
+      if (elements.clearFrame) {
+        elements.clearFrame.hidden = mode !== "frame" || editingAttachment;
+        elements.clearFrame.disabled = !enabled;
+      }
       if (elements.applyBaseToFrame) {
         elements.applyBaseToFrame.hidden = true;
         elements.applyBaseToFrame.disabled = true;

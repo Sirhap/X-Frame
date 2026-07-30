@@ -1,0 +1,793 @@
+/* XSXB professional creative-tool shell. Loaded last to keep business modules independent. */
+:root {
+  --shell-rail-width: 64px;
+  --shell-sidebar-width: 320px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --motion-fast: 160ms;
+  --motion-standard: 220ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --canvas-bg: #050709;
+  --bg: #0c1117;
+  --panel: #121923;
+  --panel-2: #19222e;
+  --panel-3: #080d13;
+  --surface: #121923;
+  --surface-2: #19222e;
+  --line: #2b3745;
+  --line-strong: #435267;
+  --ink: #eef6f8;
+  --muted: #9cabb7;
+  --control-bg: #17212b;
+  --control-ink: #edf7f7;
+  --control-muted: #9cabb7;
+  --accent: #f59e0b;
+  --accent-text: #4de3c2;
+  --accent-dark: #149377;
+  --accent-2: #31d6b4;
+  --accent-3: #f7b84b;
+  --ok: #31d6b4;
+  --danger: #f05b62;
+  --danger-ink: #ffffff;
+  --shadow: rgba(0, 0, 0, 0.38);
+  --hard-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --soft-shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
+  --radius: 8px;
+}
+
+body.theme-light {
+  --bg: #e7edf1;
+  --panel: #f7f9fa;
+  --panel-2: #edf2f4;
+  --panel-3: #dfe7eb;
+  --surface: #ffffff;
+  --surface-2: #f4f7f8;
+  --line: #c7d2d9;
+  --line-strong: #8fa0aa;
+  --ink: #142029;
+  --muted: #53636d;
+  --control-bg: #ffffff;
+  --control-ink: #142029;
+  --control-muted: #5d6b74;
+  --accent-text: #087f68;
+  --accent-2: #10a889;
+  --accent-3: #c97708;
+  --ok: #087f68;
+  --danger: #c93e46;
+  --shadow: rgba(28, 44, 54, 0.16);
+  --hard-shadow: 0 1px 2px rgba(28, 44, 54, 0.1);
+  --soft-shadow: 0 18px 46px rgba(28, 44, 54, 0.14);
+}
+
+body:not(.theme-kunkun) {
+  background:
+    radial-gradient(circle at 78% 0%, color-mix(in srgb, var(--accent-2) 8%, transparent), transparent 28%),
+    var(--bg);
+}
+
+body:not(.theme-kunkun) :focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+body:not(.theme-kunkun) :is(button, select, input, textarea, [role="button"]) {
+  border-color: var(--line);
+  border-width: 1px;
+  border-radius: 6px;
+  box-shadow: none;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
+}
+
+body:not(.theme-kunkun) button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  transform: none;
+  box-shadow: none;
+}
+
+body:not(.theme-kunkun) button:active:not(:disabled) {
+  background-color: color-mix(in srgb, var(--accent-2) 14%, var(--control-bg));
+  transform: none;
+}
+
+.app {
+  grid-template-columns: var(--shell-rail-width) var(--shell-sidebar-width) minmax(0, 1fr);
+  transition: grid-template-columns var(--motion-standard) var(--ease-standard);
+}
+
+.toolRail {
+  position: fixed;
+  z-index: 1180;
+  inset: 0 auto 0 0;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2);
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel-3) 94%, transparent);
+  box-shadow: 5px 0 20px rgba(0, 0, 0, 0.12);
+}
+
+.toolRailBrand {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 58%, var(--line));
+  border-radius: 10px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent-2) 26%, var(--panel)), var(--panel-2));
+  color: var(--accent-2);
+  text-decoration: none;
+  font: 900 17px/1 var(--data-font);
+}
+
+.toolRailGroup {
+  width: 100%;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.toolRailItem {
+  width: 48px;
+  min-width: 48px;
+  min-height: 50px;
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.toolRailItem svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.toolRailItem span {
+  font: 700 9px/1 var(--ui-font);
+}
+
+.toolRailItem:hover,
+.toolRailItem.active {
+  border-color: color-mix(in srgb, var(--accent-2) 35%, var(--line));
+  background: color-mix(in srgb, var(--accent-2) 9%, var(--panel-2));
+  color: var(--ink);
+}
+
+.toolRailItem.active {
+  box-shadow: inset 3px 0 0 var(--accent-2);
+  color: var(--accent-2);
+}
+
+.toolRailCollapse {
+  margin-top: auto;
+  font-family: inherit;
+}
+
+.sidebar {
+  grid-column: 2;
+  grid-row: 1;
+  width: var(--shell-sidebar-width);
+  padding: var(--space-3);
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: none;
+  transition:
+    width var(--motion-standard) var(--ease-standard),
+    padding var(--motion-standard) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
+}
+
+body.sidebarCollapsed .app {
+  grid-template-columns: var(--shell-rail-width) 0 minmax(0, 1fr);
+}
+
+body.sidebarCollapsed .sidebar {
+  width: 0;
+  padding-inline: 0;
+  border-right: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.sidebarCollapsed .toolRailCollapse svg {
+  transform: rotate(180deg);
+}
+
+.brand {
+  grid-template-columns: 36px minmax(0, 1fr);
+  column-gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mark,
+body:not(.theme-kunkun) .mark {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 48%, var(--line));
+  border-radius: 9px;
+  background:
+    radial-gradient(circle at 68% 25%, #ffffff 0 6%, transparent 7%),
+    linear-gradient(135deg, var(--accent-3), var(--accent-2) 52%, var(--panel-3) 53%);
+  box-shadow: none;
+}
+
+.brandMain h1 {
+  font-size: 15px;
+  font-weight: 780;
+  letter-spacing: -0.02em;
+  text-shadow: none;
+}
+
+.brandMain p {
+  font-size: 11px;
+}
+
+.languageButtons {
+  margin-top: 2px;
+}
+
+.sidebarTabs {
+  position: sticky;
+  top: -12px;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  margin: 0 0 12px;
+  padding: 8px 0;
+  background: var(--panel);
+}
+
+.sidebarTabs button {
+  min-height: 32px;
+  padding: 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.sidebarTabs button.active {
+  border-color: var(--line);
+  background: var(--panel-2);
+  color: var(--accent-text);
+  box-shadow: inset 0 -2px 0 var(--accent-2);
+}
+
+body[data-sidebar-tab] .sidebar [data-shell-category] {
+  display: none;
+}
+
+body[data-sidebar-tab="project"] .sidebar [data-shell-category="project"],
+body[data-sidebar-tab="transform"] .sidebar [data-shell-category="transform"],
+body[data-sidebar-tab="boxes"] .sidebar [data-shell-category="boxes"],
+body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
+  display: block;
+}
+
+.sidebar :is(.panel, .projectContext, .sidebarSection) {
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-2) 56%, var(--panel));
+  box-shadow: none;
+}
+
+.sidebar :is(.panel, .projectContext) > summary {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.sidebar :is(.panel, .projectContext)[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.sidebar :is(.projectContextBody, .panel[open] > :not(summary)) {
+  animation: shellPanelIn var(--motion-standard) var(--ease-standard) both;
+}
+
+.workspace {
+  grid-column: 3;
+  grid-row: 1;
+  grid-template-rows: auto minmax(0, 1fr) clamp(156px, 23vh, 228px) auto;
+  gap: 10px;
+  padding: 12px;
+  transition: padding var(--motion-standard) var(--ease-standard);
+}
+
+.workspace > .contextActionBar {
+  grid-row: 4;
+}
+
+.toolbar,
+.filmstripPanel,
+#stage {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: var(--hard-shadow);
+}
+
+.toolbar {
+  min-height: 56px;
+  align-items: center;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+}
+
+.toolbarMain {
+  min-width: 180px;
+  gap: 3px;
+}
+
+.toolbarMain > strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+#hint {
+  max-width: min(620px, 46vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.selectionHud {
+  min-height: 14px;
+  font-size: 10px;
+}
+
+.toolbarActions {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.toolbarActions > :is(.factoryHomeLaunch, #cutoutOpen, #organizerOpen, #organizerNewOpen) {
+  display: none;
+}
+
+.themeSwitch {
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+
+.themeButton {
+  min-width: 42px;
+  min-height: 30px;
+  padding: 4px 7px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.themeButton.active {
+  background: color-mix(in srgb, var(--accent-2) 14%, var(--control-bg));
+  color: var(--accent-text);
+}
+
+.historyControls,
+.appearanceControls {
+  gap: 4px;
+}
+
+.stageZoomControls {
+  grid-template-columns: 30px minmax(86px, 116px) 30px auto auto;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+
+.stageZoomControls > button,
+.historyControls > button {
+  min-height: 30px;
+  border-width: 1px;
+}
+
+.canvasColorControl {
+  width: 34px;
+  height: 34px;
+}
+
+.canvasColorControl input {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.shortcutGuide > summary {
+  width: 34px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.filmstripPanel {
+  border-width: 1px;
+  background: var(--panel);
+}
+
+.filmstripHeader {
+  min-height: 38px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.filmstripHeaderActions,
+.filmstripLayoutSwitch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filmstripLayoutSwitch {
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.filmstripLayoutSwitch button,
+.frameActionsMenu > summary {
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 720;
+  box-shadow: none;
+}
+
+.filmstripLayoutSwitch button.active {
+  background: var(--control-bg);
+  color: var(--accent-text);
+}
+
+.filmstrip {
+  gap: 8px;
+  padding: 8px 10px 12px;
+  overflow-y: hidden;
+}
+
+.filmstripPanel[data-layout="grid"] .filmstrip {
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow-y: auto;
+}
+
+.filmstripPanel[data-layout="grid"] .frameStack {
+  flex-basis: 104px;
+  min-width: 104px;
+  min-height: 148px;
+}
+
+.filmstripPanel[data-layout="grid"] .thumb {
+  width: 96px;
+  min-width: 96px;
+  height: 132px;
+  grid-template-rows: minmax(0, 1fr) 22px 24px;
+}
+
+.workspace:has(.filmstripPanel[data-layout="grid"]) {
+  grid-template-rows: auto minmax(0, 1fr) clamp(260px, 38vh, 440px) auto;
+}
+
+.thumb,
+.attachmentAssetTray,
+.attachmentAssetCard {
+  border-width: 1px;
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.thumb.selected {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 1px var(--accent-2);
+}
+
+.contextActionBar {
+  min-width: 0;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.08);
+}
+
+.contextActionStatus {
+  display: grid;
+  gap: 2px;
+}
+
+.contextActionStatus span {
+  color: var(--accent-text);
+  font: 700 8px/1 var(--data-font);
+  letter-spacing: 0.14em;
+}
+
+.contextActionStatus strong {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.contextActionFeedback {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.contextActionFeedback::after {
+  content: attr(data-shell-message);
+  color: var(--accent-text);
+  font-size: 11px;
+}
+
+.contextActionFeedback .saveState,
+.contextActionFeedback .status {
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.contextActionBarActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.contextActionBarActions button {
+  min-height: 34px;
+  padding: 6px 14px;
+}
+
+.contextActionBarActions .save {
+  min-width: 132px;
+  margin: 0;
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: #06120f;
+  font-weight: 780;
+}
+
+.contextActionBarActions .exportWorkbenchLaunch {
+  border-color: var(--line-strong);
+  background: var(--control-bg);
+  color: var(--control-ink);
+}
+
+body:is(.cutoutOpen, .organizerOpen) :is(.cutoutModal, .organizerModal) {
+  inset: 0 0 0 var(--shell-rail-width);
+}
+
+body:is(.cutoutOpen, .organizerOpen) :is(.cutoutHeader, .organizerHeader) {
+  min-height: 60px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+body:is(.cutoutOpen, .organizerOpen) .workbenchHome {
+  min-height: 32px;
+  padding: 5px 9px;
+  font-size: 10px;
+}
+
+body:is(.cutoutOpen, .organizerOpen) :is(.cutoutHeader h2, .organizerHeader h2) {
+  font-size: 22px;
+  letter-spacing: -0.025em;
+}
+
+body:is(.cutoutOpen, .organizerOpen) :is(.cutoutHeader p, .organizerHeader p) {
+  margin-top: 3px;
+  font-size: 10px;
+}
+
+body:is(.cutoutOpen, .organizerOpen) :is(.cutoutWorkbench, .organizerWorkbench) {
+  background: var(--panel-3);
+}
+
+body:not(.theme-kunkun).organizerOpen
+  :is(.organizerHeader h2, .organizerEyebrow, .organizerImportIntro span, .organizerEmptyState strong) {
+  color: var(--accent-text);
+}
+
+body:not(.theme-kunkun).organizerOpen .organizerWorkbench.importMode .organizerHeader h2 {
+  font-size: 24px;
+}
+
+body:not(.theme-kunkun).organizerOpen .organizerImportSetup {
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent-2) 6%, var(--panel));
+}
+
+body:not(.theme-kunkun).organizerOpen .organizerImportIntro {
+  border-color: var(--line);
+}
+
+body:not(.theme-kunkun).organizerOpen .organizerEmptyState {
+  border-color: color-mix(in srgb, var(--accent-2) 56%, var(--line));
+  background: color-mix(in srgb, var(--accent-2) 5%, var(--panel-2));
+}
+
+body:not(.theme-kunkun).organizerOpen .organizerPrimary {
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: #06120f;
+}
+
+body:not(.theme-kunkun).organizerOpen .organizerSourceTools {
+  border-color: var(--accent-2);
+}
+
+body:not(.theme-kunkun).organizerOpen .organizerVideoButton {
+  border-color: var(--line);
+  background: var(--control-bg);
+  color: var(--control-ink);
+}
+
+body:not(.theme-kunkun) .importAnimationButton {
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: #06120f;
+}
+
+body:is(.cutoutOpen, .organizerOpen)
+  :is(.cutoutSettingsCard, .cutoutPreview, .organizerFramesPanel, .organizerPreviewPanel) {
+  border-color: var(--line);
+  border-width: 1px;
+  box-shadow: none;
+}
+
+body.cutoutOpen :is(.cutoutFooter, .cutoutBatchWorkspaceActions),
+body.organizerOpen .organizerFooterActions {
+  border-color: var(--line);
+  border-width: 1px;
+  background: var(--panel);
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes shellPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 1380px) {
+  :root {
+    --shell-sidebar-width: 288px;
+  }
+
+  .workspace {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  #hint {
+    max-width: 360px;
+  }
+
+  .toolbarActions {
+    gap: 4px;
+  }
+
+  .stageZoomControls {
+    grid-template-columns: 28px 86px 28px auto;
+  }
+
+  #stageZoomActual {
+    display: none;
+  }
+}
+
+@media (max-height: 820px) {
+  .workspace {
+    grid-template-rows: auto minmax(0, 1fr) 148px auto;
+  }
+
+  .workspace:has(.filmstripPanel[data-layout="grid"]) {
+    grid-template-rows: auto minmax(0, 1fr) min(34vh, 280px) auto;
+  }
+
+  .toolbar {
+    min-height: 50px;
+  }
+
+  #hint {
+    display: none;
+  }
+}
+
+@media (max-width: 1120px) {
+  .app,
+  body.sidebarCollapsed .app {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding-left: var(--shell-rail-width);
+    overflow: visible;
+  }
+
+  .sidebar {
+    order: 2;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    border-top: 1px solid var(--line);
+    border-right: 0;
+  }
+
+  body.sidebarCollapsed .sidebar {
+    display: none;
+  }
+
+  .workspace {
+    order: 1;
+    width: 100%;
+  }
+
+  .toolbarActions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app,
+  .sidebar,
+  .sidebar :is(.projectContextBody, .panel[open] > :not(summary)) {
+    transition: none;
+    animation: none;
+  }
+}

@@ -1,0 +1,327 @@
+/*
+ * Homepage-inspired workbench theme.
+ *
+ * This file intentionally contains every visual override for the new theme so
+ * the legacy dark and light styles can continue to evolve independently.
+ */
+
+body.theme-home {
+  color-scheme: dark;
+  --bg: #0b0d0c;
+  --panel: #121614;
+  --panel-2: #181d1a;
+  --panel-3: #0f1311;
+  --surface: #181d1a;
+  --surface-2: #1e2420;
+  --line: #333b36;
+  --line-strong: #536058;
+  --ink: #f2f0e8;
+  --muted: #a7aaa2;
+  --control-bg: #171c19;
+  --control-ink: #f2f0e8;
+  --control-muted: #a7aaa2;
+  --accent: #48e2bd;
+  --accent-text: #48e2bd;
+  --accent-dark: #21987e;
+  --accent-2: #48e2bd;
+  --accent-3: #f5c84b;
+  --ok: #48e2bd;
+  --danger: #ff6542;
+  --danger-ink: #0b0d0c;
+  --shadow: rgba(0, 0, 0, 0.48);
+  --hard-shadow: 3px 3px 0 #050706;
+  --soft-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+  --radius: 2px;
+  --ui-font: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --data-font: "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono CJK SC", monospace;
+  background:
+    radial-gradient(circle at 86% 7%, rgba(72, 226, 189, 0.08), transparent 27%),
+    radial-gradient(circle at 5% 55%, rgba(245, 200, 75, 0.045), transparent 24%),
+    radial-gradient(rgba(255, 255, 255, 0.05) 0.7px, transparent 0.7px) 0 0 / 7px 7px,
+    var(--bg);
+}
+
+body.theme-home ::selection {
+  background: var(--accent-3);
+  color: var(--bg);
+}
+
+body.theme-home :focus-visible {
+  outline-color: var(--accent-3);
+}
+
+body.theme-home .sidebar {
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  box-shadow: 12px 0 34px rgba(0, 0, 0, 0.16);
+}
+
+body.theme-home .brand {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+body.theme-home .mark {
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background:
+    linear-gradient(var(--accent-2), var(--accent-2)) 9px 27px / 7px 11px no-repeat,
+    linear-gradient(var(--accent-3), var(--accent-3)) 20px 10px / 7px 28px no-repeat,
+    linear-gradient(var(--danger), var(--danger)) 31px 20px / 7px 18px no-repeat,
+    var(--panel-3);
+  box-shadow: none;
+}
+
+body.theme-home h1 {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-shadow: none;
+}
+
+body.theme-home h2,
+body.theme-home .sectionEyebrow,
+body.theme-home .panelTitle small,
+body.theme-home .toolbarMain strong {
+  letter-spacing: 0.1em;
+}
+
+body.theme-home .brandMain p,
+body.theme-home .sectionEyebrow,
+body.theme-home .panelTitle small,
+body.theme-home .scopeImpact,
+body.theme-home .selectionHud,
+body.theme-home .coordHud {
+  font-family: var(--data-font);
+}
+
+body.theme-home :is(button, input, select, textarea) {
+  border-width: 1px;
+  border-radius: 1px;
+  box-shadow: none;
+}
+
+body.theme-home :is(button, select) {
+  letter-spacing: 0.025em;
+}
+
+body.theme-home button {
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+body.theme-home button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+
+body.theme-home button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+body.theme-home :is(input, select, textarea):focus {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px rgba(72, 226, 189, 0.14);
+}
+
+body.theme-home :is(.panel, .projectContext, .sidebarSection) {
+  border-width: 1px;
+  border-radius: 1px;
+  box-shadow: none;
+}
+
+body.theme-home :is(.panel, .projectContext) {
+  background: rgba(24, 29, 26, 0.82);
+}
+
+body.theme-home :is(.panel, .projectContext) > summary {
+  border-radius: 0;
+}
+
+body.theme-home :is(.panel, .projectContext)[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+body.theme-home .save,
+body.theme-home .importAnimationButton {
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: #07100d;
+  box-shadow: none;
+}
+
+body.theme-home :is(.save, .importAnimationButton):hover:not(:disabled) {
+  border-color: #bff8e9;
+  background: #69e9c9;
+}
+
+body.theme-home .dangerAction,
+body.theme-home .appConfirmAccept,
+body.theme-home .activationUnbindAccept {
+  border-color: var(--danger);
+}
+
+body.theme-home .workspace {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.024) 1px, transparent 1px) 0 0 / 34px 34px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.024) 1px, transparent 1px) 0 0 / 34px 34px,
+    transparent;
+}
+
+body.theme-home .toolbar {
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: none;
+  backdrop-filter: blur(16px);
+}
+
+body.theme-home .toolbarMain strong::before {
+  margin-right: 8px;
+  color: var(--accent-2);
+  content: "●";
+  font-size: 8px;
+}
+
+body.theme-home .themeSwitch {
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--line);
+  background: var(--panel-3);
+}
+
+body.theme-home .themeButton {
+  min-width: 34px;
+  min-height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--data-font);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+body.theme-home .themeButton.active {
+  background: var(--accent-2);
+  color: #07100d;
+}
+
+body.theme-home .canvasColorControl input {
+  height: 32px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.theme-home :is(.stage, .canvasWrap, .previewCanvasWrap, .organizerPreviewStage) {
+  border-color: var(--line);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+
+body.theme-home :is(.selectionHud, .coordHud) {
+  border-width: 1px;
+  border-radius: 0;
+  background: rgba(11, 13, 12, 0.84);
+  backdrop-filter: blur(8px);
+}
+
+body.theme-home :is(.filmstrip, .cutoutShell, .organizerShell) {
+  border-color: var(--line);
+  background: var(--panel);
+}
+
+body.theme-home :is(.filmstripHeader, .cutoutHeader, .organizerHeader) {
+  border-color: var(--line);
+  background: var(--panel-3);
+}
+
+body.theme-home
+  :is(
+    .homeHubCard,
+    .filmCard,
+    .cutoutSettingsCard,
+    .cutoutQueueItem,
+    .organizerFrame,
+    .organizerPanel,
+    .activationCard,
+    .appConfirmCard
+  ) {
+  border-width: 1px;
+  border-radius: 1px;
+  box-shadow: none;
+}
+
+body.theme-home :is(.homeHubCard, .organizerFrame, .cutoutQueueItem):hover {
+  border-color: var(--accent-2);
+}
+
+body.theme-home :is(.homeHubCard, .filmCard, .cutoutSettingsCard, .organizerPanel) {
+  background: var(--panel-2);
+}
+
+body.theme-home :is(.homeHubCard, .organizerFrame, .cutoutQueueItem).active,
+body.theme-home :is(.homeHubCard, .organizerFrame, .cutoutQueueItem).selected {
+  border-color: var(--accent-2);
+  box-shadow: inset 3px 0 0 var(--accent-2);
+}
+
+body.theme-home :is(.tag, .badge, .chip, .statusBadge, .frameIndex) {
+  border-radius: 0;
+  font-family: var(--data-font);
+  letter-spacing: 0.06em;
+}
+
+body.theme-home :is(.toggle, .boxChoice) {
+  border-radius: 0;
+}
+
+body.theme-home input[type="checkbox"],
+body.theme-home input[type="radio"] {
+  accent-color: var(--accent-2);
+}
+
+body.theme-home input[type="range"] {
+  accent-color: var(--accent-2);
+}
+
+body.theme-home .filmCard.selected,
+body.theme-home .organizerFrame.selected {
+  outline-color: var(--accent-3);
+}
+
+body.theme-home .status {
+  border-left: 2px solid var(--accent-2);
+  background: rgba(72, 226, 189, 0.07);
+}
+
+body.theme-home .browserModeBanner {
+  border-color: var(--accent-3);
+  border-radius: 0;
+  background: rgba(245, 200, 75, 0.09);
+}
+
+body.theme-home :is(.appConfirmPanel, .activationPanel) {
+  background: rgba(5, 7, 6, 0.82);
+  backdrop-filter: blur(12px);
+}
+
+body.theme-home .appConfirmCard::before,
+body.theme-home .activationCard::before {
+  background: var(--accent-2);
+}
+
+body.theme-home .activationRail {
+  background: var(--accent-3);
+  color: var(--bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.theme-home button {
+    transition: none;
+  }
+}

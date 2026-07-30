@@ -161,7 +161,7 @@ self.onmessage = async (event) => {
       normalizedHeight,
       {
         backgroundColors: options?.backgroundColors,
-        backgroundTolerance: Number(options?.tolerance || 0) + Number(options?.feather || 0),
+        backgroundTolerance: Math.max(0, Number(options?.tolerance || 0) + Number(options?.feather || 0)),
       },
     );
     self.postMessage(

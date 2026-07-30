@@ -30,6 +30,7 @@ func _load_frame_runtime() -> void:
 	_frame_box_overrides.clear()
 	_frame_audio_bindings.clear()
 	_frame_image_attachments.clear()
+	_attack_trail_bindings.clear()
 	_texture_cache.clear()
 	_last_visual_state_key = ""
 	_runtime_ready = false
@@ -50,6 +51,9 @@ func _load_frame_runtime() -> void:
 	_frame_box_overrides = _dict_from(tuning.get("frame_box_overrides", {}))
 	_load_frame_audio_bindings("%s/frame_audio_bindings.json" % data_dir)
 	_load_frame_image_attachments("%s/frame_image_attachments.json" % data_dir)
+	var attack_trails: Dictionary = _read_json_dict("%s/attack_trails.json" % data_dir)
+	_attack_trail_bindings = _dict_from(attack_trails.get("bindings", {}))
+	_configure_attack_trails()
 	_runtime_ready = not _animations.is_empty()
 
 
@@ -224,6 +228,16 @@ func _frame_key(animation_name: String, frame_index: int) -> String:
 	return "%s/%s:%d" % [frame_profile_id, animation_name, frame_index]
 
 
+func _frame_duration_for(animation_name: String, frame_index: int) -> float:
+	var animation: Dictionary = _animations.get(animation_name, {})
+	var frames: Array = animation.get("frames", []) as Array
+	if frame_index < 0 or frame_index >= frames.size():
+		return 0.0
+	var frame_data: Dictionary = frames[frame_index] as Dictionary
+	var playback: Dictionary = _frame_playback_overrides.get(_frame_key(animation_name, frame_index), {})
+	return maxf(0.001, float(playback.get("duration", frame_data.get("duration", 1.0))) / _animation_fps(animation_name))
+
+
 func _group_playback_key(animation_name: String) -> String:
 	return "%s/%s:__group" % [frame_profile_id, animation_name]
 
@@ -278,6 +292,8 @@ func _apply_frame_visual() -> void:
 		runtime_scale,
 		render_facing_value,
 	)
+	_apply_attack_trail_transform(frame_size, anchor, transform, runtime_scale, render_facing_value)
+	_update_attack_trails()
 	if visual_state_key == _last_visual_state_key:
 		return
 	_last_visual_state_key = visual_state_key
@@ -297,6 +313,43 @@ func _apply_frame_visual() -> void:
 		_apply_frame_collision_box(frame_key, transform, runtime_scale)
 		_apply_frame_hurtbox(frame_key, transform, runtime_scale)
 		_apply_frame_hitbox(frame_key, transform, runtime_scale)
+
+
+func _configure_attack_trails() -> void:
+	if _attack_trails_behind != null and _attack_trails_behind.has_method("configure"):
+		_attack_trails_behind.call("configure", self, _attack_trail_bindings, "behind")
+	if _attack_trails_front != null and _attack_trails_front.has_method("configure"):
+		_attack_trails_front.call("configure", self, _attack_trail_bindings, "front")
+
+
+func _update_attack_trails() -> void:
+	var elapsed := current_animation_elapsed()
+	if _attack_trails_behind != null and _attack_trails_behind.has_method("update_for_animation"):
+		_attack_trails_behind.call("update_for_animation", _current_animation, elapsed)
+	if _attack_trails_front != null and _attack_trails_front.has_method("update_for_animation"):
+		_attack_trails_front.call("update_for_animation", _current_animation, elapsed)
+
+
+func _apply_attack_trail_transform(
+	frame_size: Vector2,
+	anchor: Vector2,
+	transform: Dictionary,
+	runtime_scale: float,
+	render_facing_value: float,
+) -> void:
+	var scale_x: float = runtime_scale * float(transform.get("scale_x", 1.0))
+	var scale_y: float = runtime_scale * float(transform.get("scale_y", 1.0))
+	var visual_offset: Vector2 = transform.get("offset", Vector2.ZERO)
+	var trail_position := Vector2(
+		(visual_offset.x * runtime_scale * render_facing_value) + ((frame_size.x * 0.5 - anchor.x) * scale_x * render_facing_value),
+		(visual_offset.y * runtime_scale) + ((frame_size.y * 0.5 - anchor.y) * scale_y)
+	)
+	for trail_node in [_attack_trails_behind, _attack_trails_front]:
+		if trail_node == null:
+			continue
+		trail_node.position = trail_position
+		trail_node.scale = Vector2(render_facing_value * scale_x, scale_y)
+		trail_node.rotation_degrees = float(transform.get("rotation", 0.0)) * render_facing_value
 `;
 }
 

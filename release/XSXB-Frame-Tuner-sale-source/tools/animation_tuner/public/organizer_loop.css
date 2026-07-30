@@ -1,0 +1,404 @@
+.organizerLoopPanel {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 7, 10, 0.86);
+  backdrop-filter: blur(8px);
+}
+
+.organizerLoopCard {
+  width: min(1120px, 96%);
+  max-height: 94%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 4px solid var(--line);
+  border-radius: 13px;
+  background:
+    linear-gradient(90deg, rgba(52, 211, 183, 0.055) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(rgba(52, 211, 183, 0.055) 1px, transparent 1px) 0 0 / 28px 28px,
+    var(--panel);
+  box-shadow:
+    12px 12px 0 var(--line),
+    0 0 0 4px var(--accent-2);
+}
+
+.organizerLoopHeader,
+.organizerLoopFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 19px;
+  border-bottom: 4px solid var(--line);
+  background: linear-gradient(105deg, var(--accent-2) 0 14px, transparent 14px), var(--panel-2);
+}
+
+.organizerLoopHeader span {
+  color: var(--accent-2);
+  font: 950 9px/1 var(--data-font);
+  letter-spacing: 0.17em;
+}
+
+.organizerLoopHeader h3 {
+  margin: 4px 0 0;
+  font-size: 29px;
+  line-height: 1;
+}
+
+.organizerLoopHeader p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font: 800 10px/1.3 var(--data-font);
+}
+
+.organizerLoopHeader > button {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #05070a;
+  font-size: 25px;
+}
+
+.organizerLoopBody {
+  min-height: 430px;
+  overflow: auto;
+  padding: 24px;
+}
+
+.organizerLoopParams {
+  width: min(720px, 100%);
+  display: grid;
+  gap: 24px;
+}
+
+.organizerLoopParamSection {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.organizerLoopParamSection > strong,
+.organizerLoopParamSection > legend {
+  padding: 0;
+  color: var(--muted);
+  font: 950 13px/1 var(--data-font);
+}
+
+.organizerLoopSegments {
+  width: min(520px, 100%);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 3px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 4px 4px 0 var(--line);
+}
+
+.organizerLoopSegments button {
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 0;
+  border-right: 2px solid var(--line);
+  border-radius: 0;
+  background: var(--control-bg);
+  color: var(--control-ink);
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.organizerLoopSegments button:last-child {
+  border-right: 0;
+}
+
+.organizerLoopSegments button.active {
+  background: var(--accent-2);
+  color: #06120f;
+}
+
+.organizerLoopRadio {
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font: 900 13px/1 var(--data-font);
+}
+
+.organizerLoopRadio input {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  accent-color: var(--accent-2);
+}
+
+.organizerLoopStartRow {
+  width: fit-content;
+  display: grid;
+  grid-template-columns: auto 90px auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 0 34px;
+  color: var(--muted);
+  font: 850 11px/1 var(--data-font);
+}
+
+.organizerLoopStartRow input {
+  min-height: 38px;
+  padding: 6px;
+  text-align: center;
+}
+
+.organizerLoopSearch,
+.organizerLoopEmpty {
+  min-height: 380px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 15px;
+  text-align: center;
+}
+
+.organizerLoopSearchPulse {
+  width: 86px;
+  height: 86px;
+  display: grid;
+  place-items: center;
+  border: 4px solid var(--line);
+  border-radius: 50%;
+  background: var(--accent-2);
+  color: #06120f;
+  box-shadow: 7px 7px 0 var(--line);
+  font: 950 19px/1 var(--data-font);
+  animation: organizerLoopPulse 1.1s steps(2, end) infinite;
+}
+
+@keyframes organizerLoopPulse {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.organizerLoopProgressTrack {
+  width: min(520px, 72vw);
+  height: 20px;
+  overflow: hidden;
+  border: 3px solid var(--line);
+  border-radius: 6px;
+  background: var(--control-bg);
+  box-shadow: 4px 4px 0 var(--line);
+}
+
+.organizerLoopProgressTrack span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: repeating-linear-gradient(135deg, var(--accent-2) 0 12px, var(--accent-3) 12px 24px);
+  transition: width 0.15s ease-out;
+}
+
+.organizerLoopSearch small {
+  color: var(--accent-3);
+  font: 950 11px/1 var(--data-font);
+}
+
+.organizerLoopEmpty strong {
+  font-size: 22px;
+}
+
+.organizerLoopEmpty p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--muted);
+  font: 800 11px/1.5 var(--data-font);
+}
+
+.organizerLoopResultContent {
+  min-height: 430px;
+  display: grid;
+  grid-template-columns: minmax(240px, 310px) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.organizerLoopCandidates {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  overflow: auto;
+  padding: 3px 8px 8px 3px;
+}
+
+.organizerLoopCandidate {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 10px;
+  padding: 12px;
+  border: 3px solid var(--line);
+  border-radius: 9px;
+  background: var(--control-bg);
+  color: var(--control-ink);
+  text-align: left;
+  box-shadow: 4px 4px 0 var(--line);
+}
+
+.organizerLoopCandidate.active {
+  transform: translate(-2px, -2px);
+  border-color: var(--accent-2);
+  box-shadow:
+    6px 6px 0 var(--line),
+    0 0 0 2px var(--accent-2);
+}
+
+.organizerLoopCandidate strong {
+  grid-row: 1 / 3;
+  align-self: center;
+  color: var(--accent-text);
+  font: 950 21px/1 var(--data-font);
+}
+
+.organizerLoopCandidate span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--control-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 900 10px/1.2 var(--data-font);
+}
+
+.organizerLoopCandidate small {
+  color: color-mix(in srgb, var(--control-ink) 68%, transparent);
+  font: 800 9px/1.2 var(--data-font);
+}
+
+.organizerLoopPreview {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(280px, 1fr) auto auto;
+  gap: 10px;
+}
+
+#organizerLoopCanvas {
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  border: 4px solid var(--line);
+  border-radius: 10px;
+  image-rendering: pixelated;
+  background: conic-gradient(#343b46 25%, #1e242d 0 50%, #343b46 0 75%, #1e242d 0) 0 0 / 22px 22px;
+  box-shadow: 6px 6px 0 var(--line);
+}
+
+.organizerLoopPreviewControls {
+  display: grid;
+  grid-template-columns: 40px auto 40px minmax(80px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.organizerLoopPreviewControls > button {
+  min-height: 38px;
+  padding: 6px 9px;
+}
+
+.organizerLoopPreviewControls label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: var(--muted);
+  font: 850 10px/1 var(--data-font);
+}
+
+.organizerLoopPreviewControls label input {
+  width: 58px;
+  min-height: 38px;
+  padding: 5px;
+  text-align: center;
+}
+
+.organizerLoopPreviewControls > input {
+  min-height: 22px;
+  padding: 0;
+  box-shadow: none;
+}
+
+.organizerLoopPlay {
+  min-width: 70px;
+  background: var(--accent-2);
+  color: #06120f;
+}
+
+.organizerLoopSpeed {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--muted);
+  font: 850 10px/1 var(--data-font);
+}
+
+.organizerLoopSpeed input {
+  min-height: 22px;
+  padding: 0;
+  box-shadow: none;
+}
+
+.organizerLoopFooter {
+  justify-content: flex-end;
+  border-top: 4px solid var(--line);
+  border-bottom: 0;
+}
+
+.organizerLoopFooter button {
+  min-width: 150px;
+}
+
+@media (max-height: 820px) {
+  .organizerLoopCard {
+    max-height: 97%;
+  }
+
+  .organizerLoopHeader {
+    padding-block: 11px;
+  }
+
+  .organizerLoopHeader h3 {
+    font-size: 25px;
+  }
+
+  .organizerLoopBody {
+    min-height: 0;
+    padding: 14px 18px;
+  }
+
+  .organizerLoopResultContent {
+    min-height: 350px;
+  }
+
+  .organizerLoopCandidate {
+    padding: 9px;
+  }
+
+  .organizerLoopPreview {
+    grid-template-rows: minmax(210px, 1fr) auto auto;
+  }
+
+  #organizerLoopCanvas {
+    min-height: 225px;
+  }
+
+  .organizerLoopFooter {
+    padding-block: 10px;
+  }
+}

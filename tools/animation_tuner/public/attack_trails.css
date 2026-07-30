@@ -1,0 +1,655 @@
+.attackTrailPanel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.attackTrailQuickStart {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 38%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent-2) 8%, var(--panel-3));
+}
+
+.attackTrailQuickStart > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.attackTrailQuickStart strong {
+  color: var(--accent-text);
+  font-size: 13px;
+}
+
+.attackTrailQuickStart span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.attackTrailQuickStart button {
+  width: 100%;
+  min-height: 44px;
+}
+
+.attackTrailBody {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+  min-width: 0;
+}
+.attackTrailBody *,
+.attackTrailBody *::before,
+.attackTrailBody *::after {
+  box-sizing: border-box;
+}
+.attackTrailRow {
+  display: grid;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.attackTrailBody :is(button, select, input, output, canvas) {
+  max-width: 100%;
+}
+
+.attackTrailBody button {
+  min-width: 0;
+  min-height: 44px;
+  overflow: hidden;
+  padding-inline: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trailControlSection {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel-2) 58%, var(--panel));
+}
+
+.trailControlHeading {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+}
+
+.trailControlHeading > span {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 42%, var(--line));
+  border-radius: 6px;
+  color: var(--accent-text);
+  font: 850 9px/1 var(--data-font);
+}
+
+.trailControlHeading div {
+  min-width: 0;
+}
+
+.trailControlHeading h3 {
+  margin: 1px 0 4px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.trailControlHeading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.trailSegmentRow {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trailSegmentRow select {
+  width: 100%;
+  min-width: 0;
+  grid-column: 1 / -1;
+}
+
+.trailDeleteHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.trailStickActionRow {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trailStickActionRow button {
+  min-width: 0;
+}
+
+.attackTrailGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.attackTrailGrid > * {
+  min-width: 0;
+}
+.trailAppearanceGrid > button {
+  width: 100%;
+}
+
+.trailTextureBox,
+.trailGradientEditor {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-3) 72%, var(--panel));
+}
+
+.trailTextureActions,
+.trailGradientActions {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 8px;
+}
+
+.trailTextureActions button,
+.trailGradientActions button {
+  min-width: 0;
+}
+
+.trailGradientActions output {
+  min-width: 0;
+  color: var(--accent-text);
+  font: 800 11px/1 var(--data-font);
+}
+
+.trailTexturePreview {
+  width: 100%;
+  height: 116px;
+  background: var(--surface);
+  object-fit: contain;
+}
+.trailTextureName,
+.trailTimingSummary {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.trailCurvatureRange {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 10px;
+  margin: 4px 0 0;
+}
+
+.trailCurvatureRange > span {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trailCurvatureRange > output {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 34px;
+  color: var(--accent-text);
+  font: 800 10px/1 var(--data-font);
+  text-align: right;
+}
+
+.trailCurvatureRange > input {
+  width: 100%;
+  min-width: 0;
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.trailGradientBar {
+  position: relative;
+  height: 30px;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  cursor: crosshair;
+}
+.trailGradientStop {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 38px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+}
+.trailGradientStop.selected {
+  outline: 3px solid var(--accent-2);
+}
+
+.trailAdvanced {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel-2) 42%, var(--panel));
+}
+
+.trailAdvanced > summary {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.trailAdvanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.trailAdvanced > summary span {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trailAdvanced > summary b {
+  margin-right: 8px;
+  color: var(--accent-text);
+  font: 850 9px/1 var(--data-font);
+}
+
+.trailAdvanced > summary small {
+  color: var(--muted);
+  font-size: 9px;
+  text-align: right;
+}
+
+.trailAdvanced > summary::after {
+  color: var(--accent-text);
+  content: "+";
+  font: 800 16px/1 var(--data-font);
+}
+
+.trailAdvanced > summary small,
+.trailAdvanced > summary::after {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.trailAdvanced > summary::after {
+  display: none;
+}
+
+.trailAdvanced[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.trailAdvanced[open] > summary small {
+  display: none;
+}
+
+.trailAdvanced[open] > summary::after {
+  display: block;
+  content: "−";
+}
+
+.trailAdvanced > :not(summary) {
+  margin-inline: 12px;
+}
+
+.trailAdvanced .trailMotionGrid {
+  margin-top: 12px;
+}
+
+.trailAdvanced .number {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 86px;
+  margin: 0;
+}
+
+.trailAdvanced .number > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trailAdvanced .number > input {
+  width: 100%;
+  min-width: 0;
+}
+
+.trailAdvanced .trailTimingSummary {
+  margin-block: 12px;
+}
+
+.trailLayerToggle.behind {
+  background: #39baff;
+  color: #05070a;
+}
+.trailLayerToggle.front {
+  background: var(--accent);
+  color: #05070a;
+}
+.trailPresetDialog {
+  max-width: 390px;
+  border: 3px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--ink);
+}
+.trailPresetForm {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+.trailPresetActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.trailPresetActions button {
+  width: 100%;
+}
+
+.attackTrailGuide[hidden] {
+  display: none;
+}
+
+body.attackTrailGuideOpen {
+  overflow: hidden;
+}
+
+.attackTrailGuide {
+  position: fixed;
+  z-index: 1250;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 5, 4, 0.78);
+  backdrop-filter: blur(10px);
+}
+
+.attackTrailGuideCard {
+  width: min(900px, 100%);
+  max-height: min(720px, calc(100dvh - 32px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--panel-3);
+  color: var(--ink);
+  box-shadow: 12px 12px 0 color-mix(in srgb, var(--accent-2) 28%, #020504);
+}
+
+.attackTrailGuideHeader,
+.attackTrailGuideFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.attackTrailGuideHeader span,
+.attackTrailGuideDetail > span {
+  color: var(--accent-text);
+  font: 850 9px/1 var(--data-font);
+  letter-spacing: 0.14em;
+}
+
+.attackTrailGuideHeader h2 {
+  margin: 5px 0 0;
+  font-size: clamp(24px, 4vw, 40px);
+  letter-spacing: -0.04em;
+}
+
+.attackTrailGuideClose {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 24px;
+}
+
+.attackTrailGuideBody {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(210px, 0.72fr) minmax(0, 1.28fr);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.attackTrailGuideSteps {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  margin: 0;
+  padding: 16px;
+  border-right: 1px solid var(--line);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-2) 6%, transparent) 1px, transparent 1px) 0 0 /
+      22px 22px,
+    var(--panel-2);
+  list-style: none;
+}
+
+.attackTrailGuideSteps button {
+  width: 100%;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  color: var(--muted);
+  text-align: left;
+}
+
+.attackTrailGuideSteps button b {
+  color: var(--accent-text);
+  font: 850 10px/1 var(--data-font);
+}
+
+.attackTrailGuideSteps button span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attackTrailGuideSteps button.active {
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 10%, var(--panel));
+  color: var(--ink);
+}
+
+.attackTrailGuideDetail {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 16px;
+  padding: clamp(24px, 5vw, 52px);
+}
+
+.attackTrailGuideDetail h3 {
+  margin: 0;
+  font-size: clamp(30px, 5vw, 52px);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.attackTrailGuideDetail > p {
+  max-width: 570px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.attackTrailGuideDetail ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attackTrailGuideDetail li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  color: #c7d2cd;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.attackTrailGuideDetail li::before {
+  color: var(--accent-text);
+  content: "✓";
+  font-weight: 900;
+}
+
+.attackTrailGuideLocate {
+  min-height: 46px;
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: #06100d;
+  font-weight: 850;
+}
+
+.attackTrailGuideTarget {
+  outline: 3px solid var(--accent-3) !important;
+  outline-offset: 4px !important;
+  animation: attackTrailGuideTargetPulse 800ms ease-in-out 2;
+}
+
+.attackTrailGuideFooter {
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.attackTrailGuideFooter p {
+  max-width: 470px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.attackTrailGuideFooter > div {
+  display: flex;
+  gap: 8px;
+}
+
+.attackTrailGuideFooter button {
+  min-width: 92px;
+  min-height: 44px;
+}
+
+.dangerMini {
+  color: var(--danger);
+}
+
+@media (max-width: 700px) {
+  .attackTrailGuide {
+    align-items: end;
+    padding: 8px;
+  }
+
+  .attackTrailGuideCard {
+    max-height: calc(100dvh - 16px);
+    border-radius: 12px 12px 5px 5px;
+    box-shadow: 5px 5px 0 color-mix(in srgb, var(--accent-2) 28%, #020504);
+  }
+
+  .attackTrailGuideBody {
+    grid-template-columns: 1fr;
+  }
+
+  .attackTrailGuideSteps {
+    grid-template-columns: repeat(5, minmax(52px, 1fr));
+    overflow-x: auto;
+    padding: 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .attackTrailGuideSteps button {
+    min-height: 50px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 6px;
+    text-align: center;
+  }
+
+  .attackTrailGuideSteps button span {
+    display: none;
+  }
+
+  .attackTrailGuideDetail {
+    padding: 24px 18px;
+  }
+
+  .attackTrailGuideHeader,
+  .attackTrailGuideFooter {
+    align-items: stretch;
+    padding: 13px;
+  }
+
+  .attackTrailGuideFooter {
+    flex-direction: column;
+  }
+
+  .attackTrailGuideFooter > div,
+  .attackTrailGuideFooter button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attackTrailGuide *,
+  .attackTrailBody * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@keyframes attackTrailGuideTargetPulse {
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent-3) 18%, transparent);
+  }
+}
+
+body.codexPetsProject [data-panel="scene-scale"],
+body.codexPetsProject [data-panel="boxes"] {
+  display: none;
+}

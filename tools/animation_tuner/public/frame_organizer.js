@@ -2,6 +2,7 @@
   "use strict";
 
   const textModule = root.FrameOrganizerText;
+  const sequenceOrder = root.FrameSequenceOrder;
 
   /**
    * Creates the frame organizer controller.
@@ -25,6 +26,7 @@
     const imagePixelBudget = root.ImagePixelBudget;
     if (!imagePixelBudget) throw new Error("ImagePixelBudget is required.");
     if (!textModule) throw new Error("FrameOrganizerText is required.");
+    if (!sequenceOrder) throw new Error("FrameSequenceOrder is required.");
     const protectedRuntimeModule = root.ProtectedAlgorithmRuntime;
     if (!protectedRuntimeModule) throw new Error("ProtectedAlgorithmRuntime is required.");
     const protectedRuntime = protectedRuntimeModule.getDefaultRuntime(root);
@@ -46,6 +48,8 @@
     if (!previewModule) throw new Error("FrameOrganizerPreview is required.");
     const actionModule = root.FrameOrganizerActions;
     if (!actionModule) throw new Error("FrameOrganizerActions is required.");
+    const mediaExportDialogModule = root.MediaExportDialog;
+    if (!mediaExportDialogModule) throw new Error("MediaExportDialog is required.");
     const batchZip = root.BatchZip;
     if (!batchZip) throw new Error("BatchZip is required.");
     const outputCore = root.BatchCutoutOutputCore;
@@ -71,6 +75,7 @@
       "organizerReduce",
       "organizerReduceStep",
       "organizerUndoDelete",
+      "organizerViewExportJob",
       "organizerConfirmPanel",
       "organizerConfirmTitle",
       "organizerConfirmMessage",
@@ -107,6 +112,8 @@
       "organizerLoopStartSearch",
       "organizerLoopTrim",
       "organizerAutoSort",
+      "organizerOrderFilename",
+      "organizerOrderSelection",
       "organizerFlip",
       "organizerImport",
       "organizerFileInput",
@@ -140,6 +147,7 @@
       "organizerReset",
       "organizerAddAssets",
       "organizerGodotPlaceholder",
+      "organizerGodotHandoffBadge",
       "organizerExport",
       "organizerApply",
       "organizerGrid",
@@ -149,17 +157,31 @@
       "organizerPreview",
       "organizerPreviewFrame",
       "organizerSpeed",
-      "organizerTag",
-      "organizerApplyTag",
-      "organizerClearTag",
+      "organizerBatchCutout",
       "organizerViewOriginal",
       "organizerViewEdited",
+      "mediaExportDialog",
+      "mediaExportClose",
+      "mediaExportFrameCount",
+      "mediaExportFps",
+      "mediaExportCanvas",
+      "mediaExportFrames",
+      "mediaExportSheet",
+      "mediaExportGif",
+      "mediaExportMov",
+      "mediaExportLocalHint",
+      "mediaExportStatus",
+      "mediaExportDownloads",
+      "mediaExportCancel",
+      "mediaExportSubmit",
     ];
     const elements = Object.fromEntries(ids.map((id) => [id, document.querySelector(`#${id}`)]));
     const state = {
       language: hooks.getLanguage?.() === "en" ? "en" : "zh",
       mode: "edit",
       frames: [],
+      importOrderStrategy: sequenceOrder.ORDER_STRATEGIES.FILENAME,
+      nextImportBatchIndex: 0,
       anchorIndex: -1,
       previewIndex: 0,
       previewTimer: 0,
@@ -204,6 +226,11 @@
 
     function editImportCutout(...args) {
       return organizerActionCall("editImportCutout", ...args);
+    }
+
+    /** Opens the complete organizer workset with the standard automatic batch profile. */
+    function editBatchCutout(...args) {
+      return organizerActionCall("editBatchCutout", ...args);
     }
 
     function applyPlan(...args) {
@@ -363,20 +390,27 @@
     /**
      * Creates one organizer frame record.
      * @param {CanvasImageSource} image Source image.
-     * @param {{sourceIndex?:number,originalIndex?:number,sourcePath?:string,name?:string,imported?:boolean,reuseCanvas?:boolean}} options Frame metadata.
+     * @param {{sourceIndex?:number,originalIndex?:number,sourcePath?:string,name?:string,imported?:boolean,reuseCanvas?:boolean,sourceType?:"manifest"|"image"|"video",importBatchIndex?:number,importSelectionIndex?:number,importFilenameIndex?:number}} options Frame metadata.
      * @returns {object}
      */
     function createFrame(image, options = {}) {
       const originalCanvas =
         options.reuseCanvas && image instanceof HTMLCanvasElement ? image : imageCanvas(image);
+      const orderMetadata = sequenceOrder.createFrameOrderMetadata({
+        sourceType:
+          options.sourceType ||
+          (options.imported ? sequenceOrder.SOURCE_TYPES.IMAGE : sequenceOrder.SOURCE_TYPES.MANIFEST),
+        batchIndex: options.importBatchIndex,
+        selectionIndex: options.importSelectionIndex ?? options.sourceIndex ?? options.originalIndex,
+        filenameIndex: options.importFilenameIndex ?? options.sourceIndex ?? options.originalIndex,
+      });
       return {
         uid: root.crypto?.randomUUID?.() || `frame_${Date.now()}_${Math.random()}`,
         sourceIndex: Number.isInteger(options.sourceIndex) ? options.sourceIndex : null,
-        originalIndex: Number.isInteger(options.originalIndex)
-          ? options.originalIndex
-          : Number.MAX_SAFE_INTEGER,
+        originalIndex: Number.isInteger(options.originalIndex) ? options.originalIndex : null,
         sourcePath: String(options.sourcePath || ""),
         name: String(options.name || "frame.png"),
+        ...orderMetadata,
         originalCanvas,
         editedCanvas: originalCanvas,
         included: true,
@@ -443,6 +477,8 @@
      */
     async function loadCurrentAnimation() {
       state.premiumFeatures.clear();
+      state.importOrderStrategy = sequenceOrder.ORDER_STRATEGIES.FILENAME;
+      state.nextImportBatchIndex = 0;
       const animation = hooks.getCurrentAnimation?.();
       if (!animation?.frames?.length || animation.images?.length !== animation.frames.length) {
         state.frames = [];
@@ -613,6 +649,32 @@
       cssEscape: (value) => CSS.escape(value),
       premiumFeatures: hooks.premiumFeatures,
     });
+    const mediaExportDialog = mediaExportDialogModule.createController({
+      elements,
+      getLanguage: () => state.language,
+      getSummary: () => {
+        const frames = includedFrames();
+        const animation = hooks.getCurrentAnimation?.() || {};
+        const width = Math.max(0, ...frames.map((frame) => Number(frame.editedCanvas?.width) || 0));
+        const height = Math.max(0, ...frames.map((frame) => Number(frame.editedCanvas?.height) || 0));
+        return {
+          frameCount: frames.length,
+          fps:
+            state.mode === "import"
+              ? Number(elements.organizerImportFps.value || 12)
+              : Number(animation.fps || 12),
+          canvas: width && height ? `${width}×${height}` : "—",
+        };
+      },
+      onExport: (options) => exportIncludedFrames(options),
+      fetchImpl: root.fetch,
+      onRecoveryChange: (job) => {
+        elements.organizerViewExportJob.hidden = !job?.id;
+      },
+    });
+    const hasRecentExportJob = Boolean(root.LocalMediaExportClient?.getLastJobId?.());
+    elements.organizerViewExportJob.hidden = !hasRecentExportJob;
+    elements.organizerViewExportJob.addEventListener("click", () => mediaExportDialog.open());
 
     /**
      * Opens the organizer and reloads the current animation.
@@ -642,6 +704,8 @@
       state.returnFocus = document.activeElement;
       state.mode = "import";
       state.frames = [];
+      state.importOrderStrategy = sequenceOrder.ORDER_STRATEGIES.FILENAME;
+      state.nextImportBatchIndex = 0;
       state.animationName = "";
       state.anchorIndex = -1;
       state.previewIndex = 0;
@@ -716,13 +780,16 @@
       analyze,
       loadCurrentAnimation,
       applyPlan,
+      editBatchCutout,
       importIntoSession,
       addIncludedFramesToAssets,
       exportIncludedFrames,
+      openExportDialog: () => mediaExportDialog.open(),
       selectFrame,
       imageImporter,
       videoImporter,
       loopFinder,
+      sequenceOrder,
     });
     uiController.bindEvents();
     uiController.renderLanguage();

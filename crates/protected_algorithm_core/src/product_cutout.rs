@@ -1,6 +1,9 @@
 //! Product-level color replacement and connected selection repair pipeline.
 
+mod scratch;
+
 use crate::protection;
+use scratch::{reset_bytes, shared_scratch, CutoutScratch, EdgeScratch};
 
 /// Fixed byte size of [`CutoutConfiguration`]'s external representation.
 pub(crate) const CONFIG_BYTES: usize = 64;
@@ -84,22 +87,50 @@ pub(crate) fn parse_configuration(bytes: &[u8]) -> Option<CutoutConfiguration> {
     })
 }
 
-/// Applies global color replacement or connected selection repair as one pipeline.
-pub(crate) fn apply(
+/// Applies global color replacement or connected selection repair directly into
+/// the caller-owned output buffer.
+pub(crate) fn apply_into(
     source: &[u8],
     width: usize,
     height: usize,
     operation_mask: Option<&[u8]>,
     protected_colors: &[[u8; 3]],
+    output: &mut [u8],
+    configuration: CutoutConfiguration,
+) {
+    let mut scratch = shared_scratch();
+    apply_with_scratch(
+        source,
+        width,
+        height,
+        operation_mask,
+        protected_colors,
+        output,
+        configuration,
+        &mut scratch,
+    );
+}
+
+/// Executes one cutout call with explicitly supplied reusable working memory.
+#[allow(clippy::too_many_arguments)]
+fn apply_with_scratch(
+    source: &[u8],
+    width: usize,
+    height: usize,
+    operation_mask: Option<&[u8]>,
+    protected_colors: &[[u8; 3]],
+    output: &mut [u8],
     mut configuration: CutoutConfiguration,
-) -> Vec<u8> {
+    scratch: &mut CutoutScratch,
+) {
     let pixel_count = width * height;
+    output.copy_from_slice(source);
     if configuration.seed_x < 0
         || configuration.seed_y < 0
         || configuration.seed_x as usize >= width
         || configuration.seed_y as usize >= height
     {
-        return source.to_vec();
+        return;
     }
     if !configuration.explicit_reference {
         let offset = (configuration.seed_y as usize * width + configuration.seed_x as usize) * 4;
@@ -111,11 +142,11 @@ pub(crate) fn apply(
         };
     }
     if configuration.reference == configuration.replacement {
-        return source.to_vec();
+        return;
     }
     let threshold = threshold_squared(configuration.tolerance);
-    let selected = if configuration.connected {
-        connected_candidates(
+    if configuration.connected {
+        fill_connected_candidates(
             source,
             width,
             height,
@@ -124,9 +155,10 @@ pub(crate) fn apply(
             configuration.seed_y,
             configuration.reference,
             threshold,
-        )
+            scratch,
+        );
     } else {
-        expanded_candidates(
+        fill_expanded_candidates(
             source,
             width,
             height,
@@ -134,12 +166,14 @@ pub(crate) fn apply(
             configuration.reference,
             configuration.tolerance,
             configuration.edge_enhance,
-        )
-    };
-    let protected = if configuration.connected {
-        None
+            scratch,
+        );
+    }
+    let has_protection = if configuration.connected {
+        scratch.protection.clear();
+        false
     } else {
-        protection::protection_mask(
+        protection::fill_protection_mask(
             source,
             [
                 configuration.reference.r,
@@ -147,13 +181,15 @@ pub(crate) fn apply(
                 configuration.reference.b,
             ],
             protected_colors,
+            &mut scratch.protection,
         )
     };
-    let mut output = source.to_vec();
+    let selected = scratch.selected.as_slice();
+    let protected = has_protection.then_some(scratch.protection.as_slice());
     for pixel in 0..pixel_count {
         if selected[pixel] == 0
             || operation_mask.is_some_and(|mask| mask[pixel] != 255)
-            || protected.as_ref().is_some_and(|mask| mask[pixel] != 0)
+            || protected.is_some_and(|mask| mask[pixel] != 0)
         {
             continue;
         }
@@ -166,31 +202,32 @@ pub(crate) fn apply(
         ]);
     }
     blend_recovery(
-        &mut output,
+        output,
         source,
-        &selected,
+        selected,
         operation_mask,
-        protected.as_deref(),
+        protected,
         configuration,
     );
     if !configuration.connected {
         alpha_thresholds(
-            &mut output,
+            output,
             operation_mask,
             configuration.alpha_high,
             configuration.alpha_low,
         );
     }
     restore_edges(
-        &mut output,
+        output,
         source,
         width,
         height,
-        &selected,
+        selected,
         operation_mask,
-        protected.as_deref(),
+        protected,
         configuration,
         threshold,
+        &mut scratch.edge,
     );
     let despill_reference = if configuration.explicit_despill {
         configuration.despill
@@ -199,10 +236,10 @@ pub(crate) fn apply(
     };
     if !configuration.connected {
         directional_despill(
-            &mut output,
-            &selected,
+            output,
+            selected,
             operation_mask,
-            protected.as_deref(),
+            protected,
             despill_reference,
             configuration.despill_strength,
         );
@@ -216,7 +253,6 @@ pub(crate) fn apply(
             output[offset..offset + 4].copy_from_slice(&source[offset..offset + 4]);
         }
     }
-    output
 }
 
 fn threshold_squared(tolerance: i32) -> i32 {
@@ -236,7 +272,7 @@ fn rgba_matches(source: &[u8], pixel: usize, reference: Color, threshold: i32) -
     distance <= threshold
 }
 
-fn expanded_candidates(
+fn fill_expanded_candidates(
     source: &[u8],
     width: usize,
     height: usize,
@@ -244,12 +280,14 @@ fn expanded_candidates(
     reference: Color,
     tolerance: i32,
     edge_enhance: i32,
-) -> Vec<u8> {
+    scratch: &mut CutoutScratch,
+) {
     let count = width * height;
-    let mut candidates = vec![0_u8; count];
-    let mut selected = vec![0_u8; count];
+    reset_bytes(&mut scratch.candidates, count);
+    reset_bytes(&mut scratch.selected, count);
+    scratch.traversal.clear();
     if tolerance < 0 {
-        return selected;
+        return;
     }
     let effective = ((100 - tolerance).max(0) * edge_enhance) as f64 / 100.0 + tolerance as f64;
     let base_threshold = threshold_squared(tolerance);
@@ -257,7 +295,9 @@ fn expanded_candidates(
         .mul_add(effective * 5.1, 0.5)
         .trunc()
         .clamp(0.0, i32::MAX as f64) as i32;
-    let mut queue = Vec::<u32>::with_capacity(count);
+    let candidates = &mut scratch.candidates;
+    let selected = &mut scratch.selected;
+    let queue = &mut scratch.traversal;
     for pixel in 0..count {
         if mask.is_some_and(|value| value[pixel] != 255)
             || !rgba_matches(source, pixel, reference, enhanced_threshold)
@@ -267,12 +307,12 @@ fn expanded_candidates(
         candidates[pixel] = 1;
         if rgba_matches(source, pixel, reference, base_threshold) {
             selected[pixel] = 1;
-            queue.push(pixel as u32);
+            queue.push(pixel);
         }
     }
     let mut head = 0;
     while head < queue.len() {
-        let pixel = queue[head] as usize;
+        let pixel = queue[head];
         head += 1;
         let x = pixel % width;
         let neighbors = [
@@ -292,14 +332,13 @@ fn expanded_candidates(
         for neighbor in neighbors.into_iter().flatten() {
             if candidates[neighbor] != 0 && selected[neighbor] == 0 {
                 selected[neighbor] = 1;
-                queue.push(neighbor as u32);
+                queue.push(neighbor);
             }
         }
     }
-    selected
 }
 
-fn connected_candidates(
+fn fill_connected_candidates(
     source: &[u8],
     width: usize,
     height: usize,
@@ -308,19 +347,23 @@ fn connected_candidates(
     seed_y: i32,
     reference: Color,
     threshold: i32,
-) -> Vec<u8> {
+    scratch: &mut CutoutScratch,
+) {
     let count = width * height;
-    let mut selected = vec![0_u8; count];
+    reset_bytes(&mut scratch.selected, count);
+    scratch.traversal.clear();
     if seed_x < 0 || seed_y < 0 || seed_x as usize >= width || seed_y as usize >= height {
-        return selected;
+        return;
     }
     let seed = seed_y as usize * width + seed_x as usize;
     if mask.is_some_and(|value| value[seed] != 255)
         || !rgba_matches(source, seed, reference, threshold)
     {
-        return selected;
+        return;
     }
-    let mut stack = vec![seed];
+    let selected = &mut scratch.selected;
+    let stack = &mut scratch.traversal;
+    stack.push(seed);
     selected[seed] = 1;
     while let Some(pixel) = stack.pop() {
         let x = pixel % width;
@@ -349,7 +392,6 @@ fn connected_candidates(
             stack.push(neighbor);
         }
     }
-    selected
 }
 
 fn alpha_thresholds(output: &mut [u8], mask: Option<&[u8]>, high: u8, low: u8) {
@@ -841,28 +883,11 @@ fn restore_edges(
     _protected: Option<&[u8]>,
     configuration: CutoutConfiguration,
     threshold: i32,
+    scratch: &mut EdgeScratch,
 ) {
     let radius = configuration.edge_radius.min(600);
     if radius == 0 {
         return;
-    }
-    let count = width * height;
-    let original = output.to_vec();
-    let mut visited = vec![0u8; count];
-    let mut frontier = vec![0u8; count];
-    for pixel in 0..count {
-        if selected[pixel] != 1 {
-            continue;
-        }
-        let x = pixel % width;
-        let y = pixel / width;
-        if (x > 0 && selected[pixel - 1] == 0)
-            || (x + 1 < width && selected[pixel + 1] == 0)
-            || (y > 0 && selected[pixel - width] == 0)
-            || (y + 1 < height && selected[pixel + width] == 0)
-        {
-            frontier[pixel] = 1;
-        }
     }
     let reference_linear = rgb_linear(configuration.reference);
     let replacement_linear = rgb_linear(configuration.replacement);
@@ -878,10 +903,36 @@ fn restore_edges(
     if configuration.edge_mode != 0 && alpha_delta == 0.0 && axis_length < 0.0001 {
         return;
     }
+    let count = width * height;
+    scratch.original.resize(output.len(), 0);
+    scratch.original.copy_from_slice(output);
+    reset_bytes(&mut scratch.visited, count);
+    reset_bytes(&mut scratch.frontier, count);
+    reset_bytes(&mut scratch.next_frontier, count);
+    let EdgeScratch {
+        original,
+        visited,
+        frontier,
+        next_frontier,
+    } = scratch;
+    for pixel in 0..count {
+        if selected[pixel] != 1 {
+            continue;
+        }
+        let x = pixel % width;
+        let y = pixel / width;
+        if (x > 0 && selected[pixel - 1] == 0)
+            || (x + 1 < width && selected[pixel + 1] == 0)
+            || (y > 0 && selected[pixel - width] == 0)
+            || (y + 1 < height && selected[pixel + width] == 0)
+        {
+            frontier[pixel] = 1;
+        }
+    }
     let mut minimum_alpha = configuration.replacement.a as i32;
     let mut maximum_alpha = configuration.replacement.a as i32;
     for layer in 1..=radius {
-        let mut next = vec![0u8; count];
+        next_frontier.fill(0);
         for pixel in 0..count {
             if frontier[pixel] == 0 {
                 continue;
@@ -903,11 +954,11 @@ fn restore_edges(
             ];
             for neighbor in neighbors.into_iter().flatten() {
                 if selected[neighbor] == 0 && visited[neighbor] == 0 {
-                    next[neighbor] = 1;
+                    next_frontier[neighbor] = 1;
                 }
             }
         }
-        if !next.iter().any(|v| *v != 0) {
+        if !next_frontier.iter().any(|value| *value != 0) {
             break;
         }
         let layer_weight = 1.0 - (layer - 1) as f64 / radius as f64;
@@ -915,7 +966,7 @@ fn restore_edges(
         let mut alpha_total = 0i64;
         let mut alpha_count = 0i64;
         for pixel in 0..count {
-            if next[pixel] == 0 {
+            if next_frontier[pixel] == 0 {
                 continue;
             }
             visited[pixel] = 1;
@@ -965,7 +1016,7 @@ fn restore_edges(
                     minimum_alpha,
                     maximum_alpha,
                     output,
-                    &visited,
+                    visited.as_slice(),
                     width,
                     height,
                     pixel,
@@ -1023,7 +1074,7 @@ fn restore_edges(
                             minimum_alpha,
                             maximum_alpha,
                             output,
-                            &visited,
+                            visited.as_slice(),
                             width,
                             height,
                             pixel,
@@ -1049,7 +1100,7 @@ fn restore_edges(
                             minimum_alpha,
                             maximum_alpha,
                             output,
-                            &visited,
+                            visited.as_slice(),
                             width,
                             height,
                             pixel,
@@ -1073,7 +1124,7 @@ fn restore_edges(
                     minimum_alpha.max((configuration.replacement.a as i32 * 2 + average) / 3);
             }
         }
-        frontier = next;
+        std::mem::swap(frontier, next_frontier);
         if configuration.edge_mode != 0 && !changed {
             break;
         }
@@ -1188,7 +1239,143 @@ mod tests {
             despill_strength: 0,
             edge_radius: 0,
         };
-        let result = apply(&source, 3, 1, None, &[], configuration);
+        let mut result = vec![0; source.len()];
+        let mut scratch = CutoutScratch::new();
+        apply_with_scratch(
+            &source,
+            3,
+            1,
+            None,
+            &[],
+            &mut result,
+            configuration,
+            &mut scratch,
+        );
         assert_eq!(result, [0, 0, 0, 0, 255, 0, 0, 255, 0, 255, 0, 255]);
+    }
+
+    #[test]
+    fn negative_tolerance_skips_direct_replacement_but_keeps_blend_recovery() {
+        let source = [0, 255, 0, 255, 0, 254, 0, 255];
+        let configuration = CutoutConfiguration {
+            connected: false,
+            blend_mode: 0,
+            edge_mode: 0,
+            explicit_reference: true,
+            explicit_despill: false,
+            alpha_high: 0,
+            alpha_low: 0,
+            seed_x: 0,
+            seed_y: 0,
+            reference: Color {
+                r: 0,
+                g: 255,
+                b: 0,
+                a: 255,
+            },
+            replacement: Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            despill: Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            tolerance: -1,
+            edge_enhance: 100,
+            blend_strength: 100,
+            despill_strength: 100,
+            edge_radius: 3,
+        };
+        let mut result = vec![99; source.len()];
+        let mut scratch = CutoutScratch::new();
+        apply_with_scratch(
+            &source,
+            2,
+            1,
+            None,
+            &[],
+            &mut result,
+            configuration,
+            &mut scratch,
+        );
+        assert_eq!(result, [150, 150, 150, 0, 148, 150, 148, 2]);
+    }
+
+    #[test]
+    fn repeated_calls_reuse_pixel_sized_scratch_buffers() {
+        let source = [0, 255, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255];
+        let configuration = CutoutConfiguration {
+            connected: false,
+            blend_mode: 0,
+            edge_mode: 0,
+            explicit_reference: true,
+            explicit_despill: false,
+            alpha_high: 0,
+            alpha_low: 0,
+            seed_x: 0,
+            seed_y: 0,
+            reference: Color {
+                r: 0,
+                g: 255,
+                b: 0,
+                a: 255,
+            },
+            replacement: Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            despill: Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            tolerance: 1,
+            edge_enhance: 0,
+            blend_strength: 0,
+            despill_strength: 0,
+            edge_radius: 0,
+        };
+        let mut scratch = CutoutScratch::new();
+        let mut first = vec![0; source.len()];
+        apply_with_scratch(
+            &source,
+            3,
+            1,
+            None,
+            &[[255, 0, 0]],
+            &mut first,
+            configuration,
+            &mut scratch,
+        );
+        let pointers = (
+            scratch.candidates.as_ptr(),
+            scratch.selected.as_ptr(),
+            scratch.traversal.as_ptr(),
+            scratch.protection.as_ptr(),
+        );
+        let mut second = vec![0; source.len()];
+        apply_with_scratch(
+            &source,
+            3,
+            1,
+            None,
+            &[[255, 0, 0]],
+            &mut second,
+            configuration,
+            &mut scratch,
+        );
+        assert_eq!(first, second);
+        assert_eq!(scratch.candidates.as_ptr(), pointers.0);
+        assert_eq!(scratch.selected.as_ptr(), pointers.1);
+        assert_eq!(scratch.traversal.as_ptr(), pointers.2);
+        assert_eq!(scratch.protection.as_ptr(), pointers.3);
     }
 }

@@ -33,8 +33,8 @@
 
   /**
    * Creates one immutable product output consumed by ZIP, worksets, and group replacement.
-   * @param {{name:string,frame?:object|null,data:string,canvas?:object|null}} value Output fields.
-   * @returns {{name:string,frame:object|null,data:string,canvas:object|null}}
+   * @param {{name:string,frame?:object|null,data:string,canvas?:object|null,cutoutState?:object|null}} value Output fields.
+   * @returns {{name:string,frame:object|null,data:string,canvas:object|null,cutoutState:object|null}}
    */
   function createOutput(value) {
     const data = String(value?.data || "");
@@ -46,6 +46,15 @@
       frame: value?.frame || null,
       data,
       canvas: value?.canvas || null,
+      cutoutState: value?.cutoutState
+        ? {
+            processingParameters: { ...(value.cutoutState.processingParameters || {}) },
+            backgroundSamples: Array.from(value.cutoutState.backgroundSamples || [], (color) => ({
+              ...color,
+            })),
+            seedPoints: Array.from(value.cutoutState.seedPoints || [], (point) => ({ ...point })),
+          }
+        : null,
     });
   }
 

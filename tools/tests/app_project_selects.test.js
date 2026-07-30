@@ -71,6 +71,26 @@ test("project selects preserve the active project and retire the profile filter"
   assert.equal(selectedProfileId, "all");
 });
 
+test("project selects protect the Codex Pets system project from clear and delete actions", () => {
+  const elements = createElements();
+  const controller = createController({
+    elements,
+    getConfig: () => ({
+      activeProjectId: "codex_pets",
+      projects: [{ id: "codex_pets", kind: "codex_pets", label: "Codex Pets" }],
+    }),
+    projectLabel: (project) => project.label,
+    translate: (key) => (key === "codexPetsProjectProtected" ? "protected" : key),
+    storage: { setItem() {} },
+  });
+
+  controller.renderProjectSelect();
+
+  assert.equal(elements.clearProject.disabled, true);
+  assert.equal(elements.deleteProject.disabled, true);
+  assert.equal(elements.deleteProject.title, "protected");
+});
+
 test("small group lists stay visible and chain select preserves its value", () => {
   const elements = createElements();
   let groupSearch = "slash";

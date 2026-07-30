@@ -11,11 +11,17 @@ if (browserOnlyMode) {
  * Exports processed organizer frames without calling the local project API.
  * @param {object} metadata Animation export metadata.
  * @param {Array<object>} items Processed PNG frame records.
- * @param {{onProgress?:(current:number,total:number)=>void}} [options] Export progress callbacks.
+ * @param {{formats?:{frames?:boolean,spritesheet?:boolean,gif?:boolean,mov?:boolean},premiumFeatures?:Iterable<string>,onProgress?:(current:number,total:number)=>void,signal?:AbortSignal}} [options] Selected outputs, progress callback, and cancellation signal.
  * @returns {Promise<object>} Browser ZIP export result.
  */
 async function exportBrowserAnimation(metadata, items, options = {}) {
   if (!browserRuntime) throw new Error("Browser export runtime is unavailable.");
+  const formats = {
+    frames: options.formats?.frames !== false,
+    spritesheet: options.formats?.spritesheet === true,
+    gif: options.formats?.gif === true,
+    mov: options.formats?.mov === true,
+  };
   const requiredFeatures = premiumFeatures.normalizeFeatureIds([
     "organizer.output",
     ...Array.from(options.premiumFeatures || []),
@@ -34,12 +40,28 @@ async function exportBrowserAnimation(metadata, items, options = {}) {
   } else if (!(await ensurePremiumActivated(requiredFeatures))) {
     return null;
   }
-  return browserRuntime.exportAnimationPackage(metadata, items, {
-    authorization,
+  const browserResult =
+    formats.frames || formats.spritesheet
+      ? await browserRuntime.exportAnimationPackage(metadata, items, {
+          authorization,
+          fetchImpl: globalThis.fetch,
+          formats,
+          premiumFeatures: browserOnlyMode ? requiredFeatures : [],
+          onProgress: (current) => options.onProgress?.(Math.min(current, items.length), items.length),
+          signal: options.signal,
+        })
+      : { filename: "", frameCount: items.length, downloads: [] };
+  if (!formats.gif && !formats.mov) return browserResult;
+  if (browserOnlyMode) throw new Error("GIF and transparent MOV require the local app with FFmpeg.");
+  const localClient = globalThis.LocalMediaExportClient;
+  if (typeof localClient?.exportMedia !== "function") throw new Error("Local media exporter is unavailable.");
+  const localResult = await localClient.exportMedia(metadata, items, formats, {
     fetchImpl: globalThis.fetch,
-    premiumFeatures: browserOnlyMode ? requiredFeatures : [],
-    onProgress: (current) => options.onProgress?.(Math.min(current, items.length), items.length),
+    document: globalThis.document,
+    onProgress: options.onProgress,
+    signal: options.signal,
   });
+  return { ...browserResult, downloads: localResult.downloads || [] };
 }
 
 /**
@@ -235,8 +257,11 @@ let {
   batchCutout,
   frameOrganizer,
   cutoutReturnTool,
-  homeHubDismissed,
 } = globalThis.XSXBAppState.createInitialState();
+let attackTrailEditor = null;
+let lastAttackTrailPlaybackSampleToken = "";
+const dirtyPetProfileIds = new Set();
+let removedCodexPetRecovery = null;
 
 const appConfirmModule = globalThis.XSXBAppConfirm;
 if (!appConfirmModule) throw new Error("XSXBAppConfirm is required.");
@@ -248,6 +273,7 @@ const appConfirmation = appConfirmModule.createController({
     message: els.appConfirmMessage,
     details: els.appConfirmDetails,
     cancel: els.appConfirmCancel,
+    alternate: els.appConfirmAlternate,
     accept: els.appConfirmAccept,
   },
   documentRef: globalThis.document,
@@ -378,6 +404,7 @@ function updateGroupPlaybackFromInputs(...args) {
 }
 
 let projectSelectsController = null;
+let godotHandoffController = null;
 
 function projectSelectsCall(name, ...args) {
   if (!projectSelectsController) throw new Error("XSXBAppProjectSelects is not initialized.");
@@ -459,6 +486,7 @@ const frameSelection = globalThis.XSXBFrameSelection.createController({
   setSelectionAnchorFrame: (value) => {
     selectionAnchorFrame = value;
   },
+  onPrimaryFrameChanged: () => attackTrailEditor?.frameChanged(),
 });
 const {
   clampFrameIndex,
@@ -506,30 +534,38 @@ const playFrameAudio = frameAudio.play;
 const collectFrameAudioBindingsForSave = frameAudio.collectForSave;
 const syncFrameAudioBindingsToGame = frameAudio.syncToGame;
 const routing = globalThis.XSXBAppRouting.createController({
-  elements: els,
-  getConfig: () => config,
-  getLanguage: () => language,
   getCurrentGroup: () => currentGroup,
-  getHomeHubDismissed: () => homeHubDismissed,
-  setHomeHubDismissed: (dismissed) => {
-    homeHubDismissed = Boolean(dismissed);
-  },
   getSelectedFrame: () => selectedFrame,
   getActiveProjectId: activeProjectId,
   getBatchCutout: () => batchCutout,
   getFrameOrganizer: () => frameOrganizer,
+  getWorkspaceDirty: () => dirty,
+  requestWorkspaceDecision: () =>
+    appConfirmation.requestDecision(
+      language === "en"
+        ? "Current tuning has unsaved changes. Save them before switching tools, or discard them."
+        : "当前调参有未保存改动。请先保存，或放弃改动后切换工具。",
+      {
+        title: language === "en" ? "Unsaved tuning" : "未保存的调参",
+        saveLabel: language === "en" ? "Save and switch" : "保存并切换",
+        discardLabel: language === "en" ? "Discard" : "放弃改动",
+        cancelLabel: language === "en" ? "Cancel" : "取消",
+      },
+    ),
+  saveWorkspace: () => save(),
+  discardWorkspaceChanges: async () => {
+    resetProjectSession();
+    dirty = false;
+    editRevision += 1;
+    imageCache.clear();
+    await loadConfig();
+    resizeCanvas();
+  },
   translate: t,
-  projectLabel,
   groupLabel,
 });
-const {
-  applyWorkbenchRoute,
-  currentWorkbenchRoute,
-  renderHomeHub,
-  syncUrlState,
-  syncWorkbenchRoute,
-  updateDocumentTitle,
-} = routing;
+const { applyWorkbenchRoute, currentWorkbenchRoute, syncUrlState, syncWorkbenchRoute, updateDocumentTitle } =
+  routing;
 const playbackTiming = globalThis.XSXBPlaybackTiming.createController({
   minFrameDurationMs: MIN_FRAME_DURATION_MS,
   getCurrentGroup: () => currentGroup,
@@ -1170,7 +1206,6 @@ projectStateController = projectStateModule.createController({
   normalizeFrameImageAttachment,
   newLocalId,
   groupPlaybackFrame: GROUP_PLAYBACK_FRAME,
-  renderHomeHub: () => renderHomeHub(),
   renderSceneSelect: () => renderSceneSelect(),
   renderProfileSelect: () => renderProfileSelect(),
   renderGroupSelect: (...args) => renderGroupSelect(...args),
@@ -1269,6 +1304,8 @@ const saveController = saveControllerModule.createController({
   updateAdjustmentFromInputs: () => updateAdjustmentFromInputs(),
   pruneNoopFrameOverrides,
   collectFrameAudioBindingsForSave,
+  getProjectKind: () => config?.projectKind || "godot",
+  collectCodexPetExportsForSave: () => collectCodexPetExportsForSave(),
   canEditBox,
   mapWithConcurrency,
   loadImageCached,
@@ -1298,6 +1335,7 @@ const saveController = saveControllerModule.createController({
   getSoulFrameOverrides: () => soulFrameOverrides,
   getSoulPlaybackOverrides: () => soulPlaybackOverrides,
   getSoulFrameBoxOverrides: () => soulFrameBoxOverrides,
+  getAttackTrails: () => attackTrailEditor?.serialize(),
   premiumFeatures,
   ensurePremiumActivated,
   fetchImpl: globalThis.fetch,
@@ -1422,9 +1460,13 @@ function updateSaveState(...args) {
   return projectStateCall("updateSaveState", ...args);
 }
 function markDirty(...args) {
+  if (config?.projectKind === "codex_pets" && currentGroup?.profileId) {
+    dirtyPetProfileIds.add(currentGroup.profileId);
+  }
   return projectStateCall("markDirty", ...args);
 }
 function markClean(...args) {
+  dirtyPetProfileIds.clear();
   return projectStateCall("markClean", ...args);
 }
 
@@ -1529,17 +1571,47 @@ function canUseReferenceFrame(...args) {
   return projectStateCall("canUseReferenceFrame", ...args);
 }
 function resetProjectSession() {
+  dirtyPetProfileIds.clear();
   return projectLifecycle.resetProjectSession();
 }
 
 function updateGroupMeta() {}
 
+/** Synchronizes custom-pet lifecycle controls for the selected profile. */
+function syncCodexPetLifecycleActions() {
+  const pet = currentGroup?.profilePet;
+  const writableCustomPet =
+    config?.projectKind === "codex_pets" && pet?.kind === "custom" && pet?.writable === true;
+  const actions = document.querySelector("#codexPetActions");
+  const removeButton = document.querySelector("#removeCodexPet");
+  const restoreBackupButton = document.querySelector("#restoreCodexPetBackup");
+  const undoButton = document.querySelector("#restoreRemovedCodexPet");
+  if (actions) actions.hidden = !writableCustomPet;
+  if (removeButton) removeButton.disabled = !writableCustomPet;
+  if (restoreBackupButton) {
+    restoreBackupButton.hidden = !writableCustomPet || pet?.hasBackup !== true;
+    restoreBackupButton.disabled = !writableCustomPet || pet?.hasBackup !== true;
+  }
+  if (undoButton) {
+    undoButton.hidden = !removedCodexPetRecovery || removedCodexPetRecovery.projectId !== activeProjectId();
+  }
+}
+
 async function loadConfig() {
-  return projectLifecycle.loadConfig();
+  const result = await projectLifecycle.loadConfig();
+  attackTrailEditor?.load(config?.attackTrails);
+  document.body.classList.toggle("codexPetsProject", config?.projectKind === "codex_pets");
+  const addCodexPet = document.querySelector("#addCodexPet");
+  if (addCodexPet) addCodexPet.hidden = config?.projectKind !== "codex_pets";
+  syncCodexPetLifecycleActions();
+  return result;
 }
 
 async function selectGroup(group, options = {}) {
-  return projectLifecycle.selectGroup(group, options);
+  const result = await projectLifecycle.selectGroup(group, options);
+  attackTrailEditor?.contextChanged();
+  syncCodexPetLifecycleActions();
+  return result;
 }
 
 function loadChainImages(chain) {
@@ -1571,6 +1643,7 @@ function cloneState() {
     framePlaybackOverrides: structuredClone(framePlaybackOverrides),
     vfxPlaybackOverrides: structuredClone(vfxPlaybackOverrides),
     frameBoxOverrides: structuredClone(frameBoxOverrides),
+    attackTrails: attackTrailEditor?.snapshot() || { schemaVersion: 8, bindings: {} },
     bossFrameOverrides: structuredClone(bossFrameOverrides),
     bossPlaybackOverrides: structuredClone(bossPlaybackOverrides),
     act2StatueBossFrameOverrides: structuredClone(act2StatueBossFrameOverrides),
@@ -1604,6 +1677,7 @@ function restoreHistoryState(state) {
   framePlaybackOverrides = structuredClone(state.framePlaybackOverrides);
   vfxPlaybackOverrides = structuredClone(state.vfxPlaybackOverrides);
   frameBoxOverrides = structuredClone(state.frameBoxOverrides || {});
+  attackTrailEditor?.restore(state.attackTrails || { schemaVersion: 8, bindings: {} });
   bossFrameOverrides = structuredClone(state.bossFrameOverrides);
   bossPlaybackOverrides = structuredClone(state.bossPlaybackOverrides);
   act2StatueBossFrameOverrides = structuredClone(state.act2StatueBossFrameOverrides || {});
@@ -1795,6 +1869,7 @@ function syncGroupPlaybackInputs(...args) {
 function selectFilmstripFrame(index, event = null) {
   clearSelectedAttachment();
   const frameIndex = clampFrameIndex(index, currentGroup);
+  const usesDirectMultiSelection = Boolean(event?.shiftKey || event?.ctrlKey || event?.metaKey);
   if (event?.shiftKey) {
     const anchor = clampFrameIndex(selectionAnchorFrame, currentGroup);
     const start = Math.min(anchor, frameIndex);
@@ -1816,6 +1891,7 @@ function selectFilmstripFrame(index, event = null) {
   } else {
     setSingleFrameSelection(frameIndex, currentGroup);
   }
+  if (usesDirectMultiSelection) attackTrailEditor?.frameChanged();
   playing = false;
   playbackPrimaryGroup = null;
   if (els.playPause) els.playPause.textContent = t("play");
@@ -1915,6 +1991,8 @@ function renderFilmstrip() {
 
 const attachmentModule = globalThis.XSXBAppAttachments;
 if (!attachmentModule) throw new Error("XSXBAppAttachments is required.");
+const attachmentSequenceModule = globalThis.XSXBAttachmentSequence;
+if (!attachmentSequenceModule) throw new Error("XSXBAttachmentSequence is required.");
 const attachmentController = attachmentModule.createController({
   fetchImpl: globalThis.fetch,
   fileReaderConstructor: globalThis.FileReader,
@@ -1951,16 +2029,33 @@ const attachmentController = attachmentModule.createController({
   draw,
   status,
   translate: t,
+  buildOneToOneSequencePlan: attachmentSequenceModule.buildOneToOneSequencePlan,
+  persistAssetLibrary: browserOnlyMode
+    ? async () => {
+        markDirty();
+      }
+    : undefined,
+  requestConfirmation: (message, details, options = {}) =>
+    appConfirmation.requestConfirmation(message, details, {
+      title: options.title || t("confirmTitle"),
+      confirmLabel: options.confirmLabel || t("confirm"),
+      cancelLabel: options.cancelLabel || t("cancel"),
+      tone: options.tone || "warning",
+    }),
 });
 const {
   addImagesToCurrentGroupAssets: attachmentAddImagesToCurrentGroupAssets,
   applyAttachmentAsset: attachmentApplyAsset,
+  applyAttachmentAssetSequence: attachmentApplyAssetSequence,
   attachmentAssetGroupKey: attachmentGroupKey,
   bindFrameImageAttachmentFile: attachmentBindImageFile,
+  canUndoAttachmentAssetRemoval: attachmentCanUndoAssetRemoval,
   collectFrameImageAttachmentsForSave: attachmentCollectForSave,
   persistAttachmentAssets: attachmentPersistAssets,
   readFileAsDataUrl,
+  removeAttachmentAssets: attachmentRemoveAssets,
   removeFrameImageAttachment: attachmentRemoveImage,
+  undoAttachmentAssetRemoval: attachmentUndoAssetRemoval,
   uploadFrameAttachmentData: uploadFrameAttachmentDataController,
   uploadFrameAttachmentImage: uploadFrameAttachmentImageController,
 } = attachmentController;
@@ -2019,6 +2114,7 @@ async function applyBrowserFrameOrganizerPlan(items, options = {}) {
     frameBoxOverrides: boxOverrides,
     frameAudioBindings,
     frameImageAttachments,
+    attackTrails: attackTrailEditor?.snapshot(),
     premiumFeatures: options.premiumFeatures || [],
   });
   replaceRecordContents(visualOverrides, result.frameVisualOverrides);
@@ -2026,6 +2122,8 @@ async function applyBrowserFrameOrganizerPlan(items, options = {}) {
   replaceRecordContents(boxOverrides, result.frameBoxOverrides);
   frameAudioBindings = result.frameAudioBindings;
   frameImageAttachments = result.frameImageAttachments;
+  config.attackTrails = result.attackTrails;
+  attackTrailEditor?.restore(result.attackTrails);
   imageCache.clear();
   imageElements.clear();
   await selectGroup(currentGroup, {
@@ -2033,6 +2131,109 @@ async function applyBrowserFrameOrganizerPlan(items, options = {}) {
     preserveView: true,
   });
   markDirty();
+}
+
+/**
+ * Deletes selected frames from the active browser-session animation without using a local API.
+ * @param {Iterable<number>} indexes Zero-based frame indexes to delete.
+ * @returns {Promise<void>} Resolves after all frame-owned state and views are remapped.
+ */
+async function deleteBrowserSessionFrames(indexes) {
+  if (!currentGroup) throw new Error("No active browser animation.");
+  const visualOverrides = overrideStore(currentGroup);
+  const playbackOverrides = playbackStore(currentGroup);
+  const boxOverrides = boxOverrideStore(currentGroup);
+  try {
+    const result = browserRuntime.deleteSessionAnimationFrames(currentGroup, indexes, {
+      frameVisualOverrides: visualOverrides,
+      framePlaybackOverrides: playbackOverrides,
+      frameBoxOverrides: boxOverrides,
+      frameAudioBindings,
+      frameImageAttachments,
+      attackTrails: attackTrailEditor?.snapshot(),
+    });
+    replaceRecordContents(visualOverrides, result.frameVisualOverrides);
+    replaceRecordContents(playbackOverrides, result.framePlaybackOverrides);
+    replaceRecordContents(boxOverrides, result.frameBoxOverrides);
+    frameAudioBindings = result.frameAudioBindings;
+    frameImageAttachments = result.frameImageAttachments;
+    config.attackTrails = result.attackTrails;
+    attackTrailEditor?.restore(result.attackTrails);
+    clearSelectedAttachment();
+    imageCache.clear();
+    imageElements.clear();
+    await selectGroup(currentGroup, {
+      frameIndex: Math.min(selectedFrame, currentGroup.frames.length - 1),
+      preserveView: true,
+    });
+    markDirty();
+  } catch (error) {
+    status(
+      language === "zh"
+        ? `浏览器会话帧删除失败：${error.message}`
+        : `Unable to delete browser-session frames: ${error.message}`,
+    );
+    throw error;
+  }
+}
+
+/**
+ * Deletes one complete browser-session animation and its animation-owned in-memory state.
+ * @param {object} group Transient animation group to delete.
+ * @returns {Promise<void>} Resolves after the next available group or empty state is rendered.
+ */
+async function deleteBrowserSessionAnimation(group) {
+  const visualOverrides = overrideStore(group);
+  const playbackOverrides = playbackStore(group);
+  const boxOverrides = boxOverrideStore(group);
+  const tuningValuesStore = valueStore(group);
+  try {
+    const result = browserRuntime.deleteSessionAnimation(config, group, {
+      values: tuningValuesStore,
+      frameVisualOverrides: visualOverrides,
+      framePlaybackOverrides: playbackOverrides,
+      frameBoxOverrides: boxOverrides,
+      frameAudioBindings,
+      frameImageAttachments,
+      attachmentAssets,
+      attackTrails: attackTrailEditor?.snapshot(),
+    });
+    config = result.config;
+    replaceRecordContents(tuningValuesStore, result.values);
+    replaceRecordContents(visualOverrides, result.frameVisualOverrides);
+    replaceRecordContents(playbackOverrides, result.framePlaybackOverrides);
+    replaceRecordContents(boxOverrides, result.frameBoxOverrides);
+    frameAudioBindings = result.frameAudioBindings;
+    frameImageAttachments = result.frameImageAttachments;
+    attachmentAssets = result.attachmentAssets;
+    attackTrailEditor?.restore(result.attackTrails);
+    clearSelectedAttachment();
+    imageCache.clear();
+    imageElements.clear();
+    renderProfileSelect();
+    renderGroupSelect();
+    renderChainGroupSelect();
+    if (result.nextGroup) {
+      await selectGroup(result.nextGroup, { fitView: true });
+    } else {
+      resetProjectSession();
+      renderProfileSelect();
+      renderGroupSelect();
+      renderChainGroupSelect();
+      updateWorkbenchHud(null);
+      draw();
+      syncUrlState();
+    }
+    resizeCanvas();
+    markDirty();
+  } catch (error) {
+    status(
+      language === "zh"
+        ? `浏览器会话动画删除失败：${error.message}`
+        : `Unable to delete browser-session animation: ${error.message}`,
+    );
+    throw error;
+  }
 }
 
 /**
@@ -2069,6 +2270,7 @@ appToolActionsController = appToolActionsModule.createController({
   getActiveProjectId: activeProjectId,
   getConfig: () => config,
   getLanguage: () => language,
+  browserOnly: browserOnlyMode,
   getFrameMutationPending: () => frameMutationPending,
   setFrameMutationPending: (value) => {
     frameMutationPending = Boolean(value);
@@ -2090,6 +2292,8 @@ appToolActionsController = appToolActionsModule.createController({
   loadConfig,
   resizeCanvas: () => resizeCanvas(),
   selectGroup,
+  deleteBrowserSessionFrames,
+  deleteBrowserSessionAnimation,
   clearImageCache: () => imageCache.clear(),
   clearImageElements: () => imageElements.clear(),
   setOpaqueRectCache: (value) => {
@@ -2212,6 +2416,30 @@ projectSelectsController = projectSelectsModule.createController({
   projectLabel,
   groupLabel,
   translate: t,
+  renderGodotHandoff: () => godotHandoffController?.render(),
+});
+
+const godotHandoffModule = globalThis.XSXBGodotHandoffController;
+if (!godotHandoffModule) throw new Error("XSXBGodotHandoffController is required.");
+godotHandoffController = godotHandoffModule.createController({
+  elements: {
+    card: document.querySelector("#godotHandoffCard"),
+    badge: document.querySelector("#godotHandoffBadge"),
+    rootLabel: document.querySelector("#godotHandoffRootLabel"),
+    rootInput: document.querySelector("#godotHandoffRoot"),
+    message: document.querySelector("#godotHandoffMessage"),
+    blockers: document.querySelector("#godotHandoffBlockers"),
+    bindButton: document.querySelector("#godotHandoffBind"),
+    syncButton: document.querySelector("#godotHandoffSync"),
+    unbindButton: document.querySelector("#godotHandoffUnbind"),
+  },
+  getConfig: () => config,
+  getLanguage: () => language,
+  browserOnly: browserOnlyMode,
+  fetchImpl: globalThis.fetch,
+  confirm: requestAppConfirmation,
+  reload: loadConfig,
+  status,
 });
 
 const filmstripModule = globalThis.XSXBAppFilmstrip;
@@ -2219,6 +2447,7 @@ if (!filmstripModule) throw new Error("XSXBAppFilmstrip is required.");
 const filmstripRendering = filmstripModule.createController({
   filmstrip: els.filmstrip,
   attachmentAssetTrayHost: els.attachmentAssetTrayHost,
+  getActiveProjectId: activeProjectId,
   deleteSelectedFramesButton: els.deleteSelectedFrames,
   clearAnimationButton: els.clearAnimation,
   attachmentAssetDragType: ATTACHMENT_ASSET_DRAG_TYPE,
@@ -2230,8 +2459,12 @@ const filmstripRendering = filmstripModule.createController({
   assetUrl,
   getSelectedFrameCount: selectedFrameCount,
   applyAttachmentAsset: attachmentApplyAsset,
+  applyAttachmentAssetSequence: attachmentApplyAssetSequence,
+  removeAttachmentAssets: attachmentRemoveAssets,
+  undoAttachmentAssetRemoval: attachmentUndoAssetRemoval,
+  canUndoAttachmentAssetRemoval: attachmentCanUndoAssetRemoval,
   readFileAsDataUrl,
-  addImagesToCurrentGroupAssets: attachmentAddImagesToCurrentGroupAssets,
+  addImagesToCurrentGroupAssets,
   status,
   deleteSelectedAnimationFrames,
   clearCurrentAnimation,
@@ -2388,6 +2621,15 @@ canvasRenderer = canvasRendererModule.createController({
   usesRuntimeFootAnchor,
   usesSceneTopLeftAnchor,
   valueStore,
+  drawAttackTrailLayer: (...args) => attackTrailEditor?.drawLayer(...args),
+  drawAttackTrailGuides: () => attackTrailEditor?.drawGuides(),
+  attackTrailNeedsContinuousDraw: () => {
+    if (!playing || !attackTrailEditor?.isContinuous()) return false;
+    const token = attackTrailPlaybackSampleToken();
+    if (token === lastAttackTrailPlaybackSampleToken) return false;
+    lastAttackTrailPlaybackSampleToken = token;
+    return true;
+  },
 });
 
 const stageViewModule = globalThis.XSXBStageView;
@@ -2445,6 +2687,7 @@ const keyboardController = keyboardModule.createController({
   getSelectedFrame: () => selectedFrame,
   setSelectedFrame: (value) => {
     selectedFrame = value;
+    attackTrailEditor?.frameChanged();
   },
   setSelectedFrames: (value) => {
     selectedFrames = value;
@@ -2585,6 +2828,165 @@ function updateAdjustmentFromInputs() {
   }
 }
 
+/** Converts attack-trail group-local coordinates into canvas pixels. */
+function attackTrailLocalToScreen(point, group = currentGroup, groupImages = images) {
+  const stableTransform = baseTransform(group);
+  const rect = frameScreenRect(0, group, groupImages, { transform: stableTransform });
+  if (!rect || !group) return { x: 0, y: 0 };
+  const transform = renderTransformForGroup(stableTransform, group);
+  const runtimeScale = runtimeBaseScaleForGroup(0, group, groupImages);
+  const worldScale = view.zoom * devicePixelRatio;
+  const facing = effectiveFlipH(group) ? -1 : 1;
+  const scaleX = runtimeScale * transform.scaleX * worldScale * facing;
+  const scaleY = runtimeScale * transform.scaleY * worldScale;
+  const rotation = (Number(transform.rotation || 0) * facing * Math.PI) / 180;
+  const x = Number(point?.x || 0) * scaleX;
+  const y = Number(point?.y || 0) * scaleY;
+  return {
+    x: rect.originX + x * Math.cos(rotation) - y * Math.sin(rotation),
+    y: rect.originY + x * Math.sin(rotation) + y * Math.cos(rotation),
+  };
+}
+
+/** Converts canvas pixels into attack-trail group-local coordinates. */
+function attackTrailScreenToLocal(point, group = currentGroup, groupImages = images) {
+  const stableTransform = baseTransform(group);
+  const rect = frameScreenRect(0, group, groupImages, { transform: stableTransform });
+  if (!rect || !group) return { x: 0, y: 0 };
+  const transform = renderTransformForGroup(stableTransform, group);
+  const runtimeScale = runtimeBaseScaleForGroup(0, group, groupImages);
+  const worldScale = view.zoom * devicePixelRatio;
+  const facing = effectiveFlipH(group) ? -1 : 1;
+  const scaleX = runtimeScale * transform.scaleX * worldScale * facing;
+  const scaleY = runtimeScale * transform.scaleY * worldScale;
+  const rotation = -(Number(transform.rotation || 0) * facing * Math.PI) / 180;
+  const dx = Number(point?.x || 0) - rect.originX;
+  const dy = Number(point?.y || 0) - rect.originY;
+  return {
+    x: (dx * Math.cos(rotation) - dy * Math.sin(rotation)) / (scaleX || 1),
+    y: (dx * Math.sin(rotation) + dy * Math.cos(rotation)) / (scaleY || 1),
+  };
+}
+
+/** Returns the time at which a trail control stick is reached. */
+function attackTrailFrameArrival(frameIndex, framePhase, group = currentGroup) {
+  if (!group?.frames?.length) return 0;
+  const target = clampInteger(frameIndex, 0, group.frames.length - 1);
+  let elapsed = 0;
+  for (let index = 0; index < target; index += 1) {
+    if (!framePlayback(index, group).disabled) elapsed += frameDurationMs(index, group) / 1000;
+  }
+  if (!framePlayback(target, group).disabled) {
+    elapsed += (frameDurationMs(target, group) / 1000) * clampNumber(framePhase, 0, 1);
+  }
+  return elapsed;
+}
+
+/** Returns quantized elapsed animation time for stable trail rendering. */
+function attackTrailPlaybackSample(group = currentGroup) {
+  if (!group) return { time: 0, sampleIndex: 0, subdivisions: 1, step: 0 };
+  let rawTime = attackTrailFrameArrival(selectedFrame, 0, group);
+  if (!playing) {
+    const selectedArrival = attackTrailEditor?.selectedStickArrival();
+    if (Number.isFinite(selectedArrival)) rawTime = selectedArrival;
+    return { time: rawTime, sampleIndex: 0, subdivisions: 1, step: 0 };
+  }
+  const frameStart = rawTime;
+  const frameDuration = frameDurationMs(selectedFrame, group) / 1000;
+  rawTime += Math.min(frameDuration, Math.max(0, (performance.now() - lastPlay) / 1000));
+  return window.XsxbTimingModes.frameSynchronousEffectSample(
+    rawTime,
+    frameStart,
+    frameDuration,
+    1 / groupPlaybackFps(group),
+  );
+}
+
+function attackTrailPlaybackSampleToken(group = currentGroup) {
+  if (!playing || !group) return "";
+  const sample = attackTrailPlaybackSample(group);
+  return `${group.uiId}:${selectedFrame}:${sample.sampleIndex}/${sample.subdivisions}:${sample.step.toFixed(6)}`;
+}
+
+function attackTrailAnimationTiming(group = currentGroup) {
+  let duration = 0;
+  let lastPlayableFrameStart = 0;
+  for (let index = 0; index < (group?.frames?.length || 0); index += 1) {
+    if (framePlayback(index, group).disabled) continue;
+    lastPlayableFrameStart = duration;
+    duration += frameDurationMs(index, group) / 1000;
+  }
+  return { duration, lastPlayableFrameStart };
+}
+
+/** Returns one Codex pet profile from the active config. */
+function codexPetProfile(profileId) {
+  return (config?.profiles || []).find((profile) => profile.id === profileId && profile.pet) || null;
+}
+
+/** Composes tuned pet cells back into their original WebP atlas layout. */
+async function composeCodexPetAtlas(profileId) {
+  const groups = (config?.groups || []).filter((group) => group.profileId === profileId);
+  if (!groups.length) return "";
+  const canvas = document.createElement("canvas");
+  canvas.width = 1536;
+  canvas.height = Number(codexPetProfile(profileId)?.pet?.atlasHeight || 1872);
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = true;
+  for (const group of groups) {
+    const groupImages = await Promise.all(
+      (group.frames || []).map((frame) => loadImageCached(frame).catch(() => null)),
+    );
+    for (let index = 0; index < group.frames.length; index += 1) {
+      const crop = group.frames[index].crop;
+      const image = groupImages[index];
+      if (!crop || !image) continue;
+      const transform = renderTransformForGroup(frameTransform(index, group), group);
+      const runtimeScale = runtimeBaseScaleForGroup(index, group, groupImages);
+      const scaleX = runtimeScale * Number(transform.scaleX || transform.scale || 1);
+      const scaleY = runtimeScale * Number(transform.scaleY || transform.scale || 1);
+      const cellX = Number(crop.x || 0);
+      const cellY = Number(crop.y || 0);
+      const cellWidth = Number(crop.width || 192);
+      const cellHeight = Number(crop.height || 208);
+      context.save();
+      context.beginPath();
+      context.rect(cellX, cellY, cellWidth, cellHeight);
+      context.clip();
+      context.translate(
+        cellX + cellWidth * 0.5 + Number(transform.offset?.x || 0) * runtimeScale,
+        cellY + cellHeight + Number(transform.offset?.y || 0) * runtimeScale - image.height * scaleY * 0.5,
+      );
+      context.rotate((Number(transform.rotation || 0) * Math.PI) / 180);
+      context.drawImage(
+        image,
+        -image.width * scaleX * 0.5,
+        -image.height * scaleY * 0.5,
+        image.width * scaleX,
+        image.height * scaleY,
+      );
+      context.restore();
+    }
+  }
+  const data = canvas.toDataURL("image/webp", 1);
+  if (!data.startsWith("data:image/webp;base64,")) {
+    throw new Error("Unable to encode Codex pet WebP atlas.");
+  }
+  return data;
+}
+
+/** Collects writable Codex pet profiles changed in the current edit session. */
+async function collectCodexPetExportsForSave() {
+  if (config?.projectKind !== "codex_pets") return [];
+  const exports = [];
+  for (const profileId of dirtyPetProfileIds) {
+    if (!codexPetProfile(profileId)?.pet?.writable) continue;
+    exports.push({ profileId, data: await composeCodexPetAtlas(profileId) });
+  }
+  return exports;
+}
+
 async function save() {
   return saveController.save();
 }
@@ -2699,6 +3101,7 @@ const appEvents = appEventsModule.createController({
     updateSelectedBoxFromInputs,
     updateSelectedFromInputs,
     updateSelectedPlaybackFromInputs,
+    valueStore,
     zoomViewAt,
     rotateVector,
   },
@@ -2793,6 +3196,7 @@ frameOrganizer =
     getImportContext: () => ({
       activeProject: config?.activeProject || null,
       profiles: config?.profiles || [],
+      godotHandoff: config?.godotHandoff || null,
     }),
     getCurrentAnimation: () =>
       currentGroup?.frames?.length && currentGroup.profileId && currentGroup.animationId
@@ -2823,6 +3227,17 @@ frameOrganizer =
     onClose: () => syncWorkbenchRoute(""),
     onStatus: (message) => status(message),
   }) || null;
+const characterStarterGuide = window.CharacterStarterGuide?.createController({
+  onImport: () =>
+    frameOrganizer?.openImport().catch((error) => status(t("loadFailed", { message: error.message }))),
+  onStatus: (message) => status(message),
+});
+
+/** Opens a tool guide requested by a factory deep link. */
+function openRequestedFactoryGuide() {
+  const requestedGuide = new URLSearchParams(globalThis.location.search).get("guide");
+  if (requestedGuide === "character") characterStarterGuide?.open();
+}
 const workbenchExportModule = globalThis.XSXBWorkbenchExport;
 if (browserOnlyMode && !workbenchExportModule) throw new Error("XSXBWorkbenchExport is required.");
 const workbenchExportController = browserOnlyMode
@@ -2856,40 +3271,213 @@ if (els.exportWorkbench) {
 els.organizerNewOpen?.addEventListener("click", () => {
   void frameOrganizer?.openImport().catch((error) => status(t("loadFailed", { message: error.message })));
 });
-els.homeHubContinue?.addEventListener("click", () => {
-  homeHubDismissed = true;
-  renderHomeHub();
-  els.stage.focus();
+attackTrailEditor = new window.AttackTrailEditor({
+  ctx,
+  projectId: () => activeProjectId(),
+  projectKind: () => config?.projectKind || "godot",
+  group: () => currentGroup,
+  groups: () => config?.groups || [],
+  selectedFrame: () => selectedFrame,
+  currentImage: () => images[selectedFrame] || null,
+  assetUrl,
+  loadTexture: loadImageCached,
+  frameArrival: attackTrailFrameArrival,
+  animationElapsed: () => attackTrailPlaybackSample().time,
+  animationTiming: attackTrailAnimationTiming,
+  localToScreen: attackTrailLocalToScreen,
+  screenToLocal: attackTrailScreenToLocal,
+  stagePoint,
+  dpr: () => devicePixelRatio,
+  markDirty,
+  pushUndo,
+  draw,
+  status,
 });
-els.homeCopyProjectPath?.addEventListener("click", async () => {
-  const projectPath = els.homeProjectPath?.textContent || "";
-  if (!projectPath || projectPath === "—") return;
+
+for (const eventName of ["pointerdown", "pointermove"]) {
+  els.stage.addEventListener(
+    eventName,
+    (event) => {
+      const handled =
+        eventName === "pointerdown"
+          ? attackTrailEditor.pointerDown(event)
+          : attackTrailEditor.pointerMove(event);
+      if (!handled) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (eventName === "pointerdown") els.stage.setPointerCapture(event.pointerId);
+      updateCoordHud();
+    },
+    { capture: true },
+  );
+}
+for (const eventName of ["pointerup", "pointercancel", "lostpointercapture"]) {
+  els.stage.addEventListener(eventName, () => attackTrailEditor.pointerUp(), { capture: true });
+}
+
+/** Sends one Codex pet lifecycle mutation and preserves structured server errors. */
+async function mutateCodexPet(pathname, payload) {
+  const response = await fetch(pathname, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: activeProjectId(), ...payload }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+  return result;
+}
+
+document.querySelector("#removeCodexPet")?.addEventListener("click", async () => {
+  const profileId = currentGroup?.profileId;
+  const pet = currentGroup?.profilePet;
+  if (!profileId || pet?.kind !== "custom" || pet?.writable !== true) return;
+  const displayName = pet.displayName || currentGroup.profileLabel || profileId;
+  if (
+    !(await requestAppConfirmation(t("removeCodexPetConfirm", { name: displayName }), {
+      title: t("removeCodexPet"),
+      confirmLabel: t("removeCodexPet"),
+      tone: "danger",
+    }))
+  )
+    return;
   try {
-    await navigator.clipboard.writeText(projectPath);
-    status(t("copied"));
-  } catch (_error) {
-    status(t("copyFailed"));
+    const result = await mutateCodexPet("/api/codex-pets/remove", { profileId });
+    removedCodexPetRecovery = {
+      projectId: activeProjectId(),
+      token: result.removed?.token,
+      displayName: result.removed?.displayName || displayName,
+    };
+    dirtyPetProfileIds.delete(profileId);
+    await loadConfig();
+    resizeCanvas();
+    status(t("codexPetRemoved", { name: displayName }));
+  } catch (error) {
+    status(t("codexPetRemoveFailed", { message: error.message }));
   }
 });
-for (const button of els.homeToolButtons) {
-  button.addEventListener("click", () => {
-    const tool = button.dataset.homeTool;
-    if (tool === "import") {
-      frameOrganizer?.openImport().catch((error) => status(t("loadFailed", { message: error.message })));
-    } else if (tool === "workspace") {
-      syncWorkbenchRoute("", { push: true });
-      els.stage.focus();
-    } else if (tool === "cutout") {
-      batchCutout?.open();
-    }
-  });
-}
+
+document.querySelector("#restoreRemovedCodexPet")?.addEventListener("click", async () => {
+  const recovery = removedCodexPetRecovery;
+  if (!recovery?.token || recovery.projectId !== activeProjectId()) return;
+  try {
+    await mutateCodexPet("/api/codex-pets/restore", { token: recovery.token });
+    removedCodexPetRecovery = null;
+    await loadConfig();
+    resizeCanvas();
+    status(t("codexPetRestored", { name: recovery.displayName }));
+  } catch (error) {
+    status(t("codexPetRestoreFailed", { message: error.message }));
+  }
+});
+
+document.querySelector("#restoreCodexPetBackup")?.addEventListener("click", async () => {
+  const profileId = currentGroup?.profileId;
+  const pet = currentGroup?.profilePet;
+  if (!profileId || pet?.kind !== "custom" || pet?.writable !== true || pet?.hasBackup !== true) return;
+  const displayName = pet.displayName || currentGroup.profileLabel || profileId;
+  if (
+    !(await requestAppConfirmation(t("restoreCodexPetBackupConfirm", { name: displayName }), {
+      title: t("restoreCodexPetBackup"),
+      confirmLabel: t("restoreCodexPetBackup"),
+      tone: "warning",
+    }))
+  )
+    return;
+  try {
+    await mutateCodexPet("/api/codex-pets/restore-backup", { profileId });
+    dirtyPetProfileIds.delete(profileId);
+    await loadConfig();
+    resizeCanvas();
+    status(t("codexPetBackupRestored", { name: displayName }));
+  } catch (error) {
+    status(t("codexPetBackupRestoreFailed", { message: error.message }));
+  }
+});
+
+document.querySelector("#addCodexPet")?.addEventListener("click", () => {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/webp,.webp";
+  input.addEventListener(
+    "change",
+    async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(reader.error || new Error("Unable to read WebP file."));
+          reader.readAsDataURL(file);
+        });
+        const displayName = window.prompt("宠物显示名称", file.name.replace(/\.webp$/i, ""));
+        if (!displayName?.trim()) return;
+        const response = await fetch("/api/codex-pets/import", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: activeProjectId(),
+            data,
+            name: displayName.trim(),
+            description: window.prompt("宠物描述（可留空）", "") || "",
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        await loadConfig();
+        resizeCanvas();
+        status(`已导入 ${displayName.trim()}`);
+      } catch (error) {
+        status(`宠物导入失败：${error.message}`);
+      }
+    },
+    { once: true },
+  );
+  input.click();
+});
+
 applyUiTheme();
 applyCanvasColor();
 applyLanguage();
+const appShellModule = globalThis.XSXBAppShell;
+if (!appShellModule) throw new Error("XSXBAppShell is required.");
+const appShell = appShellModule.createController({
+  documentRef: globalThis.document,
+  windowRef: globalThis,
+  storage: browserStorage,
+  navigate: async (route) => {
+    syncWorkbenchRoute(route, { push: true });
+    return applyWorkbenchRoute();
+  },
+});
+appShell.bind();
+const attackTrailGuideModule = globalThis.AttackTrailGuide;
+if (!attackTrailGuideModule) throw new Error("AttackTrailGuide is required.");
+attackTrailGuideModule.createController({
+  documentRef: globalThis.document,
+  onLocate: (selector) => {
+    appShell.setSidebarTab("effects");
+    const panel = document.querySelector("#attackTrailPanel");
+    if (panel) panel.open = true;
+    let target = document.querySelector(selector);
+    if (!target || target.hidden || target.closest?.("[hidden]")) {
+      target = document.querySelector("#attackTrailMode");
+    }
+    globalThis.requestAnimationFrame(() => {
+      target?.scrollIntoView?.({
+        behavior: globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "center",
+      });
+      target?.focus?.();
+      target?.classList.add("attackTrailGuideTarget");
+      globalThis.setTimeout(() => target?.classList.remove("attackTrailGuideTarget"), 1800);
+    });
+  },
+});
 loadConfig()
   .then(async () => {
     resizeCanvas();
     await applyWorkbenchRoute();
+    openRequestedFactoryGuide();
   })
   .catch((error) => status(t("loadFailed", { message: error.message })));

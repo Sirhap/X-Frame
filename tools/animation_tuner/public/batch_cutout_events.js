@@ -8,6 +8,25 @@
   "use strict";
 
   /**
+   * Activates automatic processing and exposes its result after a parameter edit.
+   * The caller records history before invoking this helper so undo restores the
+   * untouched single-frame state instead of an already-activated snapshot.
+   * @param {object} state Mutable cutout session state.
+   * @param {object|null|undefined} item Selected cutout item.
+   * @returns {boolean} Whether a selected item was activated.
+   */
+  function activateAutomaticPreview(state, item) {
+    if (!state || typeof state !== "object") {
+      throw new TypeError("Automatic preview activation requires session state.");
+    }
+    state.previewMode = "result";
+    if (!item) return false;
+    item.processingActivated = true;
+    item.automaticCutoutActivated = true;
+    return true;
+  }
+
+  /**
    * Creates the batch cutout event wiring controller.
    * @param {object} dependencies Event dependencies and state.
    * @returns {{createController:Function}} Event controller factory.
@@ -43,6 +62,7 @@
       selectBatchIndex,
       toggleBatchPlayback,
       setPreviewMode,
+      setPreviewBackground,
       renderStatus,
       selectedItem,
       resolveProtectedColorInput,
@@ -91,6 +111,7 @@
       scrollBatchActionsByKeyboard,
       resolveConfirmation,
       schedulePreview,
+      previewLatestRepairAcrossBatch,
     } = handlers;
 
     const repairEventsModule = root.BatchCutoutRepairEvents;
@@ -120,9 +141,20 @@
       movePreviewPan,
       endPreviewPan,
       setPreviewScale,
+      previewLatestRepairAcrossBatch,
     });
 
     let sidebarCollapsed = false;
+
+    /**
+     * Schedules an automatic-processing refresh and switches to its result.
+     * @param {{recordHistory?:boolean}} [options] Preview history behavior.
+     * @returns {void}
+     */
+    function scheduleAutomaticPreview(options = {}) {
+      schedulePreview(options);
+      activateAutomaticPreview(state, selectedItem());
+    }
 
     /**
      * Selects the visible left-workbar surface without changing image-processing state.
@@ -212,6 +244,9 @@
       elements.cutoutViewOriginal.addEventListener("click", () => setPreviewMode("original"));
       elements.cutoutViewAlpha.addEventListener("click", () => setPreviewMode("alpha"));
       elements.cutoutViewDifference.addEventListener("click", () => setPreviewMode("difference"));
+      elements.cutoutBackgroundLight.addEventListener("click", () => setPreviewBackground("light"));
+      elements.cutoutBackgroundDark.addEventListener("click", () => setPreviewBackground("dark"));
+      elements.cutoutBackgroundWhite.addEventListener("click", () => setPreviewBackground("white"));
       elements.cutoutSidebarParametersTab.addEventListener("click", () => setSidebarPanel("parameters"));
       elements.cutoutSidebarBatchTab.addEventListener("click", () => setSidebarPanel("batch"));
       elements.cutoutSidebarCollapse.addEventListener("click", () => {
@@ -349,13 +384,12 @@
       elements.cutoutRepairBrush.addEventListener("click", () => setRepairMode("brush"));
       elements.cutoutRepairEraser.addEventListener("click", () => setRepairMode("eraser"));
       elements.cutoutRepairSource.addEventListener("click", () => setRepairMode("restore-source"));
-      elements.cutoutRepairFill.addEventListener("click", () => setRepairMode("fill"));
       elements.cutoutRepairRecolor.addEventListener("click", () => setRepairMode("recolor"));
       elements.cutoutRepairClear.addEventListener("click", () => setRepairMode("clear"));
       elements.cutoutRepairRestore.addEventListener("click", () => setRepairMode("restore"));
       elements.cutoutRepairProtect.addEventListener("click", () => setRepairMode("protect"));
       elements.cutoutAreaTransparentQuick.addEventListener("click", () => {
-        setRepairMode("fill");
+        setRepairMode("recolor");
         setAreaColorTransparent(!state.areaColorTransparent);
         updateLatestAreaRepair({ color: selectedAreaColor() });
       });
@@ -417,6 +451,7 @@
         state.protectionPreview = null;
         refreshQualityAnalysis();
         renderPreview();
+        previewLatestRepairAcrossBatch(item);
         if (outcome.live) {
           await applyCurrentGroup({ live: true, publishedCanvases: outcome.publishedCanvases });
         }
@@ -434,6 +469,7 @@
         state.protectionPreview = null;
         refreshQualityAnalysis();
         renderPreview();
+        previewLatestRepairAcrossBatch(item);
         if (outcome.live) {
           await applyCurrentGroup({ live: true, publishedCanvases: outcome.publishedCanvases });
         }
@@ -452,6 +488,7 @@
         }
         state.protectionPreview = null;
         renderPreview();
+        previewLatestRepairAcrossBatch(item);
       });
       elements.cutoutRepairBatch.addEventListener("click", propagateLatestRepair);
       elements.cutoutProtectSample.addEventListener("click", () => {
@@ -662,9 +699,10 @@
         });
       }
       elements.cutoutDropzone.addEventListener("drop", (event) => loadFiles(event.dataTransfer?.files));
-      elements.cutoutConnected.addEventListener("change", schedulePreview);
-      elements.cutoutPerceptual.addEventListener("change", schedulePreview);
-      elements.cutoutDespillMode.addEventListener("change", schedulePreview);
+      elements.cutoutConnected.addEventListener("change", scheduleAutomaticPreview);
+      elements.cutoutPerceptual.addEventListener("change", scheduleAutomaticPreview);
+      elements.cutoutBlendMode.addEventListener("change", scheduleAutomaticPreview);
+      elements.cutoutDespillMode.addEventListener("change", scheduleAutomaticPreview);
       elements.cutoutColor.addEventListener("input", () => {
         const item = selectedItem();
         if (item) {
@@ -673,10 +711,8 @@
           item.backgroundSamples = [
             backgroundController.normalizeColor(colorUtils.hexToRgb(elements.cutoutColor.value)),
           ];
-          item.processingActivated = true;
-          item.automaticCutoutActivated = true;
         }
-        schedulePreview({ recordHistory: false });
+        scheduleAutomaticPreview({ recordHistory: false });
       });
       [
         [elements.cutoutTolerance, elements.cutoutToleranceValue],
@@ -697,7 +733,7 @@
         bindNumericRange(input, output, {
           onInput: () => {
             renderAdvancedMode();
-            schedulePreview();
+            scheduleAutomaticPreview();
           },
         });
       });
@@ -706,5 +742,5 @@
     return { bind, setSidebarCollapsed, setSidebarPanel };
   }
 
-  return { createController };
+  return { activateAutomaticPreview, createController };
 });

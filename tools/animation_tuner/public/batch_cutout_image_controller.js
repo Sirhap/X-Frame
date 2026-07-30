@@ -158,6 +158,7 @@
         error: "",
         sourceThumbnail: createThumbnailUrl(pixels.canvas),
         resultThumbnail: "",
+        resultVariant: "",
         thumbnailRevision: -1,
         processingActivated: false,
         automaticCutoutActivated: false,

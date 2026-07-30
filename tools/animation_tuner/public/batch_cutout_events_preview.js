@@ -38,6 +38,7 @@
       movePreviewPan,
       endPreviewPan,
       setPreviewScale,
+      previewLatestRepairAcrossBatch = () => false,
     } = dependencies;
     if (!elements || !state) {
       throw new TypeError("BatchCutoutRepairEvents requires elements and state.");
@@ -69,7 +70,7 @@
           return;
         }
         const item = selectedItem();
-        if (!item?.resultImageData && ["fill", "recolor"].includes(state.repairMode)) {
+        if (!item?.resultImageData && state.repairMode === "recolor") {
           setStatus(text("processing", { current: 1, total: 1 }), "busy");
           renderPreview();
           return;
@@ -143,9 +144,10 @@
             "success",
           );
           renderPreview();
+          previewLatestRepairAcrossBatch(item);
           return;
         }
-        if (state.repairMode === "fill" || state.repairMode === "recolor") {
+        if (state.repairMode === "recolor") {
           const sourceX = Math.max(
             0,
             Math.min(item.resultImageData.width - 1, Math.round(drag.sourceStartX)),
@@ -171,12 +173,12 @@
             sourceColor,
             color: selectedAreaColor(),
             tolerance,
-            scope: state.repairMode === "fill" ? "connected" : elements.cutoutAreaScope.value,
+            scope: elements.cutoutAreaScope.value,
             ...createRepairTrackingMetadata(
               item,
               { x: sourceX, y: sourceY },
               {
-                includeRegion: state.repairMode === "fill" || elements.cutoutAreaScope.value !== "global",
+                includeRegion: elements.cutoutAreaScope.value !== "global",
                 tolerance,
                 sourceColor,
               },
@@ -186,11 +188,12 @@
           invalidateItem(item);
           setStatus(
             text("repaired", {
-              mode: text(state.repairMode === "fill" ? "repairFillMode" : "repairRecolorMode"),
+              mode: text("repairRecolorMode"),
             }),
             "success",
           );
           renderPreview();
+          previewLatestRepairAcrossBatch(item);
           return;
         }
         if (
@@ -297,7 +300,7 @@
             },
             ...createRepairTrackingMetadata(item, point),
           });
-        } else if (state.repairMode === "fill" || state.repairMode === "recolor") {
+        } else if (state.repairMode === "recolor") {
           const sourceOffset = (Math.round(point.y) * width + Math.round(point.x)) * 4;
           const sourceColor = {
             r: item.resultImageData.data[sourceOffset],
@@ -314,9 +317,9 @@
             sourceColor,
             color: selectedAreaColor(),
             tolerance,
-            scope: state.repairMode === "fill" ? "connected" : elements.cutoutAreaScope.value,
+            scope: elements.cutoutAreaScope.value,
             ...createRepairTrackingMetadata(item, point, {
-              includeRegion: state.repairMode === "fill" || elements.cutoutAreaScope.value !== "global",
+              includeRegion: elements.cutoutAreaScope.value !== "global",
               tolerance,
               sourceColor,
             }),
@@ -346,6 +349,7 @@
         item.undoneRepairs = [];
         invalidateItem(item);
         renderPreview();
+        previewLatestRepairAcrossBatch(item);
         setStatus(text("repaired", { mode: state.repairMode }), "success");
       });
       [elements.cutoutOriginal, elements.cutoutResult].forEach((canvas) => {

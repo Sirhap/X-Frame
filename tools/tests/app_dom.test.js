@@ -31,6 +31,7 @@ test("createElements preserves the main workbench DOM contract", () => {
   assert.equal(elements.filmstrip.selector, "#filmstrip");
   assert.equal(elements.save.selector, "#save");
   assert.equal(elements.appConfirmPanel.selector, "#appConfirmPanel");
+  assert.equal(elements.appConfirmAlternate.selector, "#appConfirmAlternate");
   assert.equal(elements.appConfirmAccept.selector, "#appConfirmAccept");
   assert.deepEqual(elements.languageButtons, [
     { selector: "[data-language]", index: 0 },
@@ -49,6 +50,17 @@ test("createElements rejects an invalid document dependency", () => {
 test("the frame editor is visible before application initialization", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
 
-  assert.match(html, /<section id="homeHub"[^>]*\shidden>/);
+  assert.doesNotMatch(html, /homeHub|data-home-tool/);
   assert.match(html, /<canvas id="stage"/);
+});
+
+test("the Codex Pets project exposes custom-pet recovery controls", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const script = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app.js"), "utf8");
+
+  assert.match(html, /id="removeCodexPet"/);
+  assert.match(html, /id="restoreRemovedCodexPet"/);
+  assert.match(html, /id="restoreCodexPetBackup"/);
+  assert.match(script, /\/api\/codex-pets\/remove/);
+  assert.match(script, /\/api\/codex-pets\/restore-backup/);
 });

@@ -48,6 +48,14 @@ function ensureGodotRuntime(root, project, options = {}) {
       path: path.join(runtimeDir, "xsxb_runtime_test.tscn"),
       content: testScene(),
     },
+    {
+      path: path.join(runtimeDir, "xsxb_attack_trail_renderer.gd"),
+      content: fs.readFileSync(path.join(__dirname, "runtime", "xsxb_attack_trail_renderer.gd"), "utf8"),
+    },
+    {
+      path: path.join(runtimeDir, "xsxb_attack_trail.gdshader"),
+      content: fs.readFileSync(path.join(__dirname, "runtime", "xsxb_attack_trail.gdshader"), "utf8"),
+    },
   ];
   const runtimeFiles = [];
   for (const file of files) {

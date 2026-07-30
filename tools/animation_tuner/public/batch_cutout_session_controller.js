@@ -35,11 +35,117 @@
       renderQueue,
       setStatus,
       requestConfirmation,
+      estimateBackgroundColor = root?.BatchCutoutCore?.estimateBackgroundColor,
+      backgroundController = root?.BatchCutoutBackgroundController,
     } = dependencies;
     if (!state || !elements || typeof selectedItem !== "function" || typeof createItem !== "function") {
       throw new TypeError("BatchCutoutSessionController dependencies are required.");
     }
     const documentApi = documentRef;
+    const suspendedBatchFields = [
+      "items",
+      "sourceKind",
+      "sessionMode",
+      "selectedIndex",
+      "selectionAnchorIndex",
+      "settingsMode",
+      "repairMode",
+      "previewScale",
+      "previewFitScale",
+      "previewPanX",
+      "previewPanY",
+      "previewMode",
+      "previewBackground",
+      "batchPreviewRepair",
+      "batchPreviewRevision",
+      "thumbnailMode",
+      "batchTrayCollapsed",
+      "qualityOnly",
+      "protectionPreview",
+      "samplingProtectedColor",
+      "samplingBackgroundColor",
+    ];
+
+    /** Preserves a standalone batch while an organizer-owned workset is edited. @returns {void} */
+    function suspendStandaloneBatch() {
+      if (state.sourceKind === "workset" || !state.items.length || state.suspendedBatchSession) return;
+      state.suspendedBatchSession = Object.fromEntries(
+        suspendedBatchFields.map((field) => [field, state[field]]),
+      );
+      state.suspendedBatchSession.selectedIds = new Set(state.selectedIds || []);
+    }
+
+    /** Restores a standalone batch after its organizer-owned workset closes. @returns {boolean} */
+    function restoreSuspendedBatch() {
+      const snapshot = state.suspendedBatchSession;
+      state.suspendedBatchSession = null;
+      if (!snapshot) return false;
+      for (const field of suspendedBatchFields) state[field] = snapshot[field];
+      state.selectedIds = new Set(snapshot.selectedIds || []);
+      applyProcessingParametersToControls(selectedItem()?.processingParameters);
+      renderQueue();
+      renderPreview();
+      scheduleBatchThumbnails();
+      return true;
+    }
+
+    /**
+     * Converts an estimated RGB background into the color input's canonical HEX representation.
+     * @param {{r:number,g:number,b:number}} color Estimated background color.
+     * @returns {string} Six-digit lowercase HEX color.
+     */
+    function backgroundHex(color) {
+      const channel = (value) => Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+      return `#${[color.r, color.g, color.b]
+        .map((value) => channel(value).toString(16).padStart(2, "0"))
+        .join("")}`;
+    }
+
+    /**
+     * Restores persisted workset parameters, then optionally activates per-image background detection.
+     * Explicit workset parameters take precedence so a new batch always starts from its requested profile.
+     * @param {object} item Newly created cutout queue item.
+     * @param {object} input Organizer workset input.
+     * @param {object} workset Workset session options.
+     * @returns {void}
+     */
+    function restoreWorksetCutoutState(item, input, workset) {
+      const persisted = input?.cutoutState || {};
+      item.processingParameters = {
+        ...(item.processingParameters || {}),
+        ...(persisted.processingParameters || {}),
+        ...(workset.processingParameters || {}),
+      };
+      item.backgroundSamples = Array.from(persisted.backgroundSamples || [], (color) => ({ ...color }));
+      item.seedPoints = Array.from(persisted.seedPoints || [], (point) => ({ ...point }));
+      if (!workset.autoDetectBackground) return;
+      if (typeof estimateBackgroundColor !== "function") {
+        throw new Error("Automatic background detection is unavailable.");
+      }
+      const estimated = estimateBackgroundColor(
+        item.sourceImageData.data,
+        item.sourceImageData.width,
+        item.sourceImageData.height,
+      );
+      const background = backgroundController?.normalizeColor
+        ? backgroundController.normalizeColor(estimated)
+        : { ...estimated, a: 255 };
+      item.processingParameters.backgroundColor = backgroundHex(background);
+      item.backgroundSamples = [background];
+      item.seedPoints = [];
+      item.automaticCutoutActivated = true;
+      item.processingActivated = true;
+      item.pendingAutomaticPropagation = false;
+    }
+
+    /** Clears transient batch-preview state without touching committed repairs. @returns {void} */
+    function resetBatchPreviewState() {
+      state.batchPreviewRepair = null;
+      state.batchPreviewRevision = Number(state.batchPreviewRevision || 0) + 1;
+      if (elements.cutoutModal?.dataset) elements.cutoutModal.dataset.batchPreview = "false";
+      elements.cutoutRepairBatch?.classList.remove("previewPending");
+      elements.cutoutRepairBatch?.setAttribute("aria-pressed", "false");
+    }
 
     /**
      * Clears the current batch after an explicit confirmation.
@@ -49,6 +155,7 @@
     async function clear(options = {}) {
       const newBatch = options.mode === "new";
       if (!state.items.length) {
+        resetBatchPreviewState();
         setStatus(text("ready"));
         return true;
       }
@@ -61,6 +168,7 @@
       stopBatchPlayback();
       state.thumbnailJob += 1;
       resultArtifacts.clear();
+      resetBatchPreviewState();
       state.items = [];
       state.sourceKind = "";
       state.selectedIndex = 0;
@@ -100,6 +208,12 @@
       state.thumbnailJob += 1;
       const currentItemId = selectedItem()?.id;
       state.items = state.items.filter((item) => !state.selectedIds.has(item.id));
+      if (
+        state.batchPreviewRepair &&
+        !state.items.some((item) => item.id === state.batchPreviewRepair.sourceItemId)
+      ) {
+        resetBatchPreviewState();
+      }
       state.selectedIds.clear();
       const preservedIndex = state.items.findIndex((item) => item.id === currentItemId);
       state.selectedIndex =
@@ -142,7 +256,7 @@
     /**
      * Opens an isolated cutout session for an unsaved animation workset.
      * Applying resolves with processed outputs; closing resolves with null.
-     * @param {{name?:string,mode?:"single"|"batch",selectedIndex?:number,onLiveApply?:(outputs:Array<object>)=>void,items:Array<{name?:string,image:CanvasImageSource,frame?:object}>}} workset Unsaved frame workset.
+     * @param {{name?:string,mode?:"single"|"batch",selectedIndex?:number,autoDetectBackground?:boolean,processingParameters?:object,onLiveApply?:(outputs:Array<object>)=>void,items:Array<{name?:string,image:CanvasImageSource,frame?:object,cutoutState?:object}>}} workset Unsaved frame workset.
      * @returns {Promise<Array<object>|null>}
      */
     function openWorkset(workset) {
@@ -155,30 +269,38 @@
         state.worksetResolver = null;
         previousResolver(null);
       }
-      stopBatchPlayback();
-      state.thumbnailJob += 1;
-      elements.cutoutConnected.checked = false;
-      elements.cutoutPerceptual.checked = false;
-      state.batchTrayCollapsed = true;
+      let worksetItems;
       try {
         let retainedPixels = 0;
-        state.items = inputs.map((item, index) => {
+        worksetItems = inputs.map((item, index) => {
           const budget = assertImagePixelBudget(item.image, retainedPixels);
           retainedPixels = budget.totalPixels;
-          return createItem(
+          const worksetItem = createItem(
             item.image,
             item.name || `frame_${String(index + 1).padStart(4, "0")}.png`,
             item.frame || null,
           );
+          restoreWorksetCutoutState(worksetItem, item, workset);
+          return worksetItem;
         });
       } catch (error) {
         return Promise.reject(error);
       }
+      suspendStandaloneBatch();
+      stopBatchPlayback();
+      state.thumbnailJob += 1;
+      resetBatchPreviewState();
+      elements.cutoutConnected.checked = false;
+      elements.cutoutPerceptual.checked = false;
+      state.batchTrayCollapsed = true;
+      state.items = worksetItems;
       state.sourceKind = "workset";
       state.sessionMode = workset.mode === "single" || inputs.length === 1 ? "single" : "batch";
       state.items.forEach((item) => {
-        item.automaticCutoutActivated = false;
-        item.processingActivated = false;
+        if (!workset.autoDetectBackground) {
+          item.automaticCutoutActivated = false;
+          item.processingActivated = false;
+        }
         item.pendingAutomaticPropagation = false;
       });
       state.worksetName = String(workset.name || "animation");
@@ -196,6 +318,7 @@
       state.cancelRequested = false;
       state.previewMode = state.sessionMode === "single" ? "original" : "result";
       state.qualityOnly = false;
+      documentApi.querySelector?.('[data-cutout-tab="regular"]')?.click?.();
       return new Promise((resolve) => {
         resolve.liveApply = typeof workset.onLiveApply === "function" ? workset.onLiveApply : null;
         state.worksetResolver = resolve;
@@ -238,11 +361,16 @@
       state.worksetName = "";
       if (resolver) {
         resultArtifacts.clear();
-        state.items = [];
-        state.sourceKind = "";
-        state.selectedIndex = 0;
-        state.selectedIds.clear();
-        state.sessionMode = "batch";
+        resetBatchPreviewState();
+        if (!restoreSuspendedBatch()) {
+          state.items = [];
+          state.sourceKind = "";
+          state.selectedIndex = 0;
+          state.selectedIds.clear();
+          state.sessionMode = "batch";
+          renderQueue();
+          renderPreview();
+        }
         resolver(worksetResult);
       }
       if (state.returnFocus && typeof state.returnFocus.focus === "function") state.returnFocus.focus();

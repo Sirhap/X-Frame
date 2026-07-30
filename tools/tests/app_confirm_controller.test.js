@@ -77,10 +77,12 @@ function createFixture() {
     message: createElement(documentRef),
     details: createElement(documentRef),
     cancel: createElement(documentRef),
+    alternate: createElement(documentRef),
     accept: createElement(documentRef),
   };
   elements.panel.hidden = true;
-  elements.panel.querySelectorAll = () => [elements.cancel, elements.accept];
+  elements.alternate.hidden = true;
+  elements.panel.querySelectorAll = () => [elements.cancel, elements.alternate, elements.accept];
   documentRef.activeElement = origin;
   const controller = createController({
     elements,
@@ -142,4 +144,26 @@ test("app confirmation cancels with Escape and resolves an existing request safe
   assert.equal(await secondPromise, false);
   assert.equal(prevented, true);
   assert.equal(fixture.app.inert, false);
+});
+
+test("app confirmation returns save, discard, and cancel navigation decisions", async () => {
+  const saveFixture = createFixture();
+  const savePromise = saveFixture.controller.requestDecision("Unsaved changes", {
+    saveLabel: "Save and switch",
+    discardLabel: "Discard",
+  });
+  assert.equal(saveFixture.elements.alternate.hidden, false);
+  assert.equal(saveFixture.documentRef.activeElement, saveFixture.elements.cancel);
+  saveFixture.elements.alternate.dispatch("click");
+  assert.equal(await savePromise, "save");
+
+  const discardFixture = createFixture();
+  const discardPromise = discardFixture.controller.requestDecision("Unsaved changes");
+  discardFixture.elements.accept.dispatch("click");
+  assert.equal(await discardPromise, "discard");
+
+  const cancelFixture = createFixture();
+  const cancelPromise = cancelFixture.controller.requestDecision("Unsaved changes");
+  cancelFixture.elements.cancel.dispatch("click");
+  assert.equal(await cancelPromise, "cancel");
 });

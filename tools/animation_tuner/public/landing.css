@@ -8,6 +8,7 @@
   --mint: #48e2bd;
   --yellow: #f5c84b;
   --coral: #ff6542;
+  --blue: #84a8ff;
   --serif: "Iowan Old Style", "Songti SC", "STSong", serif;
   --sans: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
   --mono: "SFMono-Regular", "Cascadia Mono", "Noto Sans Mono CJK SC", monospace;
@@ -105,6 +106,7 @@ a {
 }
 
 .wordmark {
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   gap: 11px;
@@ -164,6 +166,9 @@ a {
 
 .site-header nav a {
   position: relative;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   padding: 12px 0;
   color: var(--muted);
   font: 600 12px/1 var(--sans);
@@ -222,9 +227,13 @@ a:focus-visible {
 }
 
 .button-small {
-  min-height: 40px;
+  min-height: 44px;
   justify-self: end;
   padding: 0 16px;
+}
+
+.site-header .admin-trigger {
+  min-height: 44px;
 }
 
 .button-primary {
@@ -335,6 +344,9 @@ a:focus-visible {
 }
 
 .text-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid var(--line);
   color: #d7d8d3;
@@ -754,14 +766,14 @@ a:focus-visible {
 
 .capability-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
 .capability-card {
   --card-color: var(--mint);
   position: relative;
-  min-height: 390px;
+  min-height: 350px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -812,12 +824,16 @@ a:focus-visible {
   transform: scale(1.24);
 }
 
-.card-sequence {
-  --card-color: var(--yellow);
+.card-starter {
+  --card-color: var(--coral);
 }
 
 .card-alpha {
-  --card-color: var(--coral);
+  --card-color: var(--yellow);
+}
+
+.card-export {
+  --card-color: var(--blue);
 }
 
 .card-index {
@@ -1107,13 +1123,9 @@ a:focus-visible {
   .capability-grid {
     grid-template-columns: 1fr 1fr;
   }
-
-  .capability-card:last-child {
-    grid-column: 1 / -1;
-  }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 800px) {
   .site-header,
   .hero,
   .capabilities,
@@ -1133,8 +1145,12 @@ a:focus-visible {
   }
 
   .button-small {
-    min-height: 38px;
+    min-height: 44px;
     padding: 0 12px;
+  }
+
+  .site-header .admin-trigger {
+    width: 44px;
   }
 
   .hero {
@@ -1203,10 +1219,6 @@ a:focus-visible {
 
   .capability-grid {
     grid-template-columns: 1fr;
-  }
-
-  .capability-card:last-child {
-    grid-column: auto;
   }
 
   .workflow,

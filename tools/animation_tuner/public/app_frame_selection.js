@@ -17,6 +17,7 @@
    *   setSelectedFrames?:(value:Set<number>)=>void,
    *   getSelectionAnchorFrame?:()=>number,
    *   setSelectionAnchorFrame?:(value:number)=>void,
+   *   onPrimaryFrameChanged?:(value:number)=>void,
    * }} dependencies Controller dependencies.
    * @returns {object} Frame selection operations.
    */
@@ -29,6 +30,7 @@
       setSelectedFrames = () => {},
       getSelectionAnchorFrame = () => 0,
       setSelectionAnchorFrame = () => {},
+      onPrimaryFrameChanged = () => {},
     } = dependencies;
 
     /**
@@ -51,6 +53,7 @@
     function setSingleFrameSelection(index, group = getCurrentGroup()) {
       const selectedFrame = clampFrameIndex(index, group);
       setSelectedFrame(selectedFrame);
+      onPrimaryFrameChanged(selectedFrame);
       setSelectedFrames(new Set([selectedFrame]));
       setSelectionAnchorFrame(selectedFrame);
     }
@@ -71,6 +74,7 @@
       }
       const selectedFrame = clampFrameIndex(primaryIndex, group);
       setSelectedFrame(selectedFrame);
+      onPrimaryFrameChanged(selectedFrame);
       next.add(selectedFrame);
       setSelectedFrames(next);
       setSelectionAnchorFrame(clampFrameIndex(getSelectionAnchorFrame(), group));

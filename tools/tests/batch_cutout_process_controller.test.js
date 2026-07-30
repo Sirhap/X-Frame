@@ -6,10 +6,11 @@ const { createController } = require("../animation_tuner/public/batch_cutout_pro
 
 /**
  * Creates a process-controller fixture that exercises coordination guards without a browser canvas.
- * @returns {{controller:object,statuses:string[],state:object}}
+ * @returns {{controller:object,processedRepairSets:object[][],statuses:string[],state:object}}
  */
-function createFixture() {
+function createFixture(overrides = {}) {
   const statuses = [];
+  const processedRepairSets = [];
   const state = {
     items: [],
     thumbnailJob: 0,
@@ -18,11 +19,20 @@ function createFixture() {
     busy: false,
     cancelRequested: false,
     sourceKind: "",
+    ...overrides.state,
   };
   const elements = {
     cutoutFileInput: { value: "" },
     cutoutRepairBatch: { textContent: "" },
   };
+  class TestImageData {
+    /** @param {Uint8ClampedArray|Uint8Array} data Pixel bytes. @param {number} width Width. @param {number} height Height. */
+    constructor(data, width, height) {
+      this.data = data;
+      this.width = width;
+      this.height = height;
+    }
+  }
   const controller = createController({
     state,
     elements,
@@ -40,11 +50,21 @@ function createFixture() {
     assertImagePixelBudget: () => ({ totalPixels: 0 }),
     createItem: (image, name) => ({ image, name }),
     processingOptions: () => ({}),
-    repairReplayCore: {},
-    core: {},
-    cutoutExecutor: {},
-    tracking: {},
-    quality: {},
+    repairReplayCore: { automaticCacheKey: () => "automatic" },
+    cutoutExecutor: {
+      async process(data, _width, _height, _options, repairs) {
+        processedRepairSets.push(repairs);
+        return {
+          automaticData: new Uint8ClampedArray(data),
+          data: new Uint8ClampedArray(data),
+          shapeCandidates: [],
+          shapeDescriptor: null,
+          qualityMetrics: {},
+          removedPixels: 0,
+          partialPixels: 0,
+        };
+      },
+    },
     createThumbnailUrl: () => "",
     refreshQualityAnalysis() {},
     resultArtifacts: {},
@@ -55,8 +75,16 @@ function createFixture() {
     requestConfirmation: async () => false,
     close() {},
     host: {},
+    documentRef: {
+      createElement: () => ({
+        getContext: () => ({ putImageData() {} }),
+      }),
+    },
+    imageDataConstructor: TestImageData,
+    domExceptionConstructor: DOMException,
+    ...overrides.dependencies,
   });
-  return { controller, statuses, state };
+  return { controller, processedRepairSets, statuses, state };
 }
 
 test("process controller rejects invalid dependencies", () => {
@@ -79,6 +107,34 @@ test("process controller reports an unavailable animation group", async () => {
   assert.ok(statuses.includes("groupUnavailable"));
 });
 
+test("process controller confirms before replacing an existing batch with the current animation", async () => {
+  let confirmation = null;
+  const existingItems = [{ id: "existing", repairs: [{ id: "repair" }], editUndo: [] }];
+  const { controller, state } = createFixture({
+    state: { items: existingItems },
+    dependencies: {
+      host: { getCurrentAnimation: () => ({ frames: [{ name: "one.png" }], images: [{}] }) },
+      requestConfirmation: async (message, details, options) => {
+        confirmation = { message, details, options };
+        return false;
+      },
+    },
+  });
+
+  await controller.loadCurrentGroup();
+
+  assert.deepEqual(state.items, existingItems);
+  assert.deepEqual(confirmation, {
+    message: "loadGroupReplaceConfirm",
+    details: [],
+    options: {
+      title: "loadGroupReplaceTitle",
+      confirmLabel: "confirmLoadGroup",
+      tone: "danger",
+    },
+  });
+});
+
 test("process controller returns an empty process result for an empty queue", async () => {
   const { controller } = createFixture();
 
@@ -89,8 +145,39 @@ test("process controller returns an empty process result for an empty queue", as
 
 test("process controller reuses an already current processed item", async () => {
   const { controller, state } = createFixture();
-  const item = { status: "processed", thumbnailRevision: 3, resultCanvas: {} };
+  const item = {
+    status: "processed",
+    thumbnailRevision: 3,
+    resultVariant: "committed",
+    resultCanvas: {},
+  };
   state.thumbnailRevision = 3;
 
   assert.equal(await controller.processItem(item), item);
+});
+
+test("process controller previews staged recolor but commits only stored repairs", async () => {
+  const previewRepair = { id: "preview", mode: "recolor", previewOnly: true };
+  const committedRepair = { id: "committed", mode: "recolor" };
+  const { controller, processedRepairSets, state } = createFixture({
+    state: { batchPreviewRepair: { repair: previewRepair }, batchPreviewRevision: 4 },
+    dependencies: { previewRepairsForItem: () => [previewRepair] },
+  });
+  const item = {
+    id: "frame-2",
+    sourceImageData: { width: 1, height: 1, data: new Uint8ClampedArray([1, 2, 3, 255]) },
+    repairs: [committedRepair],
+    processingRevision: 0,
+    thumbnailRevision: -1,
+    status: "ready",
+  };
+  state.items = [item];
+
+  await controller.processItem(item);
+  assert.deepEqual(processedRepairSets[0], [previewRepair]);
+  assert.equal(item.resultVariant, "batch-preview:4");
+
+  await controller.processItem(item, { preview: false });
+  assert.deepEqual(processedRepairSets[1], [committedRepair]);
+  assert.equal(item.resultVariant, "committed");
 });

@@ -692,18 +692,18 @@ pub unsafe extern "C" fn protected_core_apply_cutout(
             .map(|value| [value[0], value[1], value[2]])
             .collect::<Vec<_>>()
     };
-    let result = product_cutout::apply(
+    let output = match write_slice(output_pointer, output_length) {
+        Ok(value) => value,
+        Err(code) => return code,
+    };
+    product_cutout::apply_into(
         source,
         width as usize,
         height as usize,
         mask,
         &protected_colors,
+        output,
         configuration,
     );
-    let output = match write_slice(output_pointer, output_length) {
-        Ok(value) => value,
-        Err(code) => return code,
-    };
-    output.copy_from_slice(&result);
     status::OK
 }

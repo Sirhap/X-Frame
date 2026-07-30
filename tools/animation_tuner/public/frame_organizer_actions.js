@@ -1,11 +1,21 @@
 (function attachFrameOrganizerActions(root, factory) {
   "use strict";
 
-  const api = factory(root);
+  const smartCutoutDefaults =
+    typeof module === "object" && module.exports
+      ? require("./smart_cutout_defaults")
+      : root?.XSXBSmartCutoutDefaults;
+  const api = factory(root, smartCutoutDefaults);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.FrameOrganizerActions = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (root, smartCutoutDefaults) => {
   "use strict";
+
+  if (!smartCutoutDefaults?.REGULAR_AUTO_BACKGROUND_PARAMETERS) {
+    throw new Error("Shared smart-cutout defaults are required.");
+  }
+  /** Default automatic-removal profile used by the organizer's batch action. */
+  const ORGANIZER_BATCH_CUTOUT_PARAMETERS = smartCutoutDefaults.REGULAR_AUTO_BACKGROUND_PARAMETERS;
 
   /**
    * Creates the frame-organizer operation controller.
@@ -36,7 +46,7 @@
    *   cssEscape?:(value:string)=>string,
    *   premiumFeatures?:{normalizeFeatureIds?:(featureIds:Iterable<string>)=>string[]}
    * }} dependencies Organizer state and host callbacks.
-   * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,applyPlan:()=>Promise<void>,importIntoSession:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>,exportIncludedFrames:()=>Promise<void>}}
+   * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,editBatchCutout:()=>Promise<void>,applyPlan:()=>Promise<void>,importIntoSession:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>,exportIncludedFrames:()=>Promise<void>}}
    */
   function createController(dependencies = {}) {
     const {
@@ -93,12 +103,13 @@
     }
 
     /**
-     * Opens one workset frame while retaining the full image set as propagation targets.
-     * @param {object} targetFrame Organizer frame to edit.
+     * Opens the shared cutout workbench and writes processed canvases and parameter state back to frames.
+     * @param {{mode:"single"|"batch",sourceFrames:object[],selectedIndex?:number,autoDetectBackground?:boolean,processingParameters?:object,returnFrame?:object|null}} options Workbench behavior.
      * @returns {Promise<void>}
      */
-    async function editImportCutout(targetFrame) {
-      if (!targetFrame || !state.frames.includes(targetFrame)) {
+    async function runCutoutWorkset(options) {
+      const sourceFrames = Array.from(options.sourceFrames || []);
+      if (!sourceFrames.length) {
         setStatus(text("cutoutNeedFrames"), "error");
         return;
       }
@@ -106,8 +117,6 @@
         setStatus(text("failed", { message: "Batch cutout is unavailable." }), "error");
         return;
       }
-      const sourceFrames = [...state.frames];
-      const selectedIndex = sourceFrames.indexOf(targetFrame);
       /**
        * Copies live or final cutout outputs into the organizer workset.
        * @param {Array<object>} outputs Processed workset outputs.
@@ -129,6 +138,7 @@
           frame.signature = null;
           frame.analysisRevision = Number(frame.analysisRevision || 0) + 1;
           frame.thumbnails.edited = "";
+          if (output.cutoutState) frame.cutoutState = output.cutoutState;
         });
         for (const featureId of premiumFeatures?.normalizeFeatureIds?.(outputs.premiumFeatures) || []) {
           state.premiumFeatures.add(featureId);
@@ -143,13 +153,16 @@
       try {
         const outputs = await hooks.editCutout({
           name: elements.organizerAnimationName.value.trim() || "animation",
-          mode: "single",
-          selectedIndex,
+          mode: options.mode,
+          selectedIndex: Number(options.selectedIndex) || 0,
+          autoDetectBackground: Boolean(options.autoDetectBackground),
+          processingParameters: options.processingParameters,
           onLiveApply: applyCutoutOutputs,
           items: sourceFrames.map((frame) => ({
             name: frame.name,
             image: frame.editedCanvas,
             frame: { uid: frame.uid },
+            cutoutState: frame.cutoutState,
           })),
         });
         if (!outputs) return;
@@ -164,11 +177,46 @@
         uiController().setEditorInert(true);
         renderGrid();
         restartPreview();
-        const editButton = elements.organizerGrid.querySelector(
-          `[data-frame-uid="${cssEscape(targetFrame.uid)}"] .organizerFrameCutout`,
-        );
-        editButton?.focus({ preventScroll: true });
+        if (options.returnFrame) {
+          elements.organizerGrid
+            .querySelector(`[data-frame-uid="${cssEscape(options.returnFrame.uid)}"] .organizerFrameCutout`)
+            ?.focus({ preventScroll: true });
+        } else {
+          elements.organizerBatchCutout?.focus({ preventScroll: true });
+        }
       }
+    }
+
+    /**
+     * Opens one workset frame while retaining the full image set as propagation targets.
+     * Stored parameters are supplied with each frame so the controls reflect its last batch result.
+     * @param {object} targetFrame Organizer frame to edit.
+     * @returns {Promise<void>}
+     */
+    async function editImportCutout(targetFrame) {
+      if (!targetFrame || !state.frames.includes(targetFrame)) {
+        setStatus(text("cutoutNeedFrames"), "error");
+        return;
+      }
+      await runCutoutWorkset({
+        mode: "single",
+        sourceFrames: state.frames,
+        selectedIndex: state.frames.indexOf(targetFrame),
+        returnFrame: targetFrame,
+      });
+    }
+
+    /**
+     * Opens all included frames with automatic background detection and the organizer batch profile.
+     * @returns {Promise<void>}
+     */
+    async function editBatchCutout() {
+      await runCutoutWorkset({
+        mode: "batch",
+        sourceFrames: includedFrames(),
+        autoDetectBackground: true,
+        processingParameters: { ...ORGANIZER_BATCH_CUTOUT_PARAMETERS },
+      });
     }
 
     /**
@@ -281,9 +329,10 @@
 
     /**
      * Downloads the included processed frames as an animation ZIP.
-     * @returns {Promise<void>}
+     * @param {{confirmed?:boolean,formats?:{frames?:boolean,spritesheet?:boolean,gif?:boolean,mov?:boolean},signal?:AbortSignal}} [exportOptions] Selected export formats and cancellation signal.
+     * @returns {Promise<object|null|undefined>}
      */
-    async function exportIncludedFrames() {
+    async function exportIncludedFrames(exportOptions = {}) {
       const frames = includedFrames();
       if (!frames.length || typeof hooks.exportAnimation !== "function") return;
       let metadata;
@@ -309,7 +358,10 @@
         [text("detailFrames"), frames.length],
         [text("detailFps"), metadata.fps],
       ];
-      if (!(await controller.requestConfirmation(text("exportConfirm", { count: frames.length }), details))) {
+      if (
+        exportOptions.confirmed !== true &&
+        !(await controller.requestConfirmation(text("exportConfirm", { count: frames.length }), details))
+      ) {
         return;
       }
       const usedPremiumFeatures =
@@ -317,30 +369,49 @@
         Array.from(state.premiumFeatures || []);
       state.busy = true;
       renderCounts();
+      let exportResult = null;
       try {
         const result = await hooks.exportAnimation(
           metadata,
-          frames.map((frame) => ({
-            name: frame.name,
-            flipped: frame.flipped,
-            data: frame.editedCanvas.toDataURL("image/png"),
-          })),
+          frames.map((frame) => {
+            const item = {
+              name: frame.name,
+              flipped: frame.flipped,
+              data: frame.editedCanvas.toDataURL("image/png"),
+            };
+            if (
+              exportOptions.formats?.spritesheet ||
+              exportOptions.formats?.gif ||
+              exportOptions.formats?.mov
+            ) {
+              item.image = frame.editedCanvas;
+              item.width = frame.editedCanvas.width;
+              item.height = frame.editedCanvas.height;
+            }
+            return item;
+          }),
           {
+            formats: exportOptions.formats,
+            signal: exportOptions.signal,
             premiumFeatures: usedPremiumFeatures,
             onProgress: (current, total) => setStatus(text("exportingZip", { current, total }), "busy"),
           },
         );
+        exportResult = result;
         if (result) setStatus(text("exportedZip", { count: frames.length }), "success");
       } catch (error) {
         setStatus(text("failed", { message: error.message }), "error");
+        if (exportOptions.confirmed === true) throw error;
       } finally {
         state.busy = false;
         renderCounts();
       }
+      return exportResult;
     }
 
     return {
       editImportCutout,
+      editBatchCutout,
       applyPlan,
       importIntoSession,
       addIncludedFramesToAssets,

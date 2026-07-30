@@ -35,6 +35,18 @@
     "pendingAutomaticPropagation",
   ]);
   const MAX_EDIT_HISTORY = 100;
+  const REFERENCE_MODE_VALUES = new Set(["general", "blend", "chroma"]);
+
+  /**
+   * Normalizes one reference-kernel mode while preserving a caller-selected fallback.
+   * @param {*} value Candidate mode.
+   * @param {"general"|"blend"|"chroma"} fallback Safe fallback mode.
+   * @returns {"general"|"blend"|"chroma"} Supported reference mode.
+   */
+  function normalizeReferenceMode(value, fallback) {
+    const mode = String(value || "");
+    return REFERENCE_MODE_VALUES.has(mode) ? mode : fallback;
+  }
 
   /**
    * Clones logical session values without copying Canvas or ImageData instances.
@@ -46,6 +58,83 @@
     if (ArrayBuffer.isView(value)) return value.slice();
     if (!value || typeof value !== "object") return value;
     return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, cloneSessionValue(entry)]));
+  }
+
+  /**
+   * Stages the source frame's latest recolor as a non-destructive batch preview.
+   * Target items keep their committed repair arrays unchanged until propagation.
+   * @param {object} state Mutable batch session state.
+   * @param {object|null|undefined} sourceItem Frame that owns the recolor repair.
+   * @returns {boolean} Whether a recolor preview is active.
+   */
+  function stageBatchRepairPreview(state, sourceItem) {
+    if (!state || typeof state !== "object") {
+      throw new TypeError("Batch repair preview requires session state.");
+    }
+    const repair = sourceItem?.repairs?.at(-1);
+    if (!sourceItem || !repair || repair.mode !== "recolor" || (state.items?.length || 0) < 2) {
+      state.batchPreviewRepair = null;
+      return false;
+    }
+    state.batchPreviewRepair = {
+      sourceItemId: sourceItem.id,
+      sourceWidth: Number(sourceItem.sourceImageData?.width || 1),
+      sourceHeight: Number(sourceItem.sourceImageData?.height || 1),
+      repair: cloneSessionValue(repair),
+    };
+    return true;
+  }
+
+  /**
+   * Clears the non-destructive batch repair preview.
+   * @param {object} state Mutable batch session state.
+   * @returns {boolean} Whether a staged preview was removed.
+   */
+  function clearBatchRepairPreview(state) {
+    if (!state || typeof state !== "object") return false;
+    const changed = Boolean(state.batchPreviewRepair);
+    state.batchPreviewRepair = null;
+    return changed;
+  }
+
+  /**
+   * Resolves committed repairs plus a derived recolor preview for one target frame.
+   * Existing propagated geometry is reused when available; otherwise point
+   * coordinates are normalized between source and target canvases.
+   * @param {object} state Mutable batch session state.
+   * @param {object} item Target queue item.
+   * @returns {object[]} Effective repairs for preview rendering.
+   */
+  function previewRepairsForItem(state, item) {
+    const committedRepairs = Array.isArray(item?.repairs) ? item.repairs : [];
+    const preview = state?.batchPreviewRepair;
+    if (!preview || !item || item.id === preview.sourceItemId) return committedRepairs;
+    const sourceRepair = preview.repair;
+    if (!sourceRepair || sourceRepair.mode !== "recolor") return committedRepairs;
+    const propagatedRepair = committedRepairs.find(
+      (repair) => repair.propagatedFrom && repair.propagatedFrom === sourceRepair.id,
+    );
+    const targetWidth = Math.max(1, Number(item.sourceImageData?.width || preview.sourceWidth));
+    const targetHeight = Math.max(1, Number(item.sourceImageData?.height || preview.sourceHeight));
+    const previewRepair = {
+      ...(propagatedRepair ? cloneSessionValue(propagatedRepair) : cloneSessionValue(sourceRepair)),
+      id: `batch_preview_${sourceRepair.id || "recolor"}_${item.id}`,
+      previewOnly: true,
+      color: cloneSessionValue(sourceRepair.color),
+      tolerance: sourceRepair.tolerance,
+      scope: sourceRepair.scope,
+    };
+    if (!propagatedRepair && sourceRepair.scope !== "global") {
+      previewRepair.x =
+        (Number(sourceRepair.x || 0) * targetWidth) / Math.max(1, Number(preview.sourceWidth || 1));
+      previewRepair.y =
+        (Number(sourceRepair.y || 0) * targetHeight) / Math.max(1, Number(preview.sourceHeight || 1));
+    }
+    const effectiveRepairs = propagatedRepair
+      ? committedRepairs.filter((repair) => repair !== propagatedRepair)
+      : [...committedRepairs];
+    effectiveRepairs.push(previewRepair);
+    return effectiveRepairs;
   }
 
   /**
@@ -119,6 +208,7 @@
       "cutoutColor",
       "cutoutConnected",
       "cutoutPerceptual",
+      "cutoutBlendMode",
       "cutoutDespillMode",
       ...NUMERIC_CONTROLS.flatMap(([inputKey, outputKey]) => [inputKey, outputKey]),
     ];
@@ -137,7 +227,8 @@
       backgroundColor: String(elements.cutoutColor.value || "#ffffff"),
       connected: Boolean(elements.cutoutConnected.checked),
       perceptual: Boolean(elements.cutoutPerceptual.checked),
-      despillMode: String(elements.cutoutDespillMode.value || "general"),
+      blendMode: normalizeReferenceMode(elements.cutoutBlendMode.value, "blend"),
+      despillMode: normalizeReferenceMode(elements.cutoutDespillMode.value, "general"),
     };
     for (const [inputKey, , parameterKey] of NUMERIC_CONTROLS) {
       parameters[parameterKey] = Number(elements[inputKey].value);
@@ -158,7 +249,8 @@
     elements.cutoutColor.value = String(parameters.backgroundColor || "#ffffff");
     elements.cutoutConnected.checked = Boolean(parameters.connected);
     elements.cutoutPerceptual.checked = Boolean(parameters.perceptual);
-    elements.cutoutDespillMode.value = String(parameters.despillMode || "general");
+    elements.cutoutBlendMode.value = normalizeReferenceMode(parameters.blendMode, "blend");
+    elements.cutoutDespillMode.value = normalizeReferenceMode(parameters.despillMode, "general");
     for (const [inputKey, outputKey, parameterKey] of NUMERIC_CONTROLS) {
       const value = Number(parameters[parameterKey]);
       if (Number.isFinite(value)) elements[inputKey].value = String(value);
@@ -189,10 +281,11 @@
       seedPoints: item.seedPoints || [],
       edgeBoost: parameters.edgeBoost,
       blendStrength: parameters.blendStrength,
+      blendMode: normalizeReferenceMode(parameters.blendMode, "blend"),
       alphaLow: Math.min(parameters.alphaLow, parameters.alphaHigh),
       alphaHigh: Math.max(parameters.alphaLow, parameters.alphaHigh),
       despillStrength: parameters.despillStrength,
-      despillMode: parameters.despillMode,
+      despillMode: normalizeReferenceMode(parameters.despillMode, "general"),
       edgeDespillRadius: parameters.edgeDespillRadius,
       edgeRecoveryStrength: parameters.edgeRecoveryStrength,
       edgeRecoveryTolerance: 0,
@@ -218,6 +311,7 @@
     item.resultCanvas = null;
     item.resultImageData = null;
     item.resultThumbnail = "";
+    item.resultVariant = "";
     item.thumbnailRevision = -1;
     item.qualityMetrics = null;
     item.quality = null;
@@ -368,6 +462,41 @@
   }
 
   /**
+   * Synchronizes shared automatic settings for a file batch without creating a
+   * user-visible repair propagation transaction. Background samples captured
+   * from the source frame are reacquired at the same normalized seed points so
+   * video frames with slightly different green-screen colors do not retain the
+   * source frame's color by mistake.
+   * @param {object[]} items Session items.
+   * @param {object|null} sourceItem Selected source item.
+   * @param {object} processingParameters Current automatic processing parameters.
+   * @param {{mapSeedPoints?:boolean}} [options] Background sample mapping behavior.
+   * @returns {{updated:number,mappedBackgroundSamples:boolean}} Synchronization summary.
+   */
+  function synchronizeBatchAutomaticProcessing(items, sourceItem, processingParameters, options = {}) {
+    const targets = Array.isArray(items) ? items : [];
+    if (!sourceItem || !processingParameters || typeof processingParameters !== "object") {
+      throw new TypeError("Batch automatic synchronization requires a source item and parameters.");
+    }
+    sourceItem.processingParameters = cloneSessionValue(processingParameters);
+    const mappedBackgroundSamples = Boolean(
+      sourceItem.automaticCutoutActivated && sourceItem.backgroundSamples?.length,
+    );
+    for (const item of targets) {
+      if (mappedBackgroundSamples) {
+        copyAutomaticProcessingState(item, sourceItem, {
+          mapSeedPoints: options.mapSeedPoints !== false,
+        });
+        continue;
+      }
+      item.processingParameters = cloneSessionValue(processingParameters);
+      item.pendingAutomaticPropagation = false;
+      resetItemProcessing(item);
+    }
+    return { updated: targets.length, mappedBackgroundSamples };
+  }
+
+  /**
    * Copies one source image's automatic-cutout settings to every session item.
    * Manual FramePacker reference colors are copied to every target image.
    * @param {object[]} items Session items.
@@ -511,13 +640,17 @@
     applyProcessingParameters,
     beginPropagation,
     captureProcessingParameters,
+    clearBatchRepairPreview,
     copyAutomaticProcessingState,
     createProcessingOptions,
+    previewRepairsForItem,
     recordItemEdit,
     propagateAutomaticProcessing,
     redoEdit,
     redoPropagation,
     resetItemProcessing,
+    stageBatchRepairPreview,
+    synchronizeBatchAutomaticProcessing,
     undoEdit,
     undoPropagation,
   });

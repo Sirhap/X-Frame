@@ -39,6 +39,11 @@ function createFixture(overrides = {}) {
     cutoutProtectionBoundary: { value: "4" },
     cutoutProtectionPadding: { value: "2" },
     cutoutProtectionTolerance: { value: "8" },
+    cutoutModal: { dataset: {} },
+    cutoutRepairBatch: {
+      classList: { remove() {} },
+      setAttribute() {},
+    },
     ...overrides.elements,
   };
   const core = {
@@ -90,6 +95,10 @@ function createFixture(overrides = {}) {
     sessionCore: {
       propagateAutomaticProcessing: () => 1,
       beginPropagation: () => {},
+      clearBatchRepairPreview: () => {
+        state.batchPreviewRepair = null;
+        return true;
+      },
       copyAutomaticProcessingState: (targetItem, sourceItem, options = {}) => {
         targetItem.processingParameters = { ...sourceItem.processingParameters };
         targetItem.backgroundSamples = (sourceItem.backgroundSamples || []).map((color) => ({ ...color }));

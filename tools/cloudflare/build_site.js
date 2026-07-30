@@ -6,6 +6,8 @@ const path = require("node:path");
 const projectRoot = path.resolve(__dirname, "../..");
 const protectedDist = path.join(projectRoot, "dist");
 const publicRoot = path.join(projectRoot, "tools/animation_tuner/public");
+const factoryEntry = path.join(publicRoot, "animation_factory.html");
+const factoryStyles = path.join(publicRoot, "animation_factory.css");
 const landingAssetsSource = path.join(publicRoot, "assets/landing");
 const staticHeadersSource = path.join(projectRoot, "cloudflare/site/_headers");
 const siteDist = path.join(projectRoot, "cloudflare/site/dist");
@@ -36,8 +38,21 @@ function buildSite() {
   fs.mkdirSync(siteDist, { recursive: true });
   fs.cpSync(protectedDist, siteDist, { recursive: true });
   fs.renameSync(path.join(siteDist, "index.html"), path.join(siteDist, "workbench.html"));
-  fs.copyFileSync(path.join(publicRoot, "landing.html"), path.join(siteDist, "index.html"));
+  fs.copyFileSync(factoryEntry, path.join(siteDist, "index.html"));
   fs.copyFileSync(path.join(publicRoot, "admin.html"), path.join(siteDist, "admin.html"));
+  fs.copyFileSync(factoryStyles, path.join(siteDist, "animation_factory.css"));
+  fs.copyFileSync(
+    path.join(publicRoot, "animation_factory-console.css"),
+    path.join(siteDist, "animation_factory-console.css"),
+  );
+  fs.copyFileSync(
+    path.join(publicRoot, "animation_factory-sections.css"),
+    path.join(siteDist, "animation_factory-sections.css"),
+  );
+  fs.copyFileSync(
+    path.join(publicRoot, "animation_factory-responsive.css"),
+    path.join(siteDist, "animation_factory-responsive.css"),
+  );
   fs.copyFileSync(path.join(publicRoot, "landing.css"), path.join(siteDist, "landing.css"));
   fs.copyFileSync(path.join(publicRoot, "landing-admin.css"), path.join(siteDist, "landing-admin.css"));
   fs.copyFileSync(path.join(publicRoot, "landing-admin.js"), path.join(siteDist, "landing-admin.js"));

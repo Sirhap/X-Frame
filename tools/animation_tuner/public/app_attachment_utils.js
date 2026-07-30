@@ -66,6 +66,7 @@
       metadata,
       name: String(source.name || "image"),
       path: String(source.path || ""),
+      assetId: String(source.assetId || source.automation?.assetId || ""),
       assetHash: String(source.assetHash || ""),
       type: String(source.type || ""),
       width: Number(source.width || 0),
@@ -73,6 +74,10 @@
       layer: layerOrder < 0 ? "below" : "above",
       layerOrder,
       transform: normalizeAttachmentTransform(source.transform),
+      automation:
+        source.automation && typeof source.automation === "object"
+          ? structuredClone(source.automation)
+          : undefined,
     };
   }
 
@@ -85,6 +90,7 @@
     return {
       name: attachment.name,
       path: attachment.path,
+      ...(attachment.assetId ? { assetId: attachment.assetId } : {}),
       assetHash: attachment.assetHash,
       type: attachment.type,
       width: attachment.width,

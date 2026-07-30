@@ -1,0 +1,270 @@
+.characterStarterGuide[hidden] {
+  display: none;
+}
+
+body.characterStarterGuideOpen {
+  overflow: hidden;
+}
+
+.characterStarterGuide {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 5, 4, 0.76);
+  backdrop-filter: blur(10px);
+}
+
+.characterStarterCard {
+  width: min(920px, 100%);
+  max-height: min(760px, calc(100dvh - 32px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 4px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-3);
+  color: var(--ink);
+  box-shadow: 10px 10px 0 color-mix(in srgb, var(--accent-3) 72%, var(--line));
+}
+
+.characterStarterHeader,
+.characterStarterFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 3px solid var(--line);
+  background: var(--panel);
+}
+
+.characterStarterHeader span,
+.characterStarterDetail > span {
+  color: var(--accent-3);
+  font: 900 9px/1 var(--data-font);
+  letter-spacing: 0.16em;
+}
+
+.characterStarterHeader h2 {
+  margin: 5px 0 0;
+  font-size: clamp(24px, 4vw, 42px);
+  letter-spacing: -0.045em;
+}
+
+.characterStarterClose {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 24px;
+}
+
+.characterStarterBody {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.35fr);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.characterStarterModes {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 18px;
+  border-right: 3px solid var(--line);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-3) 8%, transparent) 1px, transparent 1px) 0 0 /
+      22px 22px,
+    var(--panel-2);
+}
+
+.characterStarterModes button {
+  min-height: 60px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.characterStarterModes button b {
+  color: var(--accent-3);
+  font: 950 13px/1 var(--data-font);
+}
+
+.characterStarterModes button span {
+  font-weight: 850;
+}
+
+.characterStarterModes button.active {
+  border-color: var(--accent-3);
+  background: color-mix(in srgb, var(--panel) 76%, var(--accent-3));
+}
+
+.characterStarterDetail {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 18px;
+  padding: clamp(22px, 5vw, 52px);
+}
+
+.characterStarterDetail h3 {
+  margin: 0;
+  font-size: clamp(30px, 5vw, 58px);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.characterStarterFacts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.characterStarterFacts > div {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 2px solid color-mix(in srgb, var(--muted) 28%, transparent);
+}
+
+.characterStarterFacts dt {
+  color: var(--muted);
+  font: 850 10px/1.4 var(--data-font);
+}
+
+.characterStarterFacts dd {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.characterStarterCommand {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 3px solid var(--accent-3);
+  background: #090b0a;
+}
+
+.characterStarterCommand span {
+  color: var(--accent-3);
+  font: 900 9px/1 var(--data-font);
+  letter-spacing: 0.14em;
+}
+
+.characterStarterCommand code {
+  overflow: hidden;
+  color: #f8f5e8;
+  font: 900 18px/1.2 var(--data-font);
+  text-overflow: ellipsis;
+}
+
+.characterStarterFooter {
+  border-top: 3px solid var(--line);
+  border-bottom: 0;
+}
+
+.characterStarterFooter p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.characterStarterActions {
+  display: flex;
+  gap: 8px;
+}
+
+.characterStarterActions button {
+  min-height: 44px;
+}
+
+.characterStarterCopy {
+  border-color: var(--accent-3);
+  background: var(--accent-3);
+  color: #111007;
+}
+
+.characterStarterCopy[data-copied="true"] {
+  background: var(--ok);
+}
+
+@media (max-width: 700px) {
+  .characterStarterGuide {
+    align-items: end;
+    padding: 8px;
+  }
+
+  .characterStarterCard {
+    max-height: calc(100dvh - 16px);
+    border-radius: 12px 12px 5px 5px;
+    box-shadow: 5px 5px 0 color-mix(in srgb, var(--accent-3) 72%, var(--line));
+  }
+
+  .characterStarterHeader,
+  .characterStarterFooter {
+    align-items: stretch;
+    padding: 13px;
+  }
+
+  .characterStarterBody {
+    grid-template-columns: 1fr;
+  }
+
+  .characterStarterModes {
+    grid-template-columns: repeat(5, minmax(52px, 1fr));
+    overflow-x: auto;
+    padding: 10px;
+    border-right: 0;
+    border-bottom: 3px solid var(--line);
+  }
+
+  .characterStarterModes button {
+    min-height: 52px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 4px;
+    padding: 7px;
+    text-align: center;
+  }
+
+  .characterStarterModes button span {
+    font-size: 9px;
+  }
+
+  .characterStarterDetail {
+    gap: 13px;
+    padding: 18px 15px;
+  }
+
+  .characterStarterFacts > div {
+    grid-template-columns: 66px minmax(0, 1fr);
+  }
+
+  .characterStarterFooter {
+    flex-direction: column;
+  }
+
+  .characterStarterActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .characterStarterCard,
+  .characterStarterModes button {
+    transition: none;
+  }
+}

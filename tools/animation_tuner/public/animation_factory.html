@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="XSXB 动画工厂：在本地完成帧动画素材导入、批量抠图、序列整理、动画调优与多格式导出。"
+    />
+    <meta name="theme-color" content="#080d0b" />
+    <title>动画工厂 · XSXB Frame Tuner</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="stylesheet" href="/animation_factory.css" />
+    <link rel="stylesheet" href="/animation_factory-console.css" />
+    <link rel="stylesheet" href="/animation_factory-sections.css" />
+    <link rel="stylesheet" href="/animation_factory-responsive.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#factoryTools">跳到工具入口</a>
+
+    <header class="factory-header">
+      <a class="brand" href="/" aria-label="XSXB 动画工厂首页">
+        <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M8 13.5 24 5l16 8.5v21L24 43 8 34.5z" />
+          <path d="m16 18 8-4 8 4v12l-8 4-8-4z" />
+          <path d="M24 14v20M16 18l8 4 8-4" />
+        </svg>
+        <span>
+          <strong>动画工厂</strong>
+          <small>XSXB / FRAME TUNER</small>
+        </span>
+      </a>
+
+      <nav class="primary-nav" aria-label="主导航">
+        <a href="#factoryTools">工作台</a>
+        <a href="#workflow">生产流程</a>
+        <a href="#localFirst">本地处理</a>
+      </nav>
+
+      <nav class="header-actions" aria-label="辅助导航">
+        <span class="local-status"><i aria-hidden="true"></i> LOCAL</span>
+        <a class="license-link" href="/admin/licenses" aria-label="许可证管理">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="8" cy="15" r="4" />
+            <path d="m11 12 8-8 2 2-2 2 1.5 1.5-2 2L17 10l-3 3" />
+          </svg>
+          <span>许可证</span>
+        </a>
+        <a class="header-button" href="/workspace">
+          <span>进入调优台</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+        </a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="factory-hero" aria-labelledby="factoryTitle">
+        <div class="hero-copy">
+          <p class="eyebrow"><span>FRAME PIPELINE / 01</span> LOCAL PRODUCTION CONSOLE</p>
+          <h1 id="factoryTitle">从原始素材，<br />到<span>可用动画。</span></h1>
+          <p class="hero-description">
+            导入图片序列或视频，在同一条本地工作流中完成抠图、整理、调优与导出。素材不必离开你的设备。
+          </p>
+          <div class="hero-actions">
+            <a class="primary-action" href="/tools/import">
+              <span>导入第一组素材</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+            </a>
+            <a class="secondary-action" href="/workspace">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 5h16v14H4zM8 9h8M8 13h5" />
+              </svg>
+              继续现有项目
+            </a>
+          </div>
+          <dl class="hero-facts">
+            <div>
+              <dt>INPUT</dt>
+              <dd>图片序列 / 视频</dd>
+            </div>
+            <div>
+              <dt>PROCESSING</dt>
+              <dd>浏览器本地完成</dd>
+            </div>
+            <div>
+              <dt>OUTPUT</dt>
+              <dd>PNG / SHEET / GIF / MOV</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="product-console" aria-label="帧动画调优工作台预览">
+          <div class="console-titlebar">
+            <span class="window-controls" aria-hidden="true"><i></i><i></i><i></i></span>
+            <code>PLAYER / SWORD_ATTACK / FRAME_05</code>
+            <span class="live-badge"><i aria-hidden="true"></i> LIVE</span>
+          </div>
+          <ol class="console-pipeline" aria-label="动画处理流程">
+            <li><span>01</span> 导入</li>
+            <li><span>02</span> 抠图</li>
+            <li class="active" aria-current="step"><span>03</span> 调优</li>
+            <li><span>04</span> 导出</li>
+          </ol>
+          <div class="console-workspace">
+            <div class="stage-preview">
+              <span class="stage-axis stage-axis-x" aria-hidden="true"></span>
+              <span class="stage-axis stage-axis-y" aria-hidden="true"></span>
+              <span class="stage-label">FRAME 05 / 09</span>
+              <div class="stage-hurtbox" aria-hidden="true"><span>HURT</span></div>
+              <div class="stage-hitbox" aria-hidden="true"><span>HIT</span></div>
+              <img
+                src="/assets/landing/hero-fighter-v2.webp"
+                alt="剑士攻击动画的第 5 帧预览"
+                width="1152"
+                height="768"
+                decoding="async"
+                fetchpriority="high"
+              />
+              <code>X 364&nbsp;&nbsp;Y 004</code>
+            </div>
+            <aside class="console-inspector" aria-label="当前帧参数">
+              <header>
+                <span>TRANSFORM</span>
+                <b>FRAME 05</b>
+              </header>
+              <dl>
+                <div>
+                  <dt>缩放</dt>
+                  <dd>0.876</dd>
+                </div>
+                <div>
+                  <dt>旋转</dt>
+                  <dd>0.0°</dd>
+                </div>
+                <div>
+                  <dt>偏移 X</dt>
+                  <dd>364</dd>
+                </div>
+                <div>
+                  <dt>偏移 Y</dt>
+                  <dd>004</dd>
+                </div>
+              </dl>
+              <div class="inspector-layers">
+                <p>COLLISION LAYERS</p>
+                <span><i class="layer-mint" aria-hidden="true"></i> 受击框 <b>ON</b></span>
+                <span><i class="layer-coral" aria-hidden="true"></i> 攻击框 <b>ON</b></span>
+              </div>
+            </aside>
+          </div>
+          <ol class="console-timeline" aria-label="攻击动画帧序列">
+            <li><span>01</span><i></i></li>
+            <li><span>02</span><i></i></li>
+            <li><span>03</span><i></i></li>
+            <li><span>04</span><i></i></li>
+            <li class="active" aria-current="true"><span>05</span><i></i></li>
+          </ol>
+          <div class="console-statusbar">
+            <span><i aria-hidden="true"></i> LOCAL PROCESSING</span>
+            <code>09 FRAMES&nbsp;&nbsp;/&nbsp;&nbsp;22 MS&nbsp;&nbsp;/&nbsp;&nbsp;LOOP ON</code>
+          </div>
+        </div>
+      </section>
+
+      <section class="trust-rail" aria-label="产品能力概览">
+        <p><span>01</span> 原始素材留在当前设备</p>
+        <p><span>02</span> 工序可独立进入</p>
+        <p><span>03</span> 参数贯穿同一动画组</p>
+        <p><span>04</span> 导出即可复用的动画包</p>
+      </section>
+
+      <section id="factoryTools" class="tool-section" aria-labelledby="toolsTitle">
+        <header class="section-heading">
+          <div>
+            <p class="eyebrow"><span>FACTORY FLOOR / 02</span> FOUR WORKSTATIONS</p>
+            <h2 id="toolsTitle">今天，从哪道工序开始？</h2>
+          </div>
+          <p>已有素材时直接进入对应工具；需要完整调参和项目管理时，打开核心工作台。</p>
+        </header>
+
+        <div class="tool-grid">
+          <a class="tool-card tool-card-featured" href="/workspace?guide=character">
+            <div class="tool-card-topline">
+              <span class="tool-number">01 / CORE</span>
+              <span class="tool-state"><i aria-hidden="true"></i> 核心工作台</span>
+            </div>
+            <div class="featured-visual" aria-hidden="true">
+              <span class="visual-crosshair"></span>
+              <svg viewBox="0 0 120 120">
+                <path d="M21 93V31l39-18 39 18v62l-39 18z" />
+                <path d="m39 43 21-10 21 10v35L60 88 39 78zM60 33v55" />
+              </svg>
+              <code>PROJECT / CHARACTER / ANIMATION</code>
+            </div>
+            <div class="tool-copy">
+              <p>CHARACTER + TUNING</p>
+              <h3>角色起稿与动画调优</h3>
+              <span>统一管理角色、动画组与逐帧参数，调整位置、碰撞框、附件、拖尾、音效和播放节奏。</span>
+            </div>
+            <ul class="featured-features" aria-label="核心能力">
+              <li>逐帧变换</li>
+              <li>三类碰撞框</li>
+              <li>附件与音效</li>
+              <li>Godot 同步</li>
+            </ul>
+            <span class="tool-open">
+              <span>打开核心工作台</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+            </span>
+          </a>
+
+          <a class="tool-card tool-card-compact tool-import" href="/tools/import">
+            <div class="tool-card-topline">
+              <span class="tool-number">02</span>
+              <span class="tool-state">INGEST</span>
+            </div>
+            <div class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32"><path d="M6 22v5h20v-5M16 4v17m-7-7 7 7 7-7" /></svg>
+            </div>
+            <div class="tool-copy">
+              <p>IMAGE + VIDEO</p>
+              <h3>导入与预处理</h3>
+              <span>导入图片序列或提取视频帧，检查画布并建立动画组。</span>
+            </div>
+            <span class="tool-open">
+              <span>进入导入</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+            </span>
+          </a>
+
+          <a class="tool-card tool-card-compact tool-cutout" href="/tools/cutout">
+            <div class="tool-card-topline">
+              <span class="tool-number">03</span>
+              <span class="tool-state">ALPHA</span>
+            </div>
+            <div class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32">
+                <circle cx="16" cy="16" r="11" />
+                <path d="M8 16h16M16 5c3 3 4.5 6.7 4.5 11S19 24 16 27c-3-3-4.5-6.7-4.5-11S13 8 16 5" />
+              </svg>
+            </div>
+            <div class="tool-copy">
+              <p>CHROMA + LUMA</p>
+              <h3>批量抠图</h3>
+              <span>移除背景、修复边缘和局部区域，再把参数传播到整组。</span>
+            </div>
+            <span class="tool-open">
+              <span>进入抠图</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+            </span>
+          </a>
+
+          <a class="tool-card tool-card-compact tool-organizer" href="/tools/organizer">
+            <div class="tool-card-topline">
+              <span class="tool-number">04</span>
+              <span class="tool-state">OUTPUT</span>
+            </div>
+            <div class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32">
+                <rect x="5" y="6" width="22" height="20" rx="2" />
+                <path d="M5 12h22M11 6v20M18 12v14M11 19h16" />
+              </svg>
+            </div>
+            <div class="tool-copy">
+              <p>SEQUENCE + EXPORT</p>
+              <h3>整理与导出</h3>
+              <span>排序、删帧、循环分析，并输出多种可复用动画格式。</span>
+            </div>
+            <span class="tool-open">
+              <span>进入动画处理</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+            </span>
+          </a>
+
+          <a class="tool-card tool-card-compact tool-scatter" href="/tools/scatter-slice">
+            <div class="tool-card-topline">
+              <span class="tool-number">05</span>
+              <span class="tool-state">SLICE</span>
+            </div>
+            <div class="tool-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32">
+                <path d="M4 5h9v8H4zM19 4h9v7h-9zM5 20h7v8H5zM17 17h11v11H17z" />
+              </svg>
+            </div>
+            <div class="tool-copy">
+              <p>CONNECTED COMPONENTS</p>
+              <h3>零散切图</h3>
+              <span>识别散落在图片中的独立元素，预览、筛选并重新拼接为规则精灵表。</span>
+            </div>
+            <span class="tool-open">
+              <span>进入切片</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+            </span>
+          </a>
+        </div>
+      </section>
+
+      <section id="workflow" class="workflow-section" aria-labelledby="workflowTitle">
+        <header class="workflow-heading">
+          <p class="eyebrow"><span>PIPELINE / 03</span> ONE CONTINUOUS WORKFLOW</p>
+          <h2 id="workflowTitle">一条流水线，<br />四次明确交付。</h2>
+        </header>
+        <ol class="workflow-list">
+          <li>
+            <span>01</span>
+            <div>
+              <h3>素材入库</h3>
+              <p>保留源顺序、命名和画布信息，建立独立动画组。</p>
+            </div>
+          </li>
+          <li>
+            <span>02</span>
+            <div>
+              <h3>透明化</h3>
+              <p>按背景颜色完成色键抠图，再修复边缘与局部区域。</p>
+            </div>
+          </li>
+          <li>
+            <span>03</span>
+            <div>
+              <h3>逐帧调优</h3>
+              <p>统一处理变换、框体、节奏、附件、音效和攻击拖尾。</p>
+            </div>
+          </li>
+          <li>
+            <span>04</span>
+            <div>
+              <h3>打包交付</h3>
+              <p>整理循环与帧序，导出适合下一步制作的动画资产。</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section id="localFirst" class="local-section" aria-labelledby="localTitle">
+        <div class="local-display" aria-hidden="true">
+          <span>0</span>
+          <small>UPLOADS</small>
+          <i></i>
+        </div>
+        <div class="local-copy">
+          <p class="eyebrow"><span>LOCAL FIRST / 04</span> YOUR ASSETS STAY YOURS</p>
+          <h2 id="localTitle">素材留在本机，<br />创作路径更短。</h2>
+          <p>网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理结果直接下载。</p>
+          <ul>
+            <li>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
+              批量处理在浏览器内完成
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
+              工序之间复用同一动画组
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
+              完成后直接导出动画包
+            </li>
+          </ul>
+          <a class="primary-action" href="/tools/import">
+            <span>开始制作动画</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="factory-footer">
+      <p><strong>XSXB</strong> FRAME TUNER <span>/</span> ANIMATION FACTORY</p>
+      <nav aria-label="页脚导航">
+        <a href="#factoryTools">工作台</a>
+        <a href="#workflow">流程</a>
+        <a href="/admin/licenses">许可证</a>
+      </nav>
+      <p>LOCAL-FIRST · OPEN WORKFLOW</p>
+    </footer>
+  </body>
+</html>

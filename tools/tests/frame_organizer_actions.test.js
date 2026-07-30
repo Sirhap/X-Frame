@@ -27,18 +27,24 @@ function createFixture() {
     reloads: 0,
     languages: 0,
     closes: 0,
+    cutoutWorksets: [],
   };
   const controller = createController({
     state,
     elements: {
       organizerModal: { inert: false, setAttribute() {}, removeAttribute() {} },
       organizerAnimationName: { value: "demo" },
+      organizerBatchCutout: { focus() {} },
       organizerGrid: { querySelector: () => null },
     },
     hooks: {
       addAssets: async (items) => {
         calls.assets = items;
         return items.length;
+      },
+      editCutout: async (workset) => {
+        calls.cutoutWorksets.push(workset);
+        return state.cutoutOutputs || null;
       },
       getCurrentAnimation: () => ({
         name: "demo",
@@ -49,6 +55,7 @@ function createFixture() {
       }),
       exportAnimation: async (metadata, items, options) => {
         calls.exported = { metadata, items, options };
+        if (state.exportError) throw state.exportError;
         options.onProgress(1, items.length);
         return { filename: "demo-xsxb.zip", frameCount: items.length };
       },
@@ -84,6 +91,7 @@ function createFixture() {
     },
     getUiController: () => ({
       requestConfirmation: async () => Boolean(state.confirmApply),
+      setEditorInert() {},
     }),
     windowRef: {
       clearTimeout() {},
@@ -123,11 +131,91 @@ test("organizer actions export the edited workset as PNG frames", async () => {
   assert.equal(fixture.state.busy, false);
 });
 
+test("organizer actions forwards sprite-sheet canvases only when requested", async () => {
+  const fixture = createFixture();
+  fixture.state.confirmApply = true;
+  fixture.frame.editedCanvas.width = 32;
+  fixture.frame.editedCanvas.height = 24;
+
+  await fixture.controller.exportIncludedFrames({
+    confirmed: true,
+    formats: { frames: true, spritesheet: true },
+  });
+
+  assert.equal(fixture.calls.exported.items[0].image, fixture.frame.editedCanvas);
+  assert.equal(fixture.calls.exported.items[0].width, 32);
+  assert.deepEqual(fixture.calls.exported.options.formats, { frames: true, spritesheet: true });
+});
+
+test("organizer actions forwards cancellation and reports dialog export failures", async () => {
+  const fixture = createFixture();
+  const abortController = new AbortController();
+  fixture.state.exportError = new Error("encoding failed");
+
+  await assert.rejects(
+    fixture.controller.exportIncludedFrames({
+      confirmed: true,
+      formats: { gif: true },
+      signal: abortController.signal,
+    }),
+    /encoding failed/,
+  );
+
+  assert.equal(fixture.calls.exported.options.signal, abortController.signal);
+  assert.equal(fixture.calls.status.at(-1), "failed");
+  assert.equal(fixture.state.busy, false);
+});
+
 test("organizer actions reject an unknown cutout target without side effects", async () => {
   const fixture = createFixture();
   await fixture.controller.editImportCutout({ uid: "missing" });
   assert.deepEqual(fixture.calls.status, ["cutoutNeedFrames"]);
   assert.equal(fixture.calls.reloads, 0);
+});
+
+test("organizer batch cutout opens included frames with the automatic removal profile", async () => {
+  const fixture = createFixture();
+
+  await fixture.controller.editBatchCutout();
+
+  const [workset] = fixture.calls.cutoutWorksets;
+  assert.equal(workset.mode, "batch");
+  assert.equal(workset.autoDetectBackground, true);
+  assert.equal(workset.items.length, 1);
+  assert.deepEqual(workset.processingParameters, {
+    backgroundColor: "#ffffff",
+    connected: false,
+    perceptual: false,
+    tolerance: -1,
+    feather: 0,
+    alphaThreshold: 0,
+    chromaFeather: 0,
+    edgeBoost: 10,
+    blendStrength: 100,
+    blendMode: "blend",
+    alphaLow: 0,
+    alphaHigh: 0,
+    despillStrength: 100,
+    despillMode: "general",
+    edgeDespillRadius: 0,
+    edgeRecoveryStrength: 0,
+    backgroundRadius: 0,
+    blurRadius: 0,
+    protectionTolerance: 0,
+  });
+});
+
+test("organizer single-frame cutout forwards the last applied parameter state", async () => {
+  const fixture = createFixture();
+  fixture.frame.cutoutState = {
+    processingParameters: { tolerance: -1, blendStrength: 100, despillStrength: 100 },
+    backgroundSamples: [{ r: 2, g: 4, b: 6, a: 255 }],
+  };
+
+  await fixture.controller.editImportCutout(fixture.frame);
+
+  assert.equal(fixture.calls.cutoutWorksets[0].mode, "single");
+  assert.equal(fixture.calls.cutoutWorksets[0].items[0].cutoutState, fixture.frame.cutoutState);
 });
 
 test("import mode creates an animation and enters the tuning workbench", async () => {

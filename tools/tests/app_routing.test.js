@@ -36,20 +36,7 @@ function createControllerFixture(href = "http://localhost/") {
   const windowRef = createWindow(href);
   const storage = createStorage();
   const documentRef = { title: "" };
-  const values = {
-    homeHub: { hidden: false },
-    homeHubOpen: { setAttribute() {} },
-    homeRecentProject: { textContent: "" },
-    homeAnimationCount: { textContent: "" },
-    homeFrameCount: { textContent: "" },
-    homeProfileCount: { textContent: "" },
-    homeRecentAnimation: { textContent: "" },
-    homeProjectPath: { textContent: "" },
-    homeLastEdited: { textContent: "" },
-    homeRecentTool: { textContent: "" },
-  };
   const state = {
-    homeHubDismissed: false,
     config: {
       activeProject: { name: "Demo", workspacePath: "/tmp/demo" },
       groups: [{ name: "Idle", frames: [{}, {}] }],
@@ -59,14 +46,7 @@ function createControllerFixture(href = "http://localhost/") {
     selectedFrame: 1,
   };
   const controller = createController({
-    elements: values,
-    getConfig: () => state.config,
-    getLanguage: () => "en",
     getCurrentGroup: () => state.currentGroup,
-    getHomeHubDismissed: () => state.homeHubDismissed,
-    setHomeHubDismissed: (dismissed) => {
-      state.homeHubDismissed = dismissed;
-    },
     getSelectedFrame: () => state.selectedFrame,
     getActiveProjectId: () => "project-1",
     translate: (key) =>
@@ -75,13 +55,12 @@ function createControllerFixture(href = "http://localhost/") {
         homeImportTitle: "Import",
         homeOrganizerTitle: "Organizer",
       })[key] || key,
-    projectLabel: (project) => project?.name || "",
     groupLabel: (group) => group?.name || "",
     windowRef,
     documentRef,
     storage,
   });
-  return { controller, documentRef, state, storage, values, windowRef };
+  return { controller, documentRef, state, storage, windowRef };
 }
 
 test("routing reads canonical and legacy workbench routes", () => {
@@ -96,17 +75,11 @@ test("routing reads canonical and legacy workbench routes", () => {
   assert.equal(createControllerFixture("http://localhost/unknown").controller.currentWorkbenchRoute(), "");
 });
 
-test("home hub renders project summary and document title", () => {
-  const { controller, documentRef, values } = createControllerFixture();
+test("routing updates the document title from the active animation", () => {
+  const { controller, documentRef } = createControllerFixture();
 
-  controller.renderHomeHub();
+  controller.updateDocumentTitle();
 
-  assert.equal(values.homeHub.hidden, false);
-  assert.equal(values.homeRecentProject.textContent, "Demo");
-  assert.equal(values.homeAnimationCount.textContent, "1");
-  assert.equal(values.homeFrameCount.textContent, "2");
-  assert.equal(values.homeProfileCount.textContent, "1");
-  assert.equal(values.homeRecentAnimation.textContent, "Idle");
   assert.equal(documentRef.title, "Idle · XSXB Frame Tuner");
 });
 
@@ -124,13 +97,18 @@ test("route and selection synchronization preserve URL state", () => {
 });
 
 test("returning to the workspace route restores the frame editor", () => {
-  const { controller, state, values, windowRef } = createControllerFixture("http://localhost/tools/cutout");
+  const { controller, windowRef } = createControllerFixture("http://localhost/tools/cutout");
 
   controller.syncWorkbenchRoute("");
 
   assert.equal(windowRef.location.pathname, "/workspace");
-  assert.equal(state.homeHubDismissed, true);
-  assert.equal(values.homeHub.hidden, true);
+});
+
+test("applying the workspace URL keeps the frame editor route active", async () => {
+  const { controller, windowRef } = createControllerFixture("http://localhost/workspace");
+
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.equal(windowRef.location.pathname, "/workspace");
 });
 
 test("route application closes conflicting workbench before opening target", async () => {
@@ -212,4 +190,55 @@ test("route application rolls URL back when opening a workbench throws", async (
 
   await assert.rejects(() => controller.applyWorkbenchRoute(), /cutout failed/);
   assert.equal(windowRef.location.pathname, "/workspace");
+});
+
+test("workspace route guard saves dirty tuning before opening a tool", async () => {
+  const windowRef = createWindow("http://localhost/tools/cutout");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => {
+      events.push("decide");
+      return "save";
+    },
+    saveWorkspace: async () => events.push("save"),
+    getBatchCutout: () => ({
+      isOpen: () => false,
+      open: () => events.push("open-cutout"),
+    }),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.deepEqual(events, ["decide", "save", "open-cutout"]);
+});
+
+test("workspace route guard discards or cancels dirty tuning explicitly", async () => {
+  const discardWindow = createWindow("http://localhost/tools/organizer");
+  const discardEvents = [];
+  const discardController = createController({
+    windowRef: discardWindow,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => "discard",
+    discardWorkspaceChanges: async () => discardEvents.push("discard"),
+    getFrameOrganizer: () => ({
+      isOpen: () => false,
+      open: () => discardEvents.push("open-organizer"),
+    }),
+  });
+  assert.equal(await discardController.applyWorkbenchRoute(), true);
+  assert.deepEqual(discardEvents, ["discard", "open-organizer"]);
+
+  const cancelWindow = createWindow("http://localhost/tools/cutout");
+  const cancelController = createController({
+    windowRef: cancelWindow,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => "cancel",
+    getBatchCutout: () => ({ isOpen: () => false, open() {} }),
+  });
+  assert.equal(await cancelController.applyWorkbenchRoute(), false);
+  assert.equal(cancelWindow.location.pathname, "/workspace");
 });

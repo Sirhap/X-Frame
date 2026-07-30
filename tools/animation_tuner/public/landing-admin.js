@@ -152,7 +152,36 @@
     elements.loginView.hidden = authenticated;
     elements.dashboardView.hidden = !authenticated;
     if (authenticated) elements.activationCode.focus();
-    else elements.username.focus();
+    else {
+      clearSensitiveAdminState();
+      elements.username.focus();
+    }
+  }
+
+  /**
+   * Removes decrypted activation data whenever the local administrator view is locked.
+   * @returns {void}
+   */
+  function clearSensitiveAdminState() {
+    licenses = [];
+    selectedLicenseIds.clear();
+    elements.licenseItems.replaceChildren();
+    elements.createdCodesText.value = "";
+    elements.createdCodes.hidden = true;
+    elements.activationCode.value = "";
+    elements.selectedCount.textContent = "已选择 0 个";
+    elements.selectAll.checked = false;
+    elements.selectAll.indeterminate = false;
+    elements.copySelectedButton.disabled = true;
+    elements.copyAllButton.disabled = true;
+    elements.bulkEditor.hidden = true;
+    elements.selectionBar.hidden = true;
+    elements.codeCount.textContent = "—";
+    elements.trialCount.textContent = "—";
+    elements.activeCount.textContent = "—";
+    elements.deviceCount.textContent = "—";
+    elements.codeTabCount.textContent = "0";
+    elements.trialTabCount.textContent = "0";
   }
 
   /** @returns {void} */
@@ -454,7 +483,8 @@
           if (!window.confirm(`确定移除设备“${boundDevice.name}”的绑定吗？`)) return;
           void mutateDevice(boundDevice.id, "DELETE", "/api/admin/licenses/devices", {}, "设备槽位已重置。");
         });
-        controls.append(revoke, reset);
+        controls.append(revoke);
+        if (!isTrial) controls.append(reset);
         row.append(summary, controls);
         devices.append(row);
       }
@@ -717,6 +747,7 @@
   elements.refreshButton.addEventListener("click", () => void loadLicenses());
   elements.logoutButton.addEventListener("click", async () => {
     setBusy(elements.logoutButton, true);
+    let logoutError = null;
     try {
       await requestJson("/api/admin/logout", {
         method: "POST",
@@ -724,12 +755,15 @@
         body: "{}",
       });
     } catch (error) {
-      setStatus(elements.licenseStatus, error.message, "error");
+      logoutError = error;
     } finally {
-      selectedLicenseIds.clear();
       showAuthenticatedView(false);
       setBusy(elements.logoutButton, false);
-      setStatus(elements.loginStatus, "已退出管理会话。");
+      setStatus(
+        elements.loginStatus,
+        logoutError ? `本地管理台已锁定，但服务端退出失败：${logoutError.message}` : "已退出管理会话。",
+        logoutError ? "error" : "",
+      );
     }
   });
 

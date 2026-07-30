@@ -23,18 +23,98 @@
     <link rel="stylesheet" href="/organizer_video.css" />
     <link rel="stylesheet" href="/organizer_workspace.css" />
     <link rel="stylesheet" href="/organizer_cutout_responsive.css" />
+    <link rel="stylesheet" href="/media_export_dialog.css" />
+    <link rel="stylesheet" href="/character_starter_guide.css" />
     <link rel="stylesheet" href="/app_confirm.css" />
     <link rel="stylesheet" href="/activation.css" />
+    <link rel="stylesheet" href="/attack_trails.css" />
     <link rel="stylesheet" href="/responsive.css" />
     <link rel="stylesheet" href="/theme-home.css" />
     <link rel="stylesheet" href="/theme-kunkun.css" />
+    <link rel="stylesheet" href="/app_shell.css" />
   </head>
-  <body class="theme-home">
+  <body class="theme-dark" data-sidebar-tab="transform">
     <a class="skipLink" href="#mainWorkbench" data-i18n="skipToMain">跳到主要内容</a>
+    <nav class="toolRail" aria-label="创作工具">
+      <a class="toolRailBrand" href="/" aria-label="网站首页" title="网站首页">
+        <span aria-hidden="true">X</span>
+      </a>
+      <div class="toolRailGroup">
+        <a
+          class="toolRailItem"
+          href="/workspace"
+          data-workbench-route=""
+          aria-label="动画调参"
+          title="动画调参"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16M7 6v12m10-12v12M4 18h16M9 10h6v4H9z" />
+          </svg>
+          <span>调参</span>
+        </a>
+        <a
+          class="toolRailItem"
+          href="/tools/import"
+          data-workbench-route="import"
+          aria-label="导入动画"
+          title="导入动画"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3v12m0-12 4 4m-4-4L8 7M5 14v5h14v-5" />
+          </svg>
+          <span>导入</span>
+        </a>
+        <a
+          class="toolRailItem"
+          href="/tools/organizer"
+          data-workbench-route="organizer"
+          aria-label="帧整理"
+          title="帧整理"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16v4H4zM4 11h10v4H4zM4 17h13v2H4zM17 12l3 3-3 3" />
+          </svg>
+          <span>整理</span>
+        </a>
+        <a
+          class="toolRailItem"
+          href="/tools/cutout"
+          data-workbench-route="cutout"
+          aria-label="批量抠图"
+          title="批量抠图"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 3 8 18M16 3 8 21M5 8h14M5 16h14" /></svg>
+          <span>抠图</span>
+        </a>
+        <a class="toolRailItem" href="/tools/scatter-slice" aria-label="零散切图" title="零散切图">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 4h6v6H4zM14 3h7v5h-7zM3 15h5v6H3zM12 13h9v8h-9z" />
+          </svg>
+          <span>切片</span>
+        </a>
+      </div>
+      <button
+        id="sidebarCollapse"
+        class="toolRailItem toolRailCollapse"
+        type="button"
+        aria-expanded="true"
+        aria-controls="workbenchSidebar"
+        title="折叠参数栏"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg>
+        <span>侧栏</span>
+      </button>
+    </nav>
     <main id="mainWorkbench" class="app" tabindex="-1">
-      <aside class="sidebar">
+      <aside id="workbenchSidebar" class="sidebar">
         <div class="brand">
-          <div class="mark"></div>
+          <button
+            id="brandMark"
+            class="mark"
+            type="button"
+            aria-label="XSXB 标志"
+            title="XSXB Frame Tuner"
+          ></button>
           <div class="brandMain">
             <div class="brandTop">
               <h1>XSXB Frame Tuner</h1>
@@ -45,6 +125,18 @@
             </div>
             <p data-i18n="brandSubtitle">帧动画调参工作台</p>
           </div>
+        </div>
+        <div class="sidebarTabs" role="tablist" aria-label="调参分类">
+          <button type="button" role="tab" data-sidebar-tab="project" aria-selected="false" tabindex="-1">
+            项目
+          </button>
+          <button type="button" role="tab" data-sidebar-tab="transform" aria-selected="true">变换</button>
+          <button type="button" role="tab" data-sidebar-tab="boxes" aria-selected="false" tabindex="-1">
+            框体
+          </button>
+          <button type="button" role="tab" data-sidebar-tab="effects" aria-selected="false" tabindex="-1">
+            特效
+          </button>
         </div>
         <section id="browserModeBanner" class="browserModeBanner" hidden>
           <span>WEB MODE / LOCAL PROCESSING</span>
@@ -64,12 +156,65 @@
             <p class="sidebarHint" data-i18n="projectHint">
               项目只决定素材保存位置；导入完成后会自动切换到新动画。
             </p>
+            <section id="godotHandoffCard" class="godotHandoffCard" data-state="local_only">
+              <header>
+                <strong>Godot Handoff</strong>
+                <span id="godotHandoffBadge" class="godotHandoffBadge">仅本地</span>
+              </header>
+              <label class="godotHandoffRoot">
+                <span id="godotHandoffRootLabel">Godot 项目根目录</span>
+                <input
+                  id="godotHandoffRoot"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="/绝对路径/到/Godot工程"
+                />
+              </label>
+              <p id="godotHandoffMessage" class="godotHandoffMessage" aria-live="polite"></p>
+              <ul id="godotHandoffBlockers" class="godotHandoffBlockers" hidden></ul>
+              <div class="godotHandoffActions">
+                <button id="godotHandoffBind" type="button" class="secondary">验证并同步</button>
+                <button id="godotHandoffSync" type="button" class="secondary">同步</button>
+                <button id="godotHandoffUnbind" type="button" class="secondary">解除绑定</button>
+              </div>
+            </section>
             <button
               id="refreshProject"
               class="secondary projectRefreshButton"
               data-i18n="refreshAnimationList"
             >
               刷新动画列表
+            </button>
+            <button id="addCodexPet" class="secondary projectRefreshButton" type="button" hidden>
+              ＋ 导入新宠物
+            </button>
+            <div id="codexPetActions" class="buttonRow projectPetActions" hidden>
+              <button
+                id="restoreCodexPetBackup"
+                type="button"
+                class="secondary"
+                data-i18n="restoreCodexPetBackup"
+              >
+                恢复导入版本
+              </button>
+              <button
+                id="removeCodexPet"
+                type="button"
+                class="secondary dangerAction"
+                data-i18n="removeCodexPet"
+              >
+                移出自定义宠物
+              </button>
+            </div>
+            <button
+              id="restoreRemovedCodexPet"
+              class="secondary projectRefreshButton"
+              type="button"
+              data-i18n="undoRemoveCodexPet"
+              hidden
+            >
+              撤销移出宠物
             </button>
             <p class="projectDangerHint" data-i18n="projectDangerHint">
               以下是低频危险操作，执行前会再次确认。
@@ -369,6 +514,14 @@
               >
             </div>
           </details>
+          <div class="adjustmentRecoveryActions" aria-live="polite">
+            <button id="clearGroup" type="button" class="secondary" data-i18n="restoreGroupDefaults" hidden>
+              恢复当前动画默认
+            </button>
+            <button id="clearFrame" type="button" class="secondary" data-i18n="restoreFrameDefaults" hidden>
+              恢复选中帧默认
+            </button>
+          </div>
           <button id="applyBaseToFrame" class="secondary" data-i18n="copyBaseToSelected" hidden>
             复制 Base 到选中帧
           </button>
@@ -408,6 +561,177 @@
           <p class="panelHint" data-i18n="assetLibraryHint">导入可重复使用的图片，再应用到当前选中的帧。</p>
           <div id="attachmentAssetTrayHost" class="attachmentAssetTrayHost"></div>
         </details>
+        <details id="attackTrailPanel" class="panel attackTrailPanel" data-panel="attack-trails" hidden>
+          <summary><h2>攻击拖尾</h2></summary>
+          <div class="attackTrailQuickStart">
+            <div>
+              <strong>第一次做拖尾？</strong>
+              <span>按 5 步完成：开启 → 放棍 → 贴武器 → 调外观 → 预览。</span>
+            </div>
+            <button id="attackTrailHelpOpen" type="button" class="secondary">打开新手引导</button>
+          </div>
+          <label class="toggle"
+            ><input id="attackTrailMode" type="checkbox" /><span>攻击拖尾模式</span></label
+          >
+          <div id="attackTrailBody" class="attackTrailBody" hidden>
+            <section class="trailControlSection" aria-labelledby="trailPresetHeading">
+              <header class="trailControlHeading">
+                <span>01</span>
+                <div>
+                  <h3 id="trailPresetHeading">选择拖尾方案</h3>
+                  <p>直接用默认拖尾即可开始；满意后再保存成自己的预设。</p>
+                </div>
+              </header>
+              <div class="attackTrailRow trailSegmentRow">
+                <select id="attackTrailSegment" aria-label="拖尾预设"></select>
+                <button id="attackTrailNew" type="button" class="secondary">保存为预设</button>
+                <button
+                  id="attackTrailDelete"
+                  type="button"
+                  class="dangerMini"
+                  aria-describedby="attackTrailDeleteHint"
+                >
+                  删除拖尾
+                </button>
+              </div>
+              <p id="attackTrailDeleteHint" class="trailDeleteHint" aria-live="polite"></p>
+            </section>
+            <section class="trailControlSection" aria-labelledby="trailStickHeading">
+              <header class="trailControlHeading">
+                <span>02</span>
+                <div>
+                  <h3 id="trailStickHeading">在关键帧放置棍子</h3>
+                  <p>在挥刀开始帧和结束帧各放一根，拖尾会自动连接。</p>
+                </div>
+              </header>
+              <div class="attackTrailRow trailStickActionRow">
+                <button id="attackTrailAddStick" type="button" class="secondary">当前帧加棍子</button>
+                <button id="attackTrailDeleteStick" type="button" class="dangerMini">删除当前棍子</button>
+                <button id="attackTrailLayerToggle" type="button" class="secondary trailLayerToggle">
+                  角色后
+                </button>
+                <button id="attackTrailReverse" type="button" class="secondary" title="贴图方向反了时使用">
+                  翻转贴图方向
+                </button>
+              </div>
+            </section>
+            <section class="trailControlSection" aria-labelledby="trailTextureHeading">
+              <header class="trailControlHeading">
+                <span>03</span>
+                <div>
+                  <h3 id="trailTextureHeading">设置拖尾形状</h3>
+                  <p>白色区域决定形状；先用默认 PNG，只需按武器调整弧度。</p>
+                </div>
+              </header>
+              <div class="trailTextureBox">
+                <input id="attackTrailTextureFile" type="file" accept="image/png,.png" hidden />
+                <div class="trailTextureActions">
+                  <button id="attackTrailTextureBrowse" type="button" class="secondary">
+                    选择 / 替换拖尾 PNG
+                  </button>
+                  <button id="attackTrailTextureReset" type="button" class="secondary">恢复默认 PNG</button>
+                </div>
+                <span id="attackTrailTextureName" class="trailTextureName">尚未导入 PNG</span>
+                <canvas
+                  id="attackTrailTexturePreview"
+                  class="trailTexturePreview"
+                  width="720"
+                  height="116"
+                ></canvas>
+                <label class="range trailCurvatureRange"
+                  ><span>头部弧度</span
+                  ><input
+                    id="attackTrailHeadCurvature"
+                    type="range"
+                    min="-100"
+                    max="100"
+                    step="1"
+                    value="0"
+                  /><output id="attackTrailHeadCurvatureValue">0</output></label
+                >
+              </div>
+            </section>
+            <section class="trailControlSection" aria-labelledby="trailAppearanceHeading">
+              <header class="trailControlHeading">
+                <span>04</span>
+                <div>
+                  <h3 id="trailAppearanceHeading">设置颜色</h3>
+                  <p>新手建议先用单色；需要多色过渡时再切换为渐变。</p>
+                </div>
+              </header>
+              <div class="attackTrailGrid trailAppearanceGrid">
+                <label class="field"
+                  ><span>颜色模式</span
+                  ><select id="attackTrailColorMode">
+                    <option value="solid">单色</option>
+                    <option value="gradient">渐变</option>
+                    <option value="original">贴图原色</option>
+                  </select></label
+                >
+                <label class="field"
+                  ><span>拖尾颜色</span><input id="attackTrailColor" type="color" value="#d9364a"
+                /></label>
+                <button id="attackTrailPickColor" type="button" class="secondary">从角色吸色</button>
+              </div>
+              <div id="attackTrailGradientEditor" class="trailGradientEditor" hidden>
+                <div
+                  id="attackTrailGradientBar"
+                  class="trailGradientBar"
+                  tabindex="0"
+                  aria-label="拖尾渐变节点"
+                ></div>
+                <label class="field"
+                  ><span>节点颜色</span><input id="attackTrailGradientColor" type="color" value="#d9364a"
+                /></label>
+                <div class="trailGradientActions">
+                  <output id="attackTrailGradientPosition">0%</output>
+                  <button id="attackTrailGradientDelete" type="button" class="secondary">移除当前节点</button>
+                </div>
+              </div>
+            </section>
+            <details class="trailAdvanced">
+              <summary>
+                <span><b>05</b> 时间与质量</span>
+                <small>高级设置 · 默认值通常够用</small>
+              </summary>
+              <div class="attackTrailGrid trailMotionGrid">
+                <label class="number"
+                  ><span>终点前拖后 ms</span
+                  ><input id="attackTrailBeforeTimeMs" type="number" min="0" max="60000" step="1"
+                /></label>
+                <label class="number"
+                  ><span>终点后收拢 ms</span
+                  ><input id="attackTrailAfterTimeMs" type="number" min="1" max="60000" step="1"
+                /></label>
+                <label class="number"
+                  ><span>尾端采样点</span
+                  ><input id="attackTrailTailSamples" type="number" min="4" max="8" step="1"
+                /></label>
+                <label class="number"
+                  ><span>拖尾细腻度</span
+                  ><input id="attackTrailPathColumns" type="number" min="8" max="96" step="1"
+                /></label>
+                <label class="number"
+                  ><span>渐隐起点 %</span
+                  ><input id="attackTrailTailFadeStart" type="number" min="0" max="95" step="1"
+                /></label>
+              </div>
+              <p id="attackTrailTimingSummary" class="trailTimingSummary"></p>
+            </details>
+          </div>
+          <dialog id="attackTrailPresetDialog" class="trailPresetDialog">
+            <form id="attackTrailPresetForm" class="trailPresetForm">
+              <h3>保存拖尾预设</h3>
+              <label class="field"
+                ><span>预设名称</span><input id="attackTrailPresetName" type="text" maxlength="60"
+              /></label>
+              <div class="trailPresetActions">
+                <button id="attackTrailPresetCancel" type="button" class="secondary">取消</button
+                ><button type="submit">保存</button>
+              </div>
+            </form>
+          </dialog>
+        </details>
         <details class="panel" data-panel="boxes">
           <summary><h2 class="premiumOption" data-i18n="boxes">碰撞框</h2></summary>
           <label class="toggle"
@@ -438,6 +762,9 @@
               >这一帧启用碰撞框</span
             ></label
           >
+          <button id="clearBox" type="button" class="secondary boxRecoveryAction" data-i18n="restoreAutoBox">
+            恢复自动框
+          </button>
         </details>
         <button id="save" class="save" data-i18n="saveTuning">保存调参</button>
         <div id="saveState" class="saveState" aria-live="polite" data-i18n="noChanges">没有改动</div>
@@ -468,10 +795,34 @@
           <div class="toolbarActions">
             <div class="appearanceControls" aria-label="UI appearance">
               <div class="themeSwitch" role="group" aria-label="界面主题">
-                <button type="button" class="themeButton" data-theme="home" title="首页风格 UI">首页</button>
-                <button type="button" class="themeButton" data-theme="kunkun" title="坤坤彩蛋 UI">坤</button>
-                <button type="button" class="themeButton" data-theme="dark" title="经典黑色 UI">黑</button>
-                <button type="button" class="themeButton" data-theme="light" title="经典白色 UI">白</button>
+                <button
+                  type="button"
+                  class="themeButton"
+                  data-theme="dark"
+                  title="深色主题"
+                  aria-label="深色主题"
+                >
+                  深色
+                </button>
+                <button
+                  type="button"
+                  class="themeButton"
+                  data-theme="light"
+                  title="浅色主题"
+                  aria-label="浅色主题"
+                >
+                  浅色
+                </button>
+                <button
+                  type="button"
+                  class="themeButton kunkunThemeButton"
+                  data-theme="kunkun"
+                  title="坤坤彩蛋主题"
+                  aria-label="坤坤彩蛋主题"
+                  hidden
+                >
+                  彩蛋
+                </button>
               </div>
               <label class="canvasColorControl" title="画布颜色">
                 <input id="canvasColor" type="color" value="#000000" />
@@ -493,6 +844,9 @@
                 title="残影"
               >
                 影
+              </button>
+              <button id="attackTrailGuideToggle" class="secondary iconButton" type="button" hidden>
+                棍
               </button>
               <button
                 id="undoTop"
@@ -525,7 +879,7 @@
                 100%
               </button>
             </div>
-            <a id="homeHubOpen" class="homeHubLaunch" href="/" data-i18n="homeHubOpen"> ← 网站首页 </a>
+            <a class="factoryHomeLaunch" href="/" data-i18n="factoryHomeOpen"> ← 网站首页 </a>
             <button id="cutoutOpen" class="cutoutLaunch" type="button" data-cutout-i18n="open">
               批量抠图
             </button>
@@ -568,64 +922,6 @@
             </details>
           </div>
         </div>
-        <section id="homeHub" class="homeHub" aria-labelledby="homeHubTitle" hidden>
-          <header class="homeHubHeader">
-            <div>
-              <span>LOCAL FRAME WORKSHOP / START</span>
-              <h2 id="homeHubTitle" data-i18n="homeHubTitle">选择工作台</h2>
-              <p data-i18n="homeHubSubtitle">从导入、整理到抠图，所有处理都在本机完成。</p>
-            </div>
-            <div class="homeHubActions">
-              <a class="secondary homeSiteLink" href="/">网站首页</a>
-            </div>
-          </header>
-          <div class="homeToolGrid">
-            <button type="button" class="homeToolCard homeToolImport" data-home-tool="import">
-              <b>01 / INGEST + PREP</b><strong data-i18n="homeImportTitle">导入与处理动画</strong
-              ><span data-i18n="homeImportHint">导入、排序、删帧和单帧抠图，再创建动画</span
-              ><i aria-hidden="true">→</i>
-            </button>
-            <button type="button" class="homeToolCard homeToolTuner" data-home-tool="workspace">
-              <b>02 / TUNE</b><strong data-i18n="homeTunerTitle">帧动画调参工作台</strong
-              ><span data-i18n="homeTunerHint">打开动画，调整变换、时序、碰撞框和附件</span
-              ><i aria-hidden="true">→</i>
-            </button>
-            <button type="button" class="homeToolCard homeToolCutout" data-home-tool="cutout">
-              <b>03 / ALPHA</b><strong data-i18n="homeCutoutTitle">批量抠图</strong
-              ><span data-i18n="homeCutoutHint">本地背景清除与边缘修正</span><i aria-hidden="true">→</i>
-            </button>
-          </div>
-          <dl class="homeStats" aria-label="项目统计">
-            <div>
-              <dt data-i18n="homeAnimations">动画</dt>
-              <dd id="homeAnimationCount">0</dd>
-            </div>
-            <div>
-              <dt data-i18n="homeFrames">总帧数</dt>
-              <dd id="homeFrameCount">0</dd>
-            </div>
-            <div>
-              <dt data-i18n="homeCharacters">角色</dt>
-              <dd id="homeProfileCount">0</dd>
-            </div>
-            <div>
-              <dt data-i18n="homeLastEdit">最近编辑</dt>
-              <dd id="homeLastEdited">—</dd>
-            </div>
-          </dl>
-          <footer class="homeRecent">
-            <span data-i18n="homeRecentProject">当前项目</span><strong id="homeRecentProject">—</strong>
-            <span data-i18n="homeRecentAnimation">当前动画</span><strong id="homeRecentAnimation">—</strong>
-            <span data-i18n="homeRecentTool">最近工作台</span><strong id="homeRecentTool">—</strong>
-            <span data-i18n="homeProjectPath">项目路径</span>
-            <span class="homeProjectPath"
-              ><strong id="homeProjectPath">—</strong
-              ><button id="homeCopyProjectPath" type="button" class="secondary" data-i18n="copy">
-                复制
-              </button></span
-            >
-          </footer>
-        </section>
         <canvas id="stage" width="1280" height="760" tabindex="0" aria-label="动画预览画布"></canvas>
         <section class="filmstripPanel" aria-labelledby="filmstripTitle">
           <header class="filmstripHeader">
@@ -633,33 +929,57 @@
               <span class="sectionEyebrow">FRAME TIMELINE</span>
               <strong id="filmstripTitle" data-i18n="frameTimeline">帧时间轴</strong>
             </div>
-            <details class="frameActionsMenu">
-              <summary data-i18n="frameActions">帧操作</summary>
-              <div class="animationFrameActions">
-                <button
-                  id="deleteSelectedFrames"
-                  type="button"
-                  class="secondary"
-                  data-i18n="deleteSelectedFrames"
-                >
-                  删除所选帧
+            <div class="filmstripHeaderActions">
+              <div class="filmstripLayoutSwitch" role="group" aria-label="帧时间轴布局">
+                <button type="button" data-filmstrip-layout="single" aria-pressed="true" title="单行时间轴">
+                  单行
                 </button>
-                <button
-                  id="clearAnimation"
-                  type="button"
-                  class="secondary dangerAction"
-                  data-i18n="clearAnimation"
-                >
-                  清空动画
+                <button type="button" data-filmstrip-layout="grid" aria-pressed="false" title="多行总览">
+                  总览
                 </button>
               </div>
-            </details>
+              <details class="frameActionsMenu">
+                <summary data-i18n="frameActions">帧操作</summary>
+                <div class="animationFrameActions">
+                  <button
+                    id="deleteSelectedFrames"
+                    type="button"
+                    class="secondary"
+                    data-i18n="deleteSelectedFrames"
+                  >
+                    删除所选帧
+                  </button>
+                  <button
+                    id="clearAnimation"
+                    type="button"
+                    class="secondary dangerAction"
+                    data-i18n="clearAnimation"
+                  >
+                    删除当前动画
+                  </button>
+                </div>
+              </details>
+            </div>
           </header>
           <div id="filmstrip" class="filmstrip"></div>
         </section>
+        <footer id="contextActionBar" class="contextActionBar" aria-label="当前工作区操作">
+          <div class="contextActionStatus">
+            <span>WORKSPACE</span>
+            <strong>动画调参</strong>
+          </div>
+          <div class="contextActionFeedback"></div>
+          <div class="contextActionBarActions"></div>
+        </footer>
       </section>
     </main>
-    <section id="cutoutModal" class="cutoutModal" aria-labelledby="cutoutTitle" hidden>
+    <section
+      id="cutoutModal"
+      class="cutoutModal"
+      data-preview-background="light"
+      aria-labelledby="cutoutTitle"
+      hidden
+    >
       <div class="cutoutWorkbench">
         <header class="cutoutHeader">
           <div>
@@ -669,10 +989,17 @@
           </div>
           <div class="workbenchHeaderActions">
             <div class="themeSwitch workbenchThemeSwitch" role="group" aria-label="界面主题">
-              <button type="button" class="themeButton" data-theme="home" title="首页风格 UI">首</button>
-              <button type="button" class="themeButton" data-theme="kunkun" title="坤坤彩蛋 UI">坤</button>
-              <button type="button" class="themeButton" data-theme="dark" title="经典黑色 UI">黑</button>
-              <button type="button" class="themeButton" data-theme="light" title="经典白色 UI">白</button>
+              <button type="button" class="themeButton" data-theme="dark" title="深色主题">深色</button>
+              <button type="button" class="themeButton" data-theme="light" title="浅色主题">浅色</button>
+              <button
+                type="button"
+                class="themeButton kunkunThemeButton"
+                data-theme="kunkun"
+                title="坤坤彩蛋主题"
+                hidden
+              >
+                彩蛋
+              </button>
             </div>
             <button id="cutoutCopyLink" class="workbenchLink" type="button" data-cutout-i18n="copyLink">
               复制链接
@@ -862,8 +1189,8 @@
                         ><input
                           id="cutoutTolerance"
                           type="range"
-                          min="0"
-                          max="60"
+                          min="-1"
+                          max="100"
                           step="1"
                           value="1"
                         /><output id="cutoutToleranceValue">1</output></label
@@ -893,6 +1220,14 @@
                           value="0"
                         /><output id="cutoutBlendStrengthValue">0</output></label
                       >
+                      <label class="cutoutSelectField">
+                        <span data-cutout-i18n="blendMode">混合换色模式</span>
+                        <select id="cutoutBlendMode">
+                          <option value="general" data-cutout-i18n="despillGeneral">通用模式</option>
+                          <option value="blend" data-cutout-i18n="despillBlend" selected>混合模式</option>
+                          <option value="chroma" data-cutout-i18n="despillChroma">褪色模式</option>
+                        </select>
+                      </label>
                     </section>
                   </div>
                   <div
@@ -994,9 +1329,11 @@
                   >
                     <div class="cutoutAdvancedIntro">
                       <div>
-                        <span>ALPHA CONTROL / EXPERT</span
-                        ><strong data-cutout-i18n="advancedTitle">精细 Alpha 与保护色</strong
-                        ><small data-cutout-i18n="advancedHint">先选择预设，再针对边缘细节微调。</small>
+                        <span>BACKGROUND CLEAR / ADVANCED</span
+                        ><strong data-cutout-i18n="advancedTitle">高级设置</strong
+                        ><small data-cutout-i18n="advancedHint"
+                          >大多数情况只需选择预设；保护和原始参数按需展开。</small
+                        >
                       </div>
                       <div id="cutoutAdvancedSummary" class="cutoutAdvancedSummary">0 — 0 / T 0</div>
                     </div>
@@ -1014,129 +1351,276 @@
                         ><small data-cutout-i18n="presetHardHint">像素图与纯色边缘</small>
                       </button>
                     </div>
-                    <section class="cutoutParameterCard cutoutComplexKeyCard">
-                      <header>
-                        <div>
-                          <span>A / COMPLEX KEY</span
-                          ><strong data-cutout-i18n="complexKey">复杂背景与柔性色键</strong>
-                        </div>
-                      </header>
-                      <label class="cutoutRange"
-                        ><span data-cutout-i18n="feather">边缘柔化</span
-                        ><input id="cutoutFeather" type="range" min="0" max="24" step="1" value="0" /><output
-                          id="cutoutFeatherValue"
-                          >0</output
-                        ></label
-                      >
-                      <label class="cutoutRange"
-                        ><span data-cutout-i18n="chromaFeather">色键柔边</span
-                        ><input
-                          id="cutoutChromaFeather"
-                          type="range"
-                          min="0"
-                          max="100"
-                          step="1"
-                          value="0"
-                        /><output id="cutoutChromaFeatherValue">0</output></label
-                      >
-                      <label
-                        class="cutoutCheck"
-                        title="开启后会保留未与画面边缘连通的内部背景；关闭时与 FramePacker 常规换色一致"
-                        ><input id="cutoutConnected" type="checkbox" /><span data-cutout-i18n="connected"
-                          >仅从画面边缘清除（保留内部背景）</span
-                        ></label
-                      >
-                      <label class="cutoutCheck"
-                        ><input id="cutoutPerceptual" type="checkbox" /><span data-cutout-i18n="perceptual"
-                          >OKLab / YCbCr 柔性色键（复杂背景）</span
-                        ></label
-                      >
-                    </section>
-                    <section class="cutoutParameterCard cutoutAlphaCard">
-                      <header>
-                        <div>
-                          <span>B / ALPHA WINDOW</span
-                          ><strong data-cutout-i18n="alphaWindow">透明度窗口</strong>
-                        </div>
-                        <small data-cutout-i18n="alphaWindowHint">低于下限清空，高于上限转为不透明</small>
-                      </header>
-                      <label class="cutoutRange"
-                        ><span data-cutout-i18n="alphaLow">半透明低阈值</span
-                        ><input
-                          id="cutoutAlphaLow"
-                          type="range"
-                          min="0"
-                          max="255"
-                          step="1"
-                          value="0"
-                        /><output id="cutoutAlphaLowValue">0</output></label
-                      >
-                      <label class="cutoutRange"
-                        ><span data-cutout-i18n="alphaHigh">半透明高阈值</span
-                        ><input
-                          id="cutoutAlphaHigh"
-                          type="range"
-                          min="0"
-                          max="255"
-                          step="1"
-                          value="0"
-                        /><output id="cutoutAlphaHighValue">0</output></label
-                      >
-                      <label class="cutoutRange"
-                        ><span data-cutout-i18n="alphaThreshold">硬透明阈值</span
-                        ><input
-                          id="cutoutAlphaThreshold"
-                          type="range"
-                          min="0"
-                          max="48"
-                          step="1"
-                          value="0"
-                        /><output id="cutoutAlphaValue">0</output></label
-                      >
-                    </section>
-                    <section class="cutoutParameterCard cutoutProtectionCard">
-                      <header>
-                        <div>
-                          <span>C / COLOR GUARD</span
-                          ><strong data-cutout-i18n="colorProtection">颜色保护</strong>
-                        </div>
-                        <small data-cutout-i18n="colorProtectionHint">启用后点击原图，保留相近颜色</small>
-                      </header>
-                      <label class="cutoutRange"
-                        ><span data-cutout-i18n="protectionTolerance">保护色容差</span
-                        ><input
-                          id="cutoutProtectionTolerance"
-                          type="range"
-                          min="0"
-                          max="40"
-                          step="1"
-                          value="0"
-                        /><output id="cutoutProtectionToleranceValue">0</output></label
-                      >
-                      <div class="cutoutColorProtection">
-                        <div>
-                          <strong data-cutout-i18n="protectedPalette">保护色板</strong
-                          ><small data-cutout-i18n="protectedPaletteHint">点击色块可移除</small>
-                        </div>
-                        <button
-                          id="cutoutProtectSample"
-                          type="button"
-                          class="secondary"
-                          data-cutout-i18n="protectSample"
-                        >
-                          吸取保护色
-                        </button>
-                        <button
-                          id="cutoutProtectClear"
-                          type="button"
-                          class="secondary"
-                          data-cutout-i18n="protectClear"
-                        >
-                          清除
-                        </button>
-                        <div id="cutoutProtectedColors" class="cutoutProtectedColors"></div>
+                    <details class="cutoutAdvancedDisclosure">
+                      <summary>
+                        <span data-cutout-i18n="advancedManual">手动微调</span>
+                        <small data-cutout-i18n="advancedManualHint">仅在预设无法处理边缘时展开</small>
+                      </summary>
+                      <div class="cutoutAdvancedDisclosureBody">
+                        <section class="cutoutParameterCard cutoutComplexKeyCard">
+                          <header>
+                            <div>
+                              <span>A / COMPLEX KEY</span
+                              ><strong data-cutout-i18n="complexKey">复杂背景与柔性色键</strong>
+                            </div>
+                          </header>
+                          <label class="cutoutRange"
+                            ><span data-cutout-i18n="feather">边缘柔化</span
+                            ><input
+                              id="cutoutFeather"
+                              type="range"
+                              min="0"
+                              max="24"
+                              step="1"
+                              value="0"
+                            /><output id="cutoutFeatherValue">0</output></label
+                          >
+                          <label class="cutoutRange"
+                            ><span data-cutout-i18n="chromaFeather">色键柔边</span
+                            ><input
+                              id="cutoutChromaFeather"
+                              type="range"
+                              min="0"
+                              max="100"
+                              step="1"
+                              value="0"
+                            /><output id="cutoutChromaFeatherValue">0</output></label
+                          >
+                          <label
+                            class="cutoutCheck"
+                            title="开启后会保留未与画面边缘连通的内部背景；关闭时与 FramePacker 常规换色一致"
+                            ><input id="cutoutConnected" type="checkbox" /><span data-cutout-i18n="connected"
+                              >仅从画面边缘清除（保留内部背景）</span
+                            ></label
+                          >
+                          <label class="cutoutCheck"
+                            ><input id="cutoutPerceptual" type="checkbox" /><span
+                              data-cutout-i18n="perceptual"
+                              >OKLab / YCbCr 柔性色键（复杂背景）</span
+                            ></label
+                          >
+                        </section>
+                        <section class="cutoutParameterCard cutoutAlphaCard">
+                          <header>
+                            <div>
+                              <span>B / ALPHA WINDOW</span
+                              ><strong data-cutout-i18n="alphaWindow">透明度窗口</strong>
+                            </div>
+                            <small data-cutout-i18n="alphaWindowHint">低于下限清空，高于上限转为不透明</small>
+                          </header>
+                          <label class="cutoutRange"
+                            ><span data-cutout-i18n="alphaLow">半透明低阈值</span
+                            ><input
+                              id="cutoutAlphaLow"
+                              type="range"
+                              min="0"
+                              max="255"
+                              step="1"
+                              value="0"
+                            /><output id="cutoutAlphaLowValue">0</output></label
+                          >
+                          <label class="cutoutRange"
+                            ><span data-cutout-i18n="alphaHigh">半透明高阈值</span
+                            ><input
+                              id="cutoutAlphaHigh"
+                              type="range"
+                              min="0"
+                              max="255"
+                              step="1"
+                              value="0"
+                            /><output id="cutoutAlphaHighValue">0</output></label
+                          >
+                          <label class="cutoutRange"
+                            ><span data-cutout-i18n="alphaThreshold">硬透明阈值</span
+                            ><input
+                              id="cutoutAlphaThreshold"
+                              type="range"
+                              min="0"
+                              max="48"
+                              step="1"
+                              value="0"
+                            /><output id="cutoutAlphaValue">0</output></label
+                          >
+                        </section>
                       </div>
-                    </section>
+                    </details>
+                    <details class="cutoutAdvancedDisclosure cutoutProtectionDisclosure">
+                      <summary>
+                        <span data-cutout-i18n="protectionAdvanced">主体保护（可选）</span>
+                        <small data-cutout-i18n="protectionAdvancedHint">保护色板与框选主体集中在这里</small>
+                      </summary>
+                      <section class="cutoutParameterCard cutoutProtectionCard">
+                        <header>
+                          <div>
+                            <span>C / COLOR GUARD</span
+                            ><strong data-cutout-i18n="colorProtection">主体与颜色保护</strong>
+                          </div>
+                          <small data-cutout-i18n="colorProtectionHint"
+                            >优先吸取保护色；复杂主体再使用框选保护</small
+                          >
+                        </header>
+                        <label class="cutoutRange"
+                          ><span data-cutout-i18n="protectionTolerance">保护色容差</span
+                          ><input
+                            id="cutoutProtectionTolerance"
+                            type="range"
+                            min="0"
+                            max="40"
+                            step="1"
+                            value="0"
+                          /><output id="cutoutProtectionToleranceValue">0</output></label
+                        >
+                        <div class="cutoutColorProtection">
+                          <div>
+                            <strong data-cutout-i18n="protectedPalette">保护色板</strong
+                            ><small data-cutout-i18n="protectedPaletteHint">点击色块可移除</small>
+                          </div>
+                          <button
+                            id="cutoutProtectSample"
+                            type="button"
+                            class="secondary"
+                            data-cutout-i18n="protectSample"
+                          >
+                            吸取保护色
+                          </button>
+                          <button
+                            id="cutoutProtectClear"
+                            type="button"
+                            class="secondary"
+                            data-cutout-i18n="protectClear"
+                          >
+                            清除
+                          </button>
+                          <div id="cutoutProtectedColors" class="cutoutProtectedColors"></div>
+                        </div>
+                        <div class="cutoutProtectionAction">
+                          <button
+                            id="cutoutRepairProtect"
+                            type="button"
+                            class="secondary"
+                            data-cutout-tool="protect"
+                            data-cutout-i18n="repairProtect"
+                            title="框选后保护颜色或智能识别主体"
+                          >
+                            框选保护主体
+                          </button>
+                          <small data-cutout-i18n="protectActionHint"
+                            >选择保护方式后，点击按钮并在画布框选</small
+                          >
+                        </div>
+                        <div id="cutoutProtectionControls" class="cutoutProtectionControls">
+                          <label class="cutoutSelectField"
+                            ><span data-cutout-i18n="protectionType">保护方式</span
+                            ><select id="cutoutProtectionType">
+                              <option value="color" data-cutout-i18n="protectColors">按颜色保护</option>
+                              <option value="range" data-cutout-i18n="protectRange" selected>
+                                智能保护主体
+                              </option>
+                            </select></label
+                          >
+                          <div id="cutoutProtectionRangeOptions" class="cutoutProtectionRangeOptions">
+                            <label class="cutoutRange"
+                              ><span data-cutout-i18n="boundaryStrength">边界识别</span
+                              ><input
+                                id="cutoutProtectionBoundary"
+                                type="range"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value="55"
+                              /><output id="cutoutProtectionBoundaryValue">55</output></label
+                            >
+                            <label class="cutoutRange"
+                              ><span data-cutout-i18n="boundaryPadding">边界扩展</span
+                              ><input
+                                id="cutoutProtectionPadding"
+                                type="range"
+                                min="0"
+                                max="8"
+                                step="1"
+                                value="2"
+                              /><output id="cutoutProtectionPaddingValue">2</output></label
+                            >
+                            <small data-cutout-i18n="protectRangeHint"
+                              >粗略框住主体，系统会排除背景并收紧到主体边界</small
+                            >
+                          </div>
+                          <div id="cutoutProtectionColorOptions" class="cutoutProtectionColorOptions" hidden>
+                            <div class="cutoutProtectionColorHeading">
+                              <div>
+                                <strong data-cutout-i18n="recognizedProtectionColors">识别颜色</strong>
+                                <small id="cutoutProtectionColorStatus"></small>
+                              </div>
+                              <button
+                                id="cutoutProtectionColorClear"
+                                type="button"
+                                class="secondary"
+                                data-cutout-i18n="protectClear"
+                              >
+                                清除
+                              </button>
+                            </div>
+                            <div
+                              id="cutoutProtectionColors"
+                              class="cutoutProtectedColors cutoutProtectionColors"
+                              aria-live="polite"
+                            ></div>
+                            <div class="cutoutProtectionColorInput">
+                              <input
+                                id="cutoutProtectionColorPicker"
+                                type="color"
+                                value="#ffffff"
+                                data-cutout-i18n-aria-label="protectionColorPicker"
+                                aria-label="选择保护颜色"
+                              />
+                              <input
+                                id="cutoutProtectionColorHex"
+                                type="text"
+                                value="#ffffff"
+                                maxlength="7"
+                                inputmode="text"
+                                spellcheck="false"
+                                pattern="#[0-9A-Fa-f]{6}"
+                                data-cutout-i18n-aria-label="protectionColorHex"
+                                aria-label="输入保护颜色"
+                              />
+                              <button
+                                id="cutoutProtectionColorAdd"
+                                type="button"
+                                class="secondary"
+                                data-cutout-i18n="addProtectionColor"
+                              >
+                                添加
+                              </button>
+                            </div>
+                            <small data-cutout-i18n="protectColorInputHint"
+                              >框选会自动识别代表色；也可输入 #RRGGBB 手动补充</small
+                            >
+                          </div>
+                          <div
+                            id="cutoutProtectionPreview"
+                            class="cutoutProtectionPreview"
+                            aria-live="polite"
+                            hidden
+                          >
+                            <strong data-cutout-i18n="protectionPreviewTitle">保护预览</strong>
+                            <span
+                              class="cutoutProtectionPreviewLegend"
+                              data-cutout-i18n="protectionPreviewHint"
+                              >松开鼠标后，这里只显示识别到的保护主体</span
+                            >
+                            <div id="cutoutProtectionSubject" class="cutoutProtectionSubject" hidden>
+                              <canvas
+                                id="cutoutProtectionSubjectCanvas"
+                                aria-label="识别到的保护主体"
+                                data-cutout-i18n-aria-label="protectionSubjectAriaLabel"
+                              ></canvas>
+                            </div>
+                            <span id="cutoutProtectionPreviewStatus"></span>
+                          </div>
+                        </div>
+                      </section>
+                    </details>
                   </div>
                 </div>
                 <div id="cutoutLocalSettings" class="cutoutLocalSettings" hidden>
@@ -1211,8 +1695,8 @@
                         <option value="global" data-cutout-i18n="scopeGlobal">整张图</option>
                       </select></label
                     >
-                    <small id="cutoutAreaHint" data-cutout-i18n="fillHint"
-                      >点击缺失或透明区域进行局部补色</small
+                    <small id="cutoutAreaHint" data-cutout-i18n="recolorHint"
+                      >点击画布取样，通过作用范围选择局部补色或整图替换</small
                     >
                   </div>
                   <div class="cutoutToolOptions cutoutSelectionControls" data-cutout-options="selection">
@@ -1220,113 +1704,6 @@
                     <small id="cutoutSelectionHint" data-cutout-i18n="selectionHint"
                       >在画布中拖出矩形，松开后应用</small
                     >
-                    <div id="cutoutProtectionControls" class="cutoutProtectionControls" hidden>
-                      <label class="cutoutSelectField"
-                        ><span data-cutout-i18n="protectionType">保护方式</span
-                        ><select id="cutoutProtectionType">
-                          <option value="color" data-cutout-i18n="protectColors">按颜色保护</option>
-                          <option value="range" data-cutout-i18n="protectRange" selected>智能保护主体</option>
-                        </select></label
-                      >
-                      <div id="cutoutProtectionRangeOptions" class="cutoutProtectionRangeOptions" hidden>
-                        <label class="cutoutRange"
-                          ><span data-cutout-i18n="boundaryStrength">边界识别</span
-                          ><input
-                            id="cutoutProtectionBoundary"
-                            type="range"
-                            min="0"
-                            max="100"
-                            step="1"
-                            value="55"
-                          /><output id="cutoutProtectionBoundaryValue">55</output></label
-                        >
-                        <label class="cutoutRange"
-                          ><span data-cutout-i18n="boundaryPadding">边界扩展</span
-                          ><input
-                            id="cutoutProtectionPadding"
-                            type="range"
-                            min="0"
-                            max="8"
-                            step="1"
-                            value="2"
-                          /><output id="cutoutProtectionPaddingValue">2</output></label
-                        >
-                        <small data-cutout-i18n="protectRangeHint"
-                          >粗略框住主体，系统会排除背景并收紧到主体边界</small
-                        >
-                      </div>
-                      <div id="cutoutProtectionColorOptions" class="cutoutProtectionColorOptions" hidden>
-                        <div class="cutoutProtectionColorHeading">
-                          <div>
-                            <strong data-cutout-i18n="recognizedProtectionColors">识别颜色</strong>
-                            <small id="cutoutProtectionColorStatus"></small>
-                          </div>
-                          <button
-                            id="cutoutProtectionColorClear"
-                            type="button"
-                            class="secondary"
-                            data-cutout-i18n="protectClear"
-                          >
-                            清除
-                          </button>
-                        </div>
-                        <div
-                          id="cutoutProtectionColors"
-                          class="cutoutProtectedColors cutoutProtectionColors"
-                          aria-live="polite"
-                        ></div>
-                        <div class="cutoutProtectionColorInput">
-                          <input
-                            id="cutoutProtectionColorPicker"
-                            type="color"
-                            value="#ffffff"
-                            data-cutout-i18n-aria-label="protectionColorPicker"
-                            aria-label="选择保护颜色"
-                          />
-                          <input
-                            id="cutoutProtectionColorHex"
-                            type="text"
-                            value="#ffffff"
-                            maxlength="7"
-                            inputmode="text"
-                            spellcheck="false"
-                            pattern="#[0-9A-Fa-f]{6}"
-                            data-cutout-i18n-aria-label="protectionColorHex"
-                            aria-label="输入保护颜色"
-                          />
-                          <button
-                            id="cutoutProtectionColorAdd"
-                            type="button"
-                            class="secondary"
-                            data-cutout-i18n="addProtectionColor"
-                          >
-                            添加
-                          </button>
-                        </div>
-                        <small data-cutout-i18n="protectColorInputHint"
-                          >框选会自动识别代表色；也可输入 #RRGGBB 手动补充</small
-                        >
-                      </div>
-                      <div
-                        id="cutoutProtectionPreview"
-                        class="cutoutProtectionPreview"
-                        aria-live="polite"
-                        hidden
-                      >
-                        <strong data-cutout-i18n="protectionPreviewTitle">保护预览</strong>
-                        <span class="cutoutProtectionPreviewLegend" data-cutout-i18n="protectionPreviewHint"
-                          >松开鼠标后，这里只显示识别到的保护主体</span
-                        >
-                        <div id="cutoutProtectionSubject" class="cutoutProtectionSubject" hidden>
-                          <canvas
-                            id="cutoutProtectionSubjectCanvas"
-                            aria-label="识别到的保护主体"
-                            data-cutout-i18n-aria-label="protectionSubjectAriaLabel"
-                          ></canvas>
-                        </div>
-                        <span id="cutoutProtectionPreviewStatus"></span>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -1373,43 +1750,74 @@
                   ▶
                 </button>
               </div>
-              <div class="cutoutViewModes" role="group" aria-label="预览显示模式">
-                <button
-                  id="cutoutViewResult"
-                  type="button"
-                  class="secondary active"
-                  aria-pressed="true"
-                  data-cutout-i18n="viewResult"
-                >
-                  结果
-                </button>
-                <button
-                  id="cutoutViewOriginal"
-                  type="button"
-                  class="secondary"
-                  aria-pressed="false"
-                  data-cutout-i18n="viewOriginal"
-                >
-                  原图
-                </button>
-                <button
-                  id="cutoutViewAlpha"
-                  type="button"
-                  class="secondary"
-                  aria-pressed="false"
-                  data-cutout-i18n="viewAlpha"
-                >
-                  Alpha
-                </button>
-                <button
-                  id="cutoutViewDifference"
-                  type="button"
-                  class="secondary"
-                  aria-pressed="false"
-                  data-cutout-i18n="viewDifference"
-                >
-                  差异
-                </button>
+              <div class="cutoutPreviewDisplayControls">
+                <div class="cutoutPreviewBackgrounds" role="group" aria-label="透明预览背景">
+                  <button
+                    id="cutoutBackgroundLight"
+                    type="button"
+                    class="secondary active"
+                    aria-pressed="true"
+                    data-cutout-i18n="backgroundLight"
+                  >
+                    浅格
+                  </button>
+                  <button
+                    id="cutoutBackgroundDark"
+                    type="button"
+                    class="secondary"
+                    aria-pressed="false"
+                    data-cutout-i18n="backgroundDark"
+                  >
+                    深格
+                  </button>
+                  <button
+                    id="cutoutBackgroundWhite"
+                    type="button"
+                    class="secondary"
+                    aria-pressed="false"
+                    data-cutout-i18n="backgroundWhite"
+                  >
+                    白色
+                  </button>
+                </div>
+                <div class="cutoutViewModes" role="group" aria-label="预览显示模式">
+                  <button
+                    id="cutoutViewResult"
+                    type="button"
+                    class="secondary active"
+                    aria-pressed="true"
+                    data-cutout-i18n="viewResult"
+                  >
+                    结果
+                  </button>
+                  <button
+                    id="cutoutViewOriginal"
+                    type="button"
+                    class="secondary"
+                    aria-pressed="false"
+                    data-cutout-i18n="viewOriginal"
+                  >
+                    原图
+                  </button>
+                  <button
+                    id="cutoutViewAlpha"
+                    type="button"
+                    class="secondary"
+                    aria-pressed="false"
+                    data-cutout-i18n="viewAlpha"
+                  >
+                    Alpha
+                  </button>
+                  <button
+                    id="cutoutViewDifference"
+                    type="button"
+                    class="secondary"
+                    aria-pressed="false"
+                    data-cutout-i18n="viewDifference"
+                  >
+                    差异
+                  </button>
+                </div>
               </div>
             </div>
             <div id="cutoutRepairTools" class="cutoutRepairTools" role="toolbar" aria-label="局部修正工具">
@@ -1458,24 +1866,14 @@
                   <span data-cutout-i18n="toolGroupArea">区域</span>
                   <div>
                     <button
-                      id="cutoutRepairFill"
-                      type="button"
-                      class="secondary"
-                      data-cutout-tool="fill"
-                      data-cutout-i18n="repairFill"
-                      title="点击缺失或透明的连通区域进行补色"
-                    >
-                      区域补色
-                    </button>
-                    <button
                       id="cutoutRepairRecolor"
                       type="button"
                       class="secondary"
                       data-cutout-tool="recolor"
                       data-cutout-i18n="repairRecolor"
-                      title="替换局部或整张图中的匹配颜色"
+                      title="连通区域用于补色，整张图用于批量替换匹配颜色"
                     >
-                      颜色替换
+                      补色 / 替换
                     </button>
                     <button
                       id="cutoutAreaTransparentQuick"
@@ -1484,7 +1882,7 @@
                       data-cutout-tool="transparent"
                       data-cutout-i18n="noColor"
                       data-cutout-i18n-title="transparentFillTitle"
-                      title="使用完全透明颜色进行区域补色"
+                      title="将匹配区域替换为完全透明"
                       aria-pressed="false"
                     >
                       无颜色
@@ -1525,16 +1923,6 @@
                       title="将框选区域直接变为完全透明"
                     >
                       清空区域
-                    </button>
-                    <button
-                      id="cutoutRepairProtect"
-                      type="button"
-                      class="secondary"
-                      data-cutout-tool="protect"
-                      data-cutout-i18n="repairProtect"
-                      title="框选后保护颜色或智能识别范围"
-                    >
-                      保护
                     </button>
                   </div>
                 </div>
@@ -1881,10 +2269,17 @@
           </div>
           <div class="workbenchHeaderActions">
             <div class="themeSwitch workbenchThemeSwitch" role="group" aria-label="界面主题">
-              <button type="button" class="themeButton" data-theme="home" title="首页风格 UI">首</button>
-              <button type="button" class="themeButton" data-theme="kunkun" title="坤坤彩蛋 UI">坤</button>
-              <button type="button" class="themeButton" data-theme="dark" title="经典黑色 UI">黑</button>
-              <button type="button" class="themeButton" data-theme="light" title="经典白色 UI">白</button>
+              <button type="button" class="themeButton" data-theme="dark" title="深色主题">深色</button>
+              <button type="button" class="themeButton" data-theme="light" title="浅色主题">浅色</button>
+              <button
+                type="button"
+                class="themeButton kunkunThemeButton"
+                data-theme="kunkun"
+                title="坤坤彩蛋主题"
+                hidden
+              >
+                彩蛋
+              </button>
             </div>
             <button
               id="organizerActivationManage"
@@ -1915,6 +2310,7 @@
             <small data-organizer-i18n="importSetupHint"
               >动画名称用于 ZIP 文件名；处理和导出均在浏览器本地完成。</small
             >
+            <span id="organizerGodotHandoffBadge" class="organizerGodotHandoffBadge">local_only</span>
           </div>
           <label class="organizerProjectMetadata">
             <span data-organizer-i18n="importProject">保存到</span>
@@ -2034,7 +2430,28 @@
                 />
                 <button id="organizerReduce" type="button" data-organizer-i18n="reduce">减帧</button>
               </label>
-              <button id="organizerAutoSort" type="button" data-organizer-i18n="autoSort">恢复原顺序</button>
+              <div class="organizerOrderControl" role="group" aria-label="图片导入顺序">
+                <span data-organizer-i18n="orderBy">顺序</span>
+                <button
+                  id="organizerOrderFilename"
+                  type="button"
+                  aria-pressed="true"
+                  data-organizer-i18n="orderFilename"
+                >
+                  文件名
+                </button>
+                <button
+                  id="organizerOrderSelection"
+                  type="button"
+                  aria-pressed="false"
+                  data-organizer-i18n="orderSelection"
+                >
+                  选择顺序
+                </button>
+              </div>
+              <button id="organizerAutoSort" type="button" data-organizer-i18n="autoSort">
+                恢复导入顺序
+              </button>
               <button id="organizerFlip" type="button" data-organizer-i18n="flip">水平翻转</button>
             </div>
           </div>
@@ -2432,18 +2849,13 @@
                 <span id="organizerSelection">选中 0 帧</span>
               </div>
               <div class="organizerTagTools">
-                <input
-                  id="organizerTag"
-                  type="text"
-                  name="frame-tag"
-                  autocomplete="off"
-                  placeholder="标记，例如：攻击有效帧…"
-                />
-                <button id="organizerApplyTag" type="button" class="secondary" data-organizer-i18n="applyTag">
-                  标记选中
-                </button>
-                <button id="organizerClearTag" type="button" class="secondary" data-organizer-i18n="clearTag">
-                  清除标记
+                <button
+                  id="organizerBatchCutout"
+                  type="button"
+                  class="organizerBatchCutout"
+                  data-organizer-i18n="batchCutout"
+                >
+                  智能抠图
                 </button>
               </div>
             </div>
@@ -2500,6 +2912,15 @@
               >
                 撤销删除
               </button>
+              <button
+                id="organizerViewExportJob"
+                type="button"
+                class="secondary"
+                data-organizer-i18n="viewExportJob"
+                hidden
+              >
+                查看任务
+              </button>
             </div>
             <div class="organizerFooterActions">
               <button id="organizerReset" type="button" class="secondary" data-organizer-i18n="reset">
@@ -2524,7 +2945,7 @@
                 导入动画组并进入调参
               </button>
               <button id="organizerExport" type="button" class="secondary" data-organizer-i18n="exportZip">
-                导出 ZIP
+                导出
               </button>
               <button id="organizerApply" type="button" class="organizerPrimary" data-organizer-i18n="apply">
                 应用到动画
@@ -2532,6 +2953,210 @@
             </div>
           </aside>
         </div>
+      </div>
+    </section>
+    <section
+      id="mediaExportDialog"
+      class="mediaExportDialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="mediaExportTitle"
+      hidden
+    >
+      <div class="mediaExportCard">
+        <header class="mediaExportHeader">
+          <div>
+            <span>PACKAGE / MEDIA OUTPUT</span>
+            <h2 id="mediaExportTitle" data-i18n="mediaExportTitle">选择导出格式。</h2>
+          </div>
+          <button
+            id="mediaExportClose"
+            class="secondary mediaExportClose"
+            type="button"
+            title="关闭"
+            aria-label="关闭"
+            data-i18n-title="close"
+          >
+            ×
+          </button>
+        </header>
+        <dl class="mediaExportSummary">
+          <div>
+            <dt data-i18n="mediaExportFrameCount">帧数</dt>
+            <dd id="mediaExportFrameCount">0</dd>
+          </div>
+          <div>
+            <dt data-i18n="mediaExportFps">FPS</dt>
+            <dd id="mediaExportFps">12</dd>
+          </div>
+          <div>
+            <dt data-i18n="mediaExportCanvas">最大画布</dt>
+            <dd id="mediaExportCanvas">—</dd>
+          </div>
+        </dl>
+        <div class="mediaExportFormats">
+          <label class="mediaExportFormat">
+            <input id="mediaExportFrames" type="checkbox" checked />
+            <b data-i18n="mediaExportFramesTitle">PNG + frames.json</b>
+            <span data-i18n="mediaExportFramesHint">保留透明 PNG 序列、源顺序和统一帧时长。</span>
+          </label>
+          <label class="mediaExportFormat">
+            <input id="mediaExportSheet" type="checkbox" />
+            <b data-i18n="mediaExportSheetTitle">Sprite Sheet + atlas</b>
+            <span data-i18n="mediaExportSheetHint">自动分页到安全纹理尺寸，帧保持左上锚点。</span>
+          </label>
+          <label class="mediaExportFormat">
+            <input id="mediaExportGif" type="checkbox" disabled />
+            <b>GIF</b>
+            <span data-i18n="mediaExportGifHint">本地 FFmpeg 调色板编码，适合快速预览。</span>
+          </label>
+          <label class="mediaExportFormat">
+            <input id="mediaExportMov" type="checkbox" disabled />
+            <b data-i18n="mediaExportMovTitle">透明 MOV</b>
+            <span data-i18n="mediaExportMovHint">ProRes 4444 / yuva444p10le，保留 Alpha。</span>
+          </label>
+        </div>
+        <p id="mediaExportLocalHint" class="mediaExportLocalHint" data-i18n="mediaExportChecking">
+          正在检查本地 FFmpeg…
+        </p>
+        <p id="mediaExportStatus" class="mediaExportStatus" aria-live="polite" data-i18n="mediaExportChoose">
+          选择至少一种输出格式。
+        </p>
+        <div id="mediaExportDownloads" class="mediaExportDownloads" hidden></div>
+        <footer class="mediaExportFooter">
+          <span data-i18n="mediaExportFooter">PNG 与 Sprite Sheet 在浏览器生成；GIF/MOV 只在本地编码。</span>
+          <div>
+            <button id="mediaExportCancel" type="button" class="secondary" data-i18n="cancel">取消</button>
+            <button
+              id="mediaExportSubmit"
+              type="button"
+              class="mediaExportSubmit"
+              data-i18n="mediaExportStart"
+            >
+              开始导出
+            </button>
+          </div>
+        </footer>
+      </div>
+    </section>
+    <section
+      id="characterStarterGuide"
+      class="characterStarterGuide"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="characterStarterTitle"
+      hidden
+    >
+      <div class="characterStarterCard">
+        <header class="characterStarterHeader">
+          <div>
+            <span>2D CHARACTER STARTER / CODEX</span>
+            <h2 id="characterStarterTitle" data-i18n="characterStarterTitle">先把角色方向定下来。</h2>
+          </div>
+          <button
+            id="characterStarterClose"
+            class="secondary characterStarterClose"
+            type="button"
+            title="关闭"
+            aria-label="关闭"
+            data-i18n-title="close"
+          >
+            ×
+          </button>
+        </header>
+        <div class="characterStarterBody">
+          <nav
+            id="characterStarterModes"
+            class="characterStarterModes"
+            aria-label="2DCS 模式"
+            data-i18n-aria-label="characterStarterModesLabel"
+          ></nav>
+          <article class="characterStarterDetail">
+            <span data-i18n="characterStarterSelectedMode">已选模式</span>
+            <h3 id="characterStarterModeTitle">三档简化</h3>
+            <dl class="characterStarterFacts">
+              <div>
+                <dt data-i18n="characterStarterInput">需要输入</dt>
+                <dd id="characterStarterModeInput">1 张角色图</dd>
+              </div>
+              <div>
+                <dt data-i18n="characterStarterOutput">得到结果</dt>
+                <dd id="characterStarterModeOutput">轻度、中度、重度三张可游玩角色图</dd>
+              </div>
+            </dl>
+            <div class="characterStarterCommand">
+              <span>CODEX COMMAND</span><code id="characterStarterCommand">$2DCS s</code>
+            </div>
+          </article>
+        </div>
+        <footer class="characterStarterFooter">
+          <p data-i18n="characterStarterGuideHint">
+            复制指令后在 Codex 中附上参考图片；生成结果保持 3:2 绿幕，可直接进入导入与抠图流程。
+          </p>
+          <div class="characterStarterActions">
+            <button
+              id="characterStarterCopy"
+              class="characterStarterCopy"
+              type="button"
+              data-i18n="characterStarterCopy"
+            >
+              复制指令
+            </button>
+            <button
+              id="characterStarterImport"
+              class="secondary"
+              type="button"
+              data-i18n="characterStarterImport"
+            >
+              已有素材，进入导入
+            </button>
+          </div>
+        </footer>
+      </div>
+    </section>
+    <section
+      id="attackTrailGuide"
+      class="attackTrailGuide"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="attackTrailGuideTitle"
+      hidden
+    >
+      <div class="attackTrailGuideCard">
+        <header class="attackTrailGuideHeader">
+          <div>
+            <span>ATTACK TRAIL / QUICK GUIDE</span>
+            <h2 id="attackTrailGuideTitle">第一次做攻击拖尾</h2>
+          </div>
+          <button
+            id="attackTrailGuideClose"
+            type="button"
+            class="secondary attackTrailGuideClose"
+            aria-label="关闭攻击拖尾引导"
+            title="关闭"
+          >
+            ×
+          </button>
+        </header>
+        <div class="attackTrailGuideBody">
+          <ol id="attackTrailGuideSteps" class="attackTrailGuideSteps" aria-label="引导步骤"></ol>
+          <article class="attackTrailGuideDetail">
+            <span id="attackTrailGuideIndex">STEP 01 / 05</span>
+            <h3 id="attackTrailGuideStepTitle"></h3>
+            <p id="attackTrailGuideDescription"></p>
+            <ul id="attackTrailGuideChecklist"></ul>
+            <button id="attackTrailGuideLocate" type="button" class="attackTrailGuideLocate">
+              关闭引导并定位到此项
+            </button>
+          </article>
+        </div>
+        <footer class="attackTrailGuideFooter">
+          <p>随时可以从“特效 → 攻击拖尾”重新打开，不会强制完成。</p>
+          <div>
+            <button id="attackTrailGuidePrevious" type="button" class="secondary">上一步</button>
+            <button id="attackTrailGuideNext" type="button">下一步</button>
+          </div>
+        </footer>
       </div>
     </section>
     <section
@@ -2550,6 +3175,7 @@
         <dl id="appConfirmDetails" hidden></dl>
         <div class="appConfirmActions">
           <button id="appConfirmCancel" type="button" class="secondary">取消</button>
+          <button id="appConfirmAlternate" type="button" class="secondary" hidden>保存</button>
           <button id="appConfirmAccept" type="button" class="appConfirmAccept">确认</button>
         </div>
       </div>
@@ -2691,6 +3317,7 @@
     <script src="/frame_organizer_worker_client.js"></script>
     <script src="/protected_artifact_loader.js"></script>
     <script src="/protected_algorithm_runtime.js"></script>
+    <script src="/frame_sequence_order.js"></script>
     <script src="/frame_organizer_video.js"></script>
     <script src="/frame_organizer_image_import.js"></script>
     <script src="/frame_organizer_grid.js"></script>
@@ -2698,10 +3325,16 @@
     <script src="/frame_organizer_loop.js"></script>
     <script src="/frame_organizer_text.js"></script>
     <script src="/frame_organizer_ui.js"></script>
+    <script src="/smart_cutout_defaults.js"></script>
     <script src="/frame_organizer_actions.js"></script>
+    <script src="/media_export_dialog.js"></script>
     <script src="/frame_organizer.js"></script>
+    <script src="/media_export_core.js"></script>
+    <script src="/local_media_export_client.js"></script>
     <script src="/browser_runtime.js"></script>
     <script src="/workbench_export.js"></script>
+    <script src="/character_starter_guide.js"></script>
+    <script src="/attack_trail_guide.js"></script>
     <script src="/app_dom.js"></script>
     <script src="/app_state.js"></script>
     <script src="/app_frame_selection.js"></script>
@@ -2722,6 +3355,7 @@
     <script src="/app_canvas_coordinates.js"></script>
     <script src="/app_playback.js"></script>
     <script src="/app_project_mutations.js"></script>
+    <script src="/godot_handoff_controller.js"></script>
     <script src="/app_attachment_state.js"></script>
     <script src="/app_layer_stack.js"></script>
     <script src="/app_image_cache.js"></script>
@@ -2738,6 +3372,7 @@
     <script src="/app_history.js"></script>
     <script src="/app_filmstrip.js"></script>
     <script src="/app_filmstrip_interaction.js"></script>
+    <script src="/app_attachment_sequence.js"></script>
     <script src="/app_attachments.js"></script>
     <script src="/app_stage_view.js"></script>
     <script src="/app_keyboard.js"></script>
@@ -2749,6 +3384,9 @@
     <script src="/app_attachment_manipulation.js"></script>
     <script src="/app_playback_inputs.js"></script>
     <script src="/app_project_selects.js"></script>
+    <script src="/timing_modes.js"></script>
+    <script src="/attack_trails.js"></script>
+    <script src="/app_shell.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

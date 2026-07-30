@@ -240,6 +240,16 @@
   padding: 0 9px 9px;
 }
 
+.adjustmentRecoveryActions {
+  display: grid;
+  margin: 10px 0 0;
+}
+
+.adjustmentRecoveryActions button,
+.boxRecoveryAction {
+  width: 100%;
+}
+
 .panel:has(#adjustCharacter:checked) .frameOptionGrid,
 .panel:has(#adjustGroup:checked) .frameOptionGrid {
   display: none;

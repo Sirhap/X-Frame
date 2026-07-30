@@ -31,6 +31,7 @@ var _frame_playback_overrides: Dictionary = {}
 var _frame_box_overrides: Dictionary = {}
 var _frame_audio_bindings: Dictionary = {}
 var _frame_image_attachments: Dictionary = {}
+var _attack_trail_bindings: Dictionary = {}
 var _texture_cache: Dictionary = {}
 var _current_animation: String = ""
 var _current_frame: int = 0
@@ -48,6 +49,8 @@ var _last_visual_state_key: String = ""
 @onready var _frame_sprite: Sprite2D = get_node_or_null("VisualOwner/FrameSprite") as Sprite2D
 @onready var _attachments_below: Node2D = get_node_or_null("VisualOwner/AttachmentsBelow") as Node2D
 @onready var _attachments_above: Node2D = get_node_or_null("VisualOwner/AttachmentsAbove") as Node2D
+@onready var _attack_trails_behind: Node2D = get_node_or_null("AttackTrailsBehind") as Node2D
+@onready var _attack_trails_front: Node2D = get_node_or_null("AttackTrailsFront") as Node2D
 @onready var _body_collision: CollisionShape2D = get_node_or_null("CollisionShape2D") as CollisionShape2D
 @onready var _hurtbox_area: Area2D = get_node_or_null("Hurtbox") as Area2D
 @onready var _hurtbox_collision: CollisionShape2D = get_node_or_null("Hurtbox/CollisionShape2D") as CollisionShape2D
@@ -109,6 +112,24 @@ func restart_frame_animation(animation_name: String, should_loop: bool = true) -
 	play_frame_animation(animation_name, should_loop, true)
 
 
+func trail_frame_arrival_time(animation_name: String, frame_index: int, frame_phase: float) -> float:
+	var animation: Dictionary = _animations.get(animation_name, {})
+	var frames: Array = animation.get("frames", []) as Array
+	var clamped_frame: int = clampi(frame_index, 0, maxi(0, frames.size() - 1))
+	var elapsed := 0.0
+	for index in range(clamped_frame):
+		if not _frame_is_disabled(animation_name, index):
+			elapsed += _frame_duration_for(animation_name, index)
+	if not _frame_is_disabled(animation_name, clamped_frame):
+		elapsed += _frame_duration_for(animation_name, clamped_frame) * clampf(frame_phase, 0.0, 1.0)
+	return elapsed
+
+
+func current_animation_elapsed() -> float:
+	var elapsed := trail_frame_arrival_time(_current_animation, _current_frame, 0.0)
+	return elapsed + clampf(_frame_clock, 0.0, _frame_duration_for(_current_animation, _current_frame))
+
+
 func animation_duration(animation_name: String) -> float:
 	if not _animations.has(animation_name):
 		return 0.0
@@ -125,6 +146,15 @@ func animation_duration(animation_name: String) -> float:
 			frame_duration = float(frame_value.get("duration", 1.0))
 		duration_units += maxf(0.001, float(playback.get("duration", frame_duration)))
 	return maxf(0.001, duration_units / _animation_fps(animation_name))
+
+
+func animation_last_playable_frame_start(animation_name: String) -> float:
+	var animation: Dictionary = _animations.get(animation_name, {})
+	var frames: Array = animation.get("frames", []) as Array
+	for index in range(frames.size() - 1, -1, -1):
+		if not _frame_is_disabled(animation_name, index):
+			return trail_frame_arrival_time(animation_name, index, 0.0)
+	return 0.0
 
 
 func current_animation_duration() -> float:
@@ -274,6 +304,12 @@ func _ensure_runtime_nodes() -> void:
 		_attachments_below = Node2D.new()
 		_attachments_below.name = "AttachmentsBelow"
 		_visual_owner.add_child(_attachments_below)
+	if _attack_trails_behind == null:
+		_attack_trails_behind = Node2D.new()
+		_attack_trails_behind.name = "AttackTrailsBehind"
+		_attack_trails_behind.set_script(load("res://xsxb_frame_tuner/runtime/xsxb_attack_trail_renderer.gd"))
+		add_child(_attack_trails_behind)
+		move_child(_attack_trails_behind, _visual_owner.get_index())
 	if _frame_sprite == null:
 		_frame_sprite = Sprite2D.new()
 		_frame_sprite.name = "FrameSprite"
@@ -282,6 +318,12 @@ func _ensure_runtime_nodes() -> void:
 		_attachments_above = Node2D.new()
 		_attachments_above.name = "AttachmentsAbove"
 		_visual_owner.add_child(_attachments_above)
+	if _attack_trails_front == null:
+		_attack_trails_front = Node2D.new()
+		_attack_trails_front.name = "AttackTrailsFront"
+		_attack_trails_front.set_script(load("res://xsxb_frame_tuner/runtime/xsxb_attack_trail_renderer.gd"))
+		add_child(_attack_trails_front)
+		move_child(_attack_trails_front, _visual_owner.get_index() + 1)
 	if _body_collision == null:
 		_body_collision = CollisionShape2D.new()
 		_body_collision.name = "CollisionShape2D"

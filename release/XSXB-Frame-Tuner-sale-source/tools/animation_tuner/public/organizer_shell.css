@@ -1,0 +1,488 @@
+.organizerOpen {
+  overflow: hidden;
+}
+
+.organizerModal {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  display: grid;
+  place-items: center;
+  padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  background: rgba(5, 7, 10, 0.86);
+  backdrop-filter: blur(8px);
+  overscroll-behavior: contain;
+}
+
+.organizerWorkbench {
+  position: relative;
+  width: min(1580px, 98vw);
+  height: min(940px, 96vh);
+  min-height: 640px;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 4px solid var(--line);
+  border-radius: 14px;
+  background:
+    linear-gradient(90deg, rgba(255, 212, 61, 0.05) 1px, transparent 1px) 0 0 / 30px 30px,
+    linear-gradient(rgba(255, 212, 61, 0.05) 1px, transparent 1px) 0 0 / 30px 30px,
+    var(--panel-3);
+  box-shadow:
+    12px 12px 0 var(--line),
+    var(--soft-shadow);
+}
+
+/* URL workbench: the processing flow is a page, not a floating card. */
+body.organizerOpen .organizerModal {
+  place-items: stretch;
+  padding: 0;
+  background: var(--panel-3);
+  backdrop-filter: none;
+}
+
+body.organizerOpen .organizerWorkbench {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.organizerOpen .organizerClose {
+  display: none;
+}
+
+.organizerWorkbench.importMode {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.organizerWorkbench.importMode .organizerImportSetup {
+  grid-template-columns: 180px repeat(2, minmax(118px, 1fr));
+}
+
+.organizerWorkbench.importMode .organizerProjectMetadata {
+  display: none;
+}
+
+.organizerWorkbench.importMode .organizerHeader {
+  min-height: 58px;
+  padding: 8px 16px;
+}
+
+.organizerWorkbench.importMode .organizerHeader > div:first-child {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 6px 13px;
+}
+
+.organizerWorkbench.importMode .organizerEyebrow {
+  grid-column: 1;
+  font-size: 8px;
+}
+
+.organizerWorkbench.importMode .organizerHeader h2 {
+  grid-column: 2;
+  margin: 0;
+  font-size: 27px;
+  white-space: nowrap;
+}
+
+.organizerWorkbench.importMode .organizerHeader p {
+  grid-column: 3;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.organizerWorkbench.importMode .organizerClose {
+  width: 38px;
+  height: 38px;
+  font-size: 23px;
+}
+
+.organizerImportSetup {
+  display: grid;
+  grid-template-columns: 180px repeat(auto-fit, minmax(118px, 1fr));
+  gap: 7px;
+  align-items: center;
+  padding: 7px 12px;
+  border-bottom: 4px solid var(--line);
+  background: color-mix(in srgb, var(--accent-3) 13%, var(--panel));
+}
+
+.organizerImportIntro {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px 10px 2px 0;
+  border-right: 3px solid var(--line);
+}
+
+.organizerImportIntro span {
+  color: var(--accent-3);
+  font: 950 9px/1 var(--data-font);
+  letter-spacing: 0.15em;
+}
+
+.organizerImportIntro strong {
+  font-size: 14px;
+}
+
+.organizerImportIntro small {
+  color: var(--muted);
+  font: 800 8px/1.25 var(--data-font);
+}
+
+.organizerImportSetup label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font: 900 10px/1 var(--data-font);
+}
+
+.organizerImportSetup input,
+.organizerImportSetup select {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 5px 7px;
+  font-size: 11px;
+}
+
+.organizerHeader {
+  min-height: 86px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 20px;
+  border-bottom: 4px solid var(--line);
+  background: linear-gradient(105deg, var(--accent-3) 0 16px, transparent 16px), var(--panel);
+}
+
+.organizerHeader h2 {
+  margin: 1px 0 0;
+  font-size: clamp(24px, 3vw, 40px);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+}
+
+.organizerHeader p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font: 800 12px/1.2 var(--data-font);
+}
+
+.organizerEyebrow {
+  color: var(--accent-3);
+  font: 950 10px/1 var(--data-font);
+  letter-spacing: 0.18em;
+}
+
+.organizerClose {
+  width: 50px;
+  height: 50px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #05070a;
+  font: 900 30px/1 var(--data-font);
+  box-shadow: 4px 4px 0 var(--line);
+}
+
+.organizerToolbar {
+  display: grid;
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 4px solid var(--line);
+  background: var(--panel-2);
+}
+
+.organizerToolbarRow {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.organizerToolbarPrimary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.organizerToolbarSecondary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.organizerToolbarPrimary .organizerEditTools,
+.organizerToolbarSecondary .organizerAnalysisTools {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.organizerToolGroup {
+  min-width: 0;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 7px 5px 9px;
+  border: 2px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 76%, transparent);
+}
+
+.organizerToolGroup > span:first-child {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  padding-right: 7px;
+  border-right: 2px solid color-mix(in srgb, var(--line) 58%, transparent);
+  color: var(--muted);
+  font: 950 9px/1 var(--data-font);
+  letter-spacing: 0.1em;
+}
+
+.organizerToolGroup button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 10px;
+}
+
+.organizerFilePicker {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-grid;
+}
+
+.organizerPickerFace,
+.organizerFilePicker > input {
+  grid-area: 1 / 1;
+}
+
+.organizerFilePicker:hover > .organizerPickerFace,
+.organizerFilePicker:focus-within > .organizerPickerFace {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--line);
+}
+
+.organizerFilePicker:focus-within > .organizerPickerFace {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+.organizerPickerFace {
+  min-height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 5px 8px;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--control-ink);
+  box-shadow: 3px 3px 0 var(--line);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.organizerFilePicker > input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.organizerFilePicker:has(input:disabled) > .organizerPickerFace {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.organizerSourceTools {
+  border-color: var(--accent-3);
+}
+
+.organizerSourceTools .organizerFilePicker:first-of-type > .organizerPickerFace {
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: #06120f;
+}
+
+@media (max-width: 1200px) {
+  .organizerToolbarPrimary,
+  .organizerToolbarSecondary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .organizerSourceTools,
+  .organizerDangerTools {
+    justify-content: flex-start;
+  }
+}
+
+.organizerAnalysisTools {
+  flex: 1 1 auto;
+}
+
+.organizerDangerTools {
+  flex: 0 0 auto;
+  align-self: start;
+  border-color: color-mix(in srgb, var(--danger) 72%, var(--line));
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+}
+
+.organizerReduceControl {
+  display: grid;
+  grid-template-columns: auto 42px auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font: 900 10px/1 var(--data-font);
+}
+
+.organizerReduceControl input {
+  width: 42px;
+  min-height: 30px;
+  padding: 4px;
+  text-align: center;
+  font-size: 11px;
+}
+
+.organizerVideoButton {
+  background: var(--accent-3);
+  color: #05070a;
+}
+
+.organizerVideoPanel {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 7, 10, 0.84);
+  backdrop-filter: blur(7px);
+}
+
+.organizerConfirmPanel {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: rgba(5, 7, 10, 0.82);
+  backdrop-filter: blur(7px);
+}
+
+.organizerConfirmCard {
+  width: min(540px, 96%);
+  max-height: calc(100dvh - 48px);
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 4px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 10px 10px 0 var(--line);
+}
+
+.organizerConfirmCard > span {
+  color: var(--accent-3);
+  font: 950 9px/1 var(--data-font);
+  letter-spacing: 0.16em;
+}
+
+.organizerConfirmCard[data-tone="danger"] > span {
+  color: var(--danger);
+}
+
+.organizerConfirmCard h3,
+.organizerConfirmCard p {
+  margin: 0;
+}
+
+.organizerConfirmCard h3 {
+  font-size: 25px;
+}
+
+.organizerConfirmCard p {
+  color: var(--muted);
+  font: 850 12px/1.45 var(--data-font);
+}
+
+.organizerConfirmCard dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 12px;
+  margin: 0;
+  padding: 11px;
+  border: 3px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font: 850 11px/1.25 var(--data-font);
+}
+
+.organizerConfirmCard dt {
+  color: var(--muted);
+}
+.organizerConfirmCard dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.organizerConfirmCard > div:last-child {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px;
+}
+
+.organizerConfirmCard > div:last-child button {
+  min-height: 48px;
+}
+
+.organizerConfirmCard[data-tone="danger"] #organizerConfirmAccept {
+  background: var(--danger);
+  color: var(--danger-ink);
+}
+
+@media (max-width: 560px) {
+  .organizerConfirmPanel {
+    place-items: end center;
+    padding: 12px;
+  }
+
+  .organizerConfirmCard {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    padding: 18px;
+    border-width: 3px;
+    box-shadow: 6px 6px 0 var(--line);
+  }
+
+  .organizerConfirmCard > div:last-child {
+    grid-template-columns: 1fr;
+  }
+}

@@ -236,6 +236,32 @@ test(
   },
 );
 
+test("WASM product entry preserves -1, 0, and 100 tolerance boundaries", { skip: skipReason }, async () => {
+  const wasm = await loadExports();
+  const source = Uint8Array.from([0, 255, 0, 255, 0, 254, 0, 255]);
+  const expected = new Map([
+    [-1, [150, 150, 150, 0, 148, 150, 148, 2]],
+    [0, [0, 0, 0, 0, 0, 0, 0, 0]],
+    [100, [0, 0, 0, 0, 0, 0, 0, 0]],
+  ]);
+
+  for (const tolerance of [-1, 0, 100]) {
+    const configuration = encodeCutoutConfiguration({
+      seedX: 0,
+      seedY: 0,
+      reference: { r: 0, g: 255, b: 0, a: 255 },
+      replacement: { r: 0, g: 0, b: 0, a: 0 },
+      tolerance,
+      edgeEnhance: 100,
+      blendStrength: 100,
+      despillStrength: 100,
+      edgeRadius: 3,
+    });
+
+    assert.deepEqual([...applyWasmCutout(wasm, source, 2, 1, configuration)], expected.get(tolerance));
+  }
+});
+
 test(
   "private fp_kernel_13 product path matches disconnected regions and edge modes",
   { skip: skipReason },

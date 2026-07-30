@@ -188,7 +188,6 @@
   line-height: 1.55;
 }
 
-.browserOnlyMode .projectContext,
 .browserOnlyMode .sidebarHint,
 .browserOnlyMode #save,
 .browserOnlyMode #saveState {
@@ -200,6 +199,10 @@
 }
 
 .projectDangerActions {
+  margin: 8px 0 0;
+}
+
+.projectPetActions {
   margin: 8px 0 0;
 }
 
@@ -270,6 +273,109 @@
   color: var(--muted);
   font-size: 10px;
   line-height: 1.45;
+}
+
+.godotHandoffCard {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 10px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.godotHandoffCard header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.godotHandoffCard header strong,
+.godotHandoffRoot > span {
+  color: var(--muted);
+  font: 850 10px/1.2 var(--data-font);
+}
+
+.godotHandoffBadge,
+.organizerGodotHandoffBadge {
+  width: fit-content;
+  padding: 4px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font: 900 9px/1 var(--data-font);
+}
+
+.godotHandoffBadge[data-state="gameplay_ready"] {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.godotHandoffBadge:is([data-state="sync_failed"], [data-state="invalid_root"]) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.godotHandoffBadge[data-state="sync_required"] {
+  border-color: var(--accent-3);
+  color: var(--accent-3);
+}
+
+.godotHandoffRoot {
+  display: grid;
+  gap: 5px;
+}
+
+.godotHandoffRoot input {
+  min-height: 44px;
+  font: 700 10px/1.3 var(--data-font);
+}
+
+.godotHandoffMessage,
+.godotHandoffBlockers {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.godotHandoffMessage[data-tone="sync_failed"],
+.godotHandoffMessage[data-tone="invalid_root"],
+.godotHandoffMessage[data-tone="error"] {
+  color: var(--danger);
+}
+
+.godotHandoffBlockers {
+  display: grid;
+  gap: 3px;
+  padding-left: 16px;
+}
+
+.godotHandoffBlockers[hidden] {
+  display: none;
+}
+
+.godotHandoffActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+}
+
+.godotHandoffActions button {
+  min-height: 44px;
+  padding-inline: 8px;
+  font-size: 10px;
+}
+
+.browserOnlyMode .projectContextBody > :not(.godotHandoffCard) {
+  display: none;
+}
+
+.browserOnlyMode .godotHandoffCard {
+  margin-top: 10px;
 }
 
 .projectDangerHint {

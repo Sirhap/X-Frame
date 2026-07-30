@@ -2,9 +2,33 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  applyPreviewBackground,
   createController,
+  normalizePreviewBackground,
   resolveRepairPropagationState,
 } = require("../animation_tuner/public/batch_cutout_settings.js");
+
+/**
+ * Creates a DOM-like preview background button for state synchronization tests.
+ * @returns {{classList:{toggle:(name:string,active:boolean)=>void},setAttribute:(name:string,value:string)=>void,classes:Set<string>,attributes:Record<string,string>}}
+ */
+function createPreviewBackgroundButton() {
+  const classes = new Set();
+  const attributes = {};
+  return {
+    classes,
+    attributes,
+    classList: {
+      toggle(name, active) {
+        if (active) classes.add(name);
+        else classes.delete(name);
+      },
+    },
+    setAttribute(name, value) {
+      attributes[name] = value;
+    },
+  };
+}
 
 function createFixture() {
   const item = { id: "frame-1", repairs: [{ mode: "fill", color: "#fff" }] };
@@ -71,6 +95,29 @@ test("batch settings preserves pixel-budget rejection messages", () => {
   const { controller } = createFixture();
 
   assert.throws(() => controller.assertImagePixelBudget({ width: 4, height: 4 }, 1), /batchPixelLimit:1/);
+});
+
+test("preview background switching is display-only and falls back to light", () => {
+  const exportedRgba = Uint8ClampedArray.from([12, 34, 56, 78]);
+  const state = { previewBackground: "light", exportedRgba };
+  const elements = {
+    cutoutModal: { dataset: {} },
+    cutoutBackgroundLight: createPreviewBackgroundButton(),
+    cutoutBackgroundDark: createPreviewBackgroundButton(),
+    cutoutBackgroundWhite: createPreviewBackgroundButton(),
+  };
+
+  assert.equal(applyPreviewBackground(elements, state, "dark"), "dark");
+  assert.equal(elements.cutoutModal.dataset.previewBackground, "dark");
+  assert.equal(elements.cutoutBackgroundDark.classes.has("active"), true);
+  assert.equal(elements.cutoutBackgroundDark.attributes["aria-pressed"], "true");
+  assert.equal(elements.cutoutBackgroundLight.classes.has("active"), false);
+  assert.equal(state.exportedRgba, exportedRgba);
+  assert.deepEqual([...exportedRgba], [12, 34, 56, 78]);
+
+  assert.equal(normalizePreviewBackground("unsupported"), "light");
+  assert.equal(applyPreviewBackground(elements, state, "unsupported"), "light");
+  assert.equal(elements.cutoutModal.dataset.previewBackground, "light");
 });
 
 test("batch settings follows the active tool and exposes canvas-only tool instructions", () => {

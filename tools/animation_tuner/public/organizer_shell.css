@@ -142,6 +142,14 @@ body.organizerOpen .organizerClose {
   font: 800 8px/1.25 var(--data-font);
 }
 
+.organizerGodotHandoffBadge {
+  margin-top: 2px;
+  padding: 3px 5px;
+  border-color: color-mix(in srgb, var(--accent-3) 60%, var(--line));
+  color: var(--accent-3);
+  letter-spacing: 0.02em;
+}
+
 .organizerImportSetup label {
   min-width: 0;
   display: grid;

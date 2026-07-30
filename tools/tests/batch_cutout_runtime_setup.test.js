@@ -14,6 +14,7 @@ test("runtime setup creates the batch controller state without shared mutable fi
   assert.notStrictEqual(english.selectedIds, chinese.selectedIds);
   assert.deepEqual(english.items, []);
   assert.equal(english.sessionMode, "batch");
+  assert.equal(english.previewBackground, "light");
   assert.equal(english.batchTrayCollapsed, true);
 });
 

@@ -3,7 +3,10 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 require("../animation_tuner/public/batch_cutout_events_preview");
-const { createController } = require("../animation_tuner/public/batch_cutout_events");
+const {
+  activateAutomaticPreview,
+  createController,
+} = require("../animation_tuner/public/batch_cutout_events");
 
 /** Creates a tolerant DOM fixture for event-wiring registration. @returns {object} Fixture. */
 function createFixture() {
@@ -80,6 +83,18 @@ test("batch cutout event controller registers the full interaction surface", () 
 
 test("batch cutout event controller validates required state and elements", () => {
   assert.throws(() => createController(), /requires elements, state/);
+});
+
+test("automatic parameter edits activate processing and reveal the result preview", () => {
+  const state = { previewMode: "original" };
+  const item = { processingActivated: false, automaticCutoutActivated: false };
+
+  assert.equal(activateAutomaticPreview(state, item), true);
+  assert.equal(state.previewMode, "result");
+  assert.equal(item.processingActivated, true);
+  assert.equal(item.automaticCutoutActivated, true);
+  assert.equal(activateAutomaticPreview(state, null), false);
+  assert.throws(() => activateAutomaticPreview(null, item), /requires session state/);
 });
 
 test("switching protection mode clears the incompatible preview", () => {

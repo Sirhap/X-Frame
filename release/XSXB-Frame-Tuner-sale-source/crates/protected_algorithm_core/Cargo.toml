@@ -1,0 +1,17 @@
+[package]
+name = "protected_algorithm_core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+# The protected core is a pixel-processing hot path. `z` reduced the binary by
+# only tens of KiB but more than doubled P95 execution time on arm64 browsers.
+opt-level = 3
+panic = "abort"
+strip = "symbols"

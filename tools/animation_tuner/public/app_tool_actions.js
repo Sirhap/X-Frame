@@ -25,6 +25,7 @@
       getActiveProjectId = () => "",
       getConfig = () => null,
       getLanguage = () => "zh",
+      browserOnly = false,
       getFrameMutationPending = () => false,
       setFrameMutationPending = () => {},
       setDirty = () => {},
@@ -40,6 +41,8 @@
       loadConfig = async () => {},
       resizeCanvas = () => {},
       selectGroup = async () => {},
+      deleteBrowserSessionFrames = async () => {},
+      deleteBrowserSessionAnimation = async () => {},
       clearImageCache = () => {},
       clearImageElements = () => {},
       setOpaqueRectCache = () => {},
@@ -146,7 +149,8 @@
         }));
       setFrameMutationPending(true);
       try {
-        await applyFrameOrganizerPlan(items);
+        if (browserOnly) await deleteBrowserSessionFrames(indexes);
+        else await applyFrameOrganizerPlan(items);
         status(translate("framesDeleted", { count: indexes.length }));
         return true;
       } finally {
@@ -157,7 +161,7 @@
     /**
      * Deletes the current manifest animation and all Frame Tuner data owned by
      * it.
-     * @returns {Promise<boolean>} Whether the animation was cleared.
+     * @returns {Promise<boolean>} Whether the animation was deleted.
      */
     async function clearCurrentAnimation() {
       const group = getCurrentGroup();
@@ -181,6 +185,11 @@
         return false;
       setFrameMutationPending(true);
       try {
+        if (browserOnly) {
+          await deleteBrowserSessionAnimation(group);
+          status(translate("animationCleared", { animation: animationLabel }));
+          return true;
+        }
         const response = await requireFetch()("/api/delete-animation", {
           method: "POST",
           headers: { "content-type": "application/json" },

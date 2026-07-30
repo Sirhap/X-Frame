@@ -89,6 +89,8 @@
       updateAdjustmentFromInputs = () => {},
       pruneNoopFrameOverrides = () => {},
       collectFrameAudioBindingsForSave = async () => [],
+      getProjectKind = () => "godot",
+      collectCodexPetExportsForSave = async () => [],
       canEditBox = () => false,
       mapWithConcurrency = async (items, worker) => Promise.all(items.map(worker)),
       loadImageCached = async () => null,
@@ -118,6 +120,7 @@
       getSoulFrameOverrides = () => ({}),
       getSoulPlaybackOverrides = () => ({}),
       getSoulFrameBoxOverrides = () => ({}),
+      getAttackTrails = () => undefined,
       premiumFeatures = root?.XSXBPremiumFeatures,
       fetchImpl = root?.fetch,
       markClean = () => {},
@@ -176,7 +179,9 @@
       try {
         updateAdjustmentFromInputs();
         pruneNoopFrameOverrides();
-        const frameAudioBindingsForSave = await collectFrameAudioBindingsForSave();
+        const frameAudioBindingsForSave =
+          getProjectKind() === "codex_pets" ? [] : await collectFrameAudioBindingsForSave();
+        const codexPetExportsForSave = await collectCodexPetExportsForSave();
         await ensureCollisionBoxOverridesForSave();
         const frameImageAttachmentsForSave = collectFrameImageAttachmentsForSave();
         const premiumSnapshot = {
@@ -209,6 +214,8 @@
             scene_settings: collectSceneSettings(),
             frame_audio_bindings: frameAudioBindingsForSave,
             frame_image_attachments: frameImageAttachmentsForSave,
+            attack_trails: getAttackTrails(),
+            ...(codexPetExportsForSave.length ? { codex_pet_exports: codexPetExportsForSave } : {}),
             frame_visual_overrides: getFrameOverrides(),
             attack_vfx_frame_overrides: getVfxFrameOverrides(),
             frame_playback_overrides: getFramePlaybackOverrides(),

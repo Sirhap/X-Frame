@@ -2,6 +2,11 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const {
+  EMPTY_ATTACK_TRAILS,
+  attackTrailTextureDirectory,
+  normalizeAttackTrails,
+} = require("./attack_trails");
 const { EMPTY_MANIFEST, EMPTY_TUNING } = require("./project_store");
 
 /**
@@ -73,7 +78,7 @@ function normalizeBindings(value) {
  * Deletes an animation, its frame directory, overrides, and frame bindings.
  * The caller owns the surrounding filesystem transaction and Godot sync.
  * @param {{root:string,projectStore:object,project:object,profileId:string,animationId:string}} options Mutation options.
- * @returns {{manifest:object,tuning:object,frameAudioBindings:object[],frameImageAttachments:object[],attachmentAssets:object[],removedFrames:number,removedDirectory:string}}
+ * @returns {{manifest:object,tuning:object,frameAudioBindings:object[],frameImageAttachments:object[],attachmentAssets:object[],attackTrails:object,removedFrames:number,removedDirectory:string,removedAttackTrailTextureDirectory:string,removedAttackTrailTextureDirectories:string[]}}
  * Mutation result.
  */
 function deleteAnimation(options) {
@@ -86,6 +91,7 @@ function deleteAnimation(options) {
   const audioBindings = projectStore.readJson(paths.frameAudio, []);
   const imageAttachments = projectStore.readJson(paths.frameImageAttachments, []);
   const attachmentAssets = projectStore.readJson(paths.attachmentAssets, []);
+  const attackTrails = normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
   const profileIndex = (manifest.profiles || []).findIndex((entry) => String(entry.id) === profileId);
   if (profileIndex < 0) throw new Error(`Profile not found: ${profileId}`);
   const profile = manifest.profiles[profileIndex];
@@ -97,18 +103,44 @@ function deleteAnimation(options) {
   if (!profile.animations.length) manifest.profiles.splice(profileIndex, 1);
 
   const animationKey = `${profileId}/${animationId}`;
-  const prefix = `${animationKey}:`;
+  const legacyAnimationId = String(animation.name || "");
+  const legacyKeyIsUnambiguous =
+    legacyAnimationId &&
+    legacyAnimationId !== animationId &&
+    !(profile.animations || []).some((entry) => String(entry.id || entry.name || "") === legacyAnimationId);
+  const animationKeys = new Set([
+    animationKey,
+    ...(legacyKeyIsUnambiguous ? [`${profileId}/${legacyAnimationId}`] : []),
+  ]);
+  const ownedAnimationKeys = Array.from(animationKeys);
+  const removedAttackTrailTexturePaths = ownedAnimationKeys.flatMap((key) =>
+    Array.from(attackTrails.bindings[key] || [], (segment) => String(segment?.texture?.path || "")),
+  );
+  for (const key of ownedAnimationKeys) delete attackTrails.bindings[key];
   for (const field of ["frame_visual_overrides", "frame_playback_overrides", "frame_box_overrides"]) {
-    tuning[field] = withoutAnimationKeys(tuning[field], prefix);
+    tuning[field] = ownedAnimationKeys.reduce(
+      (record, key) => withoutAnimationKeys(record, `${key}:`),
+      tuning[field],
+    );
+  }
+  const groupValuePrefixes = [animationId, ...(legacyKeyIsUnambiguous ? [legacyAnimationId] : [])].map(
+    (id) => `profiles.${profileId}.groups.${id}.`,
+  );
+  tuning.values = groupValuePrefixes.reduce(
+    (record, prefix) => withoutAnimationKeys(record, prefix),
+    tuning.values,
+  );
+  if (!profile.animations.length) {
+    tuning.values = withoutAnimationKeys(tuning.values, `profiles.${profileId}.character.`);
   }
   const nextAudio = normalizeBindings(audioBindings).filter(
-    (binding) => !bindingBelongsToAnimation(binding, animationKey),
+    (binding) => !ownedAnimationKeys.some((key) => bindingBelongsToAnimation(binding, key)),
   );
   const nextAttachments = normalizeBindings(imageAttachments).filter(
-    (binding) => !bindingBelongsToAnimation(binding, animationKey),
+    (binding) => !ownedAnimationKeys.some((key) => bindingBelongsToAnimation(binding, key)),
   );
   const nextAssets = normalizeBindings(attachmentAssets).filter(
-    (asset) => String(asset.groupKey || "") !== animationKey,
+    (asset) => !animationKeys.has(String(asset.groupKey || "")),
   );
 
   const workspaceDir = projectStore.projectWorkspaceDir(project);
@@ -117,19 +149,56 @@ function deleteAnimation(options) {
   if (removedDirectory && removedDirectory.startsWith(`${workspaceDir}${path.sep}`)) {
     fs.rmSync(removedDirectory, { recursive: true, force: true });
   }
+  const retainedAttackTrailTexturePaths = new Set(
+    Object.values(attackTrails.bindings)
+      .flat()
+      .map((segment) => safeResolve(root, segment?.texture?.path || ""))
+      .filter(Boolean),
+  );
+  const attackTrailWorkspaceRoot = path.join(workspaceDir, "attack_trails");
+  for (const texturePath of removedAttackTrailTexturePaths) {
+    const resolvedTexturePath = safeResolve(root, texturePath);
+    if (
+      resolvedTexturePath.startsWith(`${attackTrailWorkspaceRoot}${path.sep}`) &&
+      !retainedAttackTrailTexturePaths.has(resolvedTexturePath)
+    ) {
+      fs.rmSync(resolvedTexturePath, { force: true });
+    }
+  }
+  const removedAttackTrailTextureDirectories = [
+    attackTrailTextureDirectory(projectStore, project, profileId, animationId),
+    ...(legacyKeyIsUnambiguous
+      ? [attackTrailTextureDirectory(projectStore, project, profileId, legacyAnimationId)]
+      : []),
+  ].filter((directory, index, directories) => directories.indexOf(directory) === index);
+  for (const textureDirectory of removedAttackTrailTextureDirectories) {
+    const textureDirectoryStillReferenced = Object.values(attackTrails.bindings)
+      .flat()
+      .some((segment) => {
+        const texturePath = safeResolve(root, segment?.texture?.path || "");
+        return texturePath === textureDirectory || texturePath?.startsWith(`${textureDirectory}${path.sep}`);
+      });
+    if (!textureDirectoryStillReferenced) {
+      fs.rmSync(textureDirectory, { recursive: true, force: true });
+    }
+  }
   projectStore.writeJson(paths.manifest, manifest);
   projectStore.writeJson(paths.tuning, tuning);
   projectStore.writeJson(paths.frameAudio, nextAudio);
   projectStore.writeJson(paths.frameImageAttachments, nextAttachments);
   projectStore.writeJson(paths.attachmentAssets, nextAssets);
+  projectStore.writeJson(paths.attackTrails, attackTrails);
   return {
     manifest,
     tuning,
     frameAudioBindings: nextAudio,
     frameImageAttachments: nextAttachments,
     attachmentAssets: nextAssets,
+    attackTrails,
     removedFrames: Array.isArray(animation.frames) ? animation.frames.length : 0,
     removedDirectory,
+    removedAttackTrailTextureDirectory: removedAttackTrailTextureDirectories[0],
+    removedAttackTrailTextureDirectories,
   };
 }
 

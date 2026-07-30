@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { animationLooksAttack, frameBoxKey } = require("./box_estimator");
+const { EMPTY_ATTACK_TRAILS, normalizeAttackTrails, pngInfo } = require("./attack_trails");
 const { EMPTY_MANIFEST, EMPTY_TUNING, createProjectStore, slug } = require("./project_store");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -32,7 +33,10 @@ function readJson(filePath, fallback) {
 
 function normalizeBindings(raw) {
   if (Array.isArray(raw)) return raw.filter((entry) => entry && typeof entry === "object");
-  return Object.entries(raw || {}).map(([key, value]) => ({ key, ...(value && typeof value === "object" ? value : {}) }));
+  return Object.entries(raw || {}).map(([key, value]) => ({
+    key,
+    ...(value && typeof value === "object" ? value : {}),
+  }));
 }
 
 function animationMap(manifest) {
@@ -47,11 +51,12 @@ function animationMap(manifest) {
 
 function validBox(box) {
   return Boolean(
-    box && typeof box === "object"
-    && Number(box?.size?.x) > 0
-    && Number(box?.size?.y) > 0
-    && Number.isFinite(Number(box?.offset?.x))
-    && Number.isFinite(Number(box?.offset?.y))
+    box &&
+      typeof box === "object" &&
+      Number(box?.size?.x) > 0 &&
+      Number(box?.size?.y) > 0 &&
+      Number.isFinite(Number(box?.offset?.x)) &&
+      Number.isFinite(Number(box?.offset?.y)),
   );
 }
 
@@ -90,7 +95,10 @@ function resolveProject(args) {
     if (project) return project;
   }
   if (requestedRoot) {
-    const project = registry.projects.find((entry) => entry.projectRoot && path.resolve(entry.projectRoot).toLowerCase() === requestedRoot.toLowerCase());
+    const project = registry.projects.find(
+      (entry) =>
+        entry.projectRoot && path.resolve(entry.projectRoot).toLowerCase() === requestedRoot.toLowerCase(),
+    );
     if (project) return project;
   }
   return null;
@@ -101,7 +109,12 @@ function validateImport(args) {
   const warnings = [];
   const project = resolveProject(args);
   if (!project) {
-    return { ok: false, errors: ["XSXB project not found. Pass --project or a bound --project-root."], warnings, summary: {} };
+    return {
+      ok: false,
+      errors: ["XSXB project not found. Pass --project or a bound --project-root."],
+      warnings,
+      summary: {},
+    };
   }
   const projectRoot = project.projectRoot ? path.resolve(project.projectRoot) : "";
   if (!projectRoot || !fs.existsSync(path.join(projectRoot, "project.godot"))) {
@@ -114,6 +127,7 @@ function validateImport(args) {
   const standaloneAnimations = animationMap(manifest);
   const localAudio = normalizeBindings(readJson(paths.frameAudio, []));
   const localAttachments = normalizeBindings(readJson(paths.frameImageAttachments, []));
+  const localAttackTrails = normalizeAttackTrails(readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
   let frameCount = 0;
   let boxFrameCount = 0;
 
@@ -147,18 +161,30 @@ function validateImport(args) {
           errors.push(`${boxKey}: collisionbox bottom is not grounded (offset.y must equal -height/2).`);
         }
       }
-      if (attackLike && !validBox(boxes.hitbox)) errors.push(`${boxKey}: attack animation is missing a saved hitbox.`);
-      if (!attackLike && boxes.hitbox?.enabled === true) warnings.push(`${boxKey}: non-attack animation has an enabled hitbox; visually verify intent.`);
+      if (attackLike && !validBox(boxes.hitbox))
+        errors.push(`${boxKey}: attack animation is missing a saved hitbox.`);
+      if (!attackLike && boxes.hitbox?.enabled === true)
+        warnings.push(`${boxKey}: non-attack animation has an enabled hitbox; visually verify intent.`);
     });
   }
 
-  const gameDataDir = projectRoot ? path.join(projectRoot, "xsxb_frame_tuner", "data", "projects", project.id) : "";
+  const gameDataDir = projectRoot
+    ? path.join(projectRoot, "xsxb_frame_tuner", "data", "projects", project.id)
+    : "";
   const gameManifestPath = path.join(gameDataDir, "animation_manifest.json");
   const gameTuningPath = path.join(gameDataDir, "animation_tuning.json");
   const gameAudioPath = path.join(gameDataDir, "frame_audio_bindings.json");
   const gameAttachmentsPath = path.join(gameDataDir, "frame_image_attachments.json");
-  for (const filePath of [gameManifestPath, gameTuningPath, gameAudioPath, gameAttachmentsPath]) {
-    if (!filePath || !fs.existsSync(filePath)) errors.push(`Game-local XSXB data file is missing: ${filePath}`);
+  const gameAttackTrailsPath = path.join(gameDataDir, "attack_trails.json");
+  for (const filePath of [
+    gameManifestPath,
+    gameTuningPath,
+    gameAudioPath,
+    gameAttachmentsPath,
+    gameAttackTrailsPath,
+  ]) {
+    if (!filePath || !fs.existsSync(filePath))
+      errors.push(`Game-local XSXB data file is missing: ${filePath}`);
   }
 
   const gameManifest = readJson(gameManifestPath, EMPTY_MANIFEST);
@@ -173,37 +199,119 @@ function validateImport(args) {
     const expectedFrames = record.animation.frames || [];
     const gameFrames = gameRecord.animation.frames || [];
     if (expectedFrames.length !== gameFrames.length) {
-      errors.push(`${key}: frame count mismatch (${expectedFrames.length} standalone, ${gameFrames.length} game-local).`);
+      errors.push(
+        `${key}: frame count mismatch (${expectedFrames.length} standalone, ${gameFrames.length} game-local).`,
+      );
     }
     gameFrames.forEach((frame, index) => {
-      const relative = String(frame.path || "").replace(/^res:\/\//, "").replace(/^\/+/, "");
-      if (!relative || !fs.existsSync(path.join(projectRoot, relative))) errors.push(`${key}:${index}: game-local frame is missing: ${relative}`);
+      const relative = String(frame.path || "")
+        .replace(/^res:\/\//, "")
+        .replace(/^\/+/, "");
+      if (!relative || !fs.existsSync(path.join(projectRoot, relative)))
+        errors.push(`${key}:${index}: game-local frame is missing: ${relative}`);
     });
   }
-  if (JSON.stringify(tuning) !== JSON.stringify(gameTuning)) errors.push("Standalone and game-local animation_tuning.json differ.");
+  if (JSON.stringify(tuning) !== JSON.stringify(gameTuning))
+    errors.push("Standalone and game-local animation_tuning.json differ.");
 
   const gameAudio = normalizeBindings(readJson(gameAudioPath, []));
   const gameAttachments = normalizeBindings(readJson(gameAttachmentsPath, []));
-  if (localAudio.length !== gameAudio.length) errors.push(`Frame audio binding count mismatch (${localAudio.length} local, ${gameAudio.length} game-local).`);
-  if (localAttachments.length !== gameAttachments.length) errors.push(`Frame attachment count mismatch (${localAttachments.length} local, ${gameAttachments.length} game-local).`);
+  const gameAttackTrails = normalizeAttackTrails(readJson(gameAttackTrailsPath, EMPTY_ATTACK_TRAILS));
+  if (localAudio.length !== gameAudio.length)
+    errors.push(
+      `Frame audio binding count mismatch (${localAudio.length} local, ${gameAudio.length} game-local).`,
+    );
+  if (localAttachments.length !== gameAttachments.length)
+    errors.push(
+      `Frame attachment count mismatch (${localAttachments.length} local, ${gameAttachments.length} game-local).`,
+    );
   for (const binding of [...gameAudio, ...gameAttachments]) {
     const key = String(binding.key || "");
     const assetPath = String(binding.path || binding.file || "");
     if (!/^.+\/.+:[0-9]+$/.test(key)) errors.push(`Unstable frame binding key: ${key || "(empty)"}`);
-    if (!assetPath.startsWith("res://")) errors.push(`${key}: game-local binding path is not res://: ${assetPath || "(empty)"}`);
-    const diskPath = assetPath.startsWith("res://") ? path.join(projectRoot, assetPath.slice("res://".length)) : "";
-    if (diskPath && !fs.existsSync(diskPath)) errors.push(`${key}: bound game asset is missing: ${assetPath}`);
+    if (!assetPath.startsWith("res://"))
+      errors.push(`${key}: game-local binding path is not res://: ${assetPath || "(empty)"}`);
+    const diskPath = assetPath.startsWith("res://")
+      ? path.join(projectRoot, assetPath.slice("res://".length))
+      : "";
+    if (diskPath && !fs.existsSync(diskPath))
+      errors.push(`${key}: bound game asset is missing: ${assetPath}`);
+  }
+
+  let attackTrailSegments = 0;
+  let attackTrailSticks = 0;
+  for (const [key, localSegments] of Object.entries(localAttackTrails.bindings)) {
+    const gameSegments = gameAttackTrails.bindings[key] || [];
+    if (localSegments.length !== gameSegments.length) {
+      errors.push(
+        `${key}: attack trail segment count mismatch (${localSegments.length} local, ${gameSegments.length} game-local).`,
+      );
+    }
+    localSegments.forEach((segment, index) => {
+      attackTrailSegments += 1;
+      attackTrailSticks += segment.sticks.length;
+      if (!standaloneAnimations.has(key))
+        errors.push(`${key}/${segment.id}: attack trail animation binding is missing.`);
+      if (segment.sticks.length < 2)
+        errors.push(`${key}/${segment.id}: attack trail requires at least two sticks.`);
+      for (let stickIndex = 1; stickIndex < segment.sticks.length; stickIndex += 1) {
+        const previous = segment.sticks[stickIndex - 1];
+        const current = segment.sticks[stickIndex];
+        if (
+          current.frame < previous.frame ||
+          (current.frame === previous.frame && current.framePhase < previous.framePhase)
+        ) {
+          errors.push(
+            `${key}/${segment.id}: attack trail stick times are not ordered at stick ${stickIndex + 1}.`,
+          );
+        }
+      }
+      const gameSegment = gameSegments[index];
+      if (!gameSegment) return;
+      const gameTexture = String(gameSegment.texture?.path || "");
+      if (!gameTexture.startsWith("res://")) {
+        errors.push(`${key}/${segment.id}: game-local attack trail texture is not a res:// path.`);
+        return;
+      }
+      const diskPath = path.join(projectRoot, gameTexture.slice("res://".length));
+      if (!fs.existsSync(diskPath)) {
+        errors.push(`${key}/${segment.id}: game-local attack trail texture is missing: ${gameTexture}`);
+        return;
+      }
+      const textureInfo = pngInfo(fs.readFileSync(diskPath));
+      if (segment.colorMode === "original" && !textureInfo.hasEffectiveAlpha) {
+        errors.push(`${key}/${segment.id}: original-color attack trail texture lacks effective alpha.`);
+      }
+      const comparableLocal = JSON.parse(JSON.stringify(segment));
+      const comparableGame = JSON.parse(JSON.stringify(gameSegment));
+      comparableLocal.texture.path = comparableGame.texture.path;
+      if (JSON.stringify(comparableLocal) !== JSON.stringify(comparableGame)) {
+        errors.push(`${key}/${segment.id}: standalone and game-local attack trail data differ.`);
+      }
+    });
+  }
+  for (const key of Object.keys(gameAttackTrails.bindings)) {
+    if (!localAttackTrails.bindings[key]) errors.push(`${key}: unexpected game-local attack trail binding.`);
   }
 
   const runtimeDir = path.join(projectRoot, "xsxb_frame_tuner", "runtime");
   const runtimeScriptPath = path.join(runtimeDir, "xsxb_frame_actor.gd");
-  for (const fileName of ["xsxb_frame_actor.gd", "xsxb_frame_actor.tscn", "xsxb_runtime_test.tscn"]) {
-    if (!fs.existsSync(path.join(runtimeDir, fileName))) errors.push(`Generated runtime file is missing: ${fileName}`);
+  for (const fileName of [
+    "xsxb_frame_actor.gd",
+    "xsxb_frame_actor.tscn",
+    "xsxb_runtime_test.tscn",
+    "xsxb_attack_trail_renderer.gd",
+    "xsxb_attack_trail.gdshader",
+  ]) {
+    if (!fs.existsSync(path.join(runtimeDir, fileName)))
+      errors.push(`Generated runtime file is missing: ${fileName}`);
   }
   const runtimeSource = fs.existsSync(runtimeScriptPath) ? fs.readFileSync(runtimeScriptPath, "utf8") : "";
   const runtimeRequirements = [
     ["frame_audio_bindings.json", /frame_audio_bindings\.json/],
     ["frame_image_attachments.json", /frame_image_attachments\.json/],
+    ["attack_trails.json", /attack_trails\.json/],
+    ["attack trail timing", /trail_frame_arrival_time/],
     ["group playback overrides", /__group/],
     ["idempotent playback", /_current_animation\s*==\s*animation_name[\s\S]{0,300}\brestart\b/],
     ["animation duration", /func\s+animation_duration\s*\(/],
@@ -219,14 +327,29 @@ function validateImport(args) {
 
   if (projectRoot && fs.existsSync(projectRoot)) {
     const gameplayFiles = walkTextFiles(projectRoot);
-    const usesRuntime = gameplayFiles.some((entry) => /xsxb_frame_tuner\/runtime\/xsxb_frame_actor\.(?:tscn|gd)/.test(entry.text));
-    if (args["require-gameplay"] && !usesRuntime) errors.push("No non-runtime gameplay scene or script uses xsxb_frame_actor.");
+    const usesRuntime = gameplayFiles.some((entry) =>
+      /xsxb_frame_tuner\/runtime\/xsxb_frame_actor\.(?:tscn|gd)/.test(entry.text),
+    );
+    if (args["require-gameplay"] && !usesRuntime)
+      errors.push("No non-runtime gameplay scene or script uses xsxb_frame_actor.");
     else if (!usesRuntime) warnings.push("No non-runtime gameplay scene or script uses xsxb_frame_actor.");
-    if (usesRuntime && !gameplayFiles.some((entry) => /(?:current_)?animation_duration\s*\(|call\s*\(\s*["']animation_duration["']/.test(entry.text))) {
-      warnings.push("Gameplay uses XSXB runtime but does not appear to consume animation_duration for action timing.");
+    if (
+      usesRuntime &&
+      !gameplayFiles.some((entry) =>
+        /(?:current_)?animation_duration\s*\(|call\s*\(\s*["']animation_duration["']/.test(entry.text),
+      )
+    ) {
+      warnings.push(
+        "Gameplay uses XSXB runtime but does not appear to consume animation_duration for action timing.",
+      );
     }
-    if (usesRuntime && !gameplayFiles.some((entry) => /scene_scale\s*\(|call\s*\(\s*["']scene_scale["']/.test(entry.text))) {
-      warnings.push("Gameplay uses XSXB runtime but does not appear to consume scene_scale for movement values.");
+    if (
+      usesRuntime &&
+      !gameplayFiles.some((entry) => /scene_scale\s*\(|call\s*\(\s*["']scene_scale["']/.test(entry.text))
+    ) {
+      warnings.push(
+        "Gameplay uses XSXB runtime but does not appear to consume scene_scale for movement values.",
+      );
     }
   }
 
@@ -243,6 +366,8 @@ function validateImport(args) {
       actorFramesWithBoxes: boxFrameCount,
       frameAudioBindings: gameAudio.length,
       frameImageAttachments: gameAttachments.length,
+      attackTrailSegments,
+      attackTrailSticks,
     },
   };
 }

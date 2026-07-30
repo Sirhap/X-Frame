@@ -13,6 +13,15 @@
     flex: 1 1 250px;
   }
 
+  .cutoutPreviewDisplayControls {
+    flex: 1 1 100%;
+  }
+
+  .cutoutPreviewBackgrounds,
+  .cutoutViewModes {
+    flex: 1 1 auto;
+  }
+
   .cutoutZoomControls {
     flex: 1 1 390px;
     margin-left: 0;

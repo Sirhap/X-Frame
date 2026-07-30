@@ -142,6 +142,8 @@ function projectPaths(root, project) {
     frameAudio: path.join(dataDir, "frame_audio_bindings.json"),
     frameImageAttachments: path.join(dataDir, "frame_image_attachments.json"),
     attachmentAssets: path.join(dataDir, "attachment_assets.json"),
+    attackTrails: path.join(dataDir, "attack_trails.json"),
+    godotHandoff: path.join(dataDir, "godot_handoff.json"),
   };
 }
 
@@ -174,6 +176,9 @@ function ensureProjectFiles(root, project) {
   if (!fs.existsSync(paths.attachmentAssets)) {
     writeJson(paths.attachmentAssets, []);
   }
+  if (!fs.existsSync(paths.attackTrails)) {
+    writeJson(paths.attackTrails, { schemaVersion: 8, bindings: {} });
+  }
 }
 
 function normalizeProject(raw, usedIds, fallback) {
@@ -182,7 +187,9 @@ function normalizeProject(raw, usedIds, fallback) {
   return {
     id,
     label: String(source.label || source.name || id),
+    kind: String(source.kind || "godot"),
     projectRoot: String(source.projectRoot || source.root || ""),
+    petRoot: String(source.petRoot || ""),
     dataDir: reslash(source.dataDir || `data/projects/${id}`),
     workspaceDir: reslash(source.workspaceDir || `workspace/projects/${id}`),
   };
@@ -256,6 +263,26 @@ function createProjectStore(root) {
     return writeRegistry(registry);
   }
 
+  /**
+   * Updates one project's Godot root without deleting either local or external data.
+   * Root validation belongs to the handoff service so registry writes stay generic.
+   * @param {string} projectId Stable project identifier.
+   * @param {string} projectRoot Absolute Godot root or an empty string when unbinding.
+   * @returns {{registry:object,project:object}} Updated registry and project.
+   */
+  function setProjectRoot(projectId, projectRoot) {
+    const registry = readRegistry();
+    const requestedId = slug(projectId, DEFAULT_PROJECT_ID);
+    const project = registry.projects.find((entry) => entry.id === requestedId);
+    if (!project) throw new Error(`Project not found: ${projectId}`);
+    project.projectRoot = String(projectRoot || "");
+    const nextRegistry = writeRegistry(registry);
+    return {
+      registry: nextRegistry,
+      project: nextRegistry.projects.find((entry) => entry.id === requestedId),
+    };
+  }
+
   function addProject(payload = {}) {
     const registry = readRegistry();
     let projectRoot = String(payload.projectRoot || payload.root || "")
@@ -290,7 +317,9 @@ function createProjectStore(root) {
     const project = {
       id,
       label,
+      kind: String(payload.kind || "godot"),
       projectRoot,
+      petRoot: String(payload.petRoot || ""),
       dataDir: `data/projects/${id}`,
       workspaceDir: `workspace/projects/${id}`,
     };
@@ -304,7 +333,9 @@ function createProjectStore(root) {
     return {
       id: project.id,
       label: project.label,
+      kind: project.kind || "godot",
       projectRoot: project.projectRoot,
+      petRoot: project.petRoot || "",
       dataDir: reslash(project.dataDir),
       workspaceDir: reslash(project.workspaceDir),
       dataPath: paths.dataDir,
@@ -330,6 +361,7 @@ function createProjectStore(root) {
     readRegistry,
     resolveProject,
     setActiveProject,
+    setProjectRoot,
     slug,
     writeJson,
     writeRegistry,

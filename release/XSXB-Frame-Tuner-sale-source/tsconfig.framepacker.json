@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "WebWorker"],
+    "module": "CommonJS",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "target": "ES2022"
+  },
+  "include": ["tools/typecheck/**/*.ts"]
+}

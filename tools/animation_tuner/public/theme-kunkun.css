@@ -582,7 +582,6 @@ body.theme-kunkun #stage {
 
 body.theme-kunkun
   :is(
-    .homeHubCard,
     .filmCard,
     .cutoutSettingsCard,
     .cutoutQueueItem,
@@ -596,16 +595,16 @@ body.theme-kunkun
   box-shadow: none;
 }
 
-body.theme-kunkun :is(.homeHubCard, .filmCard, .cutoutSettingsCard, .organizerPanel) {
+body.theme-kunkun :is(.filmCard, .cutoutSettingsCard, .organizerPanel) {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.022), transparent 42%), var(--panel-2);
 }
 
-body.theme-kunkun :is(.homeHubCard, .organizerFrame, .cutoutQueueItem):hover {
+body.theme-kunkun :is(.organizerFrame, .cutoutQueueItem):hover {
   border-color: var(--accent);
 }
 
-body.theme-kunkun :is(.homeHubCard, .organizerFrame, .cutoutQueueItem).active,
-body.theme-kunkun :is(.homeHubCard, .organizerFrame, .cutoutQueueItem).selected {
+body.theme-kunkun :is(.organizerFrame, .cutoutQueueItem).active,
+body.theme-kunkun :is(.organizerFrame, .cutoutQueueItem).selected {
   border-color: var(--accent);
   box-shadow: inset 3px 0 0 var(--accent);
 }

@@ -1,0 +1,673 @@
+.cutoutRepairTools {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr) 132px;
+  align-items: stretch;
+  gap: 8px;
+  padding: 9px;
+  border: 3px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 88%, var(--accent-2));
+  box-shadow: 4px 4px 0 var(--line);
+}
+
+.cutoutRepairIntro {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-right: 2px solid color-mix(in srgb, var(--line) 72%, transparent);
+}
+
+.cutoutRepairIntro > span {
+  color: var(--accent-2);
+  font: 700 9px/1 var(--data-font);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.cutoutToolGroup > span {
+  color: var(--accent-2);
+  font: 700 11px/1 var(--ui-font);
+  letter-spacing: 0.04em;
+}
+
+.cutoutRepairIntro strong {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.cutoutRepairIntro small {
+  overflow: hidden;
+  color: var(--muted);
+  font: 600 11px/1.3 var(--ui-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cutoutRepairModes,
+.cutoutRepairActions {
+  display: grid;
+  gap: 6px;
+}
+
+.cutoutRepairModes {
+  grid-template-columns: minmax(150px, 0.72fr) minmax(150px, 0.72fr) minmax(300px, 1.45fr);
+  padding: 5px;
+  border: 2px solid color-mix(in srgb, var(--line) 58%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--control-bg) 18%, transparent);
+}
+
+.cutoutToolGroup {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  padding-inline: 6px;
+  border-right: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+}
+
+.cutoutToolGroup:last-child {
+  border-right: 0;
+}
+
+.cutoutToolGroup > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(66px, 1fr));
+  gap: 5px;
+}
+
+.cutoutToolGroupWide > div {
+  grid-template-columns: repeat(3, minmax(68px, 1fr));
+}
+
+.cutoutToolGroupArea > div {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cutoutToolOptions {
+  grid-column: auto;
+  min-width: 0;
+  min-height: 42px;
+  padding: 6px 8px;
+  border: 2px solid color-mix(in srgb, var(--line) 55%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--control-bg) 24%, transparent);
+}
+
+.cutoutLocalSettings .cutoutToolOptions {
+  min-height: 0;
+  padding: 11px;
+  border-color: var(--line);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--panel-3) 94%, var(--accent-2)),
+    var(--panel-3)
+  );
+  box-shadow: 3px 3px 0 var(--line);
+}
+
+.cutoutLocalSettings .cutoutBrushControls,
+.cutoutLocalSettings .cutoutAreaControls {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.cutoutLocalSettings .cutoutBrushControls label,
+.cutoutLocalSettings .cutoutAreaControls label {
+  grid-template-columns: 92px minmax(70px, 1fr) 54px;
+  font-size: 10px;
+}
+
+.cutoutLocalSettings .cutoutBrushControls .cutoutBrushColor,
+.cutoutLocalSettings .cutoutAreaControls .cutoutAreaScope {
+  grid-template-columns: 92px minmax(70px, 1fr);
+}
+
+.cutoutLocalSettings .cutoutAreaControls .cutoutAreaColor {
+  grid-template-columns: 92px 34px minmax(92px, 1fr);
+}
+
+.cutoutLocalSettings .cutoutAreaControls small {
+  grid-column: auto;
+}
+
+.cutoutToolOptions[hidden] {
+  display: none !important;
+}
+
+.cutoutBrushControls {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(70px, 1fr)) auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.cutoutBrushControls label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(42px, 1fr) 54px;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font: 600 11px/1.2 var(--ui-font);
+}
+
+.cutoutBrushControls input[type="range"] {
+  width: 100%;
+  min-height: 20px;
+  padding: 0;
+  box-shadow: none;
+}
+
+.cutoutBrushControls output {
+  min-width: 24px;
+  color: var(--ink);
+  font: 700 10px/1 var(--data-font);
+}
+
+.cutoutBrushControls .cutoutBrushColor {
+  grid-template-columns: auto 30px;
+}
+
+.cutoutBrushColor input {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 2px;
+}
+
+.cutoutRepairTools[data-repair-mode="eraser"] .cutoutBrushColor,
+.cutoutRepairTools[data-repair-mode="restore-source"] .cutoutBrushColor {
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.cutoutRepairTools:not([data-preview-mode="result"]) .cutoutRepairModes,
+.cutoutRepairTools:not([data-preview-mode="result"]) .cutoutToolOptions {
+  opacity: 0.42;
+}
+
+.cutoutAreaControls {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) minmax(140px, auto) minmax(190px, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.cutoutAreaControls label,
+.cutoutAreaControls .cutoutAreaColor {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(50px, 1fr) 54px;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font: 600 11px/1.2 var(--ui-font);
+}
+
+.cutoutAreaControls input[type="range"] {
+  width: 100%;
+  min-height: 20px;
+  padding: 0;
+  box-shadow: none;
+}
+
+.cutoutAreaControls input[type="color"] {
+  width: 34px;
+  height: 30px;
+  min-height: 30px;
+  padding: 2px;
+}
+
+.cutoutAreaControls .cutoutAreaColor {
+  grid-template-columns: auto 34px minmax(92px, auto);
+}
+
+.cutoutAreaColor > input.inactive {
+  opacity: 0.38;
+  filter: grayscale(1);
+}
+
+.cutoutTransparentColor {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 8px;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.cutoutTransparencySwatch {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 2px solid var(--line);
+  border-radius: 3px;
+  background-color: #f6f2e8;
+  background-image:
+    linear-gradient(45deg, #b8bec6 25%, transparent 25%),
+    linear-gradient(-45deg, #b8bec6 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #b8bec6 75%),
+    linear-gradient(-45deg, transparent 75%, #b8bec6 75%);
+  background-position:
+    0 0,
+    0 5px,
+    5px -5px,
+    -5px 0;
+  background-size: 10px 10px;
+}
+
+.cutoutTransparentColor.active {
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: #05070a;
+  box-shadow: 3px 3px 0 var(--line);
+}
+
+.cutoutAreaControls .cutoutAreaScope {
+  grid-template-columns: auto minmax(84px, 1fr);
+}
+
+.cutoutAreaControls select {
+  min-height: 30px;
+  padding: 4px 24px 4px 7px;
+  font-size: 10px;
+}
+
+.cutoutAreaControls small,
+.cutoutSelectionControls small {
+  color: var(--muted);
+  font: 600 11px/1.3 var(--ui-font);
+}
+
+.cutoutSelectionControls {
+  display: grid;
+  align-items: start;
+  gap: 12px;
+}
+
+.cutoutSelectionControls strong {
+  color: var(--accent-2);
+  font-size: 11px;
+}
+
+.cutoutProtectionControls,
+.cutoutProtectionControls > div {
+  display: grid;
+  gap: 11px;
+}
+
+.cutoutProtectionControls {
+  min-width: 0;
+  padding-top: 11px;
+  border-top: 1px solid color-mix(in srgb, var(--muted) 25%, transparent);
+}
+
+.cutoutProtectionControls[hidden],
+.cutoutProtectionControls > div[hidden] {
+  display: none;
+}
+
+.cutoutProtectionControls small {
+  color: var(--muted);
+  font: 600 11px/1.4 var(--ui-font);
+}
+
+.cutoutProtectionControls[hidden],
+.cutoutProtectionControls [hidden] {
+  display: none;
+}
+
+.cutoutProtectionControls label,
+.cutoutProtectionRangeOptions label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font: 600 11px/1.3 var(--ui-font);
+}
+
+.cutoutProtectionControls > .cutoutSelectField {
+  grid-template-columns: 82px minmax(0, 1fr);
+}
+
+.cutoutProtectionControls select {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 24px 4px 7px;
+  font-size: 10px;
+}
+
+#cutoutProtectionRangeOptions {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding-top: 11px;
+  border-top: 1px dashed color-mix(in srgb, var(--muted) 28%, transparent);
+}
+
+#cutoutProtectionRangeOptions[hidden] {
+  display: none;
+}
+
+.cutoutProtectionColorOptions {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding-top: 11px;
+  border-top: 1px dashed color-mix(in srgb, var(--muted) 28%, transparent);
+}
+
+.cutoutProtectionColorOptions[hidden] {
+  display: none;
+}
+
+.cutoutProtectionColorHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cutoutProtectionColorHeading > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.cutoutProtectionColorHeading strong {
+  color: var(--ink);
+  font: 900 11px/1.1 var(--data-font);
+}
+
+.cutoutProtectionColorHeading small,
+.cutoutProtectionColorOptions > small {
+  color: var(--muted);
+  font: 650 9px/1.4 var(--ui-font);
+}
+
+.cutoutProtectionColorHeading button {
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 9px;
+}
+
+.cutoutProtectionColors {
+  min-height: 32px;
+  align-content: center;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--muted) 24%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-3) 78%, transparent);
+}
+
+.cutoutProtectionColorInput {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.cutoutProtectionColorInput input[type="color"] {
+  width: 36px;
+  min-height: 32px;
+  padding: 3px;
+}
+
+.cutoutProtectionColorInput input[type="text"] {
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 7px;
+  font: 850 10px/1 var(--data-font);
+  text-transform: uppercase;
+}
+
+.cutoutProtectionColorInput button {
+  min-height: 32px;
+  padding: 5px 9px;
+  font-size: 9px;
+}
+
+#cutoutProtectionRangeOptions input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  min-height: 20px;
+  padding: 0;
+  box-shadow: none;
+}
+
+#cutoutProtectionRangeOptions output {
+  min-width: 28px;
+  color: var(--ink);
+  text-align: right;
+  font: 900 9px/1 var(--data-font);
+}
+
+#cutoutProtectionRangeOptions small {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.cutoutProtectionPreview {
+  display: grid;
+  gap: 5px;
+  padding: 9px 10px;
+  border: 2px solid color-mix(in srgb, var(--accent-2) 72%, var(--line));
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-2) 16%, transparent), transparent 60%),
+    color-mix(in srgb, var(--panel-3) 92%, var(--accent-2));
+  box-shadow: 3px 3px 0 var(--line);
+}
+
+.cutoutProtectionPreview[hidden] {
+  display: none;
+}
+
+.cutoutProtectionPreview strong {
+  color: var(--ink);
+  font: 900 11px/1 var(--data-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cutoutProtectionPreviewLegend,
+.cutoutProtectionPreview > span:last-child {
+  color: var(--muted);
+  font: 650 10px/1.35 var(--ui-font);
+}
+
+.cutoutProtectionSubject {
+  position: relative;
+  display: grid;
+  min-height: 112px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 38%, var(--line));
+  border-radius: 6px;
+  background-color: #eef1f4;
+  background-image:
+    linear-gradient(45deg, rgba(20, 28, 36, 0.09) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(20, 28, 36, 0.09) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(20, 28, 36, 0.09) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(20, 28, 36, 0.09) 75%);
+  background-position:
+    0 0,
+    0 6px,
+    6px -6px,
+    -6px 0;
+  background-size: 12px 12px;
+}
+
+.cutoutProtectionSubject[hidden] {
+  display: none;
+}
+
+.cutoutProtectionSubject canvas {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 148px;
+  image-rendering: pixelated;
+}
+
+.cutoutProtectionPreview > span:last-child {
+  color: var(--accent-2);
+  font-weight: 850;
+}
+
+.cutoutProtectionPreview[data-state="empty"] {
+  border-color: color-mix(in srgb, #ff5245 78%, var(--line));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #ff5245 15%, transparent), transparent 60%),
+    color-mix(in srgb, var(--panel-3) 92%, #ff5245);
+}
+
+.cutoutProtectionPreview[data-state="empty"] > span:last-child {
+  color: #ff8a7d;
+}
+
+.cutoutRepairActions {
+  grid-column: 3;
+  grid-row: 1;
+  grid-template-columns: repeat(3, 38px);
+  grid-template-rows: 38px minmax(42px, 1fr);
+  align-content: stretch;
+  justify-content: stretch;
+}
+
+.cutoutHistoryButtons {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, 38px);
+  gap: 5px;
+}
+
+.cutoutRepairModes button,
+.cutoutRepairActions button {
+  min-width: 0;
+  min-height: 42px;
+  padding: 6px 7px;
+  overflow: visible;
+  font-size: 10px;
+  line-height: 1.1;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: keep-all;
+}
+
+.cutoutRepairModes button[data-cutout-tool="brush"],
+.cutoutRepairModes button[data-cutout-tool="eraser"],
+.cutoutRepairModes button[data-cutout-tool="restore-source"],
+.cutoutRepairModes button[data-cutout-tool="fill"],
+.cutoutRepairModes button[data-cutout-tool="recolor"],
+.cutoutRepairModes button[data-cutout-tool="transparent"] {
+  border-color: color-mix(in srgb, var(--accent-3) 72%, var(--line));
+}
+
+.cutoutRepairModes button[data-cutout-tool="automatic"],
+.cutoutRepairModes button[data-cutout-tool="protect"] {
+  border-color: color-mix(in srgb, var(--accent-2) 72%, var(--line));
+}
+
+.cutoutRepairModes button[data-cutout-tool="clear"] {
+  border-color: color-mix(in srgb, var(--danger) 72%, var(--line));
+}
+
+.cutoutRepairModes button[data-cutout-tool="restore"] {
+  border-color: color-mix(in srgb, var(--ok) 72%, var(--line));
+}
+
+.cutoutHistoryButtons button {
+  width: 38px;
+  padding: 0;
+  color: transparent;
+  font-size: 0;
+}
+
+.cutoutHistoryButtons button::before {
+  margin: 0;
+  color: var(--control-ink);
+  font-size: 15px;
+}
+
+.cutoutBatchAction {
+  grid-column: 1 / -1;
+  min-width: 0;
+  background: var(--accent-3);
+  color: #05070a;
+  font-weight: 950;
+  box-shadow: 3px 3px 0 var(--line);
+}
+
+.cutoutBatchAction::before {
+  color: var(--accent-text);
+}
+
+.cutoutRepairModes button::before,
+.cutoutRepairActions button::before {
+  display: inline-block;
+  margin-right: 5px;
+  font: 950 12px/1 var(--data-font);
+}
+
+.cutoutRepairModes button[data-cutout-tool="brush"]::before {
+  content: "✎";
+}
+.cutoutRepairModes button[data-cutout-tool="eraser"]::before {
+  content: "⌫";
+}
+.cutoutRepairModes button[data-cutout-tool="restore-source"]::before {
+  content: "↥";
+}
+.cutoutRepairModes button[data-cutout-tool="fill"]::before {
+  content: "▣";
+}
+.cutoutRepairModes button[data-cutout-tool="recolor"]::before {
+  content: "↻";
+}
+.cutoutRepairModes button[data-cutout-tool="transparent"]::before {
+  content: "⊘";
+}
+.cutoutRepairModes button[data-cutout-tool="automatic"]::before {
+  content: "✦";
+}
+.cutoutRepairModes button[data-cutout-tool="clear"]::before {
+  content: "□";
+}
+.cutoutRepairModes button[data-cutout-tool="restore"]::before {
+  content: "↺";
+}
+.cutoutRepairModes button[data-cutout-tool="protect"]::before {
+  content: "◇";
+}
+.cutoutRepairActions button[data-cutout-action="undo"]::before {
+  content: "↶";
+}
+.cutoutRepairActions button[data-cutout-action="redo"]::before {
+  content: "↷";
+}
+.cutoutRepairActions button[data-cutout-action="reset"]::before {
+  content: "×";
+}
+.cutoutRepairActions button[data-cutout-action="batch"]::before {
+  content: "⇢";
+}
+
+.cutoutRepairModes button.active {
+  background: var(--accent-2);
+  color: #05070a;
+  box-shadow: 3px 3px 0 var(--line);
+}

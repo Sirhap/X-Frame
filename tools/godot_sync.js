@@ -3,6 +3,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { EMPTY_MANIFEST, EMPTY_TUNING, reslash } = require("./project_store");
 const { ensureGodotRuntime } = require("./godot_runtime");
+const { EMPTY_ATTACK_TRAILS, clone: cloneAttackTrails, normalizeAttackTrails } = require("./attack_trails");
 
 const GODOT_SYNC_ROOT = "xsxb_frame_tuner";
 
@@ -54,6 +55,22 @@ function copyFileIfChanged(source, target) {
   return true;
 }
 
+/**
+ * Removes unreferenced files from one generated asset directory and prunes empty folders.
+ * @param {string} directory Generated directory to prune.
+ * @param {Set<string>} retainedPaths Absolute file paths that must remain available.
+ * @returns {void}
+ */
+function pruneGeneratedDirectory(directory, retainedPaths) {
+  if (!fs.existsSync(directory)) return;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) pruneGeneratedDirectory(fullPath, retainedPaths);
+    else if (!retainedPaths.has(path.resolve(fullPath))) fs.rmSync(fullPath, { force: true });
+  }
+  if (!fs.readdirSync(directory).length) fs.rmSync(directory, { recursive: true, force: true });
+}
+
 function fileContentHash(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
@@ -75,7 +92,9 @@ function sourcePathForFrame(root, projectRoot, framePath) {
 }
 
 function localFrameRelPath(framePath, fallbackName = "frame.png") {
-  const raw = reslash(framePath || fallbackName).replace(/^res:\/\//, "").replace(/^\/+/, "");
+  const raw = reslash(framePath || fallbackName)
+    .replace(/^res:\/\//, "")
+    .replace(/^\/+/, "");
   if (raw.startsWith(`${GODOT_SYNC_ROOT}/`)) return raw;
   return godotProjectRelPath(raw || fallbackName);
 }
@@ -149,7 +168,9 @@ function decodeDataUrl(dataUrl) {
   if (!match) return null;
   return {
     mime: match[1] || "",
-    buffer: match[2] ? Buffer.from(match[3], "base64") : Buffer.from(decodeURIComponent(match[3] || ""), "utf8"),
+    buffer: match[2]
+      ? Buffer.from(match[3], "base64")
+      : Buffer.from(decodeURIComponent(match[3] || ""), "utf8"),
   };
 }
 
@@ -164,9 +185,13 @@ function frameAudioKey(binding, index) {
 function frameBindingInfo(binding, index) {
   const metadata = binding?.metadata && typeof binding.metadata === "object" ? binding.metadata : {};
   const profileId = String(metadata.profileId || binding?.profileId || "");
-  let animation = String(metadata.animation || binding?.animation || binding?.animation_id || binding?.action || "");
+  let animation = String(
+    metadata.animation || binding?.animation || binding?.animation_id || binding?.action || "",
+  );
   if (animation && profileId && !animation.includes("/")) animation = `${profileId}/${animation}`;
-  const frame = Number(metadata.frame ?? binding?.frame ?? binding?.frame_index ?? binding?.frameNumber ?? index);
+  const frame = Number(
+    metadata.frame ?? binding?.frame ?? binding?.frame_index ?? binding?.frameNumber ?? index,
+  );
   return {
     animation,
     frame: Number.isFinite(frame) ? frame : index,
@@ -194,7 +219,10 @@ function syncFrameAudio(projectStore, project, bindingsInput = null) {
   const raw = bindingsInput ?? projectStore.readJson(paths.frameAudio, []);
   const bindings = Array.isArray(raw)
     ? raw
-    : Object.entries(raw || {}).map(([key, value]) => ({ key, ...(value && typeof value === "object" ? value : {}) }));
+    : Object.entries(raw || {}).map(([key, value]) => ({
+        key,
+        ...(value && typeof value === "object" ? value : {}),
+      }));
   const localBindings = [];
   let copiedAudio = 0;
 
@@ -232,9 +260,7 @@ function syncFrameImageAttachments(root, projectStore, project, attachmentsInput
   if (!projectRoot) return { imageAttachmentCount: 0, copiedImageAttachments: 0 };
   const paths = projectStore.projectPaths(project);
   const raw = attachmentsInput ?? projectStore.readJson(paths.frameImageAttachments, []);
-  const attachments = Array.isArray(raw)
-    ? raw.filter((entry) => entry && typeof entry === "object")
-    : [];
+  const attachments = Array.isArray(raw) ? raw.filter((entry) => entry && typeof entry === "object") : [];
   const localAttachments = [];
   let copiedImageAttachments = 0;
 
@@ -259,17 +285,80 @@ function syncFrameImageAttachments(root, projectStore, project, attachmentsInput
   return { imageAttachmentCount: localAttachments.length, copiedImageAttachments };
 }
 
+function syncAttackTrails(root, projectStore, project, trailsInput = null) {
+  const projectRoot = validGodotProjectRoot(project);
+  if (!projectRoot) return { attackTrailCount: 0, copiedAttackTrailTextures: 0 };
+  const paths = projectStore.projectPaths(project);
+  const raw = trailsInput ?? projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS);
+  const local = normalizeAttackTrails(cloneAttackTrails(raw));
+  const projectTextureRoot = path.join(projectRoot, GODOT_SYNC_ROOT, "attack_trails", "projects", project.id);
+  const retainedProjectTextures = new Set();
+  let attackTrailCount = 0;
+  let copiedAttackTrailTextures = 0;
+  const presetSource = sourcePathForFrame(root, projectRoot, local.presetTexture?.path);
+  if (presetSource && path.extname(presetSource).toLowerCase() === ".png") {
+    const presetHash = String(local.presetTexture.assetHash || fileContentHash(presetSource));
+    const presetRel = godotProjectRelPath("attack_trails", "presets", `${presetHash}.png`);
+    const presetTarget = path.join(projectRoot, presetRel);
+    if (copyFileIfChanged(presetSource, presetTarget)) copiedAttackTrailTextures += 1;
+    local.presetTexture.path = `res://${presetRel}`;
+    local.presetTexture.assetHash = presetHash;
+  }
+  for (const [bindingKey, segments] of Object.entries(local.bindings)) {
+    for (const segment of segments) {
+      attackTrailCount += 1;
+      const source = sourcePathForFrame(root, projectRoot, segment.texture?.path);
+      if (!source || path.extname(source).toLowerCase() !== ".png") continue;
+      const hash = String(segment.texture.assetHash || fileContentHash(source));
+      const [profileId = "profile", animationId = "animation"] = bindingKey.split("/");
+      const nextRel = godotProjectRelPath(
+        "attack_trails",
+        "projects",
+        project.id,
+        sanitizeSegment(profileId, "profile"),
+        sanitizeSegment(animationId, "animation"),
+        `${hash}.png`,
+      );
+      const target = path.join(projectRoot, nextRel);
+      retainedProjectTextures.add(path.resolve(target));
+      if (copyFileIfChanged(source, target)) copiedAttackTrailTextures += 1;
+      segment.texture.path = `res://${nextRel}`;
+      segment.texture.assetHash = hash;
+    }
+  }
+  pruneGeneratedDirectory(projectTextureRoot, retainedProjectTextures);
+  const targetFile = path.join(godotDataDir(projectRoot, project), "attack_trails.json");
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  fs.writeFileSync(targetFile, `${JSON.stringify(local, null, 2)}\n`, "utf8");
+  return { attackTrailCount, copiedAttackTrailTextures };
+}
+
 function syncGodotProject(root, projectStore, project, options = {}) {
   const projectRoot = validGodotProjectRoot(project);
   if (!projectRoot) {
-    return { ok: false, reason: "No bound Godot project root", copiedFrames: 0, frameCount: 0, audioCount: 0, copiedAudio: 0, imageAttachmentCount: 0, copiedImageAttachments: 0 };
+    return {
+      ok: false,
+      reason: "No bound Godot project root",
+      copiedFrames: 0,
+      frameCount: 0,
+      audioCount: 0,
+      copiedAudio: 0,
+      imageAttachmentCount: 0,
+      copiedImageAttachments: 0,
+    };
   }
   const paths = projectStore.projectPaths(project);
   const manifestInput = options.manifest || projectStore.readJson(paths.manifest, EMPTY_MANIFEST);
   const manifestResult = syncManifest(root, projectStore, project, manifestInput);
   const tuningResult = syncTuning(projectStore, project, options.tuning);
   const audioResult = syncFrameAudio(projectStore, project, options.frameAudioBindings);
-  const imageAttachmentResult = syncFrameImageAttachments(root, projectStore, project, options.frameImageAttachments);
+  const imageAttachmentResult = syncFrameImageAttachments(
+    root,
+    projectStore,
+    project,
+    options.frameImageAttachments,
+  );
+  const attackTrailResult = syncAttackTrails(root, projectStore, project, options.attackTrails);
   const runtimeResult = ensureGodotRuntime(root, project, { manifest: manifestInput });
   return {
     ok: true,
@@ -280,6 +369,7 @@ function syncGodotProject(root, projectStore, project, options = {}) {
     ...tuningResult,
     ...audioResult,
     ...imageAttachmentResult,
+    ...attackTrailResult,
     ...runtimeResult,
   };
 }
@@ -289,6 +379,7 @@ module.exports = {
   godotDataRelPath,
   syncFrameAudio,
   syncFrameImageAttachments,
+  syncAttackTrails,
   syncGodotProject,
   syncManifest,
   syncTuning,

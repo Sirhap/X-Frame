@@ -33,6 +33,7 @@
       projectLabel = (project) => project?.id || "",
       groupLabel = (group) => group?.name || group?.uiId || "",
       translate = (key) => key,
+      renderGodotHandoff = () => {},
     } = dependencies;
 
     /**
@@ -61,8 +62,14 @@
         elements.currentProjectLabel.textContent = activeProject ? projectLabel(activeProject) : "—";
       }
       elements.projectContext?.classList?.toggle("singleProject", projects.length <= 1);
-      if (elements.clearProject) elements.clearProject.disabled = !active;
-      if (elements.deleteProject) elements.deleteProject.disabled = !active;
+      const protectedSystemProject =
+        activeProject?.id === "codex_pets" || activeProject?.kind === "codex_pets";
+      if (elements.clearProject) elements.clearProject.disabled = !active || protectedSystemProject;
+      if (elements.deleteProject) {
+        elements.deleteProject.disabled = !active || protectedSystemProject;
+        elements.deleteProject.title = protectedSystemProject ? translate("codexPetsProjectProtected") : "";
+      }
+      renderGodotHandoff();
     }
 
     /**

@@ -20,6 +20,7 @@
    *     message?:HTMLElement,
    *     details?:HTMLElement,
    *     cancel?:HTMLButtonElement,
+   *     alternate?:HTMLButtonElement,
    *     accept?:HTMLButtonElement,
    *   },
    *   documentRef?:Document,
@@ -29,6 +30,7 @@
    *   bind:()=>void,
    *   isOpen:()=>boolean,
    *   requestConfirmation:(message:string,details?:Array<[string,string|number]>,options?:object)=>Promise<boolean>,
+   *   requestDecision:(message:string,options?:object)=>Promise<"save"|"discard"|"cancel">,
    *   resolveConfirmation:(accepted:boolean)=>boolean,
    * }} Confirmation controller.
    */
@@ -51,6 +53,7 @@
 
     let bound = false;
     let confirmationResolver = null;
+    let confirmationMode = "boolean";
     let returnFocus = null;
     let previousAppInert = false;
 
@@ -90,7 +93,26 @@
       elements.panel.hidden = true;
       elements.card.removeAttribute("data-tone");
       restoreInteraction();
-      resolver(Boolean(accepted));
+      resolver(confirmationMode === "decision" ? (accepted ? "discard" : "cancel") : Boolean(accepted));
+      confirmationMode = "boolean";
+      return true;
+    }
+
+    /**
+     * Resolves the active three-way navigation decision.
+     * @param {"save"|"discard"|"cancel"} decision Selected action.
+     * @returns {boolean} Whether a pending decision was resolved.
+     */
+    function resolveDecision(decision) {
+      if (!confirmationResolver || confirmationMode !== "decision") return false;
+      const resolver = confirmationResolver;
+      confirmationResolver = null;
+      confirmationMode = "boolean";
+      elements.panel.hidden = true;
+      elements.card.removeAttribute("data-tone");
+      if (elements.alternate) elements.alternate.hidden = true;
+      restoreInteraction();
+      resolver(["save", "discard"].includes(decision) ? decision : "cancel");
       return true;
     }
 
@@ -103,6 +125,8 @@
      */
     function requestConfirmation(message, details = [], options = {}) {
       if (confirmationResolver) resolveConfirmation(false);
+      confirmationMode = "boolean";
+      if (elements.alternate) elements.alternate.hidden = true;
       elements.title.textContent = options.title || "Confirm action";
       elements.message.textContent = String(message || "");
       elements.cancel.textContent = options.cancelLabel || "Cancel";
@@ -126,6 +150,38 @@
         const initialControl = options.tone === "danger" ? elements.cancel : elements.accept;
         initialControl.focus();
       };
+      if (typeof windowRef?.setTimeout === "function") windowRef.setTimeout(focusInitialControl, 0);
+      else focusInitialControl();
+      return new Promise((resolve) => {
+        confirmationResolver = resolve;
+      });
+    }
+
+    /**
+     * Opens a three-way save, discard, or cancel decision dialog.
+     * @param {string} message Decision explanation.
+     * @param {{title?:string,saveLabel?:string,discardLabel?:string,cancelLabel?:string}} [options] Labels.
+     * @returns {Promise<"save"|"discard"|"cancel">} Selected action.
+     */
+    function requestDecision(message, options = {}) {
+      if (!elements.alternate) return Promise.resolve("cancel");
+      if (confirmationResolver) resolveConfirmation(false);
+      confirmationMode = "decision";
+      elements.title.textContent = options.title || "Unsaved changes";
+      elements.message.textContent = String(message || "");
+      elements.cancel.textContent = options.cancelLabel || "Cancel";
+      elements.alternate.textContent = options.saveLabel || "Save";
+      elements.accept.textContent = options.discardLabel || "Discard";
+      elements.alternate.hidden = false;
+      elements.details.replaceChildren();
+      elements.details.hidden = true;
+      elements.card.dataset.tone = "danger";
+      returnFocus = documentRef.activeElement;
+      const app = documentRef.querySelector?.(".app");
+      previousAppInert = Boolean(app?.inert);
+      if (app) app.inert = true;
+      elements.panel.hidden = false;
+      const focusInitialControl = () => elements.cancel.focus();
       if (typeof windowRef?.setTimeout === "function") windowRef.setTimeout(focusInitialControl, 0);
       else focusInitialControl();
       return new Promise((resolve) => {
@@ -167,6 +223,7 @@
       if (bound) return;
       bound = true;
       elements.cancel.addEventListener("click", () => resolveConfirmation(false));
+      elements.alternate?.addEventListener("click", () => resolveDecision("save"));
       elements.accept.addEventListener("click", () => resolveConfirmation(true));
       elements.panel.addEventListener("click", (event) => {
         if (event.target === elements.panel) resolveConfirmation(false);
@@ -179,7 +236,9 @@
       bind,
       isOpen: () => !elements.panel.hidden,
       requestConfirmation,
+      requestDecision,
       resolveConfirmation,
+      resolveDecision,
     };
   }
 

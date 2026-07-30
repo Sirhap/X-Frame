@@ -12,6 +12,7 @@ function createFixture() {
   const statuses = [];
   const confirmations = [];
   const lifecycle = [];
+  const appliedParameters = [];
   const state = {
     busy: false,
     items: [
@@ -69,12 +70,24 @@ function createFixture() {
       image,
       name,
       frame,
+      sourceImageData: image.sourceImageData || {
+        width: 1,
+        height: 1,
+        data: new Uint8ClampedArray([255, 255, 255, 255]),
+      },
+      processingParameters: { tolerance: 1, feather: 0 },
       processingActivated: false,
       repairs: [],
       backgroundSamples: [],
       protectedColors: [],
     }),
-    applyProcessingParametersToControls() {},
+    applyProcessingParametersToControls(parameters) {
+      appliedParameters.push(parameters);
+    },
+    estimateBackgroundColor: () => ({ r: 12, g: 34, b: 56 }),
+    backgroundController: {
+      normalizeColor: (color) => ({ ...color, a: 255 }),
+    },
     selectedItem: () => state.items[state.selectedIndex] || null,
     renderQueue() {},
     setStatus: (message) => statuses.push(message),
@@ -83,7 +96,7 @@ function createFixture() {
       return true;
     },
   });
-  return { controller, confirmations, lifecycle, state, statuses };
+  return { appliedParameters, controller, confirmations, lifecycle, state, statuses };
 }
 
 test("session controller validates required dependencies", () => {
@@ -127,7 +140,7 @@ test("session controller uses new-batch confirmation wording", async () => {
   });
 });
 
-test("session controller resolves an isolated workset without replacing its host route", async () => {
+test("session controller restores a standalone batch after an isolated workset closes", async () => {
   const { controller, lifecycle, state } = createFixture();
   const resultPromise = controller.openWorkset({
     name: "demo",
@@ -140,6 +153,62 @@ test("session controller resolves an isolated workset without replacing its host
   controller.close();
 
   assert.equal(await resultPromise, null);
-  assert.equal(state.sourceKind, "");
+  assert.equal(state.sourceKind, "files");
+  assert.deepEqual(
+    state.items.map((item) => item.id),
+    ["frame-1"],
+  );
+  assert.deepEqual([...state.selectedIds], ["frame-1"]);
   assert.deepEqual(lifecycle, ["editor-inert:true"]);
+});
+
+test("session controller clears an isolated workset when no standalone batch was suspended", async () => {
+  const { controller, state } = createFixture();
+  state.items = [];
+  state.selectedIds.clear();
+  state.sourceKind = "";
+  const resultPromise = controller.openWorkset({
+    name: "demo",
+    mode: "single",
+    items: [{ name: "frame.png", image: {}, frame: { id: "frame-1" } }],
+  });
+
+  controller.close();
+
+  assert.equal(await resultPromise, null);
+  assert.equal(state.sourceKind, "");
+  assert.deepEqual(state.items, []);
+});
+
+test("session controller auto-detects each batch background and restores the requested profile", async () => {
+  const { appliedParameters, controller, state } = createFixture();
+  state.items = [];
+  state.selectedIds.clear();
+  state.sourceKind = "";
+  const resultPromise = controller.openWorkset({
+    name: "demo",
+    mode: "batch",
+    autoDetectBackground: true,
+    processingParameters: {
+      tolerance: -1,
+      edgeBoost: 10,
+      blendStrength: 100,
+      blendMode: "blend",
+      despillStrength: 100,
+      despillMode: "general",
+    },
+    items: [{ name: "frame.png", image: {}, frame: { id: "frame-1" } }],
+  });
+
+  assert.equal(state.items[0].processingActivated, true);
+  assert.equal(state.items[0].automaticCutoutActivated, true);
+  assert.equal(state.items[0].processingParameters.backgroundColor, "#0c2238");
+  assert.equal(state.items[0].processingParameters.tolerance, -1);
+  assert.equal(state.items[0].processingParameters.blendStrength, 100);
+  assert.equal(state.items[0].processingParameters.despillStrength, 100);
+  assert.deepEqual(state.items[0].backgroundSamples, [{ r: 12, g: 34, b: 56, a: 255 }]);
+  assert.equal(appliedParameters.at(-1), state.items[0].processingParameters);
+
+  controller.close();
+  assert.equal(await resultPromise, null);
 });

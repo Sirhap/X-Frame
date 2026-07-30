@@ -242,7 +242,6 @@ body.theme-home :is(.filmstripHeader, .cutoutHeader, .organizerHeader) {
 
 body.theme-home
   :is(
-    .homeHubCard,
     .filmCard,
     .cutoutSettingsCard,
     .cutoutQueueItem,
@@ -256,16 +255,16 @@ body.theme-home
   box-shadow: none;
 }
 
-body.theme-home :is(.homeHubCard, .organizerFrame, .cutoutQueueItem):hover {
+body.theme-home :is(.organizerFrame, .cutoutQueueItem):hover {
   border-color: var(--accent-2);
 }
 
-body.theme-home :is(.homeHubCard, .filmCard, .cutoutSettingsCard, .organizerPanel) {
+body.theme-home :is(.filmCard, .cutoutSettingsCard, .organizerPanel) {
   background: var(--panel-2);
 }
 
-body.theme-home :is(.homeHubCard, .organizerFrame, .cutoutQueueItem).active,
-body.theme-home :is(.homeHubCard, .organizerFrame, .cutoutQueueItem).selected {
+body.theme-home :is(.organizerFrame, .cutoutQueueItem).active,
+body.theme-home :is(.organizerFrame, .cutoutQueueItem).selected {
   border-color: var(--accent-2);
   box-shadow: inset 3px 0 0 var(--accent-2);
 }
@@ -318,6 +317,50 @@ body.theme-home .activationCard::before {
 body.theme-home .activationRail {
   background: var(--accent-3);
   color: var(--bg);
+}
+
+/*
+ * The import workbench follows the homepage hierarchy: mint identifies the
+ * active tool and primary path, while yellow stays reserved for playback and
+ * attention states. These overrides keep the legacy themes independent.
+ */
+body.theme-home .organizerWorkbench {
+  background:
+    linear-gradient(90deg, rgba(72, 226, 189, 0.035) 1px, transparent 1px) 0 0 / 34px 34px,
+    linear-gradient(rgba(72, 226, 189, 0.035) 1px, transparent 1px) 0 0 / 34px 34px,
+    var(--panel-3);
+}
+
+body.theme-home .organizerHeader {
+  background: linear-gradient(105deg, var(--accent-2) 0 4px, transparent 4px), var(--panel-3);
+}
+
+body.theme-home .organizerEyebrow,
+body.theme-home .organizerImportIntro span {
+  color: var(--accent-2);
+}
+
+body.theme-home .organizerImportSetup {
+  background: color-mix(in srgb, var(--accent-2) 5%, var(--panel));
+}
+
+body.theme-home .organizerSourceTools {
+  border-color: var(--line-strong);
+}
+
+body.theme-home .organizerVideoButton {
+  border-color: var(--line-strong);
+  background: var(--control-bg);
+  color: var(--control-ink);
+}
+
+body.theme-home .organizerEmptyState {
+  border-color: color-mix(in srgb, var(--accent-2) 56%, var(--line));
+  background: color-mix(in srgb, var(--accent-2) 4%, var(--panel-3));
+}
+
+body.theme-home .organizerEmptyState strong {
+  color: var(--accent-2);
 }
 
 @media (prefers-reduced-motion: reduce) {

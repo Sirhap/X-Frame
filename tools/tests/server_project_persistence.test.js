@@ -136,3 +136,37 @@ test("animation replacement rejects mismatched and unsafe payloads before mutati
     fixture.dispose();
   }
 });
+
+test("asset-library persistence removes metadata without deleting content-addressed image files", () => {
+  const fixture = createFixture();
+  try {
+    const bytes = createPng(32, 24, 7);
+    const image = fixture.persistence.saveFrameAttachmentImage(
+      {
+        name: "slash.png",
+        data: `data:image/png;base64,${bytes.toString("base64")}`,
+      },
+      fixture.project,
+    );
+    const asset = {
+      id: "asset-slash",
+      name: image.name,
+      path: image.path,
+      assetHash: image.assetHash,
+      type: image.type,
+      width: image.width,
+      height: image.height,
+      groupKey: "hero/run",
+    };
+    const physicalFile = path.join(fixture.root, image.path);
+
+    fixture.persistence.saveAttachmentAssets([asset], fixture.project);
+    fixture.persistence.saveAttachmentAssets([], fixture.project);
+
+    assert.deepEqual(JSON.parse(fs.readFileSync(fixture.paths.attachmentAssets, "utf8")), []);
+    assert.equal(fs.existsSync(physicalFile), true);
+    assert.deepEqual(fs.readFileSync(physicalFile), bytes);
+  } finally {
+    fixture.dispose();
+  }
+});

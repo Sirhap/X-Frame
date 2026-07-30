@@ -13,7 +13,11 @@ export interface CutoutProcessingOptions {
   perceptual: boolean;
   referenceChromaKey?: boolean;
   edgeBoost: number;
+  blendStrength: number;
+  blendMode: "general" | "blend" | "chroma";
   despillStrength: number;
+  despillMode: "general" | "blend" | "chroma";
+  edgeDespillRadius: number;
   edgeRecoveryStrength: number;
 }
 

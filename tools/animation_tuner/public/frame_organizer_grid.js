@@ -58,6 +58,7 @@
       elements.organizerGodotPlaceholder.disabled =
         dependencies.browserExportOnly !== true || state.mode !== "import" || !included || state.busy;
       elements.organizerDeleteSelected.disabled = !selected || state.busy;
+      elements.organizerBatchCutout.disabled = !included || state.busy;
       elements.organizerInvert.disabled = !state.frames.length || state.busy;
       elements.organizerFlip.disabled = (!selected && !included) || state.busy;
       elements.organizerDeleteExcluded.disabled = included === state.frames.length || state.busy;
@@ -76,6 +77,7 @@
         button.disabled = state.busy;
       });
       elements.organizerReduce.title = included ? "" : text("needFrames");
+      elements.organizerBatchCutout.title = included ? text("batchCutoutHint") : text("needFrames");
       elements.organizerAddAssets.title = included ? "" : text("needFrames");
       elements.organizerExport.title = included ? "" : text("needFrames");
       elements.organizerFindJump.title = included >= 3 ? "" : text("needThreeFrames");

@@ -9,11 +9,43 @@ const {
   applyReferenceColorReplace,
   estimateBackgroundColor,
 } = require("../animation_tuner/public/batch_cutout_core.js");
+const { applyPreviewBackground } = require("../animation_tuner/public/batch_cutout_settings.js");
 
 /** Runs one product recolor repair without automatic background removal. */
 function applyRecolorRepair(pixels, width, repair) {
   return applyProductCutout(pixels, width, pixels.length / 4 / width, { automaticCutout: false }, [repair])
     .data;
+}
+
+/**
+ * Runs the automatic product entry point with one exact reference tolerance.
+ * @param {Uint8ClampedArray} pixels Source RGBA pixels.
+ * @param {-1|0|100} tolerance Reference replacement tolerance.
+ * @returns {Uint8ClampedArray} Export-ready RGBA result.
+ */
+function applyProductTolerance(pixels, tolerance) {
+  return applyProductCutout(
+    pixels,
+    2,
+    1,
+    {
+      automaticCutout: true,
+      referenceChromaKey: true,
+      connected: false,
+      backgroundColor: { r: 0, g: 255, b: 0, a: 255 },
+      backgroundColors: [{ r: 0, g: 255, b: 0, a: 255 }],
+      tolerance,
+      edgeBoost: 100,
+      blendStrength: 100,
+      despillStrength: 100,
+      despillMode: "general",
+      edgeDespillRadius: 3,
+      edgeRecoveryStrength: 0,
+      alphaLow: 0,
+      alphaHigh: 0,
+    },
+    [],
+  ).data;
 }
 
 test("product global recolor uses the FramePacker 5.1x RGBA tolerance", () => {
@@ -58,6 +90,76 @@ test("product recolor includes alpha in the FramePacker match distance", () => {
   });
 
   assert.deepEqual([...result], [9, 8, 7, 255, 9, 8, 7, 255, 100, 100, 100, 249]);
+});
+
+test("product entry preserves distinct -1, 0, and 100 reference tolerance semantics", () => {
+  const pixels = Uint8ClampedArray.from([0, 255, 0, 255, 0, 254, 0, 255]);
+  const results = new Map(
+    [-1, 0, 100].map((tolerance) => [tolerance, applyProductTolerance(pixels, tolerance)]),
+  );
+
+  assert.deepEqual([...results.get(-1)], [150, 150, 150, 0, 148, 150, 148, 0]);
+  assert.deepEqual([...results.get(0)], [0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...results.get(100)], [0, 0, 0, 0, 0, 0, 0, 0]);
+});
+
+test("preview background switches never alter exported RGBA at boundary tolerances", () => {
+  const pixels = Uint8ClampedArray.from([0, 255, 0, 255, 0, 254, 0, 255]);
+  const state = { previewBackground: "light" };
+  const elements = { cutoutModal: { dataset: {} } };
+
+  for (const tolerance of [-1, 0, 100]) {
+    const expected = applyProductTolerance(pixels, tolerance);
+    for (const background of ["light", "dark", "white"]) {
+      applyPreviewBackground(elements, state, background);
+      assert.deepEqual([...applyProductTolerance(pixels, tolerance)], [...expected]);
+    }
+  }
+});
+
+test("automatic reference cutout keeps blend and edge restoration modes independent", () => {
+  const pixels = Uint8ClampedArray.from([20, 40, 60, 255, 20, 40, 60, 128, 100, 120, 140, 255]);
+  const referenceColor = { r: 20, g: 40, b: 60, a: 255 };
+  const result = applyCutout(pixels, 3, 1, {
+    referenceChromaKey: true,
+    connected: false,
+    backgroundColor: referenceColor,
+    backgroundColors: [referenceColor],
+    tolerance: 0,
+    edgeBoost: 0,
+    blendStrength: 25,
+    blendMode: "blend",
+    despillMode: "general",
+    edgeDespillRadius: 1,
+    despillStrength: 0,
+    alphaLow: 0,
+    alphaHigh: 255,
+  });
+  const expected = applyReferenceColorReplace(pixels, 3, 1, { x: 0, y: 0 }, { r: 0, g: 0, b: 0, a: 0 }, 0, {
+    referenceColor,
+    blendStrength: 25,
+    despillMode: 1,
+    edgeRestoreRadius: 1,
+    edgeRestoreMode: 0,
+  });
+  const incorrectlyConflated = applyReferenceColorReplace(
+    pixels,
+    3,
+    1,
+    { x: 0, y: 0 },
+    { r: 0, g: 0, b: 0, a: 0 },
+    0,
+    {
+      referenceColor,
+      blendStrength: 25,
+      despillMode: 1,
+      edgeRestoreRadius: 1,
+      edgeRestoreMode: 1,
+    },
+  );
+
+  assert.deepEqual([...result.data], [...expected]);
+  assert.notDeepEqual([...result.data], [...incorrectlyConflated]);
 });
 
 test("regular cutout preserves a sampled transparent reference alpha", () => {

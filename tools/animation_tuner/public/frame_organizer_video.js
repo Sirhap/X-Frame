@@ -1,11 +1,16 @@
 (function attachFrameOrganizerVideo(root, factory) {
   "use strict";
 
-  const api = factory(root);
+  const sequenceOrder =
+    root?.FrameSequenceOrder ||
+    (typeof module === "object" && module.exports ? require("./frame_sequence_order") : null);
+  const api = factory(root, sequenceOrder);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.FrameOrganizerVideo = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (root, sequenceOrder) => {
   "use strict";
+
+  if (!sequenceOrder?.nextImportBatchIndex) throw new Error("FrameSequenceOrder is required.");
 
   const DEFAULT_MAX_FRAMES = 300;
   const DEFAULT_MAX_PIXELS = 120_000_000;
@@ -278,6 +283,10 @@
       }
       state.busy = true;
       state.videoExtracting = true;
+      const batchIndex = Number.isInteger(state.nextImportBatchIndex)
+        ? state.nextImportBatchIndex
+        : sequenceOrder.nextImportBatchIndex(state.frames);
+      state.nextImportBatchIndex = batchIndex + 1;
       dependencies.renderCounts();
       syncControls();
       elements.organizerVideoElement.pause();
@@ -296,7 +305,10 @@
             .drawImage(elements.organizerVideoElement, 0, 0, current.width, current.height);
           extractedFrames.push(
             dependencies.createFrame(canvas, {
-              originalIndex: Number.MAX_SAFE_INTEGER - current.count + index,
+              sourceType: sequenceOrder.SOURCE_TYPES.VIDEO,
+              importBatchIndex: batchIndex,
+              importSelectionIndex: index,
+              importFilenameIndex: index,
               name: `${baseName}_frame_${String(index + 1).padStart(4, "0")}.png`,
               imported: true,
               reuseCanvas: true,

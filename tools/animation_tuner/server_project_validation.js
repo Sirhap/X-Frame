@@ -4,6 +4,7 @@ const defaultFs = require("node:fs");
 const defaultPath = require("node:path");
 const { createProjectInspection: defaultCreateProjectInspection } = require("../project_inspection");
 const { EMPTY_TUNING, reslash: defaultReslash } = require("../project_store");
+const { profileIdsForSceneText } = require("../scene_profiles");
 
 const DEFAULT_GDSCRIPT_SCAN_LIMIT = 250;
 const DEFAULT_GDSCRIPT_SKIP_DIRS = new Set([".git", ".godot", "addons", "node_modules", "_external_vfx"]);
@@ -39,7 +40,7 @@ function createProjectValidation(dependencies = {}) {
     return normalized.startsWith("xsxb_frame_tuner/runtime/");
   }
 
-  function listSceneFiles(projectRoot) {
+  function listSceneFiles(projectRoot, profiles = []) {
     const root = projectRoot ? path.resolve(String(projectRoot)) : "";
     const scenes = [];
     if (!root || !fs.existsSync(root) || !fs.statSync(root).isDirectory()) return scenes;
@@ -60,11 +61,19 @@ function createProjectValidation(dependencies = {}) {
         if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".tscn") continue;
         const scenePath = relativeProjectPath(fullPath, root);
         if (isGeneratedTunerScene(scenePath)) continue;
-        scenes.push({
+        let sceneText = "";
+        try {
+          sceneText = fs.readFileSync(fullPath, "utf8");
+        } catch {
+          sceneText = "";
+        }
+        const scene = {
           id: `res://${scenePath}`,
           label: path.basename(entry.name, ".tscn"),
           path: scenePath,
-        });
+        };
+        if (profiles.length) scene.profileIds = profileIdsForSceneText(sceneText, profiles);
+        scenes.push(scene);
       }
     };
 

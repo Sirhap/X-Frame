@@ -1,10 +1,30 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 const sessionCore = require("../animation_tuner/public/batch_cutout_session_core.js");
 const { applyProductCutout } = require("../animation_tuner/public/batch_cutout_core.js");
+
+test("batch cutout runtime only calls exported session core methods", () => {
+  const runtimeSource = fs.readFileSync(
+    path.join(__dirname, "../animation_tuner/public/batch_cutout.js"),
+    "utf8",
+  );
+  const invokedMethods = new Set(
+    Array.from(runtimeSource.matchAll(/sessionCore\.(\w+)\s*\(/g), (match) => match[1]),
+  );
+
+  for (const methodName of invokedMethods) {
+    assert.equal(
+      typeof sessionCore[methodName],
+      "function",
+      `BatchCutoutSessionCore.${methodName} must be exported`,
+    );
+  }
+});
 
 /**
  * Creates the minimum DOM adapter required by the session Module.
@@ -15,7 +35,8 @@ function createControls() {
     cutoutColor: { value: "#123456", disabled: false },
     cutoutConnected: { checked: false },
     cutoutPerceptual: { checked: true },
-    cutoutDespillMode: { value: "blend" },
+    cutoutBlendMode: { value: "blend" },
+    cutoutDespillMode: { value: "general" },
   };
   const numericValues = {
     Tolerance: 15,
@@ -60,6 +81,92 @@ test("session parameters round-trip through the DOM adapter", () => {
   assert.equal(synchronized, numericParameterCount);
 });
 
+test("negative-one tolerance survives capture, restore, and worker option creation", () => {
+  const sourceControls = createControls();
+  sourceControls.cutoutTolerance.value = "-1";
+  const parameters = sessionCore.captureProcessingParameters(sourceControls);
+  const targetControls = createControls();
+
+  sessionCore.applyProcessingParameters(targetControls, parameters);
+  const processingOptions = sessionCore.createProcessingOptions(
+    {
+      automaticCutoutActivated: true,
+      processingParameters: sessionCore.captureProcessingParameters(targetControls),
+      seedPoints: [],
+    },
+    {
+      backgroundColor: { r: 0, g: 255, b: 0, a: 255 },
+      backgroundColors: [{ r: 0, g: 255, b: 0, a: 255 }],
+      protectedColors: [],
+    },
+  );
+
+  assert.equal(parameters.tolerance, -1);
+  assert.equal(targetControls.cutoutTolerance.value, "-1");
+  assert.equal(processingOptions.tolerance, -1);
+});
+
+test("blend recovery and edge restoration modes remain independent", () => {
+  const controls = createControls();
+  controls.cutoutBlendMode.value = "chroma";
+  controls.cutoutDespillMode.value = "blend";
+  const parameters = sessionCore.captureProcessingParameters(controls);
+  const options = sessionCore.createProcessingOptions(
+    { processingParameters: parameters, seedPoints: [] },
+    { backgroundColor: {}, backgroundColors: [], protectedColors: [] },
+  );
+
+  assert.equal(parameters.blendMode, "chroma");
+  assert.equal(parameters.despillMode, "blend");
+  assert.equal(options.blendMode, "chroma");
+  assert.equal(options.despillMode, "blend");
+});
+
+test("legacy processing snapshots default only the missing blend mode", () => {
+  const controls = createControls();
+  sessionCore.applyProcessingParameters(controls, { despillMode: "chroma" });
+
+  assert.equal(controls.cutoutBlendMode.value, "blend");
+  assert.equal(controls.cutoutDespillMode.value, "chroma");
+});
+
+test("batch recolor preview derives target repairs without committing them", () => {
+  const sourceItem = {
+    id: "frame-1",
+    sourceImageData: { width: 100, height: 50 },
+    repairs: [
+      {
+        id: "recolor-1",
+        mode: "recolor",
+        scope: "connected",
+        x: 25,
+        y: 10,
+        sourceColor: { r: 40, g: 50, b: 60, a: 255 },
+        color: { r: 200, g: 100, b: 50, a: 255 },
+        tolerance: 18,
+      },
+    ],
+  };
+  const targetItem = {
+    id: "frame-2",
+    sourceImageData: { width: 200, height: 100 },
+    repairs: [{ id: "target-local", mode: "brush" }],
+  };
+  const state = { items: [sourceItem, targetItem], batchPreviewRepair: null };
+
+  assert.equal(sessionCore.stageBatchRepairPreview(state, sourceItem), true);
+  const previewRepairs = sessionCore.previewRepairsForItem(state, targetItem);
+
+  assert.deepEqual(targetItem.repairs, [{ id: "target-local", mode: "brush" }]);
+  assert.equal(previewRepairs.length, 2);
+  assert.equal(previewRepairs[1].previewOnly, true);
+  assert.equal(previewRepairs[1].x, 50);
+  assert.equal(previewRepairs[1].y, 20);
+  assert.deepEqual(previewRepairs[1].color, { r: 200, g: 100, b: 50, a: 255 });
+  assert.equal(sessionCore.clearBatchRepairPreview(state), true);
+  assert.deepEqual(sessionCore.previewRepairsForItem(state, targetItem), targetItem.repairs);
+});
+
 test("automatic propagation copies manual settings and invalidates every result", () => {
   const parameters = sessionCore.captureProcessingParameters(createControls());
   const sourceItem = {
@@ -90,6 +197,68 @@ test("automatic propagation copies manual settings and invalidates every result"
   assert.equal(targetItem.pendingAutomaticPropagation, false);
   assert.equal(targetItem.processingRevision, 5);
   assert.equal(targetItem.resultCanvas, null);
+});
+
+test("file-batch synchronization reacquires each frame background color at the mapped seed", () => {
+  const sourceItem = {
+    sourceImageData: {
+      width: 2,
+      height: 1,
+      data: new Uint8ClampedArray([0, 198, 2, 255, 255, 0, 0, 255]),
+    },
+    processingParameters: { tolerance: 1 },
+    backgroundSamples: [{ r: 0, g: 198, b: 2, a: 255 }],
+    seedPoints: [{ x: 0, y: 0 }],
+    automaticCutoutActivated: true,
+    processingActivated: true,
+    pendingAutomaticPropagation: true,
+    processingRevision: 0,
+  };
+  const targetItem = {
+    sourceImageData: {
+      width: 2,
+      height: 1,
+      data: new Uint8ClampedArray([22, 135, 31, 255, 255, 0, 0, 255]),
+    },
+    backgroundSamples: [],
+    seedPoints: [],
+    pendingAutomaticPropagation: true,
+    processingRevision: 3,
+  };
+
+  const result = sessionCore.synchronizeBatchAutomaticProcessing(
+    [sourceItem, targetItem],
+    sourceItem,
+    { tolerance: 5, edgeBoost: 18 },
+    { mapSeedPoints: true },
+  );
+
+  assert.deepEqual(result, { updated: 2, mappedBackgroundSamples: true });
+  assert.deepEqual(targetItem.backgroundSamples, [{ r: 22, g: 135, b: 31, a: 255 }]);
+  assert.deepEqual(targetItem.seedPoints, [{ x: 0, y: 0 }]);
+  assert.deepEqual(targetItem.processingParameters, { tolerance: 5, edgeBoost: 18 });
+  assert.equal(targetItem.automaticCutoutActivated, true);
+  assert.equal(targetItem.processingActivated, true);
+  assert.equal(targetItem.pendingAutomaticPropagation, false);
+  assert.equal(targetItem.processingRevision, 4);
+});
+
+test("file-batch synchronization shares parameters without activating an unsampled background", () => {
+  const sourceItem = {
+    backgroundSamples: [],
+    automaticCutoutActivated: false,
+    processingRevision: 0,
+  };
+  const targetItem = { processingRevision: 2, processingActivated: false };
+
+  const result = sessionCore.synchronizeBatchAutomaticProcessing([sourceItem, targetItem], sourceItem, {
+    tolerance: 7,
+  });
+
+  assert.deepEqual(result, { updated: 2, mappedBackgroundSamples: false });
+  assert.deepEqual(targetItem.processingParameters, { tolerance: 7 });
+  assert.equal(targetItem.processingActivated, false);
+  assert.equal(targetItem.processingRevision, 3);
 });
 
 test("single-image automatic propagation maps connected background seeds to every target canvas", () => {

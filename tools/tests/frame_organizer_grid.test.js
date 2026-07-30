@@ -24,6 +24,7 @@ function createFixture(options = {}) {
     organizerApply: button(),
     organizerGodotPlaceholder: button(),
     organizerDeleteSelected: button(),
+    organizerBatchCutout: button(),
     organizerInvert: button(),
     organizerFlip: button(),
     organizerDeleteExcluded: button(),

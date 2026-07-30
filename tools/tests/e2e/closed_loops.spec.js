@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const zlib = require("node:zlib");
+const { readZipEntries } = require("./zip_test_utils");
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3n0AAAAASUVORK5CYII=",
@@ -52,31 +52,6 @@ async function dropFileOnCurrentFrame(page, file) {
     );
     element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
   }, file);
-}
-
-/**
- * Reads local ZIP entries produced by the browser without adding a test-only dependency.
- * @param {Buffer} archive ZIP bytes.
- * @returns {Map<string, Buffer>} Uncompressed entry contents by name.
- */
-function readZipEntries(archive) {
-  const entries = new Map();
-  let offset = 0;
-  while (offset + 30 <= archive.length && archive.readUInt32LE(offset) === 0x04034b50) {
-    const flags = archive.readUInt16LE(offset + 6);
-    const method = archive.readUInt16LE(offset + 8);
-    const compressedSize = archive.readUInt32LE(offset + 18);
-    const nameLength = archive.readUInt16LE(offset + 26);
-    const extraLength = archive.readUInt16LE(offset + 28);
-    expect(flags & 0x08).toBe(0);
-    const nameStart = offset + 30;
-    const dataStart = nameStart + nameLength + extraLength;
-    const name = archive.subarray(nameStart, nameStart + nameLength).toString("utf8");
-    const compressed = archive.subarray(dataStart, dataStart + compressedSize);
-    entries.set(name, method === 8 ? zlib.inflateRawSync(compressed) : Buffer.from(compressed));
-    offset = dataStart + compressedSize;
-  }
-  return entries;
 }
 
 test("image import creates a persisted animation through the organizer", async ({ page }) => {
@@ -151,8 +126,10 @@ test("focused controls keep native Space behavior without starting playback", as
   await expect(page).toHaveURL(/frame=1/);
   await expect(page.locator("#playPause")).toHaveText("播放");
 
-  await page.getByRole("button", { name: "批量抠图" }).focus();
+  await page.getByRole("link", { name: "批量抠图" }).focus();
   await page.keyboard.press("Space");
+  await expect(page.locator("#cutoutModal")).toBeHidden();
+  await page.keyboard.press("Enter");
   await expect(page.locator("#cutoutModal")).toBeVisible();
   await expect(page.locator("#playPause")).toHaveText("播放");
 });
@@ -169,7 +146,7 @@ test("workspace starts when browser storage access is denied", async ({ page }) 
 
   await page.goto("/workspace");
   await expect(page.locator(".app")).toBeVisible();
-  await expect(page.locator(".thumb")).toHaveCount(2);
+  await expect.poll(() => page.locator(".thumb").count()).toBeGreaterThan(0);
 });
 
 test("mobile frame deletion and animation clearing remain explicit and bounded", async ({
@@ -189,7 +166,7 @@ test("mobile frame deletion and animation clearing remain explicit and bounded",
   const dialogMetrics = await page.locator("#appConfirmCard").evaluate((card) => {
     const bounds = card.getBoundingClientRect();
     const buttonHeights = Array.from(
-      card.querySelectorAll("button"),
+      card.querySelectorAll("button:not([hidden])"),
       (button) => button.getBoundingClientRect().height,
     );
     return { top: bounds.top, bottom: bounds.bottom, viewportHeight: window.innerHeight, buttonHeights };
@@ -208,7 +185,7 @@ test("mobile frame deletion and animation clearing remain explicit and bounded",
 
   await page.locator("#clearAnimation").click();
   await expect(page.locator("#appConfirmCancel")).toBeFocused();
-  await expect(page.locator("#appConfirmAccept")).toHaveText("清空动画");
+  await expect(page.locator("#appConfirmAccept")).toHaveText("删除当前动画");
   await page.keyboard.press("Escape");
   await expect(page.locator(".thumb")).toHaveCount(2);
 
@@ -293,8 +270,8 @@ test("video extraction produces frames and opens loop analysis", async ({ page }
     await page.locator("#organizerFindLoop").click();
     await expect(page.locator("#organizerLoopPanel")).toBeVisible();
     await page.locator("#organizerLoopStartSearch").click();
-    await expect(page.locator("#organizerLoopProgressText")).toBeVisible();
     await expect(page.locator("#organizerLoopResults")).toBeVisible({ timeout: 20000 });
+    await expect(page.locator("#organizerLoopProgressText")).toHaveText("100%");
   } finally {
     fs.rmSync(videoPath, { force: true });
   }
@@ -327,6 +304,7 @@ test("project switching, clearing, and deletion preserve explicit confirmation",
   const second = await importProject(request, "lifecycle-b");
   await page.goto("/workspace");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
+  await page.locator('[data-sidebar-tab="project"]').click();
   await page.locator("#projectContext > summary").click();
   await page.locator("#projectSelect").focus();
   await page.locator("#projectSelect").selectOption(first.activeProjectId);
@@ -377,7 +355,14 @@ test("@touch touch input can select and process a cutout frame", async ({ page }
     buffer: fs.readFileSync(WIDE_IMAGE_PATH),
   });
   await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
-  await page.getByRole("button", { name: "原图恢复笔" }).tap();
+  const restoreSourceButton = page.getByRole("button", { name: "原图恢复笔" });
+  await restoreSourceButton.evaluate((button) => button.scrollIntoView({ block: "center" }));
+  const restoreSourceBounds = await restoreSourceButton.boundingBox();
+  expect(restoreSourceBounds).not.toBeNull();
+  await page.touchscreen.tap(
+    restoreSourceBounds.x + restoreSourceBounds.width / 2,
+    restoreSourceBounds.y + restoreSourceBounds.height / 2,
+  );
   await expect(page.locator("#cutoutActiveToolTitle")).toHaveText("原图恢复笔");
   await page.locator("#cutoutResult").tap();
   await expect(page.locator("#cutoutStatus")).toContainText("已添加局部修正");

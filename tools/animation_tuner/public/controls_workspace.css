@@ -9,18 +9,10 @@
   overflow: hidden;
 }
 
-.workspace:has(> .homeHub:not([hidden])) {
-  grid-template-rows: auto minmax(0, 1fr) clamp(168px, 24vh, 196px);
-}
-
 .workspace > .toolbar {
   grid-row: 1;
 }
 .workspace > #stage {
-  grid-row: 2;
-  grid-column: 1;
-}
-.workspace > .homeHub {
   grid-row: 2;
   grid-column: 1;
 }
@@ -29,79 +21,7 @@
   grid-column: 1;
 }
 
-.homeHub {
-  z-index: 4;
-  align-self: stretch;
-  min-width: 0;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: repeat(4, auto);
-  align-content: start;
-  gap: 12px;
-  padding: clamp(16px, 2vw, 26px);
-  overflow: auto;
-  border: 4px solid var(--line);
-  border-radius: 12px;
-  background:
-    linear-gradient(90deg, rgba(57, 217, 186, 0.07) 1px, transparent 1px) 0 0 / 30px 30px,
-    linear-gradient(rgba(57, 217, 186, 0.07) 1px, transparent 1px) 0 0 / 30px 30px,
-    var(--panel-3);
-  box-shadow: 7px 7px 0 var(--line);
-}
-
-.homeHub[hidden] {
-  display: none;
-}
-
-.homeHubHeader {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.homeHubHeader span,
-.homeToolCard b {
-  color: var(--accent-2);
-  font: 950 9px/1 var(--data-font);
-  letter-spacing: 0.16em;
-}
-
-.homeHubHeader h2 {
-  margin: 5px 0 3px;
-  font-size: clamp(26px, 3vw, 38px);
-  line-height: 1;
-  letter-spacing: -0.04em;
-}
-
-.homeHubHeader p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-.homeHubHeader button {
-  flex: 0 0 auto;
-  min-height: 42px;
-}
-
-.homeHubActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.homeSiteLink {
-  min-height: 42px;
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 13px;
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.homeHubLaunch {
+.factoryHomeLaunch {
   flex: 0 0 auto;
   min-height: 38px;
   display: inline-flex;
@@ -113,136 +33,6 @@
   color: var(--ink);
   font: 950 9px/1 var(--data-font);
   text-decoration: none;
-  white-space: nowrap;
-}
-
-.homeHubLaunch[aria-pressed="true"] {
-  background: var(--accent-2);
-  color: #06120f;
-}
-
-.homeToolGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.homeToolCard {
-  position: relative;
-  min-width: 0;
-  min-height: 128px;
-  display: grid;
-  align-content: end;
-  justify-items: start;
-  gap: 9px;
-  padding: 16px 18px;
-  overflow: hidden;
-  text-align: left;
-  background: var(--panel);
-  color: var(--ink);
-}
-
-.homeToolCard::after {
-  content: "";
-  position: absolute;
-  top: -35px;
-  right: -25px;
-  width: 120px;
-  height: 120px;
-  border: 18px solid color-mix(in srgb, var(--card-accent) 25%, transparent);
-  border-radius: 50%;
-}
-
-.homeToolCard strong {
-  font-size: clamp(19px, 2vw, 28px);
-}
-.homeToolCard span {
-  color: var(--muted);
-  font-size: 11px;
-}
-.homeToolCard i {
-  position: absolute;
-  top: 17px;
-  right: 18px;
-  color: var(--card-accent);
-  font: 950 28px/1 var(--data-font);
-}
-.homeToolImport {
-  --card-accent: var(--accent);
-  border-color: var(--accent);
-}
-.homeToolTuner {
-  --card-accent: var(--accent-3);
-  border-color: var(--accent-3);
-}
-.homeToolCutout {
-  --card-accent: var(--accent-2);
-  border-color: var(--accent-2);
-}
-.homeToolCard:hover {
-  background: color-mix(in srgb, var(--panel) 86%, var(--card-accent));
-}
-
-.homeRecent {
-  display: grid;
-  grid-template-columns: auto minmax(120px, 1fr) auto minmax(120px, 1fr);
-  align-items: center;
-  gap: 8px 14px;
-  padding-top: 10px;
-  border-top: 2px solid color-mix(in srgb, var(--muted) 25%, transparent);
-  font: 850 10px/1.2 var(--data-font);
-}
-
-.homeStats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0;
-}
-
-.homeStats > div {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 2px solid color-mix(in srgb, var(--muted) 28%, var(--line));
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--panel) 90%, transparent);
-}
-
-.homeStats dt {
-  color: var(--muted);
-  font: 850 9px/1 var(--data-font);
-}
-.homeStats dd {
-  margin: 0;
-  color: var(--accent-2);
-  font: 950 15px/1 var(--data-font);
-  font-variant-numeric: tabular-nums;
-}
-
-.homeProjectPath {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
-}
-
-.homeProjectPath button {
-  min-height: 27px;
-  padding: 4px 7px;
-  font-size: 9px;
-}
-
-.homeRecent span {
-  color: var(--muted);
-}
-.homeRecent strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

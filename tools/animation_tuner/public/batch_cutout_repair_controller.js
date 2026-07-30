@@ -299,7 +299,11 @@
      * @returns {Promise<void>}
      */
     async function propagateLatestRepair() {
-      const sourceItem = selectedItem();
+      const stagedSourceItem = state.batchPreviewRepair
+        ? state.items.find((item) => item.id === state.batchPreviewRepair.sourceItemId)
+        : null;
+      const sourceItem = stagedSourceItem || selectedItem();
+      const sourceIndex = Math.max(0, state.items.indexOf(sourceItem));
       if (sourceItem?.pendingAutomaticPropagation) {
         if (!sourceItem.processingParameters) {
           sourceItem.processingParameters = captureProcessingParameters();
@@ -309,6 +313,11 @@
           mapSeedPoints: state.sessionMode === "single",
         });
         refreshQualityAnalysis();
+        sessionCore.clearBatchRepairPreview(state);
+        state.batchPreviewRevision = Number(state.batchPreviewRevision || 0) + 1;
+        elements.cutoutModal.dataset.batchPreview = "false";
+        elements.cutoutRepairBatch.classList.remove("previewPending");
+        elements.cutoutRepairBatch.setAttribute("aria-pressed", "false");
         state.thumbnailRevision += 1;
         renderPreview();
         scheduleBatchThumbnails();
@@ -322,7 +331,7 @@
         return;
       }
       try {
-        await processItem(sourceItem);
+        await processItem(sourceItem, { preview: false });
       } catch (error) {
         if (error?.name !== "AbortError") {
           setStatus(text("failed", { message: error.message }), "error");
@@ -423,7 +432,7 @@
             item.processingActivated = true;
           }
           try {
-            await processItem(item);
+            await processItem(item, { preview: false });
           } catch (error) {
             if (error?.name === "AbortError") return;
             skipped += 1;
@@ -538,15 +547,12 @@
         await Promise.all([
           propagateDirection(
             Array.from(
-              { length: state.items.length - state.selectedIndex - 1 },
-              (_unused, offset) => state.selectedIndex + offset + 1,
+              { length: state.items.length - sourceIndex - 1 },
+              (_unused, offset) => sourceIndex + offset + 1,
             ),
           ),
           propagateDirection(
-            Array.from(
-              { length: state.selectedIndex },
-              (_unused, offset) => state.selectedIndex - offset - 1,
-            ),
+            Array.from({ length: sourceIndex }, (_unused, offset) => sourceIndex - offset - 1),
           ),
         ]);
       } catch (error) {
@@ -556,6 +562,11 @@
         return;
       }
       renderPreview();
+      sessionCore.clearBatchRepairPreview(state);
+      state.batchPreviewRevision = Number(state.batchPreviewRevision || 0) + 1;
+      elements.cutoutModal.dataset.batchPreview = "false";
+      elements.cutoutRepairBatch.classList.remove("previewPending");
+      elements.cutoutRepairBatch.setAttribute("aria-pressed", "false");
       scheduleBatchThumbnails();
       await applyCurrentGroup({ live: true });
       setStatus(

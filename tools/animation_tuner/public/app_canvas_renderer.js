@@ -59,6 +59,9 @@
       usesSceneTopLeftAnchor,
       valueStore,
       boxDrawOrder = [],
+      drawAttackTrailLayer = () => {},
+      drawAttackTrailGuides = () => {},
+      attackTrailNeedsContinuousDraw = () => false,
     } = options;
     if (!ctx || !els?.stage) throw new TypeError("Canvas renderer requires context and stage elements.");
     function drawGrid() {
@@ -532,6 +535,8 @@
       renderTransformForGroup,
       runtimeBaseScaleForGroup,
       valueStore,
+      drawAttackTrailLayer,
+      attackTrailNeedsContinuousDraw,
     });
     const { drawCompositeFrame, drawFrame, playbackNeedsContinuousDraw } = layerRenderer;
 
@@ -693,6 +698,7 @@
       drawCompositeFrame(state().selectedFrame, 1, true);
       drawReferenceFrameOverlay();
       drawBoxes();
+      drawAttackTrailGuides();
       drawCoordinateMarkers();
       drawCanvasHints();
       updateCoordHud();

@@ -309,7 +309,13 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
     /** @param {object} payload Device reset payload. @returns {Promise<object>} Mutation summary. */
     async deleteDevices(payload) {
       const ids = normalizeDeviceIds(payload.ids);
-      await requireDevices(ids);
+      const devices = await requireDevices(ids);
+      if (devices.some((device) => device.license_source === "automatic_trial")) {
+        throw Object.assign(
+          new Error("Automatic trial devices cannot be reset because trial claim history must be retained."),
+          { status: 409 },
+        );
+      }
       await repository.deleteDevices(ids);
       return { count: ids.length };
     },

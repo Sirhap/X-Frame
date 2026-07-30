@@ -1,10 +1,13 @@
 (function attachFrameOrganizerUi(root, factory) {
   "use strict";
 
-  const api = factory(root);
+  const sequenceOrder =
+    root?.FrameSequenceOrder ||
+    (typeof module === "object" && module.exports ? require("./frame_sequence_order") : null);
+  const api = factory(root, sequenceOrder);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.FrameOrganizerUi = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (root, defaultSequenceOrder) => {
   "use strict";
 
   /**
@@ -47,13 +50,16 @@
    *   analyze:(type:"jump"|"duplicate")=>void,
    *   loadCurrentAnimation:()=>Promise<void>,
    *   applyPlan:()=>Promise<void>,
+   *   editBatchCutout:()=>Promise<void>,
    *   importIntoSession:()=>Promise<void>,
    *   addIncludedFramesToAssets:()=>Promise<void>,
    *   exportIncludedFrames:()=>Promise<void>,
+   *   openExportDialog?:()=>void,
    *   selectFrame:(index:number,event:object)=>void,
    *   imageImporter:{importFiles:(files:File[])=>Promise<void>},
    *   videoImporter:{close:()=>void,bindEvents:()=>void},
    *   loopFinder:{isOpen:()=>boolean,close:()=>void,bindEvents:()=>void},
+   *   sequenceOrder?:typeof import("./frame_sequence_order"),
    *   document?:Document,
    *   window?:Window
    * }} dependencies Host callbacks and organizer DOM elements.
@@ -65,7 +71,8 @@
    *   requestConfirmation:(message:string,details?:Array<[string,string|number]>,options?:object)=>Promise<boolean>,
    *   resolveConfirmation:(accepted:boolean)=>void,
    *   offerDeleteUndo:(frames:object[])=>void,
-   *   setEditorInert:(inert:boolean)=>void
+   *   setEditorInert:(inert:boolean)=>void,
+   *   setImportOrderStrategy:(strategy:"filename"|"selection")=>void
    * }} Organizer UI controller.
    */
   function createController(dependencies = {}) {
@@ -89,9 +96,11 @@
       analyze,
       loadCurrentAnimation,
       applyPlan,
+      editBatchCutout,
       importIntoSession,
       addIncludedFramesToAssets,
       exportIncludedFrames,
+      openExportDialog,
       selectFrame,
       imageImporter,
       videoImporter,
@@ -102,6 +111,33 @@
     }
     const documentApi = dependencies.document || root.document;
     const windowApi = dependencies.window || root.window;
+    const sequenceOrder = dependencies.sequenceOrder || defaultSequenceOrder;
+    if (!sequenceOrder?.restoreImportOrder) throw new Error("FrameSequenceOrder is required.");
+
+    /** Renders segmented ordering controls from the current strategy. @returns {void} */
+    function renderImportOrderStrategy() {
+      const filenameActive =
+        sequenceOrder.normalizeOrderStrategy(state.importOrderStrategy) ===
+        sequenceOrder.ORDER_STRATEGIES.FILENAME;
+      [
+        [elements.organizerOrderFilename, filenameActive],
+        [elements.organizerOrderSelection, !filenameActive],
+      ].forEach(([button, active]) => {
+        if (!button) return;
+        button.setAttribute("aria-pressed", String(active));
+        button.classList?.toggle("active", active);
+      });
+    }
+
+    /**
+     * Selects how image batches are restored without changing the current manual grid order.
+     * @param {"filename"|"selection"} strategy Requested strategy.
+     * @returns {void}
+     */
+    function setImportOrderStrategy(strategy) {
+      state.importOrderStrategy = sequenceOrder.normalizeOrderStrategy(strategy);
+      renderImportOrderStrategy();
+    }
 
     /** Resolves and closes the organizer confirmation layer. @param {boolean} accepted Whether accepted. @returns {void} */
     function resolveConfirmation(accepted) {
@@ -212,6 +248,19 @@
     function renderImportContext(resetValues = false) {
       const context = hooks.getImportContext?.() || {};
       const activeProject = context.activeProject || null;
+      const handoffState = String(context.godotHandoff?.state || "local_only");
+      if (elements.organizerGodotHandoffBadge) {
+        const labels = {
+          local_only: state.language === "en" ? "local_only" : "仅本地",
+          invalid_root: state.language === "en" ? "invalid_root" : "根目录无效",
+          sync_required: state.language === "en" ? "sync_required" : "需要同步",
+          sync_failed: state.language === "en" ? "sync_failed" : "同步失败",
+          synced: state.language === "en" ? "synced" : "已同步",
+          gameplay_ready: state.language === "en" ? "gameplay_ready" : "Gameplay 就绪",
+        };
+        elements.organizerGodotHandoffBadge.textContent = labels[handoffState] || labels.local_only;
+        elements.organizerGodotHandoffBadge.dataset.state = handoffState;
+      }
       const selectedValue = elements.organizerProjectSelect.value;
       elements.organizerProjectSelect.innerHTML = "";
       if (activeProject?.id) {
@@ -279,7 +328,9 @@
       elements.organizerClose.setAttribute("aria-label", text("close"));
       elements.organizerVideoClose.setAttribute("aria-label", text("close"));
       elements.organizerLoopClose.setAttribute("aria-label", text("close"));
-      elements.organizerTag.placeholder = text("tagPlaceholder");
+      elements.organizerOrderFilename
+        ?.closest(".organizerOrderControl")
+        ?.setAttribute("aria-label", text("orderBy"));
       elements.organizerTitle.textContent = text(state.mode === "import" ? "importTitle" : "title");
       const browserExportOnly = hooks.browserExportOnly === true && state.mode === "import";
       const importSetupHint = documentApi.querySelector('[data-organizer-i18n="importSetupHint"]');
@@ -304,6 +355,7 @@
         .closest(".organizerWorkbench")
         ?.classList.toggle("importMode", state.mode === "import");
       if (state.mode === "import") renderImportContext(false);
+      renderImportOrderStrategy();
       renderCounts();
     }
 
@@ -355,10 +407,16 @@
         setStatus(text("reduced", { step, count: includedFrames().length }), "success");
       });
       elements.organizerAutoSort.addEventListener("click", () => {
-        state.frames.sort((left, right) => left.originalIndex - right.originalIndex);
+        state.frames = sequenceOrder.restoreImportOrder(state.frames, state.importOrderStrategy);
         renderGrid();
         restartPreview();
         setStatus(text("sorted"), "success");
+      });
+      elements.organizerOrderFilename?.addEventListener("click", () => {
+        setImportOrderStrategy(sequenceOrder.ORDER_STRATEGIES.FILENAME);
+      });
+      elements.organizerOrderSelection?.addEventListener("click", () => {
+        setImportOrderStrategy(sequenceOrder.ORDER_STRATEGIES.SELECTION);
       });
       elements.organizerFlip.addEventListener("click", flipFrames);
       elements.organizerFileInput.addEventListener("change", () => {
@@ -407,12 +465,16 @@
       elements.organizerFindDuplicate.addEventListener("click", () => analyze("duplicate"));
       elements.organizerReset.addEventListener("click", () => {
         if (state.mode === "import") {
+          const snapshot = state.frames.slice();
+          if (!snapshot.length) return;
           state.frames = [];
+          state.nextImportBatchIndex = 0;
           state.anchorIndex = -1;
           state.previewIndex = 0;
           renderGrid();
           restartPreview();
-          setStatus(text("importReady"));
+          setStatus(text("worksetCleared", { count: snapshot.length }), "success");
+          offerDeleteUndo(snapshot);
           return;
         }
         loadCurrentAnimation().catch((error) =>
@@ -422,20 +484,13 @@
       elements.organizerApply.addEventListener("click", applyPlan);
       elements.organizerGodotPlaceholder.addEventListener("click", importIntoSession);
       elements.organizerAddAssets.addEventListener("click", addIncludedFramesToAssets);
-      elements.organizerExport.addEventListener("click", exportIncludedFrames);
+      elements.organizerExport.addEventListener("click", () =>
+        typeof openExportDialog === "function" ? openExportDialog() : exportIncludedFrames(),
+      );
       elements.organizerProjectSelect.addEventListener("change", syncImportProjectField);
       elements.organizerSpeed.addEventListener("input", schedulePreviewFrame);
-      elements.organizerApplyTag.addEventListener("click", () => {
-        selectedFrames().forEach((frame) => {
-          frame.tag = elements.organizerTag.value.trim();
-        });
-        renderGrid();
-      });
-      elements.organizerClearTag.addEventListener("click", () => {
-        selectedFrames().forEach((frame) => {
-          frame.tag = "";
-        });
-        renderGrid();
+      elements.organizerBatchCutout.addEventListener("click", () => {
+        editBatchCutout().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
       });
       elements.organizerViewOriginal.addEventListener("click", () => {
         state.viewMode = "original";
@@ -517,6 +572,7 @@
       resolveConfirmation,
       offerDeleteUndo,
       setEditorInert,
+      setImportOrderStrategy,
       hasUnsavedChanges,
     };
   }

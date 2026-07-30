@@ -104,7 +104,13 @@ function createAdminRepositoryFixture() {
         return { success: true };
       },
       async findDevicesByIds(ids) {
-        return state.devices.filter((device) => ids.includes(device.id));
+        return state.devices
+          .filter((device) => ids.includes(device.id))
+          .map((device) => ({
+            ...device,
+            license_source:
+              state.licenses.find((license) => license.id === device.license_id)?.source || "code",
+          }));
       },
       async setDevicesRevoked(ids, revokedAt) {
         for (const device of state.devices.filter((entry) => ids.includes(entry.id))) {
@@ -521,6 +527,14 @@ test("administrator lists, revokes, restores, and resets individual devices", as
   assert.equal(state.devices.length, 1);
   await service.setDevicesRevoked({ ids: ["device-trial-list-01"], revoked: true }, request);
   assert.notEqual(state.devices[0].revoked_at, null);
+  await assert.rejects(
+    service.deleteDevices({ ids: ["device-trial-list-01"] }, request),
+    (error) =>
+      error.status === 409 &&
+      error.message ===
+        "Automatic trial devices cannot be reset because trial claim history must be retained.",
+  );
+  assert.equal(state.devices.length, 1);
 });
 
 test("administrator API fails closed and rejects cross-origin login", async () => {

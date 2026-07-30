@@ -296,9 +296,9 @@
         };
       }
       const store = getValueStore(group);
-      const scale = Number(store[group.scale] ?? group.baseScale ?? group.defaultScale ?? 0.22);
+      const scale = Number(store[group.scale] ?? group.defaultScale ?? group.baseScale ?? 0.22);
       const scaleVector = cloneScaleVector(
-        store[group.scaleVector] ?? group.baseScaleVector ?? group.defaultScaleVector,
+        store[group.scaleVector] ?? group.defaultScaleVector ?? group.baseScaleVector,
         scale,
       );
       return {
@@ -306,8 +306,8 @@
         scaleX: scaleVector.x,
         scaleY: scaleVector.y,
         visual_scale: scaleVector,
-        offset: cloneVector(store[group.offset] ?? group.baseOffset ?? group.defaultOffset ?? { x: 0, y: 0 }),
-        rotation: Number(store[group.rotation] ?? group.baseRotation ?? group.defaultRotation ?? 0),
+        offset: cloneVector(store[group.offset] ?? group.defaultOffset ?? group.baseOffset ?? { x: 0, y: 0 }),
+        rotation: Number(store[group.rotation] ?? group.defaultRotation ?? group.baseRotation ?? 0),
       };
     }
 

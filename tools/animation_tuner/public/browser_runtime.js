@@ -37,6 +37,14 @@
     return result;
   }
 
+  /** Throws a consistent cancellation error at safe browser export checkpoints. */
+  function throwIfExportCancelled(signal) {
+    if (!signal?.aborted) return;
+    const error = new Error("Export cancelled.");
+    error.name = "AbortError";
+    throw error;
+  }
+
   /**
    * Remaps one animation's indexed records while preserving unrelated groups.
    * @param {object} source Indexed record.
@@ -94,7 +102,9 @@
     for (const [storageKey, rawBinding] of entries) {
       const binding = rawBinding && typeof rawBinding === "object" ? rawBinding : null;
       if (!binding) continue;
-      const identity = bindingIdentity(binding);
+      const identity = bindingIdentity(
+        !binding.key && !binding.frameKey ? { ...binding, key: storageKey } : binding,
+      );
       if (identity.animation === animationKey && Number.isInteger(identity.frame)) {
         if (!indexed.has(identity.frame)) indexed.set(identity.frame, []);
         indexed.get(identity.frame).push([storageKey, binding]);
@@ -122,11 +132,42 @@
   }
 
   /**
+   * Remaps the active animation's trail sticks to a new frame plan.
+   * @param {object} source Attack-trail document.
+   * @param {string} animationKey Runtime animation key.
+   * @param {Array<{sourceIndex?:number}>} items New frame plan.
+   * @returns {object} Remapped attack-trail document.
+   */
+  function remapAttackTrails(source, animationKey, items) {
+    const result = cloneValue(
+      source && typeof source === "object" ? source : { schemaVersion: 8, bindings: {} },
+    );
+    if (!result.bindings || typeof result.bindings !== "object") result.bindings = {};
+    if (!Array.isArray(result.bindings[animationKey])) return result;
+    const frameMap = new Map();
+    items.forEach((item, nextIndex) => {
+      if (!Number.isInteger(item.sourceIndex)) return;
+      if (!frameMap.has(item.sourceIndex)) frameMap.set(item.sourceIndex, []);
+      frameMap.get(item.sourceIndex).push(nextIndex);
+    });
+    result.bindings[animationKey] = result.bindings[animationKey].map((segment) => {
+      const sticks = Array.from(segment?.sticks || []).flatMap((stick) =>
+        Array.from(frameMap.get(Number(stick?.frame)) || []).map((frame) => ({ ...stick, frame })),
+      );
+      return {
+        ...segment,
+        sticks: sticks.map((stick, order) => ({ ...stick, order })),
+      };
+    });
+    return result;
+  }
+
+  /**
    * Applies an organizer frame plan to a transient browser animation.
    * @param {object} group Active browser group.
    * @param {Array<{sourceIndex?:number,data?:string,name?:string,flipped?:boolean}>} items Frame plan.
-   * @param {{frameVisualOverrides?:object,framePlaybackOverrides?:object,frameBoxOverrides?:object,frameAudioBindings?:object|object[],frameImageAttachments?:object|object[],premiumFeatures?:string[]}} [state] Group-owned state.
-   * @returns {{frames:object[],frameVisualOverrides:object,framePlaybackOverrides:object,frameBoxOverrides:object,frameAudioBindings:object|object[],frameImageAttachments:object|object[],premiumFeatures:string[]}} Updated state.
+   * @param {{frameVisualOverrides?:object,framePlaybackOverrides?:object,frameBoxOverrides?:object,frameAudioBindings?:object|object[],frameImageAttachments?:object|object[],attackTrails?:object,premiumFeatures?:string[]}} [state] Group-owned state.
+   * @returns {{frames:object[],frameVisualOverrides:object,framePlaybackOverrides:object,frameBoxOverrides:object,frameAudioBindings:object|object[],frameImageAttachments:object|object[],attackTrails:object,premiumFeatures:string[]}} Updated state.
    */
   function reorganizeSessionAnimation(group, items, state = {}) {
     if (!group?.runtimeAnimation || !Array.isArray(group.frames))
@@ -152,6 +193,7 @@
       frameBoxOverrides: remapIndexedRecord(state.frameBoxOverrides, prefix, items, true),
       frameAudioBindings: remapBindings(state.frameAudioBindings || {}, group.runtimeAnimation, items),
       frameImageAttachments: remapBindings(state.frameImageAttachments || [], group.runtimeAnimation, items),
+      attackTrails: remapAttackTrails(state.attackTrails, group.runtimeAnimation, items),
       premiumFeatures: mergeFeatureIds([
         ...Array.from(group.premiumFeatures || []),
         ...Array.from(state.premiumFeatures || []),
@@ -160,6 +202,138 @@
     group.frames = result.frames;
     group.premiumFeatures = result.premiumFeatures;
     return result;
+  }
+
+  /**
+   * Deletes selected frames from one transient animation and remaps all frame-owned state.
+   * @param {object} group Active browser-session animation.
+   * @param {Iterable<number>} indexes Zero-based frame indexes to delete.
+   * @param {{frameVisualOverrides?:object,framePlaybackOverrides?:object,frameBoxOverrides?:object,frameAudioBindings?:object|object[],frameImageAttachments?:object|object[],attackTrails?:object,premiumFeatures?:string[]}} [state] Group-owned state.
+   * @returns {{frames:object[],frameVisualOverrides:object,framePlaybackOverrides:object,frameBoxOverrides:object,frameAudioBindings:object|object[],frameImageAttachments:object|object[],attackTrails:object,premiumFeatures:string[]}} Updated state.
+   */
+  function deleteSessionAnimationFrames(group, indexes, state = {}) {
+    if (group?.source !== "browser-session" || !Array.isArray(group.frames)) {
+      throw new Error("Browser animation is required.");
+    }
+    const removedIndexes = new Set(
+      Array.from(indexes || []).filter(
+        (index) => Number.isInteger(index) && index >= 0 && index < group.frames.length,
+      ),
+    );
+    if (!removedIndexes.size) throw new Error("Select at least one frame to delete.");
+    if (removedIndexes.size === group.frames.length) {
+      throw new Error("Delete the animation when removing all of its frames.");
+    }
+    const items = group.frames.flatMap((frame, sourceIndex) =>
+      removedIndexes.has(sourceIndex) ? [] : [{ sourceIndex, sourcePath: frame.path, name: frame.name }],
+    );
+    return reorganizeSessionAnimation(group, items, state);
+  }
+
+  /**
+   * Removes all indexed values owned by one animation while cloning retained entries.
+   * @param {object} record Indexed record.
+   * @param {string} prefix Animation key prefix.
+   * @returns {object} Filtered record.
+   */
+  function withoutIndexedPrefix(record, prefix) {
+    return Object.fromEntries(
+      Object.entries(record && typeof record === "object" ? record : {})
+        .filter(([key]) => !String(key).startsWith(prefix))
+        .map(([key, value]) => [key, cloneValue(value)]),
+    );
+  }
+
+  /**
+   * Removes audio or attachment bindings owned by one animation.
+   * @param {object[]|object} bindings Binding collection.
+   * @param {string} animationKey Runtime animation key.
+   * @returns {object[]|object} Filtered collection with its original storage shape.
+   */
+  function withoutAnimationBindings(bindings, animationKey) {
+    if (Array.isArray(bindings)) {
+      return bindings
+        .filter((binding) => bindingIdentity(binding).animation !== animationKey)
+        .map(cloneValue);
+    }
+    return Object.fromEntries(
+      Object.entries(bindings && typeof bindings === "object" ? bindings : {})
+        .filter(([storageKey, binding]) => {
+          const candidate =
+            binding && typeof binding === "object" && !binding.key && !binding.frameKey
+              ? { ...binding, key: storageKey }
+              : binding;
+          return bindingIdentity(candidate).animation !== animationKey;
+        })
+        .map(([key, value]) => [key, cloneValue(value)]),
+    );
+  }
+
+  /**
+   * Deletes one transient animation and every in-memory record exclusively owned by it.
+   * @param {object} config Browser-session project configuration.
+   * @param {object} group Animation group to delete.
+   * @param {{values?:object,frameVisualOverrides?:object,framePlaybackOverrides?:object,frameBoxOverrides?:object,frameAudioBindings?:object|object[],frameImageAttachments?:object|object[],attachmentAssets?:object[],attackTrails?:object}} [state] Browser workbench state.
+   * @returns {{config:object,nextGroup:object|null,values:object,frameVisualOverrides:object,framePlaybackOverrides:object,frameBoxOverrides:object,frameAudioBindings:object|object[],frameImageAttachments:object|object[],attachmentAssets:object[],attackTrails:object}} Filtered browser-session state.
+   */
+  function deleteSessionAnimation(config, group, state = {}) {
+    if (group?.source !== "browser-session" || !group.runtimeAnimation) {
+      throw new Error("Browser animation is required.");
+    }
+    const groups = Array.isArray(config?.groups) ? config.groups : [];
+    const removedIndex = groups.findIndex(
+      (candidate) =>
+        candidate === group ||
+        (group.uiId && candidate?.uiId === group.uiId) ||
+        candidate?.runtimeAnimation === group.runtimeAnimation,
+    );
+    if (removedIndex < 0) throw new Error("Browser animation is not part of the current session.");
+    const remainingGroups = groups.filter((_candidate, index) => index !== removedIndex);
+    const profileStillUsed = remainingGroups.some(
+      (candidate) => String(candidate.profileId || "") === String(group.profileId || ""),
+    );
+    const profiles = (Array.isArray(config?.profiles) ? config.profiles : []).filter(
+      (profile) => profileStillUsed || String(profile?.id || "") !== String(group.profileId || ""),
+    );
+    const animationValuePrefix = `profiles.${group.profileId}.groups.${group.animationId}.`;
+    const profileValuePrefix = `profiles.${group.profileId}.character.`;
+    const values = Object.fromEntries(
+      Object.entries(state.values && typeof state.values === "object" ? state.values : {})
+        .filter(
+          ([key]) =>
+            !String(key).startsWith(animationValuePrefix) &&
+            (profileStillUsed || !String(key).startsWith(profileValuePrefix)),
+        )
+        .map(([key, value]) => [key, cloneValue(value)]),
+    );
+    const framePrefix = `${group.runtimeAnimation}:`;
+    const attackTrails = cloneValue(
+      state.attackTrails && typeof state.attackTrails === "object"
+        ? state.attackTrails
+        : { schemaVersion: 8, bindings: {} },
+    );
+    if (!attackTrails.bindings || typeof attackTrails.bindings !== "object") {
+      attackTrails.bindings = {};
+    }
+    delete attackTrails.bindings[group.runtimeAnimation];
+    const nextConfig = { ...config, groups: remainingGroups, profiles, attackTrails };
+    return {
+      config: nextConfig,
+      nextGroup: remainingGroups[Math.min(removedIndex, remainingGroups.length - 1)] || null,
+      values,
+      frameVisualOverrides: withoutIndexedPrefix(state.frameVisualOverrides, framePrefix),
+      framePlaybackOverrides: withoutIndexedPrefix(state.framePlaybackOverrides, framePrefix),
+      frameBoxOverrides: withoutIndexedPrefix(state.frameBoxOverrides, framePrefix),
+      frameAudioBindings: withoutAnimationBindings(state.frameAudioBindings || {}, group.runtimeAnimation),
+      frameImageAttachments: withoutAnimationBindings(
+        state.frameImageAttachments || [],
+        group.runtimeAnimation,
+      ),
+      attachmentAssets: Array.from(state.attachmentAssets || [])
+        .filter((asset) => String(asset?.groupKey || "") !== group.runtimeAnimation)
+        .map(cloneValue),
+      attackTrails,
+    };
   }
 
   /**
@@ -399,12 +573,13 @@
    * Builds a browser-downloadable animation package from processed PNG data URLs.
    * @param {object} metadata Animation metadata collected by the organizer.
    * @param {Array<{name?:string,data:string,flipped?:boolean}>} items Processed frame items.
-   * @param {{authorization?:{permit?:string}|null,fetchImpl?:typeof fetch,premiumFeatures?:string[],batchZip?:{buildZip:(entries:Array<object>,options?:object)=>Promise<Blob>},document?:Document,urlApi?:typeof URL,now?:()=>Date,onProgress?:(current:number,total:number)=>void}} [dependencies] Browser adapters.
+   * @param {{authorization?:{permit?:string}|null,fetchImpl?:typeof fetch,premiumFeatures?:string[],formats?:{frames?:boolean,spritesheet?:boolean},batchZip?:{buildZip:(entries:Array<object>,options?:object)=>Promise<Blob>},mediaExportCore?:object,document?:Document,urlApi?:typeof URL,now?:()=>Date,onProgress?:(current:number,total:number)=>void,signal?:AbortSignal}} [dependencies] Browser adapters.
    * @returns {Promise<{filename:string,frameCount:number,blob:Blob,premiumFeatures:string[]}>} Export result.
    */
   async function exportAnimationPackage(metadata, items, dependencies = {}) {
     if (!metadata || typeof metadata !== "object") throw new TypeError("Animation metadata is required.");
     if (!Array.isArray(items) || !items.length) throw new Error("At least one processed frame is required.");
+    throwIfExportCancelled(dependencies.signal);
     const batchZip = dependencies.batchZip || root.BatchZip;
     if (!batchZip || typeof batchZip.buildZip !== "function") throw new Error("ZIP export is unavailable.");
     const premiumFeatureIds = Array.from(dependencies.premiumFeatures || []);
@@ -414,6 +589,10 @@
       dependencies.fetchImpl || root.fetch,
     );
 
+    const formats = {
+      frames: dependencies.formats?.frames !== false,
+      spritesheet: dependencies.formats?.spritesheet === true,
+    };
     const frameEntries = items.map((item, index) => {
       if (typeof item?.data !== "string" || !item.data.startsWith("data:image/png")) {
         throw new Error(`Frame ${index + 1} is missing processed PNG data.`);
@@ -433,25 +612,73 @@
         anchorMode: metadata.anchorMode,
         frames: frameEntries.map((entry, index) => ({
           index,
-          file: entry.name,
+          ...(formats.frames ? { file: entry.name } : {}),
           sourceName: items[index].name || "",
           flipped: items[index].flipped === true,
         })),
+      },
+      outputs: {
+        pngSequence: formats.frames,
+        spriteSheet: formats.spritesheet,
       },
       premiumFeatures: premiumFeatureIds,
       godotImport: { enabled: false, status: "placeholder" },
     };
     const entries = [
-      ...frameEntries,
+      ...(formats.frames ? frameEntries : []),
       { name: "xsxb-animation.json", data: `${JSON.stringify(manifest, null, 2)}\n` },
       {
         name: "README.txt",
-        data: "XSXB browser animation package\n\nGodot automatic import is currently disabled. The PNG sequence is available in frames/.\n",
+        data: [
+          "XSXB browser animation package",
+          "",
+          "Godot automatic import is currently disabled.",
+          formats.frames ? "PNG sequence: frames/" : null,
+          formats.spritesheet ? "Sprite Sheet and atlas: spritesheets/" : null,
+          "",
+        ]
+          .filter((line) => line !== null)
+          .join("\n"),
       },
     ];
+    const mediaExportCore = dependencies.mediaExportCore || root.MediaExportCore;
+    if (formats.frames) {
+      if (typeof mediaExportCore?.createFramesManifest !== "function") {
+        throw new Error("PNG frame manifest export is unavailable.");
+      }
+      entries.push({
+        name: "frames.json",
+        data: `${JSON.stringify(mediaExportCore.createFramesManifest(metadata, items), null, 2)}\n`,
+      });
+    }
+    if (formats.spritesheet) {
+      if (
+        typeof mediaExportCore?.planSpriteSheets !== "function" ||
+        typeof mediaExportCore?.createAtlasManifest !== "function" ||
+        typeof mediaExportCore?.renderSpriteSheetEntries !== "function" ||
+        !items.every((item) => item.image && Number(item.width) > 0 && Number(item.height) > 0)
+      ) {
+        throw new Error("Sprite-sheet export requires decoded frame canvases.");
+      }
+      const plan = mediaExportCore.planSpriteSheets(items);
+      const atlas = mediaExportCore.createAtlasManifest(metadata, plan);
+      entries.push(
+        ...(await mediaExportCore.renderSpriteSheetEntries(items, plan, {
+          document: dependencies.document || root.document,
+          metadata,
+          signal: dependencies.signal,
+        })),
+        { name: "spritesheets/atlas.json", data: `${JSON.stringify(atlas, null, 2)}\n` },
+      );
+    }
+    throwIfExportCancelled(dependencies.signal);
     const blob = await batchZip.buildZip(entries, {
-      onProgress: (current) => dependencies.onProgress?.(current, entries.length),
+      onProgress: (current) => {
+        throwIfExportCancelled(dependencies.signal);
+        dependencies.onProgress?.(current, entries.length);
+      },
     });
+    throwIfExportCancelled(dependencies.signal);
     const filename = `${safeFilename(metadata.animationName)}-xsxb.zip`;
     const documentApi = dependencies.document || root.document;
     const urlApi = dependencies.urlApi || root.URL;
@@ -599,6 +826,8 @@
     createSessionExportSnapshot,
     createEmptyConfig,
     createSessionAnimationGroup,
+    deleteSessionAnimation,
+    deleteSessionAnimationFrames,
     exportAnimationPackage,
     exportWorkbenchPackage,
     fetchConfig,

@@ -143,6 +143,7 @@
       updateSelectedBoxFromInputs,
       updateSelectedFromInputs,
       updateSelectedPlaybackFromInputs,
+      valueStore,
       zoomViewAt,
       rotateVector,
     } = handlers;
@@ -573,34 +574,62 @@
       if (els.clearFrame) {
         els.clearFrame.addEventListener("click", () => {
           if (!canEditFrameTransform() && !canEditFramePlayback()) return;
-          pushUndo("clear frame");
-          for (const frameIndex of selectedFrameIndexes()) {
-            delete overrideStore()[tuningFrameKey(frameIndex, state.currentGroup)];
-            delete playbackStore()[tuningFrameKey(frameIndex, state.currentGroup)];
+          const visualOverrides = overrideStore();
+          const playbackOverrides = playbackStore();
+          const keys = selectedFrameIndexes().map((frameIndex) =>
+            tuningFrameKey(frameIndex, state.currentGroup),
+          );
+          const changed = keys.some(
+            (key) =>
+              Object.prototype.hasOwnProperty.call(visualOverrides, key) ||
+              Object.prototype.hasOwnProperty.call(playbackOverrides, key),
+          );
+          if (!changed) {
+            status(t("defaultsAlreadyActive"));
+            return;
+          }
+          pushUndo("restore frame defaults");
+          for (const key of keys) {
+            delete visualOverrides[key];
+            delete playbackOverrides[key];
           }
           markDirty();
           syncFrameInputs();
           renderFilmstrip();
           draw();
+          status(t("restoreFrameDefaultsDone"));
         });
       }
 
       if (els.clearGroup) {
         els.clearGroup.addEventListener("click", () => {
           if (!canEditFrameTransform() && !canEditFramePlayback()) return;
-          pushUndo("clear group overrides");
-          const store = overrideStore();
-          for (const key of Object.keys(store)) {
-            if (groupOwnsFrameKey(state.currentGroup, key)) delete store[key];
+          const group = state.currentGroup;
+          const tuningValues = valueStore(group);
+          const tuningKeys = [group?.scale, group?.scaleVector, group?.offset, group?.rotation].filter(
+            Boolean,
+          );
+          const visualOverrides = overrideStore(group);
+          const visualKeys = Object.keys(visualOverrides).filter((key) => groupOwnsFrameKey(group, key));
+          const playbackOverrides = playbackStore(group);
+          const playbackKeys = Object.keys(playbackOverrides).filter((key) => groupOwnsFrameKey(group, key));
+          const changed =
+            tuningKeys.some((key) => Object.prototype.hasOwnProperty.call(tuningValues, key)) ||
+            visualKeys.length > 0 ||
+            playbackKeys.length > 0;
+          if (!changed) {
+            status(t("defaultsAlreadyActive"));
+            return;
           }
-          const playback = playbackStore();
-          for (const key of Object.keys(playback)) {
-            if (groupOwnsFrameKey(state.currentGroup, key)) delete playback[key];
-          }
+          pushUndo("restore animation defaults");
+          for (const key of tuningKeys) delete tuningValues[key];
+          for (const key of visualKeys) delete visualOverrides[key];
+          for (const key of playbackKeys) delete playbackOverrides[key];
           markDirty();
           syncFrameInputs();
           renderFilmstrip();
           draw();
+          status(t("restoreGroupDefaultsDone"));
         });
       }
 

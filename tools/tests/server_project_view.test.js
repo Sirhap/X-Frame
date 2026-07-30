@@ -33,6 +33,26 @@ test("project view preserves empty config response shape", () => {
   assert.equal(response.root, "/workspace");
   assert.deepEqual(response.groups, []);
   assert.deepEqual(response.tuning, {});
+  assert.equal(response.godotSync.ok, false);
+  assert.equal(response.godotHandoff.state, "local_only");
+});
+
+test("project view exposes current Godot handoff state", () => {
+  const project = { id: "demo", kind: "godot", projectRoot: "/game" };
+  const view = createEmptyView({
+    projectFromRequest: () => ({ registry: { projects: [project] }, project }),
+    projectStore: {
+      projectForClient: (entry) => entry,
+      projectWorkspaceDir: () => "/workspace/demo",
+    },
+    readAttackTrails: () => ({}),
+    syncCodexPetProject: () => ({ warnings: [] }),
+    godotHandoffForProject: () => ({ state: "sync_required", projectRoot: "/game" }),
+  });
+  const response = view.configResponse("demo");
+  assert.equal(response.godotHandoff.state, "sync_required");
+  assert.equal(response.godotSync.ok, false);
+  assert.equal(response.godotSync.projectRoot, "/game");
 });
 
 test("runtime project id sync updates only GDScript constants", () => {

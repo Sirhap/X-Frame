@@ -40,6 +40,8 @@
       renderTransformForGroup = (transform) => transform,
       runtimeBaseScaleForGroup = () => 1,
       valueStore = () => ({}),
+      drawAttackTrailLayer = () => {},
+      attackTrailNeedsContinuousDraw = () => false,
     } = options;
 
     if (!ctx) throw new TypeError("Canvas layer renderer requires a drawing context.");
@@ -147,6 +149,7 @@
     function playbackNeedsContinuousDraw() {
       if (!state().playing || !state().currentGroup) return false;
       if (sequenceOverlapEnabled(state().currentGroup)) return true;
+      if (attackTrailNeedsContinuousDraw()) return true;
       return attachedLayerGroups(state().currentGroup).some(
         (group) => group.independentPlayback === true || sequenceOverlapEnabled(group),
       );
@@ -233,6 +236,7 @@
           state().previewOwnerImages,
         );
         drawFrameImageAttachments(index, alpha, "below", state().currentGroup, state().images);
+        if (selected) drawAttackTrailLayer("behind", index, alpha);
         if (selected) {
           const nextIndex = nextPlayableFrameInGroup(state().currentGroup, index).index;
           drawSequenceOverlapFrame(index, alpha, state().currentGroup, state().images, {
@@ -255,12 +259,15 @@
           flipH: compositeLayerFlipH(state().currentGroup, state().previewOwnerGroup),
         });
         drawFrameImageAttachments(index, alpha, "above", state().currentGroup, state().images);
+        if (selected) drawAttackTrailLayer("front", index, alpha);
         return;
       }
       if (selected) drawSequenceOverlapFrame(index, alpha);
       drawFrameImageAttachments(index, alpha, "below");
+      if (selected) drawAttackTrailLayer("behind", index, alpha);
       drawFrame(index, alpha, selected);
       drawFrameImageAttachments(index, alpha, "above");
+      if (selected) drawAttackTrailLayer("front", index, alpha);
       drawAttachedLayersForOwner(state().currentGroup, index, alpha);
     }
 

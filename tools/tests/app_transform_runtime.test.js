@@ -78,3 +78,36 @@ test("runtime anchors choose canvas and source-anchor coordinates", () => {
   assert.equal(controller.targetHeightAnimationAnchorX(0, group), 17);
   assert.equal(controller.targetHeightAnimationAnchorY(0, group), 23);
 });
+
+test("runtime transform falls back to manifest defaults after persisted group values are removed", () => {
+  const group = {
+    scale: "scale",
+    scaleVector: "scaleVector",
+    offset: "offset",
+    rotation: "rotation",
+    defaultScale: 1,
+    defaultScaleVector: { x: 1.1, y: 0.9 },
+    defaultOffset: { x: 3, y: 4 },
+    defaultRotation: 5,
+    baseScale: 2,
+    baseScaleVector: { x: 2.2, y: 1.8 },
+    baseOffset: { x: 30, y: 40 },
+    baseRotation: 50,
+  };
+  const controller = createController({
+    getCurrentGroup: () => group,
+    getValueStore: () => ({}),
+    getOpaqueRectForImage: () => ({ x: 0, y: 0, width: 1, height: 1 }),
+    cloneScaleVector: (value, fallback) => value || { x: fallback, y: fallback },
+    cloneVector: (value) => ({ x: Number(value?.x || 0), y: Number(value?.y || 0) }),
+  });
+
+  assert.deepEqual(controller.baseTransform(group), {
+    scale: 1,
+    scaleX: 1.1,
+    scaleY: 0.9,
+    visual_scale: { x: 1.1, y: 0.9 },
+    offset: { x: 3, y: 4 },
+    rotation: 5,
+  });
+});

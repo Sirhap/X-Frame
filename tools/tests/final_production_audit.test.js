@@ -2,7 +2,10 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { auditFinalPosture } = require("../algorithm_protection/audit_production");
+const {
+  auditFinalPosture,
+  isAllowedProductionHtmlReference,
+} = require("../algorithm_protection/audit_production");
 
 /**
  * Creates a valid final manifest with JS Worker glue and one protected WASM core.
@@ -90,4 +93,13 @@ test("final audit rejects migration metadata even when asset extensions look val
   const failures = runFinalAudit(manifest);
   assert.ok(failures.includes("final build is not worker-wasm"));
   assert.ok(failures.includes("final build has a sensitive JS algorithm path"));
+});
+
+test("production HTML permits canonical app routes but rejects arbitrary unhashed references", () => {
+  for (const route of ["/workspace", "/tools/import", "/tools/organizer", "/tools/cutout"]) {
+    assert.equal(isAllowedProductionHtmlReference(route), true);
+  }
+  assert.equal(isAllowedProductionHtmlReference("/assets/ui.1111111111111111.js"), true);
+  assert.equal(isAllowedProductionHtmlReference("/tools/unknown"), false);
+  assert.equal(isAllowedProductionHtmlReference("/unhashed.js"), false);
 });

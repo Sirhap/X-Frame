@@ -8,6 +8,24 @@ const { EMPTY_MANIFEST, EMPTY_TUNING, createProjectStore, reslash } = require(".
 const { importAnimation, reorganizeAnimation } = require("../frame_organizer");
 const { deleteAnimation } = require("../animation_mutations");
 const { createProjectInspection } = require("../project_inspection");
+const { createGodotHandoffService } = require("../godot_handoff");
+const {
+  EMPTY_ATTACK_TRAILS,
+  normalizeAttackTrails,
+  pngInfo,
+  saveAttackTrailTexture,
+  validateAttackTrails,
+} = require("../attack_trails");
+const {
+  clearExportedPetTuning,
+  ensureCodexPetsProject,
+  exportCodexPet,
+  importCodexPet,
+  removeCustomCodexPet,
+  restoreCodexPetBackup,
+  restoreRemovedCodexPet,
+  syncCodexPetProject,
+} = require("../codex_pets");
 const { createHttpUtilities } = require("./server_http");
 const { createProjectPersistence } = require("./server_project_persistence");
 const { createProjectValidation } = require("./server_project_validation");
@@ -18,6 +36,7 @@ const { createStaticHandler } = require("./server_static");
 const { createServerIoOperations } = require("./server_io_operations");
 const { createActivationService } = require("./server_activation");
 const { createPremiumAuthorizer } = require("./server_premium_authorization");
+const { createMediaExportService } = require("./server_media_export");
 const { segmentSubject } = require("./server_subject_segmentation");
 const {
   decodeDataUrl,
@@ -41,10 +60,19 @@ const MEDIA_ROUTES = new Set([
   "/api/segment-subject",
   "/api/attachment-assets",
   "/api/frame-attachment-image",
+  "/api/attack-trail-texture",
+  "/api/codex-pets/import",
+  "/api/codex-pets/remove",
+  "/api/codex-pets/restore",
+  "/api/codex-pets/restore-backup",
   "/api/import-animation",
   "/api/replace-animation",
   "/api/replace-frame",
   "/api/reorganize-animation",
+  "/api/media-export/jobs",
+  "/api/media-export/frame",
+  "/api/media-export/finish",
+  "/api/media-export/cancel",
 ]);
 const WORKBENCH_ROUTES = new Set(["/workspace", "/tools/cutout", "/tools/import", "/tools/organizer"]);
 
@@ -67,10 +95,12 @@ const { HttpError, readJsonBody, send, validateWriteRequest } = createHttpUtilit
 const serveStatic = createStaticHandler({
   publicRoot: PUBLIC,
   workbenchRoutes: WORKBENCH_ROUTES,
+  landingDocument: "animation_factory.html",
   documentRoutes: Object.freeze({ "/tools/scatter-slice": "scatter-slice.html" }),
   safeResolve,
   send,
 });
+const mediaExportService = createMediaExportService({ root: ROOT });
 const activationService = createActivationService({
   codeHashes: process.env.XSXB_ACTIVATION_CODE_HASHES || "",
   secret: process.env.XSXB_ACTIVATION_SECRET || "",
@@ -78,11 +108,12 @@ const activationService = createActivationService({
 const premiumAuthorizer = createPremiumAuthorizer({ activationService, HttpError });
 const {
   withProjectWrite,
-  syncGodotProjectAsync,
+  syncGodotProjectAsync: syncGodotProjectWorkerAsync,
   syncFrameAudioAsync,
   projectDataRevision,
   createFilesystemSnapshot,
   rollbackFilesystemSnapshot,
+  runtimeProjectIdFiles,
   saveTransactionPaths,
 } = createServerIoOperations({
   root: ROOT,
@@ -133,6 +164,7 @@ const {
   reslash,
   createProjectInspection,
 });
+let godotHandoffService;
 const { syncGodotRuntimeProjectId, configResponse, projectsResponse } = createProjectView({
   root: ROOT,
   projectStore,
@@ -148,11 +180,46 @@ const { syncGodotRuntimeProjectId, configResponse, projectsResponse } = createPr
   readFrameAudioBindings,
   readFrameImageAttachments,
   readAttachmentAssets,
+  readAttackTrails,
+  emptyAttackTrails: EMPTY_ATTACK_TRAILS,
+  syncCodexPetProject,
   projectDataRevision,
+  godotHandoffForProject: (project) => godotHandoffService.status(project),
   fs,
   path,
   relativeProjectPath,
 });
+
+godotHandoffService = createGodotHandoffService({
+  root: ROOT,
+  projectStore,
+  projectDataRevision,
+  syncGodotProjectAsync: syncGodotProjectWorkerAsync,
+  syncGodotRuntimeProjectId,
+  runtimeProjectIdFiles,
+  createFilesystemSnapshot,
+  validateProject,
+  readManifest,
+  fs,
+  path,
+});
+
+/**
+ * Synchronizes Godot and records a receipt for every mutation path using the shared worker.
+ * @param {object} project Project record.
+ * @param {object} [options] Synchronization inputs.
+ * @returns {Promise<object>} Existing Godot synchronization response.
+ */
+async function syncGodotProjectAsync(project, options = {}) {
+  try {
+    const result = await syncGodotProjectWorkerAsync(project, options);
+    godotHandoffService.markSynced(project, result);
+    return result;
+  } catch (error) {
+    godotHandoffService.markSyncFailed(project, error);
+    throw error;
+  }
+}
 
 const { handleProjectRoute } = createProjectRoutes({
   send,
@@ -166,6 +233,7 @@ const { handleProjectRoute } = createProjectRoutes({
   clearProjectContent,
   rollbackFilesystemSnapshot,
   projectsResponse,
+  godotHandoffService,
   fs,
 });
 
@@ -198,10 +266,62 @@ const { handleMediaRoute } = createMediaRoutes({
   syncGodotRuntimeProjectId,
   godotMirrorPath,
   validateProject,
+  godotHandoffService,
 });
 
 function ensureDataFiles() {
-  projectStore.readRegistry();
+  ensureCodexPetsProject(projectStore);
+}
+
+const CODEX_PET_LIFECYCLE_ROUTES = new Map([
+  ["/api/codex-pets/remove", { operation: removeCustomCodexPet, resultKey: "removed" }],
+  ["/api/codex-pets/restore", { operation: restoreRemovedCodexPet, resultKey: "restored" }],
+  ["/api/codex-pets/restore-backup", { operation: restoreCodexPetBackup, resultKey: "restoredBackup" }],
+]);
+
+/**
+ * Handles recoverable custom-pet lifecycle mutations under the project write lock.
+ * @param {import("node:http").IncomingMessage} request Incoming request.
+ * @param {import("node:http").ServerResponse} response Outgoing response.
+ * @param {URL} parsed Parsed request URL.
+ * @returns {Promise<boolean>} Whether a lifecycle route handled the request.
+ */
+async function handleCodexPetLifecycleRoute(request, response, parsed) {
+  const route = request.method === "POST" ? CODEX_PET_LIFECYCLE_ROUTES.get(parsed.pathname) : null;
+  if (!route) return false;
+  const payload = await readJsonBody(request, parsed.pathname);
+  const { project } = requiredProjectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+  await withProjectWrite(project.id, async () => {
+    try {
+      const result = await route.operation(projectStore, project, payload);
+      let petSync;
+      try {
+        petSync = syncCodexPetProject(ROOT, projectStore, project);
+      } catch (error) {
+        return send(response, 500, {
+          ok: false,
+          operationApplied: true,
+          [route.resultKey]: result,
+          error: `The pet lifecycle operation completed, but project refresh failed: ${String(error?.message || error)}`,
+          code: "codex_pet_sync_failed",
+        });
+      }
+      return send(response, 200, {
+        ok: true,
+        [route.resultKey]: result,
+        petCount: petSync.pets.length,
+        warnings: petSync.warnings,
+      });
+    } catch (error) {
+      if (!Number.isInteger(error?.status)) throw error;
+      return send(response, Number(error.status), {
+        ok: false,
+        error: String(error.message || error),
+        ...(error.code ? { code: String(error.code) } : {}),
+      });
+    }
+  });
+  return true;
 }
 
 function round(value) {
@@ -321,6 +441,7 @@ function managedProjectPaths(project) {
     path.join(syncRoot, "workspace", "projects", project.id),
     path.join(syncRoot, "audio", "projects", project.id),
     path.join(syncRoot, "attachments", "projects", project.id),
+    path.join(syncRoot, "attack_trails", "projects", project.id),
   );
   return result;
 }
@@ -355,11 +476,13 @@ async function clearProjectContent(project) {
   projectStore.writeJson(paths.frameAudio, []);
   projectStore.writeJson(paths.frameImageAttachments, []);
   projectStore.writeJson(paths.attachmentAssets, []);
+  projectStore.writeJson(paths.attackTrails, EMPTY_ATTACK_TRAILS);
   return syncGodotProjectAsync(project, {
     manifest: EMPTY_MANIFEST,
     tuning: EMPTY_TUNING,
     frameAudioBindings: [],
     frameImageAttachments: [],
+    attackTrails: EMPTY_ATTACK_TRAILS,
   });
 }
 
@@ -414,6 +537,47 @@ function readFrameImageAttachments(project) {
 }
 
 /**
+ * Reads normalized attack-trail bindings for a Godot project.
+ * @param {object} project Project descriptor.
+ * @returns {object} Canonical attack-trail document.
+ */
+function readAttackTrails(project) {
+  if (project?.kind === "codex_pets") return EMPTY_ATTACK_TRAILS;
+  projectStore.ensureProjectFiles(project);
+  return normalizeAttackTrails(
+    projectStore.readJson(projectStore.projectPaths(project).attackTrails, EMPTY_ATTACK_TRAILS),
+  );
+}
+
+/**
+ * Validates and persists attack-trail bindings.
+ * @param {unknown} payload Client trail document.
+ * @param {object} project Project descriptor.
+ * @returns {object} Persisted canonical trail document.
+ */
+function saveAttackTrails(payload, project) {
+  if (project?.kind === "codex_pets") return EMPTY_ATTACK_TRAILS;
+  const trails = normalizeAttackTrails(payload);
+  for (const [key, segments] of Object.entries(trails.bindings)) {
+    for (const segment of segments) {
+      const texturePath = safeResolve(ROOT, segment.texture?.path || "");
+      if (texturePath && fs.existsSync(texturePath)) {
+        const info = pngInfo(fs.readFileSync(texturePath));
+        Object.assign(segment.texture, info);
+      }
+      if (segment.colorMode === "original" && !segment.texture?.hasEffectiveAlpha) {
+        throw new HttpError(
+          400,
+          `${key}/${segment.id}: original-color trails require a PNG with effective alpha.`,
+        );
+      }
+    }
+  }
+  projectStore.writeJson(projectStore.projectPaths(project).attackTrails, trails);
+  return trails;
+}
+
+/**
  * Reads reusable attachment assets for the active project.
  * @param {object} project Project record.
  * @returns {object[]} Persisted image assets.
@@ -442,6 +606,7 @@ function profileForClient(profile) {
     scale_semantic: "character_group_frame",
     anchor_mode: "manifest_anchor_mode",
     supports: profile.supports,
+    pet: profile.pet && typeof profile.pet === "object" ? profile.pet : null,
   };
 }
 
@@ -456,6 +621,8 @@ function frameForClient(frame, index) {
     duration: Number(frame.duration || 1),
     width: Number(frame.width || size.width || 0),
     height: Number(frame.height || size.height || 0),
+    crop: frame.crop && typeof frame.crop === "object" ? { ...frame.crop } : null,
+    assetVersion: String(frame.assetVersion || ""),
   };
 }
 
@@ -482,6 +649,7 @@ function buildGroups(manifest, tuningFile) {
         profileId: profile.id,
         profileLabel: profile.label,
         profileKind: profile.kind,
+        profilePet: profile.pet || null,
         profileScaleSemantic: "character_group_frame",
         profileAnchorMode: String(animation.anchorMode || "canvas_bottom_center"),
         profileSupports: Array.isArray(animation.supports) ? animation.supports : profile.supports,
@@ -589,9 +757,11 @@ function validateCharacterScaleValues(project, manifest) {
 }
 
 function validateProject(project, manifest) {
+  if (project?.kind === "codex_pets") return validateManifest(manifest);
   const inspection = createProjectInspection(project?.projectRoot);
   return [
     ...validateManifest(manifest),
+    ...validateAttackTrails(readAttackTrails(project), manifest),
     ...validateCharacterScaleValues(project, manifest),
     ...validateGdscriptTypeInference(project?.projectRoot, inspection),
     ...validateRuntimeBindingReaders(project, manifest, inspection),
@@ -607,6 +777,43 @@ const server = http.createServer(async (req, res) => {
     const parsed = new URL(req.url, "http://127.0.0.1");
     if (req.method === "POST") {
       validateWriteRequest(req);
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/media-export/capabilities") {
+      return send(res, 200, await mediaExportService.capabilities());
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/media-export/status") {
+      return send(res, 200, mediaExportService.status(parsed.searchParams.get("job")));
+    }
+    if (req.method === "GET" && parsed.pathname === "/api/media-export/file") {
+      const output = mediaExportService.outputFile(
+        parsed.searchParams.get("job"),
+        parsed.searchParams.get("name"),
+      );
+      res.writeHead(200, {
+        "content-type": output.contentType,
+        "content-length": output.size,
+        "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(output.filename))}`,
+        "cache-control": "no-store",
+      });
+      const outputStream = fs.createReadStream(output.filename);
+      outputStream.on("error", (error) => {
+        console.error("Media export download failed:", error);
+        if (!res.destroyed) res.destroy(error);
+      });
+      res.on("close", () => outputStream.destroy());
+      return outputStream.pipe(res);
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/media-export/jobs") {
+      return send(res, 201, mediaExportService.createJob(await readJsonBody(req, parsed.pathname)));
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/media-export/frame") {
+      return send(res, 200, mediaExportService.uploadFrame(await readJsonBody(req, parsed.pathname)));
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/media-export/finish") {
+      return send(res, 202, mediaExportService.finishJob(await readJsonBody(req, parsed.pathname)));
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/media-export/cancel") {
+      return send(res, 200, mediaExportService.cancel(await readJsonBody(req, parsed.pathname)));
     }
     if (req.method === "GET" && parsed.pathname === "/api/activation") {
       return send(res, 200, activationService.status(req));
@@ -629,6 +836,24 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (await handleProjectRoute(req, res, parsed)) return;
+    if (req.method === "POST" && parsed.pathname === "/api/codex-pets/import") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+      const imported = importCodexPet(project, payload);
+      syncCodexPetProject(ROOT, projectStore, project);
+      return send(res, 200, { ok: true, imported });
+    }
+    if (await handleCodexPetLifecycleRoute(req, res, parsed)) return;
+    if (req.method === "POST" && parsed.pathname === "/api/attack-trail-texture") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+      if (project?.kind === "codex_pets")
+        throw new HttpError(400, "Codex Pets projects do not support attack trails.");
+      return send(res, 200, {
+        ok: true,
+        texture: saveAttackTrailTexture(ROOT, projectStore, project, payload),
+      });
+    }
     if (req.method === "POST" && parsed.pathname === "/api/segment-subject") {
       const payload = await readJsonBody(req, parsed.pathname);
       try {
@@ -655,7 +880,20 @@ const server = http.createServer(async (req, res) => {
             dataRevision: currentRevision,
           });
         }
-        const transaction = await createFilesystemSnapshot(saveTransactionPaths(project));
+        const projectPaths = projectStore.projectPaths(project);
+        const localSavePaths = [
+          projectPaths.tuning,
+          projectPaths.frameAudio,
+          projectPaths.frameImageAttachments,
+          projectPaths.attackTrails,
+        ].filter(Boolean);
+        const localPathSet = new Set(localSavePaths.map((entry) => path.resolve(entry)));
+        const externalSavePaths = saveTransactionPaths(project).filter(
+          (entry) => !localPathSet.has(path.resolve(entry)),
+        );
+        const localTransaction = await createFilesystemSnapshot(localSavePaths);
+        const externalTransaction = await createFilesystemSnapshot(externalSavePaths);
+        let localSaved = false;
         try {
           saveTuningPayload(payload, project);
           let frameAudioBindings = null;
@@ -679,32 +917,79 @@ const server = http.createServer(async (req, res) => {
               project,
             );
           }
+          const attackTrails = saveAttackTrails(
+            payload.attack_trails || payload.attackTrails || EMPTY_ATTACK_TRAILS,
+            project,
+          );
+          const codexPetExports = [];
+          if (project.kind === "codex_pets") {
+            for (const entry of Array.isArray(payload.codex_pet_exports) ? payload.codex_pet_exports : []) {
+              codexPetExports.push(exportCodexPet(projectStore, project, entry));
+            }
+            clearExportedPetTuning(
+              projectStore,
+              project,
+              codexPetExports.map((entry) => entry.profileId),
+            );
+            syncCodexPetProject(ROOT, projectStore, project);
+          }
+          localSaved = true;
           const godotSync = await syncGodotProjectAsync(project, {
             ...(frameAudioBindings ? { frameAudioBindings } : {}),
             ...(frameImageAttachments ? { frameImageAttachments } : {}),
+            attackTrails,
           });
           const changedRuntimeProjectIdFiles = syncGodotRuntimeProjectId(project);
           const dataRevision = projectDataRevision(project);
-          await transaction.dispose();
+          await localTransaction.dispose();
+          await externalTransaction.dispose();
           return send(res, 200, {
             ok: true,
             tuning: tuningForClient(readTuningFile(project)),
             godotSync,
+            godotHandoff: godotHandoffService.status(project),
             runtimeProjectIdFiles: changedRuntimeProjectIdFiles,
+            codexPetExports,
             dataRevision,
             warnings: validateProject(project, readManifest(project)),
           });
         } catch (error) {
+          if (localSaved) {
+            try {
+              await externalTransaction.restore();
+            } catch (rollbackError) {
+              await localTransaction.dispose();
+              await externalTransaction.dispose();
+              throw new AggregateError(
+                [error, rollbackError],
+                "Godot synchronization failed and external rollback was incomplete.",
+              );
+            }
+            godotHandoffService.markSyncFailed(project, error);
+            await localTransaction.dispose();
+            await externalTransaction.dispose();
+            return send(res, 500, {
+              ok: false,
+              localSaved: true,
+              error: String(error?.message || error),
+              godotSync: { ok: false, reason: String(error?.message || error) },
+              godotHandoff: godotHandoffService.status(project),
+              dataRevision: projectDataRevision(project),
+            });
+          }
           try {
-            await transaction.restore();
+            await localTransaction.restore();
+            await externalTransaction.restore();
           } catch (rollbackError) {
-            await transaction.dispose();
+            await localTransaction.dispose();
+            await externalTransaction.dispose();
             throw new AggregateError(
               [error, rollbackError],
               "Save failed and filesystem rollback was incomplete.",
             );
           }
-          await transaction.dispose();
+          await localTransaction.dispose();
+          await externalTransaction.dispose();
           throw error;
         }
       });
@@ -758,6 +1043,8 @@ function handleServerStartupError(error) {
 }
 
 server.on("error", handleServerStartupError);
+
+server.on("close", () => mediaExportService.dispose());
 
 server.listen(PORT, HOST, () => {
   console.log(`XSXB Frame Tuner running at http://${HOST}:${PORT}`);

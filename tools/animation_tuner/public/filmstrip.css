@@ -101,7 +101,7 @@
   min-width: 0;
   min-height: 138px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 7px;
   padding: 8px;
   border: 3px solid var(--line);
@@ -115,6 +115,19 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+}
+
+.attachmentAssetHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.attachmentAssetHeaderActions .attachmentAssetUndo {
+  min-height: 44px;
+  padding: 6px 10px;
+  color: var(--accent-2);
+  border-color: var(--accent-2);
 }
 
 .attachmentAssetTray header strong {
@@ -137,6 +150,50 @@
   font: 800 9px/1.35 var(--data-font);
 }
 
+.attachmentSequenceToolbar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border: 2px solid color-mix(in srgb, var(--accent-2) 62%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent-2) 10%, var(--panel));
+}
+
+.attachmentSequenceToolbar span {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--muted);
+  font: 850 8px/1.25 var(--data-font);
+}
+
+.attachmentSequenceToolbar button {
+  min-height: 44px;
+  padding: 4px 6px;
+  font-size: 8px;
+  white-space: normal;
+}
+
+.attachmentSequenceToolbar .assetSequenceApply {
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: #06120f;
+}
+
+.attachmentSequenceToolbar .assetSequenceRemove,
+.attachmentAssetCard .attachmentAssetRemove {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.attachmentSequenceToolbar .assetSequenceRemove:hover:not(:disabled),
+.attachmentAssetCard .attachmentAssetRemove:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--danger-ink);
+}
+
 .attachmentAssetList {
   min-height: 0;
   display: flex;
@@ -145,8 +202,9 @@
 }
 
 .attachmentAssetCard {
-  flex: 0 0 82px;
-  min-width: 82px;
+  position: relative;
+  flex: 0 0 118px;
+  min-width: 118px;
   display: grid;
   grid-template-rows: 72px auto auto;
   gap: 4px;
@@ -156,6 +214,32 @@
   background: var(--control-bg);
   color: var(--control-ink);
   cursor: grab;
+}
+
+.attachmentAssetCard[data-sequence-selected="true"] {
+  border-color: var(--accent-2);
+  box-shadow: inset 0 0 0 1px var(--accent-2);
+}
+
+.attachmentAssetSequenceToggle {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.attachmentAssetSequenceChoice {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  margin: 0;
+  accent-color: var(--accent-2);
+  cursor: pointer;
 }
 
 .attachmentAssetCard img {
@@ -178,6 +262,12 @@
   padding: 4px;
   font-size: 8px;
   white-space: normal;
+}
+
+.attachmentAssetCardActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4px;
 }
 
 .frameStack {

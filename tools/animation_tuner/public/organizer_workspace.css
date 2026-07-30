@@ -91,18 +91,23 @@
   gap: 6px;
 }
 
-.organizerTagTools input {
-  width: 190px;
-  min-height: 34px;
-  padding: 6px 8px;
-  font-size: 11px;
-}
-
 .organizerTagTools button,
 .organizerViewToggle button {
   min-height: 34px;
   padding: 5px 8px;
   font-size: 11px;
+}
+
+.organizerTagTools .organizerBatchCutout {
+  min-width: 132px;
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.organizerTagTools .organizerBatchCutout:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, var(--panel));
 }
 
 .organizerGrid {
@@ -451,6 +456,36 @@
 }
 .organizerStatus[data-tone="busy"] {
   color: var(--accent-3);
+}
+
+.organizerOrderControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+
+.organizerOrderControl > span {
+  padding-inline: 5px 3px;
+  color: var(--muted);
+  font: 850 10px/1 var(--data-font);
+  letter-spacing: 0.04em;
+}
+
+.organizerOrderControl > button {
+  min-height: 34px;
+  padding: 6px 9px;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.organizerOrderControl > button[aria-pressed="true"] {
+  border-color: var(--accent-3);
+  background: var(--accent-soft);
+  color: var(--text);
 }
 
 .organizerFooterActions {

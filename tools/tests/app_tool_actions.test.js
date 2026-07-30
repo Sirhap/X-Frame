@@ -86,3 +86,58 @@ test("app tool actions wait for the shared danger confirmation before deleting f
   ]);
   assert.equal(fetchCalls, 0);
 });
+
+test("app tool actions delete browser-session frames without calling a local API", async () => {
+  const group = {
+    profileId: "hero",
+    animationId: "idle",
+    frames: [
+      { path: "a.png", name: "a.png" },
+      { path: "b.png", name: "b.png" },
+    ],
+  };
+  const deletedIndexes = [];
+  let fetchCalls = 0;
+  const controller = createController({
+    browserOnly: true,
+    getCurrentGroup: () => group,
+    getSelectedFrameIndexes: () => [1],
+    confirm: async () => true,
+    translate: (key) => key,
+    deleteBrowserSessionFrames: async (indexes) => deletedIndexes.push(...indexes),
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error("browser deletion must not fetch");
+    },
+  });
+
+  assert.equal(await controller.deleteSelectedAnimationFrames(), true);
+  assert.deepEqual(deletedIndexes, [1]);
+  assert.equal(fetchCalls, 0);
+});
+
+test("app tool actions delete a complete browser-session animation without calling a local API", async () => {
+  const group = {
+    profileId: "hero",
+    animationId: "idle",
+    name: "Idle",
+    frames: [{ path: "a.png", name: "a.png" }],
+  };
+  const deletedGroups = [];
+  let fetchCalls = 0;
+  const controller = createController({
+    browserOnly: true,
+    getCurrentGroup: () => group,
+    confirm: async () => true,
+    translate: (key) => key,
+    deleteBrowserSessionAnimation: async (target) => deletedGroups.push(target),
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error("browser deletion must not fetch");
+    },
+  });
+
+  assert.equal(await controller.clearCurrentAnimation(), true);
+  assert.deepEqual(deletedGroups, [group]);
+  assert.equal(fetchCalls, 0);
+});

@@ -23,25 +23,22 @@
   /**
    * Creates the route and workbench coordination controller.
    * @param {{
-   *   elements?:Record<string,object|null|undefined>,
-   *   getConfig?:()=>object|null,
-   *   getLanguage?:()=>string,
    *   getCurrentGroup?:()=>object|null,
-   *   getHomeHubDismissed?:()=>boolean,
-   *   setHomeHubDismissed?:(dismissed:boolean)=>void,
    *   getSelectedFrame?:()=>number,
    *   getActiveProjectId?:()=>string,
    *   getBatchCutout?:()=>object|null,
    *   getFrameOrganizer?:()=>object|null,
+   *   getWorkspaceDirty?:()=>boolean,
+   *   requestWorkspaceDecision?:()=>Promise<"save"|"discard"|"cancel">,
+   *   saveWorkspace?:()=>Promise<void>,
+   *   discardWorkspaceChanges?:()=>Promise<void>,
    *   translate?:(key:string,variables?:object)=>string,
-   *   projectLabel?:(project:object|null|undefined)=>string,
    *   groupLabel?:(group:object|null|undefined)=>string,
    *   windowRef?:Window,
    *   documentRef?:Document,
    *   storage?:Storage|null,
    * }} dependencies Controller dependencies.
    * @returns {{
-   *   renderHomeHub:()=>void,
    *   currentWorkbenchRoute:()=>string,
    *   updateDocumentTitle:()=>void,
    *   syncWorkbenchRoute:(route:string,options?:{push?:boolean})=>void,
@@ -51,37 +48,22 @@
    */
   function createController(dependencies = {}) {
     const {
-      elements = {},
-      getConfig = () => null,
-      getLanguage = () => "zh",
       getCurrentGroup = () => null,
-      getHomeHubDismissed = () => true,
-      setHomeHubDismissed = () => {},
       getSelectedFrame = () => 0,
       getActiveProjectId = () => "",
       getBatchCutout = () => null,
       getFrameOrganizer = () => null,
+      getWorkspaceDirty = () => false,
+      requestWorkspaceDecision = async () => "discard",
+      saveWorkspace = async () => {},
+      discardWorkspaceChanges = async () => {},
       translate = (key) => key,
-      projectLabel = (project) => String(project?.name || ""),
       groupLabel = (group) => String(group?.name || ""),
       windowRef = root,
     } = dependencies;
     const documentRef = dependencies.documentRef ?? windowRef.document ?? root.document;
     const storage = dependencies.storage ?? resolveStorage(windowRef);
     let applyRouteQueue = Promise.resolve();
-
-    /**
-     * Reads a route-related storage value without breaking private browsing.
-     * @param {string} key Storage key.
-     * @returns {string} Stored value or an empty string.
-     */
-    function readStorage(key) {
-      try {
-        return storage?.getItem(key) || "";
-      } catch (_error) {
-        return "";
-      }
-    }
 
     /**
      * Writes a route-related storage value without blocking navigation.
@@ -125,64 +107,6 @@
     }
 
     /**
-     * Renders the home dashboard summary and visibility state.
-     * @returns {void}
-     */
-    function renderHomeHub() {
-      if (!elements.homeHub) return;
-      const config = getConfig();
-      const currentGroup = getCurrentGroup();
-      const language = getLanguage();
-      elements.homeHub.hidden = currentWorkbenchRoute() !== "" || getHomeHubDismissed();
-      elements.homeHubOpen?.setAttribute("aria-pressed", String(!elements.homeHub.hidden));
-      if (elements.homeRecentProject) {
-        elements.homeRecentProject.textContent = projectLabel(config?.activeProject) || "—";
-      }
-      const groups = Array.isArray(config?.groups) ? config.groups : [];
-      const profiles = Array.isArray(config?.profiles) ? config.profiles : [];
-      const numberFormatter = new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en");
-      if (elements.homeAnimationCount)
-        elements.homeAnimationCount.textContent = numberFormatter.format(groups.length);
-      if (elements.homeFrameCount) {
-        const frameCount = groups.reduce(
-          (total, group) => total + (Array.isArray(group.frames) ? group.frames.length : 0),
-          0,
-        );
-        elements.homeFrameCount.textContent = numberFormatter.format(frameCount);
-      }
-      if (elements.homeProfileCount)
-        elements.homeProfileCount.textContent = numberFormatter.format(profiles.length);
-      if (elements.homeRecentAnimation) {
-        elements.homeRecentAnimation.textContent = currentGroup ? groupLabel(currentGroup) : "—";
-      }
-      if (elements.homeProjectPath) {
-        elements.homeProjectPath.textContent =
-          config?.activeProject?.workspacePath || config?.workspaceRoot || "—";
-      }
-      if (elements.homeLastEdited) {
-        const timestamp = Date.parse(readStorage("xsxbFrameTuner.lastEditedAt"));
-        elements.homeLastEdited.textContent = Number.isFinite(timestamp)
-          ? new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en", {
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            }).format(timestamp)
-          : "—";
-      }
-      if (elements.homeRecentTool) {
-        const recent = readStorage("xsxbFrameTuner.recentWorkbench");
-        const labels = {
-          cutout: translate("homeCutoutTitle"),
-          import: translate("homeImportTitle"),
-          organizer: translate("homeOrganizerTitle"),
-        };
-        elements.homeRecentTool.textContent = labels[recent] || "—";
-      }
-      updateDocumentTitle();
-    }
-
-    /**
      * Writes a workbench route without disturbing project or frame state.
      * @param {"cutout"|"organizer"|"import"|""} route Destination route.
      * @param {{push?:boolean}} [options] History behavior.
@@ -192,9 +116,8 @@
       const targetPath = PATH_BY_ROUTE[route] || WORKSPACE_PATH;
       const currentPath = windowRef.location?.pathname || "/";
       const legacyRoute = new URLSearchParams(windowRef.location?.search || "").has("tool");
-      if (!route) setHomeHubDismissed(true);
       if (currentWorkbenchRoute() === route && currentPath === targetPath && !legacyRoute) {
-        renderHomeHub();
+        updateDocumentTitle();
         return;
       }
       const url = new URL(windowRef.location.href);
@@ -203,7 +126,10 @@
       const method = options.push ? "pushState" : "replaceState";
       windowRef.history[method]({ xsxbWorkbench: route || "home" }, "", url);
       if (route) writeStorage("xsxbFrameTuner.recentWorkbench", route);
-      renderHomeHub();
+      updateDocumentTitle();
+      if (typeof windowRef.dispatchEvent === "function" && typeof windowRef.CustomEvent === "function") {
+        windowRef.dispatchEvent(new windowRef.CustomEvent("xsxb:routechange", { detail: { route } }));
+      }
     }
 
     /**
@@ -266,11 +192,10 @@
      */
     async function applyWorkbenchRouteNow() {
       const route = currentWorkbenchRoute();
-      if (!route) setHomeHubDismissed(true);
       if (new URLSearchParams(windowRef.location?.search || "").has("tool")) {
         syncWorkbenchRoute(route);
       }
-      renderHomeHub();
+      updateDocumentTitle();
       const batchCutout = getBatchCutout();
       const frameOrganizer = getFrameOrganizer();
       if (!routeControllerAvailable(route, batchCutout, frameOrganizer)) {
@@ -278,6 +203,20 @@
         return false;
       }
       try {
+        const visibleRoute = visibleWorkbenchRoute(batchCutout, frameOrganizer);
+        if (route && !visibleRoute && getWorkspaceDirty()) {
+          const decision = await requestWorkspaceDecision();
+          if (decision === "cancel") {
+            syncWorkbenchRoute("");
+            return false;
+          }
+          if (decision === "save") await saveWorkspace();
+          else if (decision === "discard") await discardWorkspaceChanges();
+          else {
+            syncWorkbenchRoute("");
+            return false;
+          }
+        }
         if (route === "cutout") {
           if (frameOrganizer?.isOpen()) {
             const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
@@ -363,7 +302,6 @@
     return {
       applyWorkbenchRoute,
       currentWorkbenchRoute,
-      renderHomeHub,
       syncUrlState,
       syncWorkbenchRoute,
       updateDocumentTitle,

@@ -474,6 +474,35 @@
   box-shadow: 2px 2px 0 var(--line);
 }
 
+.cutoutPreviewDisplayControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cutoutPreviewBackgrounds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(42px, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  box-shadow: 2px 2px 0 var(--line);
+}
+
+.cutoutPreviewBackgrounds button {
+  min-height: 30px;
+  padding: 4px 7px;
+  box-shadow: none;
+  font-size: 9px;
+}
+
+.cutoutPreviewBackgrounds button.active {
+  background: var(--accent-2);
+  color: #05070a;
+}
+
 .cutoutViewModes button {
   min-height: 30px;
   padding: 4px 7px;
@@ -484,6 +513,12 @@
 .cutoutViewModes button.active {
   background: var(--accent-3);
   color: #05070a;
+}
+
+#cutoutRepairBatch.previewPending {
+  background: var(--accent-3);
+  color: #05070a;
+  box-shadow: 3px 3px 0 var(--line);
 }
 
 .cutoutZoomControls {
@@ -577,8 +612,25 @@
   border-radius: 10px;
   cursor: crosshair;
   image-rendering: pixelated;
-  background: conic-gradient(#343b46 25%, #1e242d 0 50%, #343b46 0 75%, #1e242d 0) 0 0 / 22px 22px;
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-position:
+    0 0,
+    0 4px,
+    4px -4px,
+    -4px 0;
+  background-size: 8px 8px;
   box-shadow: 6px 6px 0 var(--line);
+}
+
+.cutoutModal[data-preview-background="dark"] .cutoutCompare canvas {
+  background: conic-gradient(#343b46 25%, #1e242d 0 50%, #343b46 0 75%, #1e242d 0) 0 0 / 22px 22px;
+}
+
+.cutoutModal[data-preview-background="white"] .cutoutCompare canvas {
+  background: #fff;
 }
 
 #cutoutResult {
