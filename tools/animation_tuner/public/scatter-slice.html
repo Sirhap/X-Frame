@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="在浏览器本地识别零散图片元素，筛选切片并重新拼接为规则精灵表。" />
+    <meta name="theme-color" content="#080d13" />
+    <title>零散切图 · XSXB Frame Tuner</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/scatter_slice.css" />
+  </head>
+  <body>
+    <a class="skipLink" href="#scatterWorkbench">跳到切图工作台</a>
+
+    <nav class="scatterRail" aria-label="创作工具">
+      <a class="railBrand" href="/" aria-label="动画工厂首页" title="动画工厂首页">X</a>
+      <div class="railGroup">
+        <a class="railItem" href="/workspace" aria-label="动画调参" title="动画调参">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16M7 6v12m10-12v12M4 18h16M9 10h6v4H9z" />
+          </svg>
+          <span>调参</span>
+        </a>
+        <a class="railItem" href="/tools/import" aria-label="导入动画" title="导入动画">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3v12m0-12 4 4m-4-4L8 7M5 14v5h14v-5" />
+          </svg>
+          <span>导入</span>
+        </a>
+        <a class="railItem" href="/tools/organizer" aria-label="帧整理" title="帧整理">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16v4H4zM4 11h10v4H4zM4 17h13v2H4zM17 12l3 3-3 3" />
+          </svg>
+          <span>整理</span>
+        </a>
+        <a class="railItem" href="/tools/cutout" aria-label="批量抠图" title="批量抠图">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 3 8 18M16 3 8 21M5 8h14M5 16h14" /></svg>
+          <span>抠图</span>
+        </a>
+        <a
+          class="railItem active"
+          href="/tools/scatter-slice"
+          aria-current="page"
+          aria-label="零散切图"
+          title="零散切图"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 4h6v6H4zM14 3h7v5h-7zM3 15h5v6H3zM12 13h9v8h-9z" />
+          </svg>
+          <span>切片</span>
+        </a>
+      </div>
+      <a class="railItem railHome" href="/" aria-label="返回动画工厂" title="返回动画工厂">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        <span>返回</span>
+      </a>
+    </nav>
+
+    <main id="scatterWorkbench" class="scatterApp" tabindex="-1">
+      <header class="scatterHeader">
+        <div class="headingCopy">
+          <p class="eyebrow"><span>CONNECTED COMPONENTS / 05</span> LOCAL SPRITE LAB</p>
+          <h1>把散落元素，<br /><em>收进每一格。</em></h1>
+        </div>
+        <div class="headingMeta">
+          <span><i aria-hidden="true"></i> LOCAL PROCESSING</span>
+          <p>色键或 Alpha 识别，逐块筛选，再按统一单元格拼接。图片只在当前浏览器中处理。</p>
+        </div>
+      </header>
+
+      <section class="workflowStrip" aria-label="切图流程">
+        <span class="active"><b>01</b> 载入素材</span>
+        <span><b>02</b> 识别区域</span>
+        <span><b>03</b> 筛选切片</span>
+        <span><b>04</b> 拼接导出</span>
+      </section>
+
+      <section class="scatterWorkbench" aria-label="零散切图工作台">
+        <aside class="controlDeck" aria-label="切图参数">
+          <section class="controlSection sourceSection">
+            <header>
+              <span>01</span>
+              <h2>源图片</h2>
+            </header>
+            <input id="scatterFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+            <button id="scatterUpload" class="actionButton primary" type="button">选择图片</button>
+            <button id="scatterSample" class="actionButton secondary" type="button">加载内置示例</button>
+            <p id="scatterSourceMeta" class="sourceMeta">未加载图片</p>
+          </section>
+
+          <section class="controlSection">
+            <header>
+              <span>02</span>
+              <h2>切片区域识别</h2>
+            </header>
+            <label class="fieldLabel" for="scatterMode">检测模式</label>
+            <select id="scatterMode">
+              <option value="auto">智能主体识别</option>
+              <option value="alpha">Alpha 透明度</option>
+              <option value="colorkey">背景色键</option>
+            </select>
+
+            <label class="fieldLabel" for="scatterColor">背景色 · 点击画布也可取色</label>
+            <div class="colorField">
+              <input id="scatterColor" type="color" value="#98d79b" />
+              <output id="scatterColorValue" for="scatterColor">#98D79B</output>
+            </div>
+
+            <label class="rangeField" for="scatterThreshold">
+              <span>前景判定阈值 <output id="scatterThresholdValue">24</output></span>
+              <input id="scatterThreshold" type="range" min="0" max="120" value="24" />
+            </label>
+            <label class="rangeField" for="scatterMergeGap">
+              <span>合并间距 <output id="scatterMergeGapValue">0</output></span>
+              <input id="scatterMergeGap" type="range" min="0" max="32" value="0" />
+            </label>
+            <div class="fieldGrid">
+              <label>最少像素<input id="scatterMinPixels" type="number" min="1" value="4" /></label>
+              <label>最小边长<input id="scatterMinSide" type="number" min="1" value="1" /></label>
+            </div>
+            <button id="scatterDetect" class="actionButton detect" type="button" disabled>
+              智能识别主体
+            </button>
+            <div class="sliceEditorControls" aria-label="切片编辑工具">
+              <div class="sliceToolModes" role="group" aria-label="画布工具">
+                <button id="scatterEditMode" type="button" aria-pressed="false" disabled>编辑切片</button>
+                <button id="scatterAddMode" type="button" aria-pressed="false" disabled>添加切片</button>
+                <button id="scatterSampleMode" type="button" aria-pressed="true" disabled>取背景色</button>
+              </div>
+              <div class="sliceBoxInspector" aria-label="选中切片坐标">
+                <label>X<input id="scatterBoxX" type="number" min="0" step="1" disabled /></label>
+                <label>Y<input id="scatterBoxY" type="number" min="0" step="1" disabled /></label>
+                <label>W<input id="scatterBoxW" type="number" min="1" step="1" disabled /></label>
+                <label>H<input id="scatterBoxH" type="number" min="1" step="1" disabled /></label>
+              </div>
+              <p class="sliceEditorHint">
+                编辑模式可移动/缩放；添加模式在原图拖出新切片；Delete / Backspace 删除选中切片。
+              </p>
+            </div>
+          </section>
+
+          <section class="controlSection exportSection">
+            <header>
+              <span>03</span>
+              <h2>拼接与导出</h2>
+            </header>
+            <div class="fieldGrid">
+              <label>切片留白<input id="scatterPadding" type="number" min="0" max="64" value="2" /></label>
+              <label>每行最大帧<input id="scatterColumns" type="number" min="1" max="64" value="8" /></label>
+            </div>
+            <label class="cutoutModeButton">
+              <input id="scatterTransparent" type="checkbox" checked />
+              <span><strong>智能抠图</strong><small>自动背景清除 · 常规模式</small></span>
+              <b aria-hidden="true">ON</b>
+            </label>
+            <div class="groupExportSelection">
+              <div><span>导出动画组</span><output id="scatterGroupSelection">0 / 0 组</output></div>
+              <button id="scatterToggleGroups" type="button" disabled>全部选择</button>
+            </div>
+            <div class="exportActions">
+              <button id="scatterDelete" class="actionButton secondary" type="button" disabled>
+                删除选中
+              </button>
+              <button id="scatterDownloadSlice" class="actionButton secondary" type="button" disabled>
+                下载切片
+              </button>
+            </div>
+            <button id="scatterDownloadSheet" class="actionButton primary" type="button" disabled>
+              导出所选动画组
+            </button>
+          </section>
+        </aside>
+
+        <div class="previewDeck">
+          <div class="previewToolbar">
+            <div><span>SOURCE / DETECTION</span><strong id="scatterBoxCount">0 BOXES</strong></div>
+            <code id="scatterActiveBox">NO SELECTION</code>
+          </div>
+          <div id="scatterDropZone" class="canvasStage">
+            <button id="scatterEmptyStage" class="emptyStage" type="button">
+              <span class="dropGlyph" aria-hidden="true"> <i></i><i></i><i></i><i></i> </span>
+              <strong>拖入一张零散素材图</strong>
+              <small>或点击选择 PNG / JPG / WebP · 最大 20 MB</small>
+            </button>
+            <canvas
+              id="scatterPreview"
+              title="源图片与检测框预览"
+              aria-label="源图片与检测框预览"
+              tabindex="0"
+              hidden
+            ></canvas>
+          </div>
+          <div id="scatterStatus" class="statusBar" role="status" aria-live="polite">
+            <span><i aria-hidden="true"></i> READY</span>
+            <p>等待图片。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="resultsDeck" aria-labelledby="scatterResultsTitle">
+        <header class="resultsHeader">
+          <div>
+            <p class="eyebrow"><span>DETECTED OUTPUT</span> CLICK TO SELECT</p>
+            <h2 id="scatterResultsTitle">动画分组与切片</h2>
+          </div>
+          <p>每一行自动归为一组；勾选一个或多个动画组后导出，点击切片可单独检查或删除。</p>
+        </header>
+        <div class="overallPlaybackPanel">
+          <div>
+            <strong>全部切片连续预览</strong>
+            <small>按动画组与帧顺序循环播放</small>
+          </div>
+          <button id="scatterPlayAll" type="button" disabled>播放全部</button>
+          <canvas id="scatterPlaybackAll" aria-label="全部切片循环预览" hidden></canvas>
+        </div>
+        <div id="scatterSliceList" class="sliceGroups">
+          <p class="emptyResults">识别结果会显示在这里。</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="/smart_cutout_defaults.js"></script>
+    <script src="/batch_cutout_color_core.js"></script>
+    <script src="/batch_cutout_connectivity_core.js"></script>
+    <script src="/batch_cutout_product_core.js"></script>
+    <script src="/batch_cutout_protection_core.js"></script>
+    <script src="/batch_cutout_reference_recovery_core.js"></script>
+    <script src="/batch_cutout_reference_replace_core.js"></script>
+    <script src="/batch_cutout_reference_input.js"></script>
+    <script src="/batch_cutout_core.js"></script>
+    <script src="/scatter_slice_core.js"></script>
+    <script src="/scatter_slice_groups.js"></script>
+    <script src="/scatter_slice_smart_cutout.js"></script>
+    <script src="/scatter_slice_editor_core.js"></script>
+    <script src="/scatter_slice.js"></script>
+  </body>
+</html>

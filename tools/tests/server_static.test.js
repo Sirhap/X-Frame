@@ -12,6 +12,7 @@ test("static handler serves workbench routes and rejects missing files", () => {
   fs.writeFileSync(path.join(root, "index.html"), "index");
   fs.writeFileSync(path.join(root, "landing.html"), "landing");
   fs.writeFileSync(path.join(root, "app.js"), "script");
+  fs.writeFileSync(path.join(root, "scatter-slice.html"), "scatter-slice");
   fs.writeFileSync(path.join(root, "favicon.ico"), "icon");
   fs.mkdirSync(path.join(root, "assets", "landing"), { recursive: true });
   fs.writeFileSync(path.join(root, "assets", "landing", "hero.webp"), "webp");
@@ -19,6 +20,7 @@ test("static handler serves workbench routes and rejects missing files", () => {
   const handler = createStaticHandler({
     publicRoot: root,
     workbenchRoutes: new Set(["/workspace", "/tools/organizer"]),
+    documentRoutes: { "/tools/scatter-slice": "scatter-slice.html" },
     safeResolve: (base, requested) => {
       const resolved = path.resolve(base, requested);
       return resolved === base || resolved.startsWith(`${base}${path.sep}`) ? resolved : null;
@@ -33,6 +35,7 @@ test("static handler serves workbench routes and rejects missing files", () => {
   handler({}, {}, "/workspace");
   handler({}, {}, "/tools/organizer");
   handler({}, {}, "/app.js");
+  handler({}, {}, "/tools/scatter-slice");
   handler({}, {}, "/favicon.ico");
   handler({}, {}, "/assets/landing/hero.webp");
   handler({}, {}, "/missing.js");
@@ -41,6 +44,7 @@ test("static handler serves workbench routes and rejects missing files", () => {
     { status: 200, body: "index", contentType: "text/html" },
     { status: 200, body: "index", contentType: "text/html" },
     { status: 200, body: "script", contentType: "application/javascript" },
+    { status: 200, body: "scatter-slice", contentType: "text/html" },
     { status: 200, body: "icon", contentType: "image/x-icon" },
     { status: 200, body: "webp", contentType: "image/webp" },
     { status: 404, body: "Not found", contentType: "text/plain" },

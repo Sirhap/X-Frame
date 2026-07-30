@@ -67,6 +67,7 @@ const { HttpError, readJsonBody, send, validateWriteRequest } = createHttpUtilit
 const serveStatic = createStaticHandler({
   publicRoot: PUBLIC,
   workbenchRoutes: WORKBENCH_ROUTES,
+  documentRoutes: Object.freeze({ "/tools/scatter-slice": "scatter-slice.html" }),
   safeResolve,
   send,
 });
