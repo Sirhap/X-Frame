@@ -39,6 +39,7 @@
     "cutoutQueue",
     "cutoutStatus",
     "cutoutDownload",
+    "cutoutAddProject",
     "cutoutApplyGroup",
     "cutoutCounter",
     "cutoutSample",

@@ -8,17 +8,32 @@
   "use strict";
 
   const ROUTE_BY_PATH = Object.freeze({
+    "/projects": "projects",
+    "/tools": "tools",
     "/tools/cutout": "cutout",
     "/tools/import": "import",
-    "/tools/organizer": "organizer",
+    "/tools/organizer": "import",
+    "/tools/scatter-slice": "scatter",
+    "/workspace/tools/cutout": "cutout",
+    "/workspace/tools/organizer": "organizer",
   });
-  const PATH_BY_ROUTE = Object.freeze({
+  const STANDALONE_PATH_BY_ROUTE = Object.freeze({
     cutout: "/tools/cutout",
-    import: "/tools/import",
+    import: "/tools/organizer",
     organizer: "/tools/organizer",
+    projects: "/projects",
+    scatter: "/tools/scatter-slice",
+    tools: "/tools",
+  });
+  const PROJECT_PATH_BY_ROUTE = Object.freeze({
+    cutout: "/workspace/tools/cutout",
+    import: "/workspace/tools/organizer",
+    organizer: "/workspace/tools/organizer",
+    projects: "/projects",
+    tools: "/tools",
   });
   const WORKSPACE_PATH = "/workspace";
-  const VALID_ROUTES = new Set(Object.keys(PATH_BY_ROUTE));
+  const VALID_ROUTES = new Set(["cutout", "import", "organizer", "projects", "scatter", "tools"]);
 
   /**
    * Creates the route and workbench coordination controller.
@@ -40,6 +55,7 @@
    * }} dependencies Controller dependencies.
    * @returns {{
    *   currentWorkbenchRoute:()=>string,
+   *   currentNavigationContext:()=>"project"|"standalone",
    *   updateDocumentTitle:()=>void,
    *   syncWorkbenchRoute:(route:string,options?:{push?:boolean})=>void,
    *   applyWorkbenchRoute:()=>Promise<boolean>,
@@ -91,6 +107,17 @@
     }
 
     /**
+     * Returns the ownership domain encoded by the current path.
+     * @returns {"project"|"standalone"} Current navigation domain.
+     */
+    function currentNavigationContext() {
+      const pathname = String(windowRef.location?.pathname || "/");
+      return pathname === "/projects" || pathname === "/workspace" || pathname.startsWith("/workspace/")
+        ? "project"
+        : "standalone";
+    }
+
+    /**
      * Updates the browser tab title from the active route and animation.
      * @returns {void}
      */
@@ -100,6 +127,9 @@
         cutout: translate("homeCutoutTitle"),
         import: translate("homeImportTitle"),
         organizer: translate("homeOrganizerTitle"),
+        projects: translate("projectHubTitle"),
+        scatter: translate("scatterSliceTitle"),
+        tools: translate("quickToolsTitle"),
       };
       const currentGroup = getCurrentGroup();
       const context = routeLabels[route] || (currentGroup ? groupLabel(currentGroup) : "");
@@ -109,11 +139,13 @@
     /**
      * Writes a workbench route without disturbing project or frame state.
      * @param {"cutout"|"organizer"|"import"|""} route Destination route.
-     * @param {{push?:boolean}} [options] History behavior.
+     * @param {{push?:boolean,context?:"project"|"standalone"}} [options] History behavior.
      * @returns {void}
      */
     function syncWorkbenchRoute(route, options = {}) {
-      const targetPath = PATH_BY_ROUTE[route] || WORKSPACE_PATH;
+      const context = options.context || currentNavigationContext();
+      const routePaths = context === "project" ? PROJECT_PATH_BY_ROUTE : STANDALONE_PATH_BY_ROUTE;
+      const targetPath = routePaths[route] || WORKSPACE_PATH;
       const currentPath = windowRef.location?.pathname || "/";
       const legacyRoute = new URLSearchParams(windowRef.location?.search || "").has("tool");
       if (currentWorkbenchRoute() === route && currentPath === targetPath && !legacyRoute) {
@@ -130,6 +162,12 @@
       if (typeof windowRef.dispatchEvent === "function" && typeof windowRef.CustomEvent === "function") {
         windowRef.dispatchEvent(new windowRef.CustomEvent("xsxb:routechange", { detail: { route } }));
       }
+    }
+
+    /** Returns the safe parent destination for a failed or cancelled route. */
+    function restoreParentRoute() {
+      if (currentNavigationContext() === "standalone") syncWorkbenchRoute("tools", { context: "standalone" });
+      else syncWorkbenchRoute("");
     }
 
     /**
@@ -199,7 +237,7 @@
       const batchCutout = getBatchCutout();
       const frameOrganizer = getFrameOrganizer();
       if (!routeControllerAvailable(route, batchCutout, frameOrganizer)) {
-        syncWorkbenchRoute("");
+        restoreParentRoute();
         return false;
       }
       try {
@@ -207,13 +245,13 @@
         if (route && !visibleRoute && getWorkspaceDirty()) {
           const decision = await requestWorkspaceDecision();
           if (decision === "cancel") {
-            syncWorkbenchRoute("");
+            restoreParentRoute();
             return false;
           }
           if (decision === "save") await saveWorkspace();
           else if (decision === "discard") await discardWorkspaceChanges();
           else {
-            syncWorkbenchRoute("");
+            restoreParentRoute();
             return false;
           }
         }
@@ -261,9 +299,12 @@
             return false;
           }
         }
+        if (route === "projects" || route === "tools") return true;
         return true;
       } catch (error) {
-        syncWorkbenchRoute(visibleWorkbenchRoute(batchCutout, frameOrganizer));
+        const visibleRoute = visibleWorkbenchRoute(batchCutout, frameOrganizer);
+        if (visibleRoute) syncWorkbenchRoute(visibleRoute);
+        else restoreParentRoute();
         throw error;
       }
     }
@@ -286,21 +327,25 @@
     function syncUrlState(options = {}) {
       const url = new URL(windowRef.location.href);
       const currentGroup = getCurrentGroup();
+      const ownsProjectSelection =
+        url.pathname === WORKSPACE_PATH || url.pathname.startsWith(`${WORKSPACE_PATH}/`);
       const entries = {
-        project: getActiveProjectId(),
-        group: currentGroup?.uiId || "",
-        frame: currentGroup ? String(getSelectedFrame()) : "",
+        project: ownsProjectSelection ? getActiveProjectId() : "",
+        group: ownsProjectSelection ? currentGroup?.uiId || "" : "",
+        frame: ownsProjectSelection && currentGroup ? String(getSelectedFrame()) : "",
       };
       for (const [key, value] of Object.entries(entries)) {
         if (value) url.searchParams.set(key, value);
         else url.searchParams.delete(key);
       }
+      url.searchParams.delete("animation");
       const method = options.push ? "pushState" : "replaceState";
       windowRef.history[method]({ xsxbSelection: true }, "", url);
     }
 
     return {
       applyWorkbenchRoute,
+      currentNavigationContext,
       currentWorkbenchRoute,
       syncUrlState,
       syncWorkbenchRoute,

@@ -1205,6 +1205,29 @@ input[type="range"] {
   }
 }
 
+body.embedded {
+  --scatter-rail: 0px;
+}
+
+body.embedded .scatterRail {
+  display: none;
+}
+
+body.embedded .scatterApp {
+  width: 100%;
+  margin-left: 0;
+}
+
+.embeddedBack {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  color: var(--scatter-accent);
+  font-weight: 750;
+  text-decoration: none;
+}
+
 @media (max-width: 500px) {
   .scatterHeader h1 {
     font-size: 40px;

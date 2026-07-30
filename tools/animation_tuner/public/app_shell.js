@@ -15,11 +15,13 @@
   });
   const SIDEBAR_TABS = Object.freeze(["project", "transform", "boxes", "effects"]);
   const FILMSTRIP_LAYOUTS = Object.freeze(["single", "grid"]);
-  const ROUTE_BY_PATH = Object.freeze({
-    "/workspace": "",
-    "/tools/import": "import",
-    "/tools/organizer": "organizer",
+  const TOOL_ROUTE_BY_PATH = Object.freeze({
     "/tools/cutout": "cutout",
+    "/tools/import": "import",
+    "/tools/organizer": "import",
+    "/tools/scatter-slice": "scatter",
+    "/workspace/tools/cutout": "cutout",
+    "/workspace/tools/organizer": "organizer",
   });
 
   /**
@@ -85,11 +87,14 @@
       body: documentRef.body,
       sidebar: documentRef.querySelector("#workbenchSidebar"),
       workspace: documentRef.querySelector(".workspace"),
+      projectHub: documentRef.querySelector("#projectHub"),
+      quickToolsHub: documentRef.querySelector("#quickToolsHub"),
+      scatterSliceSurface: documentRef.querySelector("#scatterSliceSurface"),
       collapse: documentRef.querySelector("#sidebarCollapse"),
       sidebarTabs: Array.from(documentRef.querySelectorAll("[data-sidebar-tab]")),
       filmstripPanel: documentRef.querySelector(".filmstripPanel"),
       filmstripButtons: Array.from(documentRef.querySelectorAll("[data-filmstrip-layout]")),
-      routeItems: Array.from(documentRef.querySelectorAll("[data-workbench-route]")),
+      routeItems: Array.from(documentRef.querySelectorAll("[data-app-mode]")),
       brandMark: documentRef.querySelector("#brandMark"),
       kunkunButtons: Array.from(documentRef.querySelectorAll(".kunkunThemeButton")),
       actionFeedback: documentRef.querySelector(".contextActionFeedback"),
@@ -123,6 +128,7 @@
           "#projectContext",
           "#importAnimationOpen",
           ".animationPicker",
+          '[data-panel="project-processing"]',
           '[data-panel="scene-reference"]',
         ],
         transform: ['[data-panel="adjustment-base"]'],
@@ -150,6 +156,16 @@
         if (exportButton) elements.actionButtons.append(exportButton);
         if (save) elements.actionButtons.append(save);
       }
+    }
+
+    /** Moves animation-owned preprocessing actions beside the selected animation. */
+    function mountProjectProcessingActions() {
+      const target = documentRef.querySelector(".projectProcessingActions");
+      const organizer = documentRef.querySelector("#organizerOpen");
+      const cutout = documentRef.querySelector("#cutoutOpen");
+      if (!target) return;
+      if (organizer) target.append(organizer);
+      if (cutout) target.append(cutout);
     }
 
     /** @param {string} rawTab Requested tab. */
@@ -188,32 +204,66 @@
       writePreference(STORAGE_KEYS.filmstripLayout, layout);
     }
 
-    /** Synchronizes tool-rail selection with the canonical deep-link route. */
+    /** Returns the top-level product mode represented by one path. */
+    function appModeForPath(path) {
+      return path === "/projects" || path === "/workspace" || path.startsWith("/workspace/")
+        ? "projects"
+        : "tools";
+    }
+
+    /** Synchronizes tool-rail selection and visible surface with the canonical route. */
     function syncActiveRoute() {
       const path = String(windowRef.location?.pathname || "/").replace(/\/+$/, "") || "/";
-      const route = ROUTE_BY_PATH[path] ?? "";
+      const route =
+        TOOL_ROUTE_BY_PATH[path] ?? (path === "/projects" ? "projects" : path === "/tools" ? "tools" : "");
+      const appMode = appModeForPath(path);
       for (const item of elements.routeItems) {
-        const active = item.dataset.workbenchRoute === route;
+        const active = item.dataset.appMode === appMode;
         item.classList.toggle("active", active);
         if (active) item.setAttribute("aria-current", "page");
         else item.removeAttribute("aria-current");
       }
       elements.body?.setAttribute("data-workbench", route || "workspace");
+      elements.body?.setAttribute("data-app-mode", appMode);
+      elements.body?.setAttribute(
+        "data-app-surface",
+        path === "/projects"
+          ? "projects"
+          : path === "/tools"
+            ? "tools"
+            : route === "scatter"
+              ? "scatter"
+              : route
+                ? "tool"
+                : "workspace",
+      );
       syncHiddenWorkbenchAccessibility();
     }
 
     /** Removes visually hidden workbench regions from keyboard and screen-reader navigation. */
     function syncHiddenWorkbenchAccessibility() {
-      const toolOpen = elements.body?.dataset.workbench !== "workspace";
-      const sidebarHidden = toolOpen || elements.body?.classList.contains("sidebarCollapsed");
+      const surface = elements.body?.dataset.appSurface || "workspace";
+      const workspaceVisible = surface === "workspace";
+      const sidebarHidden = !workspaceVisible || elements.body?.classList.contains("sidebarCollapsed");
       if (elements.sidebar) {
         elements.sidebar.inert = Boolean(sidebarHidden);
         elements.sidebar.setAttribute("aria-hidden", sidebarHidden ? "true" : "false");
       }
       if (elements.workspace) {
-        elements.workspace.inert = Boolean(toolOpen);
-        elements.workspace.setAttribute("aria-hidden", toolOpen ? "true" : "false");
+        elements.workspace.inert = Boolean(!workspaceVisible);
+        elements.workspace.setAttribute("aria-hidden", workspaceVisible ? "false" : "true");
       }
+      syncHubVisibility(elements.projectHub, surface === "projects");
+      syncHubVisibility(elements.quickToolsHub, surface === "tools");
+      syncHubVisibility(elements.scatterSliceSurface, surface === "scatter");
+    }
+
+    /** @param {HTMLElement|null} hub Hub surface. @param {boolean} visible Whether it is active. */
+    function syncHubVisibility(hub, visible) {
+      if (!hub) return;
+      hub.hidden = !visible;
+      hub.inert = !visible;
+      hub.setAttribute("aria-hidden", visible ? "false" : "true");
     }
 
     /** Reveals the optional easter-egg theme without occupying normal UI. */
@@ -261,7 +311,7 @@
     /** @param {MouseEvent} event Tool-rail navigation event. */
     async function handleRouteClick(event) {
       event.preventDefault();
-      const route = event.currentTarget.dataset.workbenchRoute || "";
+      const route = event.currentTarget.dataset.appMode || "projects";
       try {
         await navigate(route);
       } finally {
@@ -275,6 +325,7 @@
       bound = true;
       categorizeSidebar();
       mountContextActions();
+      mountProjectProcessingActions();
       setSidebarTab(readPreference(storage, STORAGE_KEYS.activePanelTab, "transform"));
       setFilmstripLayout(readPreference(storage, STORAGE_KEYS.filmstripLayout, "single"));
       setSidebarCollapsed(readPreference(storage, STORAGE_KEYS.sidebarCollapsed, "false") === "true");
@@ -321,7 +372,7 @@
 
     /** @param {string} route Fallback route. @returns {boolean} */
     function defaultNavigate(route) {
-      const target = Object.entries(ROUTE_BY_PATH).find(([, value]) => value === route)?.[0] || "/workspace";
+      const target = route === "tools" ? "/tools" : "/projects";
       windowRef.location.assign(target);
       return true;
     }

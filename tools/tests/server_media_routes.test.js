@@ -8,7 +8,13 @@ function createHarness(overrides = {}) {
   const responses = [];
   const project = { id: "project-a", projectRoot: "/tmp/project-a" };
   const projectStore = {
-    projectPaths: () => ({ frameAudio: "/tmp/project-a/frame-audio.json" }),
+    projectPaths: () => ({
+      manifest: "/tmp/project-a/manifest.json",
+      tuning: "/tmp/project-a/tuning.json",
+      frameAudio: "/tmp/project-a/frame-audio.json",
+      frameImageAttachments: "/tmp/project-a/frame-images.json",
+      attackTrails: "/tmp/project-a/attack-trails.json",
+    }),
     slug: (value) =>
       String(value || "")
         .toLowerCase()
@@ -17,12 +23,15 @@ function createHarness(overrides = {}) {
     addProject: () => ({ activeProjectId: project.id, projects: [project] }),
     setActiveProject: () => ({ activeProjectId: project.id, projects: [project] }),
     resolveProject: () => project,
+    readJson: overrides.readProjectJson || ((_filename, fallback) => fallback),
   };
   const routes = createMediaRoutes({
-    send: (_res, status, payload) => {
-      responses.push({ status, payload });
-      return true;
-    },
+    send:
+      overrides.send ||
+      ((_res, status, payload) => {
+        responses.push({ status, payload });
+        return true;
+      }),
     readJsonBody:
       overrides.readJsonBody ||
       (async () => ({ projectId: project.id, frameAudioBindings: [{ key: "walk:0" }] })),
@@ -31,14 +40,18 @@ function createHarness(overrides = {}) {
     projectFromRequest: () => ({ project }),
     requiredProjectFromRequest: () => ({ project }),
     projectDataRevision: overrides.projectDataRevision || (() => "revision-a"),
-    createFilesystemSnapshot: async () => ({
-      dispose: async () => {},
-      restore: async () => {},
-    }),
+    createFilesystemSnapshot:
+      overrides.createFilesystemSnapshot ||
+      (async () => ({
+        dispose: async () => {},
+        restore: async () => {},
+      })),
     managedProjectPaths: () => ["/tmp/project-a"],
-    rollbackFilesystemSnapshot: async (_transaction, error) => {
-      throw error;
-    },
+    rollbackFilesystemSnapshot:
+      overrides.rollbackFilesystemSnapshot ||
+      (async (_transaction, error) => {
+        throw error;
+      }),
     fs: { promises: { rm: async () => {} } },
     path: require("node:path"),
     root: "/tmp/root",
@@ -49,14 +62,18 @@ function createHarness(overrides = {}) {
     replaceFrameImage: () => ({ path: "frame.png" }),
     replaceAnimationImages: () => ({ frames: [] }),
     deleteAnimation: overrides.deleteAnimation || (() => ({ removedFrames: [] })),
-    importAnimation: () => ({ profileId: "profile-a", animationId: "walk", frameCount: 1 }),
-    reorganizeAnimation: () => ({ frameCount: 1, targetDir: "", manifest: {}, tuning: {} }),
+    importAnimation:
+      overrides.importAnimation || (() => ({ profileId: "profile-a", animationId: "walk", frameCount: 1 })),
+    reorganizeAnimation:
+      overrides.reorganizeAnimation || (() => ({ frameCount: 1, targetDir: "", manifest: {}, tuning: {} })),
     syncGodotProjectAsync: overrides.syncGodotProjectAsync || (async () => ({ ok: true })),
     syncFrameAudioAsync: async () => ({ ok: true }),
     syncGodotRuntimeProjectId: () => [],
     godotMirrorPath: () => "",
-    validateProject: () => [],
-    godotHandoffService: { status: () => ({ state: "synced" }) },
+    validateProject: overrides.validateProject || (() => []),
+    godotHandoffService: overrides.godotHandoffService || {
+      status: () => ({ state: "synced" }),
+    },
   });
   return { routes, responses, project };
 }
@@ -184,4 +201,132 @@ test("animation deletion synchronizes and returns the filtered attack-trail docu
   assert.equal(syncCalls[0].attackTrails, attackTrails);
   assert.equal(responses[0].status, 200);
   assert.equal(responses[0].payload.attackTrails, attackTrails);
+});
+
+test("workset preflight reports explicit overwrite impact without image payloads", async () => {
+  const manifest = {
+    profiles: [{ id: "hero", animations: [{ id: "idle", frames: [{}, {}] }] }],
+  };
+  const { routes, responses } = createHarness({
+    readJsonBody: async () => ({
+      projectId: "project-a",
+      operations: [
+        {
+          id: "replace-idle",
+          type: "replace",
+          profileId: "hero",
+          profileLabel: "Hero",
+          animationId: "idle",
+          animationName: "Idle",
+          items: [{ sourceIndex: 0 }],
+        },
+      ],
+    }),
+    readProjectJson: (filename, fallback) => (filename.endsWith("manifest.json") ? manifest : fallback),
+  });
+
+  assert.equal(
+    await routes.handleMediaRoute(
+      { method: "POST" },
+      {},
+      new URL("http://127.0.0.1/api/project-worksets/plan"),
+    ),
+    true,
+  );
+  assert.equal(responses[0].status, 200);
+  assert.equal(responses[0].payload.ok, true);
+  assert.deepEqual(responses[0].payload.impacts[0].frames, { before: 2, after: 1 });
+  assert.equal("items" in responses[0].payload.operations[0], false);
+});
+
+test("workset apply executes mixed operations in one ordered transaction", async () => {
+  const calls = [];
+  const manifest = {
+    profiles: [{ id: "hero", animations: [{ id: "idle", frames: [{}, {}] }] }],
+  };
+  const operations = [
+    {
+      id: "replace-idle",
+      type: "replace",
+      profileId: "hero",
+      profileLabel: "Hero",
+      animationId: "idle",
+      animationName: "Idle",
+      items: [{ sourceIndex: 0, data: "data:image/png;base64,AA==" }],
+    },
+    {
+      id: "create-run",
+      type: "create",
+      profileId: "hero",
+      profileLabel: "Hero",
+      animationId: "run",
+      animationName: "Run",
+      items: [{ data: "data:image/png;base64,AA==" }],
+    },
+  ];
+  const { routes, responses } = createHarness({
+    readJsonBody: async () => ({ projectId: "project-a", baseRevision: "revision-a", operations }),
+    readProjectJson: (filename, fallback) => (filename.endsWith("manifest.json") ? manifest : fallback),
+    reorganizeAnimation: (options) => {
+      calls.push(`replace:${options.animationId}`);
+      return { frameCount: options.items.length, targetDir: "", manifest, tuning: {} };
+    },
+    importAnimation: (options) => {
+      calls.push(`create:${options.animationId}`);
+      return {
+        profileId: options.profileId,
+        animationId: options.animationId,
+        frameCount: options.items.length,
+      };
+    },
+  });
+
+  assert.equal(
+    await routes.handleMediaRoute(
+      { method: "POST" },
+      {},
+      new URL("http://127.0.0.1/api/project-worksets/apply"),
+    ),
+    true,
+  );
+  assert.deepEqual(calls, ["replace:idle", "create:run"]);
+  assert.equal(responses[0].status, 200);
+  assert.equal(responses[0].payload.results.length, 2);
+});
+
+test("workset apply never rolls back a disposed snapshot when response delivery fails", async () => {
+  const events = [];
+  const operations = [
+    {
+      id: "create-idle",
+      type: "create",
+      profileId: "hero",
+      profileLabel: "Hero",
+      animationId: "idle",
+      animationName: "Idle",
+      items: [{ data: "data:image/png;base64,AA==" }],
+    },
+  ];
+  const { routes } = createHarness({
+    readJsonBody: async () => ({ projectId: "project-a", baseRevision: "revision-a", operations }),
+    createFilesystemSnapshot: async () => ({
+      dispose: async () => events.push("dispose"),
+      restore: async () => events.push("restore"),
+    }),
+    rollbackFilesystemSnapshot: async (transaction, error) => {
+      events.push("rollback");
+      await transaction.restore();
+      throw error;
+    },
+    send: () => {
+      events.push("send");
+      throw new Error("response socket closed");
+    },
+  });
+
+  await assert.rejects(
+    routes.handleMediaRoute({ method: "POST" }, {}, new URL("http://127.0.0.1/api/project-worksets/apply")),
+    /response socket closed/,
+  );
+  assert.deepEqual(events, ["dispose", "send"]);
 });

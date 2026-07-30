@@ -505,8 +505,15 @@
       premiumFeatures: hooks.premiumFeatures,
       ensurePremiumActivated: hooks.ensurePremiumActivated,
     });
-    const { loadFiles, loadCurrentGroup, processItem, processAll, downloadAll, applyCurrentGroup } =
-      processController;
+    const {
+      loadFiles,
+      loadCurrentGroup,
+      processItem,
+      processAll,
+      downloadAll,
+      addToProject,
+      applyCurrentGroup,
+    } = processController;
     const previewRendererModule = root.BatchCutoutPreviewRenderer;
     if (!previewRendererModule) throw new Error("BatchCutoutPreviewRenderer is required.");
     previewRenderer = previewRendererModule.createController({
@@ -654,6 +661,7 @@
       loadCurrentGroup,
       clear,
       downloadAll,
+      addToProject,
       applyCurrentGroup,
       selectBatchIndex,
       toggleBatchPlayback,

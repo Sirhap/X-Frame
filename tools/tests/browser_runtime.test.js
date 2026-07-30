@@ -15,6 +15,13 @@ test("browser runtime creates an isolated empty project shell", async () => {
   assert.deepEqual(config.scenes, []);
 });
 
+test("browser runtime discards an abandoned transient project", () => {
+  const created = browserRuntime.createSessionProject("Throwaway");
+  assert.ok(browserRuntime.getSessionProjectConfig(created.projectId));
+  assert.equal(browserRuntime.discardSessionProject(created.projectId), true);
+  assert.equal(browserRuntime.getSessionProjectConfig(created.projectId), null);
+});
+
 test("browser runtime builds a portable animation package", async () => {
   let capturedEntries = [];
   const result = await browserRuntime.exportAnimationPackage(
@@ -188,7 +195,7 @@ test("browser runtime builds uniquely named transient tuning groups", () => {
       premiumFeatures: ["cutout.edge-refinement"],
     },
     [{ name: "idle.png", data: "data:image/png;base64,AA==" }],
-    [{ animationId: "idle" }],
+    [{ animationId: "idle", profileId: "browser-character" }],
     "en",
   );
 
@@ -202,6 +209,17 @@ test("browser runtime builds uniquely named transient tuning groups", () => {
     () => browserRuntime.createSessionAnimationGroup({ animationName: "Bad" }, [{ data: "" }], []),
     /PNG/,
   );
+});
+
+test("browser runtime scopes animation names to one profile", () => {
+  const group = browserRuntime.createSessionAnimationGroup(
+    { animationName: "Idle", profileId: "villain", profileLabel: "Villain" },
+    [{ name: "idle.png", data: "data:image/png;base64,AA==" }],
+    [{ animationId: "idle", profileId: "hero" }],
+    "en",
+  );
+  assert.equal(group.animationId, "idle");
+  assert.equal(group.runtimeAnimation, "villain/idle");
 });
 
 test("browser runtime reorganizes one session group and remaps its frame-owned state", () => {
@@ -233,6 +251,21 @@ test("browser runtime reorganizes one session group and remaps its frame-owned s
       frameImageAttachments: [
         { key: `${prefix}0`, metadata: { animation: group.runtimeAnimation, frame: 0 } },
       ],
+      attackTrails: {
+        schemaVersion: 8,
+        bindings: {
+          [group.runtimeAnimation]: [
+            {
+              id: "slash",
+              sticks: [
+                { id: "frame-zero-late", frame: 0, framePhase: 0.8, order: 1 },
+                { id: "frame-one", frame: 1, framePhase: 0.5, order: 2 },
+                { id: "frame-zero-early", frame: 0, framePhase: 0.2, order: 0 },
+              ],
+            },
+          ],
+        },
+      },
       premiumFeatures: ["organizer.sequence-analysis"],
     },
   );
@@ -244,6 +277,18 @@ test("browser runtime reorganizes one session group and remaps its frame-owned s
   assert.equal(result.frameBoxOverrides[`${prefix}0`].hitbox.rotation, -12);
   assert.equal(Object.values(result.frameAudioBindings)[0].metadata.frame, 0);
   assert.equal(result.frameImageAttachments[0].metadata.frame, 1);
+  assert.deepEqual(
+    result.attackTrails.bindings[group.runtimeAnimation][0].sticks.map(({ id, frame, order }) => ({
+      id,
+      frame,
+      order,
+    })),
+    [
+      { id: "frame-one", frame: 0, order: 0 },
+      { id: "frame-zero-early", frame: 1, order: 1 },
+      { id: "frame-zero-late", frame: 1, order: 2 },
+    ],
+  );
   assert.deepEqual(group.premiumFeatures, ["organizer.sequence-analysis"]);
 });
 

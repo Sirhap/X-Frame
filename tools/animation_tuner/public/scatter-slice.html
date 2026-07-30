@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/scatter_slice.css" />
   </head>
-  <body>
+  <body class="embedded">
     <a class="skipLink" href="#scatterWorkbench">跳到切图工作台</a>
 
     <nav class="scatterRail" aria-label="创作工具">
@@ -64,6 +64,7 @@
           <h1>把散落元素，<br /><em>收进每一格。</em></h1>
         </div>
         <div class="headingMeta">
+          <a class="embeddedBack" href="/tools" target="_parent">← 返回快速工具</a>
           <span><i aria-hidden="true"></i> LOCAL PROCESSING</span>
           <p>色键或 Alpha 识别，逐块筛选，再按统一单元格拼接。图片只在当前浏览器中处理。</p>
         </div>
@@ -168,6 +169,16 @@
             </div>
             <button id="scatterDownloadSheet" class="actionButton primary" type="button" disabled>
               导出所选动画组
+            </button>
+            <label class="fieldLabel" for="scatterProjectMode">加入项目方式</label>
+            <select id="scatterProjectMode">
+              <option value="separate">每组作为一个动画</option>
+              <option value="merge">全部合并为一个动画</option>
+            </select>
+            <label class="fieldLabel" for="scatterAnimationName">动画名称</label>
+            <input id="scatterAnimationName" type="text" maxlength="80" placeholder="sprites" />
+            <button id="scatterAddProject" class="actionButton detect" type="button" disabled>
+              加入动画项目
             </button>
           </section>
         </aside>

@@ -2,7 +2,17 @@ import { handleActivationRequest } from "./activation.mjs";
 import { handleAdminRequest } from "./admin.mjs";
 import { handleExportAuthorizationRequest } from "./export_authorization.mjs";
 
-const WORKBENCH_ROUTES = new Set(["/workspace", "/tools/import", "/tools/cutout", "/tools/organizer"]);
+const WORKBENCH_ROUTES = new Set([
+  "/projects",
+  "/tools",
+  "/tools/import",
+  "/tools/cutout",
+  "/tools/organizer",
+  "/tools/scatter-slice",
+  "/workspace",
+  "/workspace/tools/cutout",
+  "/workspace/tools/organizer",
+]);
 
 /**
  * Resolves a public route to its immutable deployment entry document.

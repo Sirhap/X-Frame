@@ -96,9 +96,21 @@ test("final audit rejects migration metadata even when asset extensions look val
 });
 
 test("production HTML permits canonical app routes but rejects arbitrary unhashed references", () => {
-  for (const route of ["/workspace", "/tools/import", "/tools/organizer", "/tools/cutout"]) {
+  for (const route of [
+    "/projects",
+    "/tools",
+    "/workspace",
+    "/workspace/tools/organizer",
+    "/workspace/tools/cutout",
+    "/tools/import",
+    "/tools/organizer",
+    "/tools/cutout",
+    "/tools/scatter-slice",
+  ]) {
     assert.equal(isAllowedProductionHtmlReference(route), true);
   }
+  assert.equal(isAllowedProductionHtmlReference("/workspace?guide=character"), true);
+  assert.equal(isAllowedProductionHtmlReference("/scatter-slice.html?embedded=1"), true);
   assert.equal(isAllowedProductionHtmlReference("/assets/ui.1111111111111111.js"), true);
   assert.equal(isAllowedProductionHtmlReference("/tools/unknown"), false);
   assert.equal(isAllowedProductionHtmlReference("/unhashed.js"), false);

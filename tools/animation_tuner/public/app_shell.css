@@ -185,6 +185,248 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
   font-family: inherit;
 }
 
+body:not([data-app-surface="workspace"]) .toolRailCollapse {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.modeHub {
+  grid-column: 2 / 4;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 100dvh;
+  padding: clamp(24px, 4vw, 64px);
+  overflow: auto;
+  background:
+    linear-gradient(color-mix(in srgb, var(--line) 34%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 34%, transparent) 1px, transparent 1px),
+    radial-gradient(circle at 88% 8%, color-mix(in srgb, var(--accent-2) 12%, transparent), transparent 30%),
+    var(--bg);
+  background-size:
+    36px 36px,
+    36px 36px,
+    auto,
+    auto;
+}
+
+.modeHub[hidden] {
+  display: none;
+}
+
+.scatterSliceSurface {
+  height: 100dvh;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.scatterSliceFrame {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+  background: var(--bg);
+}
+
+.modeHubHeader,
+.modeHubFeatured,
+.modeHubSectionHeading,
+.projectHubList,
+.modeHubEmpty,
+.quickToolGrid {
+  width: min(1180px, 100%);
+  margin-inline: auto;
+}
+
+.modeHubHeader,
+.modeHubFeatured,
+.modeHubSectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.modeHubHeader {
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modeHubHeader span,
+.modeHubFeatured span,
+.modeHubSectionHeading span,
+.quickToolCard > span,
+.projectHubCard > span {
+  color: var(--accent-text);
+  font: 750 10px/1.4 var(--data-font);
+  letter-spacing: 0.14em;
+}
+
+.modeHubHeader h1 {
+  margin: 8px 0 4px;
+  color: var(--ink);
+  font: 780 clamp(30px, 4vw, 54px) / 1 var(--ui-font);
+  letter-spacing: -0.04em;
+}
+
+.modeHubHeader p,
+.modeHubFeatured p,
+.modeHubEmpty p,
+.quickToolCard p,
+.projectHubCard p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.modeHubPrimary,
+.modeHubSecondary {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--control-bg);
+  color: var(--ink);
+  font: 720 12px/1 var(--ui-font);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.modeHubPrimary {
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: #07100d;
+}
+
+.modeHubFeatured {
+  margin-top: 28px;
+  padding: clamp(22px, 3vw, 38px);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 44%, var(--line));
+  border-radius: 10px;
+  background: linear-gradient(120deg, color-mix(in srgb, var(--accent-2) 12%, var(--panel)), var(--panel));
+}
+
+.modeHubFeatured h2,
+.modeHubSectionHeading h2,
+.quickToolCard h2,
+.projectHubCard h2 {
+  margin: 7px 0;
+  color: var(--ink);
+  font: 760 20px/1.2 var(--ui-font);
+}
+
+.modeHubSectionHeading {
+  margin-top: 34px;
+  margin-bottom: 14px;
+}
+
+.projectHubList,
+.quickToolGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.projectHubCard,
+.quickToolCard {
+  min-width: 0;
+  min-height: 230px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
+.projectHubCard:hover,
+.projectHubCard:focus-visible,
+.quickToolCard:hover,
+.quickToolCard:focus-visible {
+  border-color: var(--accent-2);
+  transform: translateY(-2px);
+}
+
+.quickToolCard svg {
+  width: 34px;
+  height: 34px;
+  margin: 28px 0 10px;
+  fill: none;
+  stroke: var(--accent-2);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.quickToolCard strong,
+.projectHubCard strong {
+  margin-top: auto;
+  padding-top: 22px;
+  color: var(--accent-text);
+  font-size: 12px;
+}
+
+.modeHubEmpty {
+  padding: 48px 24px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 9px;
+  text-align: center;
+}
+
+.modeHubEmpty strong {
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.modeHubEmpty p {
+  margin: 8px 0 20px;
+}
+
+@media (max-width: 900px) {
+  .modeHub {
+    grid-column: 1 / 4;
+    padding: 84px 16px 32px;
+  }
+
+  .toolRail {
+    right: 0;
+    bottom: auto;
+    width: 100%;
+    height: 64px;
+    flex-direction: row;
+    justify-content: space-between;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .toolRailGroup {
+    width: auto;
+    display: flex;
+  }
+
+  .projectHubList,
+  .quickToolGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .modeHubHeader,
+  .modeHubFeatured {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .sidebar {
   grid-column: 2;
   grid-row: 1;
@@ -296,6 +538,52 @@ body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
   border-radius: 8px;
   background: color-mix(in srgb, var(--panel-2) 56%, var(--panel));
   box-shadow: none;
+}
+
+.projectProcessingActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+.projectProcessingActions :is(#organizerOpen, #cutoutOpen) {
+  min-height: 44px;
+  margin: 0;
+  padding: 7px 8px;
+  border-color: var(--line);
+  background: var(--control-bg);
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.contextBreadcrumb {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font: 700 9px/1.4 var(--data-font);
+  white-space: nowrap;
+}
+
+.contextBreadcrumb a {
+  color: var(--accent-text);
+  text-decoration: none;
+}
+
+.contextBreadcrumb span:not(:last-child)::after,
+.contextBreadcrumb a::after {
+  margin-left: 6px;
+  color: var(--line-strong);
+  content: "/";
+}
+
+.contextBreadcrumb span:last-child {
+  max-width: 150px;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
 }
 
 .sidebar :is(.panel, .projectContext) > summary {

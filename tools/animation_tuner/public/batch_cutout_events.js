@@ -58,6 +58,7 @@
       loadCurrentGroup,
       clear,
       downloadAll,
+      addToProject,
       applyCurrentGroup,
       selectBatchIndex,
       toggleBatchPlayback,
@@ -226,6 +227,7 @@
         }
       });
       elements.cutoutDownload.addEventListener("click", downloadAll);
+      elements.cutoutAddProject?.addEventListener("click", addToProject);
       elements.cutoutApplyGroup.addEventListener("click", applyCurrentGroup);
       elements.cutoutPrevious.addEventListener("click", () => {
         selectBatchIndex(state.selectedIndex - 1, { wrap: true });

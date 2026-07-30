@@ -7,6 +7,23 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
+  /** Resolves a stable animation deep link before falling back to a generated UI identifier. */
+  function requestedGroup(groups, urlState, savedGroupUiId = "") {
+    const values = Array.from(groups || []);
+    const animationKey = String(urlState?.get?.("animation") || "");
+    const separator = animationKey.indexOf("/");
+    if (separator > 0) {
+      const profileId = animationKey.slice(0, separator);
+      const animationId = animationKey.slice(separator + 1);
+      const animationMatch = values.find(
+        (group) => group.profileId === profileId && group.animationId === animationId,
+      );
+      if (animationMatch) return animationMatch;
+    }
+    const groupUiId = String(urlState?.get?.("group") || savedGroupUiId || "");
+    return values.find((group) => group.uiId === groupUiId) || null;
+  }
+
   /**
    * Creates project loading and active-group selection operations.
    *
@@ -267,9 +284,9 @@
       updateHistoryControls();
 
       const currentUrlState = new URLSearchParams(windowRef?.location?.search || "");
-      const savedGroupUiId = currentUrlState.get("group") || readStorage(storage, "animationTuner.groupUiId");
+      const savedGroupUiId = readStorage(storage, "animationTuner.groupUiId");
       const initialGroup =
-        nextConfig.groups.find((group) => group.uiId === savedGroupUiId) ||
+        requestedGroup(nextConfig.groups, currentUrlState, savedGroupUiId) ||
         nextConfig.groups.find((group) => group.name === "stand_attack") ||
         nextConfig.groups[0];
       if (initialGroup) {
@@ -412,5 +429,5 @@
     }
   }
 
-  return Object.freeze({ createController });
+  return Object.freeze({ createController, requestedGroup });
 });

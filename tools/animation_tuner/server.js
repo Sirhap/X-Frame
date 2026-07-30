@@ -66,6 +66,8 @@ const MEDIA_ROUTES = new Set([
   "/api/codex-pets/restore",
   "/api/codex-pets/restore-backup",
   "/api/import-animation",
+  "/api/project-worksets/plan",
+  "/api/project-worksets/apply",
   "/api/replace-animation",
   "/api/replace-frame",
   "/api/reorganize-animation",
@@ -74,7 +76,17 @@ const MEDIA_ROUTES = new Set([
   "/api/media-export/finish",
   "/api/media-export/cancel",
 ]);
-const WORKBENCH_ROUTES = new Set(["/workspace", "/tools/cutout", "/tools/import", "/tools/organizer"]);
+const WORKBENCH_ROUTES = new Set([
+  "/projects",
+  "/tools",
+  "/tools/cutout",
+  "/tools/import",
+  "/tools/organizer",
+  "/tools/scatter-slice",
+  "/workspace",
+  "/workspace/tools/cutout",
+  "/workspace/tools/organizer",
+]);
 
 const DEFAULT_SUPPORTS = [
   "character_transform",
@@ -96,7 +108,6 @@ const serveStatic = createStaticHandler({
   publicRoot: PUBLIC,
   workbenchRoutes: WORKBENCH_ROUTES,
   landingDocument: "animation_factory.html",
-  documentRoutes: Object.freeze({ "/tools/scatter-slice": "scatter-slice.html" }),
   safeResolve,
   send,
 });
@@ -248,6 +259,7 @@ const { handleMediaRoute } = createMediaRoutes({
   projectDataRevision,
   createFilesystemSnapshot,
   managedProjectPaths,
+  saveTransactionPaths,
   rollbackFilesystemSnapshot,
   fs,
   path,

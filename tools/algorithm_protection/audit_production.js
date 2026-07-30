@@ -5,7 +5,18 @@ const path = require("node:path");
 const { DIST_ROOT, FORBIDDEN_CONTENT_PATTERNS, FORBIDDEN_PATH_PATTERNS } = require("./config");
 const { listFiles, resolveOutputAsset, sha256 } = require("./artifact_utils");
 
-const PRODUCTION_APP_ROUTES = new Set(["/workspace", "/tools/import", "/tools/organizer", "/tools/cutout"]);
+const PRODUCTION_APP_ROUTES = new Set([
+  "/projects",
+  "/tools",
+  "/workspace",
+  "/workspace/tools/organizer",
+  "/workspace/tools/cutout",
+  "/tools/import",
+  "/tools/organizer",
+  "/tools/cutout",
+  "/tools/scatter-slice",
+  "/scatter-slice.html",
+]);
 const HASHED_ASSET_REFERENCE = /^\/assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm|ico)$/;
 
 /**
@@ -14,7 +25,8 @@ const HASHED_ASSET_REFERENCE = /^\/assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm
  * @returns {boolean} Whether production HTML may retain the reference.
  */
 function isAllowedProductionHtmlReference(reference) {
-  return HASHED_ASSET_REFERENCE.test(reference) || PRODUCTION_APP_ROUTES.has(reference);
+  const [pathname] = String(reference || "").split("?");
+  return HASHED_ASSET_REFERENCE.test(pathname) || PRODUCTION_APP_ROUTES.has(pathname);
 }
 
 /**

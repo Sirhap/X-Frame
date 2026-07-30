@@ -26,6 +26,7 @@
     <link rel="stylesheet" href="/media_export_dialog.css" />
     <link rel="stylesheet" href="/character_starter_guide.css" />
     <link rel="stylesheet" href="/app_confirm.css" />
+    <link rel="stylesheet" href="/workset_handoff.css" />
     <link rel="stylesheet" href="/activation.css" />
     <link rel="stylesheet" href="/attack_trails.css" />
     <link rel="stylesheet" href="/responsive.css" />
@@ -42,55 +43,21 @@
       <div class="toolRailGroup">
         <a
           class="toolRailItem"
-          href="/workspace"
-          data-workbench-route=""
-          aria-label="动画调参"
-          title="动画调参"
+          href="/projects"
+          data-app-mode="projects"
+          aria-label="动画项目"
+          title="动画项目"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 6h16M7 6v12m10-12v12M4 18h16M9 10h6v4H9z" />
+            <path d="M4 7h6l2 2h8v10H4zM7 4h5l2 3" />
           </svg>
-          <span>调参</span>
+          <span>项目</span>
         </a>
-        <a
-          class="toolRailItem"
-          href="/tools/import"
-          data-workbench-route="import"
-          aria-label="导入动画"
-          title="导入动画"
-        >
+        <a class="toolRailItem" href="/tools" data-app-mode="tools" aria-label="快速工具" title="快速工具">
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3v12m0-12 4 4m-4-4L8 7M5 14v5h14v-5" />
+            <path d="M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5zM13 13h6v6h-6z" />
           </svg>
-          <span>导入</span>
-        </a>
-        <a
-          class="toolRailItem"
-          href="/tools/organizer"
-          data-workbench-route="organizer"
-          aria-label="帧整理"
-          title="帧整理"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 5h16v4H4zM4 11h10v4H4zM4 17h13v2H4zM17 12l3 3-3 3" />
-          </svg>
-          <span>整理</span>
-        </a>
-        <a
-          class="toolRailItem"
-          href="/tools/cutout"
-          data-workbench-route="cutout"
-          aria-label="批量抠图"
-          title="批量抠图"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 3 8 18M16 3 8 21M5 8h14M5 16h14" /></svg>
-          <span>抠图</span>
-        </a>
-        <a class="toolRailItem" href="/tools/scatter-slice" aria-label="零散切图" title="零散切图">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 4h6v6H4zM14 3h7v5h-7zM3 15h5v6H3zM12 13h9v8h-9z" />
-          </svg>
-          <span>切片</span>
+          <span>工具</span>
         </a>
       </div>
       <button
@@ -270,6 +237,16 @@
           <p class="emptySelectionHint" data-i18n="noAnimationHint">
             还没有动画。点击上方“导入动画”，完成处理后会自动显示在这里。
           </p>
+        </section>
+        <section class="sidebarSection projectProcessing" data-panel="project-processing">
+          <header class="sidebarSectionHeader">
+            <div>
+              <span class="sectionEyebrow">PROCESS ASSETS</span>
+              <h2>处理当前动画</h2>
+            </div>
+          </header>
+          <p class="sidebarHint">带着当前项目和动画组进入，完成后可明确应用并返回。</p>
+          <div class="projectProcessingActions"></div>
         </section>
         <details class="panel" data-panel="scene-reference">
           <summary>
@@ -777,6 +754,7 @@
           <span>全民制作人 / STAGE 025</span>
         </div>
         <div class="toolbar">
+          <nav id="workspaceBreadcrumb" class="contextBreadcrumb" aria-label="当前位置"></nav>
           <div class="toolbarMain">
             <strong id="canvasTitle" data-i18n="canvas">画布</strong>
             <span id="hint" data-i18n="hint"
@@ -972,6 +950,87 @@
           <div class="contextActionBarActions"></div>
         </footer>
       </section>
+      <section id="projectHub" class="modeHub" aria-labelledby="projectHubTitle" hidden>
+        <header class="modeHubHeader">
+          <div>
+            <span>PROJECT LIBRARY / LOCAL</span>
+            <h1 id="projectHubTitle">动画项目</h1>
+            <p>继续长期制作，管理角色、动画组、调参数据与 Godot 同步。</p>
+          </div>
+          <a class="modeHubSecondary" href="/tools">转到快速工具</a>
+        </header>
+        <section id="projectHubRecent" class="modeHubFeatured" aria-labelledby="projectHubRecentTitle">
+          <div>
+            <span>RECENT PROJECT</span>
+            <h2 id="projectHubRecentTitle">最近项目</h2>
+            <p id="projectHubRecentSummary">正在读取项目…</p>
+          </div>
+          <a id="projectHubContinue" class="modeHubPrimary" href="/workspace">继续项目</a>
+        </section>
+        <div class="modeHubSectionHeading">
+          <div>
+            <span>ALL PROJECTS</span>
+            <h2>全部项目</h2>
+          </div>
+          <button id="projectHubNew" type="button" class="modeHubSecondary">新建项目</button>
+        </div>
+        <div id="projectHubList" class="projectHubList" aria-live="polite"></div>
+        <div id="projectHubEmpty" class="modeHubEmpty" hidden>
+          <strong>还没有动画项目</strong>
+          <p>可以新建项目，或先用快速工具处理素材后再加入项目。</p>
+          <a class="modeHubPrimary" href="/tools/organizer">处理第一组素材</a>
+        </div>
+      </section>
+      <section id="quickToolsHub" class="modeHub" aria-labelledby="quickToolsTitle" hidden>
+        <header class="modeHubHeader">
+          <div>
+            <span>QUICK TOOLS / SESSION</span>
+            <h1 id="quickToolsTitle">快速工具</h1>
+            <p>不必先创建项目。处理完成后可直接下载，也可以明确选择目标加入动画项目。</p>
+          </div>
+          <a class="modeHubSecondary" href="/projects">转到动画项目</a>
+        </header>
+        <div class="quickToolGrid">
+          <a class="quickToolCard" href="/tools/cutout">
+            <span>01 / ALPHA</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 3 8 18M16 3 8 21M5 8h14M5 16h14" /></svg>
+            <h2>批量抠图</h2>
+            <p>移除背景、修复边缘与局部区域，导出透明图片或加入动画。</p>
+            <strong>进入工具 →</strong>
+          </a>
+          <a class="quickToolCard" href="/tools/organizer">
+            <span>02 / SEQUENCE</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5h16v4H4zM4 11h10v4H4zM4 17h13v2H4zM17 12l3 3-3 3" />
+            </svg>
+            <h2>序列处理</h2>
+            <p>导入图片或视频，完成排序、删帧、预览、抠图与多格式导出。</p>
+            <strong>进入工具 →</strong>
+          </a>
+          <a class="quickToolCard" href="/tools/scatter-slice">
+            <span>03 / SLICE</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 4h6v6H4zM14 3h7v5h-7zM3 15h5v6H3zM12 13h9v8h-9z" />
+            </svg>
+            <h2>零散切片</h2>
+            <p>识别散落元素，按动画组筛选、整理并导出规则帧序列。</p>
+            <strong>进入工具 →</strong>
+          </a>
+        </div>
+      </section>
+      <section
+        id="scatterSliceSurface"
+        class="modeHub scatterSliceSurface"
+        aria-label="零散切片工作台"
+        hidden
+      >
+        <iframe
+          class="scatterSliceFrame"
+          src="/scatter-slice.html?embedded=1"
+          title="零散切片"
+          loading="eager"
+        ></iframe>
+      </section>
     </main>
     <section
       id="cutoutModal"
@@ -983,6 +1042,7 @@
       <div class="cutoutWorkbench">
         <header class="cutoutHeader">
           <div>
+            <nav id="cutoutBreadcrumb" class="contextBreadcrumb" aria-label="当前位置"></nav>
             <span class="cutoutEyebrow">ALPHA LAB / LOCAL</span>
             <h2 id="cutoutTitle" data-cutout-i18n="title">批量抠图</h2>
             <p data-cutout-i18n="subtitle">本地像素处理 · 图片不会上传</p>
@@ -2221,6 +2281,15 @@
                 >
                   导出 ZIP
                 </button>
+                <button
+                  id="cutoutAddProject"
+                  type="button"
+                  class="cutoutPrimary"
+                  data-cutout-i18n="addToProject"
+                  title="将当前处理结果加入动画项目"
+                >
+                  加入动画项目
+                </button>
               </footer>
             </section>
             <footer class="cutoutFooter">
@@ -2263,6 +2332,7 @@
       <div class="organizerWorkbench">
         <header class="organizerHeader">
           <div>
+            <nav id="organizerBreadcrumb" class="contextBreadcrumb" aria-label="当前位置"></nav>
             <span class="organizerEyebrow">SEQUENCE DESK / LOCAL</span>
             <h2 id="organizerTitle" data-organizer-i18n="title">动画处理</h2>
             <p id="organizerSubtitle" data-organizer-i18n="subtitle">排序、删帧、单帧抠图与序列分析</p>
@@ -2947,6 +3017,14 @@
               <button id="organizerExport" type="button" class="secondary" data-organizer-i18n="exportZip">
                 导出
               </button>
+              <button
+                id="organizerAddProject"
+                type="button"
+                class="secondary"
+                data-organizer-i18n="addToProject"
+              >
+                加入动画项目
+              </button>
               <button id="organizerApply" type="button" class="organizerPrimary" data-organizer-i18n="apply">
                 应用到动画
               </button>
@@ -3156,6 +3234,47 @@
             <button id="attackTrailGuidePrevious" type="button" class="secondary">上一步</button>
             <button id="attackTrailGuideNext" type="button">下一步</button>
           </div>
+        </footer>
+      </div>
+    </section>
+    <section
+      id="worksetHandoffDialog"
+      class="worksetHandoffDialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="worksetHandoffTitle"
+      hidden
+    >
+      <div class="worksetHandoffCard">
+        <header>
+          <div>
+            <span>ADD TO PROJECT</span>
+            <h2 id="worksetHandoffTitle">加入动画项目</h2>
+            <p>默认新建动画组；只有明确选择已有动画时才会替换。</p>
+          </div>
+          <button id="worksetHandoffClose" type="button" class="secondary" aria-label="关闭">×</button>
+        </header>
+        <div id="worksetHandoffForm" class="worksetHandoffForm">
+          <label>
+            <span>目标项目</span>
+            <select id="worksetHandoffProject"></select>
+          </label>
+          <label id="worksetHandoffNewProjectField" hidden>
+            <span>新项目名称</span>
+            <input id="worksetHandoffNewProject" type="text" maxlength="80" autocomplete="off" />
+          </label>
+          <div id="worksetHandoffRows" class="worksetHandoffRows"></div>
+          <section id="worksetHandoffImpact" class="worksetHandoffImpact" aria-live="polite" hidden></section>
+          <p id="worksetHandoffStatus" class="worksetHandoffStatus" role="status" aria-live="polite"></p>
+        </div>
+        <section id="worksetHandoffSuccess" class="worksetHandoffSuccess" hidden>
+          <strong>已加入动画项目</strong>
+          <p>快速处理会话仍然保留，你可以继续调整、下载，或打开目标动画。</p>
+          <div id="worksetHandoffTargets"></div>
+        </section>
+        <footer>
+          <button id="worksetHandoffCancel" type="button" class="secondary">取消</button>
+          <button id="worksetHandoffSubmit" type="button">检查并加入项目</button>
         </footer>
       </div>
     </section>
@@ -3386,6 +3505,11 @@
     <script src="/app_project_selects.js"></script>
     <script src="/timing_modes.js"></script>
     <script src="/attack_trails.js"></script>
+    <script src="/app_mode_hubs.js"></script>
+    <script src="/app_navigation_context.js"></script>
+    <script src="/workset_handoff_core.js"></script>
+    <script src="/workset_handoff_runtime.js"></script>
+    <script src="/workset_handoff_dialog.js"></script>
     <script src="/app_shell.js"></script>
     <script src="/app.js"></script>
   </body>

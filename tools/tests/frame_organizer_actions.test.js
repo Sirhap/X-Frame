@@ -28,6 +28,7 @@ function createFixture() {
     languages: 0,
     closes: 0,
     cutoutWorksets: [],
+    projectRequest: null,
   };
   const controller = createController({
     state,
@@ -41,6 +42,9 @@ function createFixture() {
       addAssets: async (items) => {
         calls.assets = items;
         return items.length;
+      },
+      addToProject: async (request) => {
+        calls.projectRequest = request;
       },
       editCutout: async (workset) => {
         calls.cutoutWorksets.push(workset);
@@ -128,6 +132,25 @@ test("organizer actions export the edited workset as PNG frames", async () => {
     },
   ]);
   assert.deepEqual(fixture.calls.status, ["exportingZip", "exportedZip"]);
+  assert.equal(fixture.state.busy, false);
+});
+
+test("organizer actions hand off an ordered processed workset without closing the session", async () => {
+  const fixture = createFixture();
+
+  await fixture.controller.addIncludedFramesToProject();
+
+  assert.equal(fixture.calls.projectRequest.sourceTool, "organizer");
+  assert.equal(fixture.calls.projectRequest.worksets[0].animationName, "demo");
+  assert.deepEqual(fixture.calls.projectRequest.worksets[0].items, [
+    {
+      sourceIndex: 0,
+      name: "frame.png",
+      flipped: false,
+      data: "data:image/png;base64,frame",
+    },
+  ]);
+  assert.equal(fixture.calls.closes, 0);
   assert.equal(fixture.state.busy, false);
 });
 

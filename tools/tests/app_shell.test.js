@@ -70,6 +70,9 @@ function createFixture() {
     body: createElement(),
     sidebar: createElement(),
     workspace: createElement(),
+    projectHub: createElement(),
+    quickToolsHub: createElement(),
+    scatterSliceSurface: createElement(),
     collapse: createElement(),
     brandMark: createElement(),
     filmstripPanel: createElement(),
@@ -91,15 +94,18 @@ function createFixture() {
     element.dataset.filmstripLayout = layout;
     return element;
   });
-  const routeItems = ["", "import", "organizer", "cutout"].map((route) => {
+  const routeItems = ["projects", "tools"].map((route) => {
     const element = createElement();
-    element.dataset.workbenchRoute = route;
+    element.dataset.appMode = route;
     return element;
   });
   const categories = new Map();
   const selectorMap = new Map([
     ["#workbenchSidebar", elements.sidebar],
     [".workspace", elements.workspace],
+    ["#projectHub", elements.projectHub],
+    ["#quickToolsHub", elements.quickToolsHub],
+    ["#scatterSliceSurface", elements.scatterSliceSurface],
     ["#sidebarCollapse", elements.collapse],
     [".filmstripPanel", elements.filmstripPanel],
     ["#brandMark", elements.brandMark],
@@ -120,7 +126,7 @@ function createFixture() {
     querySelectorAll(selector) {
       if (selector === "[data-sidebar-tab]") return sidebarTabs;
       if (selector === "[data-filmstrip-layout]") return filmstripButtons;
-      if (selector === "[data-workbench-route]") return routeItems;
+      if (selector === "[data-app-mode]") return routeItems;
       if (selector === ".kunkunThemeButton") return [elements.kunkun];
       return [];
     },
@@ -165,6 +171,8 @@ test("shell restores layout preferences and exposes accessible selected state", 
   assert.equal(fixture.elements.sidebar.inert, true);
   assert.equal(fixture.elements.sidebar.attributes["aria-hidden"], "true");
   assert.equal(fixture.elements.workspace.attributes["aria-hidden"], "false");
+  assert.equal(fixture.elements.body.dataset.appMode, "projects");
+  assert.equal(fixture.elements.body.dataset.appSurface, "workspace");
   assert.equal(fixture.elements.filmstripPanel.dataset.layout, "grid");
   assert.equal(fixture.sidebarTabs[3].attributes["aria-selected"], "true");
   assert.equal(fixture.filmstripButtons[1].attributes["aria-pressed"], "true");
@@ -182,4 +190,36 @@ test("five logo activations persist and reveal the kunkun theme", () => {
 
   assert.equal(fixture.elements.kunkun.hidden, false);
   assert.equal(fixture.storage.getItem("xsxbFrameTuner.kunkunUnlocked"), "true");
+});
+
+test("scatter slice uses the shared tool shell surface", () => {
+  const fixture = createFixture();
+  fixture.controller.bind();
+  fixture.controller.destroy();
+  fixture.controller = createController({
+    documentRef: {
+      body: fixture.elements.body,
+      querySelector(selector) {
+        const mapped = {
+          "#workbenchSidebar": fixture.elements.sidebar,
+          ".workspace": fixture.elements.workspace,
+          "#projectHub": fixture.elements.projectHub,
+          "#quickToolsHub": fixture.elements.quickToolsHub,
+          "#scatterSliceSurface": fixture.elements.scatterSliceSurface,
+        };
+        return mapped[selector] || createElement();
+      },
+      querySelectorAll() {
+        return [];
+      },
+    },
+    windowRef: { location: { pathname: "/tools/scatter-slice" } },
+    storage: fixture.storage,
+  });
+  fixture.controller.bind();
+
+  assert.equal(fixture.elements.body.dataset.appMode, "tools");
+  assert.equal(fixture.elements.body.dataset.appSurface, "scatter");
+  assert.equal(fixture.elements.scatterSliceSurface.hidden, false);
+  assert.equal(fixture.elements.workspace.inert, true);
 });

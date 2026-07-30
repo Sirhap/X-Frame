@@ -259,9 +259,15 @@ let {
   cutoutReturnTool,
 } = globalThis.XSXBAppState.createInitialState();
 let attackTrailEditor = null;
+let modeHubs = null;
+let navigationContext = null;
+let worksetHandoff = null;
+let cutoutNavigationContext = "project";
+let organizerNavigationContext = "project";
 let lastAttackTrailPlaybackSampleToken = "";
 const dirtyPetProfileIds = new Set();
 let removedCodexPetRecovery = null;
+let lastKnownNavigationUrl = globalThis.location.href;
 
 const appConfirmModule = globalThis.XSXBAppConfirm;
 if (!appConfirmModule) throw new Error("XSXBAppConfirm is required.");
@@ -278,6 +284,64 @@ const appConfirmation = appConfirmModule.createController({
   },
   documentRef: globalThis.document,
   windowRef: globalThis,
+});
+
+/** Returns the embedded slice session when its iframe has finished loading. */
+function scatterSliceSession() {
+  const frame = document.querySelector(".scatterSliceFrame");
+  try {
+    return frame?.contentWindow?.XSXBScatterSliceSession || null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+/** Clears accepted transient slice state without persisting image drafts. */
+function discardScatterSliceSession() {
+  const frame = document.querySelector(".scatterSliceFrame");
+  const session = scatterSliceSession();
+  session?.allowDiscard?.();
+  if (frame?.src) frame.src = frame.src;
+}
+
+/** Confirms leaving a populated slice session through app-shell navigation. */
+async function requestScatterSliceLeave() {
+  if (globalThis.location.pathname !== "/tools/scatter-slice") return true;
+  if (!scatterSliceSession()?.hasUnsavedChanges?.()) return true;
+  const accepted = await requestAppConfirmation(
+    "当前零散切片结果只保留在本次会话。离开将丢弃源图、检测框和分组结果。",
+    {
+      title: "离开零散切片？",
+      confirmLabel: "放弃并离开",
+      tone: "danger",
+    },
+  );
+  if (accepted) discardScatterSliceSession();
+  return accepted;
+}
+
+/** Protects browser back/forward transitions that bypass app-shell click navigation. */
+function guardScatterSliceHistory(event) {
+  const previousUrl = new URL(lastKnownNavigationUrl);
+  const leavingScatter =
+    previousUrl.pathname === "/tools/scatter-slice" &&
+    globalThis.location.pathname !== "/tools/scatter-slice";
+  if (!leavingScatter || !scatterSliceSession()?.hasUnsavedChanges?.()) {
+    lastKnownNavigationUrl = globalThis.location.href;
+    return;
+  }
+  if (globalThis.confirm("当前零散切片结果尚未保存。确定放弃并离开吗？")) {
+    discardScatterSliceSession();
+    lastKnownNavigationUrl = globalThis.location.href;
+    return;
+  }
+  event.stopImmediatePropagation();
+  globalThis.history.pushState({ xsxbWorkbench: "scatter" }, "", previousUrl);
+  lastKnownNavigationUrl = previousUrl.href;
+}
+globalThis.addEventListener("popstate", guardScatterSliceHistory);
+globalThis.addEventListener("xsxb:routechange", () => {
+  lastKnownNavigationUrl = globalThis.location.href;
 });
 const premiumFeatures = globalThis.XSXBPremiumFeatures;
 if (!premiumFeatures) throw new Error("XSXBPremiumFeatures is required.");
@@ -564,8 +628,14 @@ const routing = globalThis.XSXBAppRouting.createController({
   translate: t,
   groupLabel,
 });
-const { applyWorkbenchRoute, currentWorkbenchRoute, syncUrlState, syncWorkbenchRoute, updateDocumentTitle } =
-  routing;
+const {
+  applyWorkbenchRoute,
+  currentNavigationContext,
+  currentWorkbenchRoute,
+  syncUrlState,
+  syncWorkbenchRoute,
+  updateDocumentTitle,
+} = routing;
 const playbackTiming = globalThis.XSXBPlaybackTiming.createController({
   minFrameDurationMs: MIN_FRAME_DURATION_MS,
   getCurrentGroup: () => currentGroup,
@@ -1599,6 +1669,8 @@ function syncCodexPetLifecycleActions() {
 
 async function loadConfig() {
   const result = await projectLifecycle.loadConfig();
+  modeHubs?.renderProjects(config);
+  navigationContext?.render();
   attackTrailEditor?.load(config?.attackTrails);
   document.body.classList.toggle("codexPetsProject", config?.projectKind === "codex_pets");
   const addCodexPet = document.querySelector("#addCodexPet");
@@ -1609,6 +1681,7 @@ async function loadConfig() {
 
 async function selectGroup(group, options = {}) {
   const result = await projectLifecycle.selectGroup(group, options);
+  navigationContext?.render();
   attackTrailEditor?.contextChanged();
   syncCodexPetLifecycleActions();
   return result;
@@ -3143,6 +3216,7 @@ window.addEventListener("popstate", () => {
   const urlState = new URLSearchParams(window.location.search);
   const requestedProject = urlState.get("project") || "";
   const requestedGroup = urlState.get("group") || "";
+  const requestedAnimation = urlState.get("animation") || "";
   const requestedFrame = Math.max(0, Number.parseInt(urlState.get("frame") || "0", 10) || 0);
   const restore = async () => {
     selectedProfileId = "all";
@@ -3152,7 +3226,15 @@ window.addEventListener("popstate", () => {
       await applyWorkbenchRoute();
       return;
     }
-    const group = config?.groups?.find((entry) => entry.uiId === requestedGroup);
+    const [requestedProfileId, requestedAnimationId] = requestedAnimation.split("/");
+    const group = config?.groups?.find(
+      (entry) =>
+        entry.uiId === requestedGroup ||
+        (requestedProfileId &&
+          requestedAnimationId &&
+          entry.profileId === requestedProfileId &&
+          entry.animationId === requestedAnimationId),
+    );
     if (group) await selectGroup(group, { frameIndex: requestedFrame, history: false });
     await applyWorkbenchRoute();
   };
@@ -3165,9 +3247,15 @@ batchCutout =
   window.BatchCutout?.createController({
     getLanguage: () => language,
     getCurrentAnimation: () =>
-      currentGroup?.frames?.length
+      currentNavigationContext() === "project" && currentGroup?.frames?.length
         ? {
             name: groupLabel(currentGroup),
+            profileId: currentGroup.profileId,
+            profileLabel: currentGroup.profileLabel,
+            profileKind: currentGroup.profileKind,
+            animationType: currentGroup.type,
+            fps: currentGroup.speed,
+            anchorMode: currentGroup.anchorMode,
             frames: currentGroup.frames,
             images,
             loop: currentGroup.loop === true || currentGroup.loopMode === "loop",
@@ -3178,13 +3266,16 @@ batchCutout =
       : applyCutoutOutputsToCurrentAnimation,
     premiumFeatures,
     ensurePremiumActivated,
+    addToProject: (request) => worksetHandoff.open(request),
     onOpen: () => {
       const currentRoute = currentWorkbenchRoute();
+      cutoutNavigationContext = currentNavigationContext();
       cutoutReturnTool = currentRoute === "organizer" || currentRoute === "import" ? currentRoute : "";
-      syncWorkbenchRoute("cutout", { push: true });
+      syncWorkbenchRoute("cutout", { push: true, context: cutoutNavigationContext });
     },
     onClose: () => {
-      syncWorkbenchRoute(cutoutReturnTool);
+      const returnRoute = cutoutReturnTool || (cutoutNavigationContext === "standalone" ? "tools" : "");
+      syncWorkbenchRoute(returnRoute, { context: cutoutNavigationContext });
       cutoutReturnTool = "";
     },
     onStatus: (message) => status(message),
@@ -3216,6 +3307,7 @@ frameOrganizer =
     createAnimation: browserOnlyMode ? exportBrowserAnimation : createAnimationFromOrganizer,
     createSessionAnimation: browserOnlyMode ? createBrowserSessionAnimation : undefined,
     exportAnimation: exportBrowserAnimation,
+    addToProject: (request) => worksetHandoff.open(request),
     addAssets: addImagesToCurrentGroupAssets,
     editCutout: (workset) => {
       if (!batchCutout?.openWorkset) throw new Error("Batch cutout is unavailable.");
@@ -3223,8 +3315,17 @@ frameOrganizer =
     },
     premiumFeatures,
     ensurePremiumActivated,
-    onOpen: (mode) => syncWorkbenchRoute(mode === "import" ? "import" : "organizer", { push: true }),
-    onClose: () => syncWorkbenchRoute(""),
+    onOpen: (mode) => {
+      organizerNavigationContext = currentNavigationContext();
+      syncWorkbenchRoute(mode === "import" ? "import" : "organizer", {
+        push: true,
+        context: organizerNavigationContext,
+      });
+    },
+    onClose: () =>
+      syncWorkbenchRoute(organizerNavigationContext === "standalone" ? "tools" : "", {
+        context: organizerNavigationContext,
+      }),
     onStatus: (message) => status(message),
   }) || null;
 const characterStarterGuide = window.CharacterStarterGuide?.createController({
@@ -3441,11 +3542,86 @@ applyCanvasColor();
 applyLanguage();
 const appShellModule = globalThis.XSXBAppShell;
 if (!appShellModule) throw new Error("XSXBAppShell is required.");
+const modeHubsModule = globalThis.XSXBModeHubs;
+if (!modeHubsModule) throw new Error("XSXBModeHubs is required.");
+modeHubs = modeHubsModule.createController({
+  documentRef: globalThis.document,
+  windowRef: globalThis,
+  projectLabel,
+});
+modeHubs.bind();
+const navigationContextModule = globalThis.XSXBNavigationContext;
+if (!navigationContextModule) throw new Error("XSXBNavigationContext is required.");
+navigationContext = navigationContextModule.createController({
+  documentRef: globalThis.document,
+  windowRef: globalThis,
+  getConfig: () => config,
+  getCurrentGroup: () => currentGroup,
+  getRoute: currentWorkbenchRoute,
+  getContext: currentNavigationContext,
+  projectLabel,
+  groupLabel,
+});
+navigationContext.bind();
+const handoffRuntimeModule = globalThis.XSXBWorksetHandoffRuntime;
+const handoffDialogModule = globalThis.XSXBWorksetHandoffDialog;
+if (!handoffRuntimeModule || !handoffDialogModule) {
+  throw new Error("Workset handoff modules are required.");
+}
+
+/** Returns the current browser project including unsaved in-memory binding state. */
+function browserProjectSnapshot(projectId) {
+  if (projectId !== activeProjectId()) return browserRuntime.getSessionProjectConfig(projectId);
+  return {
+    ...structuredClone(config),
+    tuning: {
+      ...(config?.tuning || {}),
+      frame_visual_overrides: structuredClone(frameOverrides),
+      frame_playback_overrides: structuredClone(framePlaybackOverrides),
+      frame_box_overrides: structuredClone(frameBoxOverrides),
+    },
+    frameAudioBindings: structuredClone(frameAudioBindings),
+    frameImageAttachments: structuredClone(frameImageAttachments),
+    attackTrails: attackTrailEditor?.snapshot() || { schemaVersion: 8, bindings: {} },
+  };
+}
+
+const handoffAdapter = browserOnlyMode
+  ? handoffRuntimeModule.createBrowserAdapter({
+      browserRuntime,
+      getProjectConfig: browserProjectSnapshot,
+      commitProjectConfig: (projectId, nextConfig) =>
+        browserRuntime.commitSessionProjectConfig(projectId, nextConfig),
+      createProject: (label) => browserRuntime.createSessionProject(label),
+      discardProject: (projectId) => browserRuntime.discardSessionProject(projectId),
+      structuredCloneImpl: globalThis.structuredClone,
+    })
+  : handoffRuntimeModule.createLocalAdapter({ fetchImpl: globalThis.fetch });
+worksetHandoff = handoffDialogModule.createController({
+  documentRef: globalThis.document,
+  windowRef: globalThis,
+  getConfig: () => config,
+  projectLabel,
+  ...handoffAdapter,
+  onApplied: async (_result, context) => {
+    if (!browserOnlyMode || context.projectId === activeProjectId()) {
+      await loadConfig();
+      resizeCanvas();
+      return;
+    }
+    const activeConfig = browserRuntime.getSessionProjectConfig(activeProjectId());
+    if (activeConfig) config.projects = activeConfig.projects;
+    modeHubs?.renderProjects(config);
+  },
+});
+worksetHandoff.bind();
+globalThis.XSXBOpenWorksetHandoff = (request) => worksetHandoff.open(request);
 const appShell = appShellModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
   storage: browserStorage,
   navigate: async (route) => {
+    if (!(await requestScatterSliceLeave())) return false;
     syncWorkbenchRoute(route, { push: true });
     return applyWorkbenchRoute();
   },

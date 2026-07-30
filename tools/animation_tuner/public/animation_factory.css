@@ -188,6 +188,24 @@ main,
   align-items: center;
 }
 
+.hero-actions .mode-entry-action {
+  min-width: min(260px, 100%);
+  min-height: 58px;
+  justify-content: space-between;
+  padding-inline: 22px;
+  border: 1px solid var(--color-border-strong);
+  background: color-mix(in srgb, var(--color-surface-raised) 92%, transparent);
+  color: var(--color-foreground);
+}
+
+.hero-actions .mode-entry-project {
+  border-color: var(--color-primary);
+}
+
+.hero-actions .mode-entry-tools {
+  border-color: var(--color-accent);
+}
+
 .primary-nav {
   gap: 30px;
 }

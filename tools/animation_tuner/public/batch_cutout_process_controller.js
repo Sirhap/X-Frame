@@ -10,7 +10,7 @@
   /**
    * Creates the batch cutout loading, processing, export, and apply coordinator.
    * @param {object} dependencies Process/session dependencies supplied by the host controller.
-   * @returns {{loadFiles:Function,loadCurrentGroup:Function,processItem:Function,processAll:Function,downloadAll:Function,applyCurrentGroup:Function}}
+   * @returns {{loadFiles:Function,loadCurrentGroup:Function,processItem:Function,processAll:Function,downloadAll:Function,addToProject:Function,applyCurrentGroup:Function}}
    */
   function createController(dependencies = {}) {
     const {
@@ -492,6 +492,53 @@
       }
     }
 
+    /** Processes the included queue and opens the shared project-target dialog. */
+    async function addToProject() {
+      if (typeof host.addToProject !== "function") return;
+      const featureIds = outputPremiumFeatures();
+      if (!(await ensurePremiumActivated(featureIds))) return;
+      try {
+        const { outputs, failures, cancelled } = await processAll();
+        if (cancelled || !outputs.length) return;
+        if (failures.length) {
+          throw new Error(
+            text("frameFailed", {
+              index: failures[0].index + 1,
+              message: failures[0].message,
+            }),
+          );
+        }
+        const animation = host.getCurrentAnimation?.() || {};
+        const animationName = animation.name || state.worksetName || "cutout-animation";
+        setStatus(text("addingToProject"), "busy");
+        await host.addToProject({
+          sourceTool: "cutout",
+          worksets: [
+            {
+              id: `cutout-${Date.now()}`,
+              label: animationName,
+              animationName,
+              profileLabel: animation.profileLabel || animation.profileId || "character",
+              profileKind: animation.profileKind || "actor",
+              animationType: animation.animationType || "actor",
+              fps: Number(animation.fps || 12),
+              anchorMode: animation.anchorMode || "canvas_bottom_center",
+              premiumFeatures: featureIds,
+              items: outputs.map((output, index) => ({
+                sourceIndex: Array.isArray(animation.frames) ? animation.frames.indexOf(output.frame) : index,
+                name: output.name,
+                data: output.data,
+                flipped: false,
+              })),
+            },
+          ],
+        });
+        setStatus(text("ready"), "idle");
+      } catch (error) {
+        setStatus(text("failed", { message: error.message }), "error");
+      }
+    }
+
     /**
      * Applies processed images to the active animation after explicit confirmation.
      * @param {{live?:boolean,publishedCanvases?:HTMLCanvasElement[]}} [options] Live workset publication options.
@@ -596,7 +643,15 @@
       }
     }
 
-    return { loadFiles, loadCurrentGroup, processItem, processAll, downloadAll, applyCurrentGroup };
+    return {
+      loadFiles,
+      loadCurrentGroup,
+      processItem,
+      processAll,
+      downloadAll,
+      addToProject,
+      applyCurrentGroup,
+    };
   }
 
   return { createController };

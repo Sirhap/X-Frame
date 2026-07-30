@@ -8,6 +8,11 @@
   "use strict";
 
   const FRAME_NAME_PADDING = 4;
+  const sessionProjects = new Map();
+  const sessionRegistry = {
+    activeProjectId: "browser-session",
+    projects: [{ id: "browser-session", label: "浏览器临时工作区", projectRoot: "" }],
+  };
 
   /** @param {unknown} value Cloneable value. @returns {any} Independent copy. */
   function cloneValue(value) {
@@ -132,6 +137,17 @@
   }
 
   /**
+   * Normalizes a trail stick's phase for deterministic chronological sorting.
+   * @param {unknown} value Saved frame phase.
+   * @returns {number} Finite phase clamped to the current frame.
+   */
+  function normalizedTrailFramePhase(value) {
+    if (value === null || value === undefined) return 0.5;
+    const phase = Number(value);
+    return Number.isFinite(phase) ? Math.min(1, Math.max(0, phase)) : 0.5;
+  }
+
+  /**
    * Remaps the active animation's trail sticks to a new frame plan.
    * @param {object} source Attack-trail document.
    * @param {string} animationKey Runtime animation key.
@@ -151,13 +167,26 @@
       frameMap.get(item.sourceIndex).push(nextIndex);
     });
     result.bindings[animationKey] = result.bindings[animationKey].map((segment) => {
-      const sticks = Array.from(segment?.sticks || []).flatMap((stick) =>
-        Array.from(frameMap.get(Number(stick?.frame)) || []).map((frame) => ({ ...stick, frame })),
-      );
-      return {
-        ...segment,
-        sticks: sticks.map((stick, order) => ({ ...stick, order })),
-      };
+      const sticks = Array.from(segment?.sticks || [])
+        .flatMap((stick, sourceIndex) => {
+          const savedOrder = Number(stick?.order);
+          const stableOrder = Number.isFinite(savedOrder) ? savedOrder : sourceIndex;
+          return Array.from(frameMap.get(Number(stick?.frame)) || []).map((frame) => ({
+            stick: { ...stick, frame },
+            sourceIndex,
+            stableOrder,
+          }));
+        })
+        .sort(
+          (left, right) =>
+            left.stick.frame - right.stick.frame ||
+            normalizedTrailFramePhase(left.stick.framePhase) -
+              normalizedTrailFramePhase(right.stick.framePhase) ||
+            left.stableOrder - right.stableOrder ||
+            left.sourceIndex - right.sourceIndex,
+        )
+        .map(({ stick }, order) => ({ ...stick, order }));
+      return { ...segment, sticks };
     });
     return result;
   }
@@ -438,16 +467,12 @@
    * Creates a transient project shell for UI components that expect project metadata.
    * @returns {object} Empty browser-session configuration.
    */
-  function createEmptyConfig() {
-    const activeProject = {
-      id: "browser-session",
-      label: "浏览器临时工作区",
-      projectRoot: "",
-    };
+  function createEmptyConfig(project = sessionRegistry.projects[0]) {
+    const activeProject = cloneValue(project);
     return {
       activeProjectId: activeProject.id,
       activeProject,
-      projects: [activeProject],
+      projects: cloneValue(sessionRegistry.projects),
       profiles: [{ id: "browser-character", label: "新角色", kind: "actor" }],
       groups: [],
       scenes: [],
@@ -456,12 +481,89 @@
     };
   }
 
+  /** Ensures the initial browser project has an authoritative in-memory config. */
+  function ensureSessionProjects() {
+    if (!sessionProjects.has("browser-session")) {
+      sessionProjects.set("browser-session", createEmptyConfig(sessionRegistry.projects[0]));
+    }
+  }
+
+  /** Returns a cloned browser-session project config by stable identifier. */
+  function getSessionProjectConfig(projectId) {
+    ensureSessionProjects();
+    const config = sessionProjects.get(String(projectId || sessionRegistry.activeProjectId));
+    if (!config) return null;
+    return {
+      ...cloneValue(config),
+      activeProjectId: config.activeProject?.id || projectId,
+      projects: cloneValue(sessionRegistry.projects),
+    };
+  }
+
+  /** Atomically replaces one browser-session project config. */
+  function commitSessionProjectConfig(projectId, nextConfig) {
+    ensureSessionProjects();
+    const id = String(projectId || "");
+    const project = sessionRegistry.projects.find((entry) => entry.id === id);
+    if (!project) throw new Error(`Project not found: ${id}`);
+    const committed = {
+      ...cloneValue(nextConfig),
+      activeProjectId: id,
+      activeProject: cloneValue(project),
+      projects: cloneValue(sessionRegistry.projects),
+    };
+    sessionProjects.set(id, committed);
+    return getSessionProjectConfig(id);
+  }
+
+  /** Creates an empty browser-session project without persisting image data to disk. */
+  function createSessionProject(label) {
+    ensureSessionProjects();
+    const normalizedLabel = String(label || "").trim();
+    if (!normalizedLabel) throw new Error("Project name is required.");
+    const baseId = safeFilename(normalizedLabel).toLowerCase() || "project";
+    const usedIds = new Set(sessionRegistry.projects.map((project) => project.id));
+    let projectId = baseId;
+    let suffix = 2;
+    while (usedIds.has(projectId)) {
+      projectId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    const project = { id: projectId, label: normalizedLabel, projectRoot: "" };
+    sessionRegistry.projects.push(project);
+    const config = createEmptyConfig(project);
+    sessionProjects.set(projectId, config);
+    return { projectId, config: getSessionProjectConfig(projectId) };
+  }
+
+  /** Deletes an uncommitted browser-session project shell. */
+  function discardSessionProject(projectId) {
+    const id = String(projectId || "");
+    if (!id || id === "browser-session") return false;
+    const index = sessionRegistry.projects.findIndex((project) => project.id === id);
+    if (index < 0) return false;
+    sessionRegistry.projects.splice(index, 1);
+    sessionProjects.delete(id);
+    return true;
+  }
+
   /**
    * Returns a response-like transient configuration without making a network request.
    * @returns {Promise<{ok:boolean,status:number,json:()=>Promise<object>,text:()=>Promise<string>}>} Config response.
    */
-  async function fetchConfig() {
-    const payload = createEmptyConfig();
+  async function fetchConfig(input = "/api/config") {
+    ensureSessionProjects();
+    const parsed = new URL(String(input || "/api/config"), "https://xsxb.local");
+    const requestedProjectId = parsed.searchParams.get("project") || sessionRegistry.activeProjectId;
+    const payload = getSessionProjectConfig(requestedProjectId);
+    if (!payload) {
+      return {
+        ok: false,
+        status: 404,
+        json: async () => ({ error: `Project not found: ${requestedProjectId}` }),
+        text: async () => `Project not found: ${requestedProjectId}`,
+      };
+    }
     return {
       ok: true,
       status: 200,
@@ -504,15 +606,20 @@
       );
     }
     const groups = Array.isArray(existingGroups) ? existingGroups : [];
-    const baseId = safeFilename(metadata?.animationName).toLowerCase() || "animation";
-    const usedAnimationIds = new Set(groups.map((group) => String(group.animationId || "")));
+    const profileId = String(metadata?.profileId || "browser-character");
+    const baseId =
+      safeFilename(metadata?.animationId || metadata?.animationName).toLowerCase() || "animation";
+    const usedAnimationIds = new Set(
+      groups
+        .filter((group) => String(group.profileId || "") === profileId)
+        .map((group) => String(group.animationId || "")),
+    );
     let animationId = baseId;
     let suffix = 2;
     while (usedAnimationIds.has(animationId)) {
       animationId = `${baseId}-${suffix}`;
       suffix += 1;
     }
-    const profileId = String(metadata?.profileId || "browser-character");
     const profileLabel = String(metadata?.profileLabel || (language === "zh" ? "新角色" : "New Character"));
     const keyBase = `profiles.${profileId}.groups.${animationId}`;
     const characterKeyBase = `profiles.${profileId}.character`;
@@ -823,14 +930,18 @@
   }
 
   return {
+    commitSessionProjectConfig,
     createSessionExportSnapshot,
     createEmptyConfig,
     createSessionAnimationGroup,
+    createSessionProject,
     deleteSessionAnimation,
     deleteSessionAnimationFrames,
+    discardSessionProject,
     exportAnimationPackage,
     exportWorkbenchPackage,
     fetchConfig,
+    getSessionProjectConfig,
     isEnabled,
     reorganizeSessionAnimation,
     replaceSessionAnimationFrames,

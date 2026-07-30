@@ -345,6 +345,7 @@ test("resolveAssetPath maps public tool routes to the workbench", () => {
   assert.equal(resolveAssetPath("/"), "/index.html");
   assert.equal(resolveAssetPath("/admin/licenses"), "/admin.html");
   assert.equal(resolveAssetPath("/tools/import"), "/workbench.html");
+  assert.equal(resolveAssetPath("/tools/scatter-slice"), "/workbench.html");
   assert.equal(resolveAssetPath("/assets/app.js"), "/assets/app.js");
 });
 

@@ -90,9 +90,7 @@ function remapIndexedDictionary(source, prefix, items, mirrorFrameBoxes = false)
     if (!Number.isInteger(item.sourceIndex)) return;
     const oldKey = `${prefix}${item.sourceIndex}`;
     if (!(oldKey in (source || {}))) return;
-    const value = mirrorFrameBoxes && item.flipped
-      ? mirrorBoxes(source[oldKey])
-      : clone(source[oldKey]);
+    const value = mirrorFrameBoxes && item.flipped ? mirrorBoxes(source[oldKey]) : clone(source[oldKey]);
     result[`${prefix}${newIndex}`] = value;
   });
   return result;
@@ -169,6 +167,59 @@ function remapBindings(bindings, animationKey, items) {
 }
 
 /**
+ * Normalizes a trail stick's phase for deterministic chronological sorting.
+ * @param {unknown} value Saved frame phase.
+ * @returns {number} Finite phase clamped to the current frame.
+ */
+function normalizedTrailFramePhase(value) {
+  if (value === null || value === undefined) return 0.5;
+  const phase = Number(value);
+  return Number.isFinite(phase) ? Math.min(1, Math.max(0, phase)) : 0.5;
+}
+
+/**
+ * Remaps attack-trail sticks to the replacement frame order.
+ * @param {object} source Attack-trail document.
+ * @param {string} animationKey Stable profile/animation key.
+ * @param {Array<{sourceIndex:number|null}>} items New frame plan.
+ * @returns {object} Remapped attack-trail document.
+ */
+function remapAttackTrails(source, animationKey, items) {
+  const result = clone(source && typeof source === "object" ? source : { schemaVersion: 8, bindings: {} });
+  if (!result.bindings || typeof result.bindings !== "object") result.bindings = {};
+  if (!Array.isArray(result.bindings[animationKey])) return result;
+  const frameMap = new Map();
+  items.forEach((item, nextIndex) => {
+    if (!Number.isInteger(item.sourceIndex)) return;
+    if (!frameMap.has(item.sourceIndex)) frameMap.set(item.sourceIndex, []);
+    frameMap.get(item.sourceIndex).push(nextIndex);
+  });
+  result.bindings[animationKey] = result.bindings[animationKey].map((segment) => {
+    const sticks = Array.from(segment?.sticks || [])
+      .flatMap((stick, sourceIndex) => {
+        const savedOrder = Number(stick?.order);
+        const stableOrder = Number.isFinite(savedOrder) ? savedOrder : sourceIndex;
+        return Array.from(frameMap.get(Number(stick?.frame)) || []).map((frame) => ({
+          stick: { ...stick, frame },
+          sourceIndex,
+          stableOrder,
+        }));
+      })
+      .sort(
+        (left, right) =>
+          left.stick.frame - right.stick.frame ||
+          normalizedTrailFramePhase(left.stick.framePhase) -
+            normalizedTrailFramePhase(right.stick.framePhase) ||
+          left.stableOrder - right.stableOrder ||
+          left.sourceIndex - right.sourceIndex,
+      )
+      .map(({ stick }, order) => ({ ...stick, order }));
+    return { ...segment, sticks };
+  });
+  return result;
+}
+
+/**
  * Locates a manifest animation.
  * @param {object} manifest Animation manifest.
  * @param {string} profileId Profile identifier.
@@ -178,7 +229,9 @@ function remapBindings(bindings, animationKey, items) {
 function findAnimation(manifest, profileId, animationId) {
   const profile = (manifest.profiles || []).find((entry) => String(entry.id) === profileId);
   if (!profile) throw new Error(`Profile not found: ${profileId}`);
-  const animation = (profile.animations || []).find((entry) => String(entry.id || entry.name) === animationId);
+  const animation = (profile.animations || []).find(
+    (entry) => String(entry.id || entry.name) === animationId,
+  );
   if (!animation) throw new Error(`Animation not found: ${profileId}/${animationId}`);
   return { profile, animation };
 }
@@ -228,13 +281,7 @@ function ensureImportProfile(manifest, profileId, profileLabel, profileKind) {
  * @returns {{manifest:object,tuning:object,frameCount:number,targetDir:string,profileId:string,animationId:string}}
  */
 function importAnimation(options) {
-  const {
-    root,
-    projectStore,
-    project,
-    profileId,
-    animationId,
-  } = options;
+  const { root, projectStore, project, profileId, animationId } = options;
   const items = Array.isArray(options.items) ? options.items : [];
   if (!project) throw new Error("An active project is required.");
   if (!profileId || !animationId) throw new Error("Profile and animation names are required.");
@@ -301,8 +348,9 @@ function importAnimation(options) {
         ...pngSize(buffer),
       };
     });
-    const animationType = ["actor", "boss", "vfx", "prop", "scene_prop_attachment"]
-      .includes(String(options.animationType || "actor"))
+    const animationType = ["actor", "boss", "vfx", "prop", "scene_prop_attachment"].includes(
+      String(options.animationType || "actor"),
+    )
       ? String(options.animationType || "actor")
       : "actor";
     animation = {
@@ -368,13 +416,7 @@ function importAnimation(options) {
  * @returns {{manifest:object,tuning:object,frameAudioBindings:object[],frameImageAttachments:object[],frameCount:number,targetDir:string}}
  */
 function reorganizeAnimation(options) {
-  const {
-    root,
-    projectStore,
-    project,
-    profileId,
-    animationId,
-  } = options;
+  const { root, projectStore, project, profileId, animationId } = options;
   const items = Array.isArray(options.items) ? options.items : [];
   if (!items.length) throw new Error("An animation must keep at least one frame.");
   if (items.length > 5000) throw new Error("Frame organizer limit is 5000 frames per animation.");
@@ -390,11 +432,13 @@ function reorganizeAnimation(options) {
   });
   const frameAudioBindings = projectStore.readJson(paths.frameAudio, []);
   const frameImageAttachments = projectStore.readJson(paths.frameImageAttachments, []);
+  const attackTrails = projectStore.readJson(paths.attackTrails, { schemaVersion: 8, bindings: {} });
   const originals = {
     manifest: clone(manifest),
     tuning: clone(tuning),
     frameAudioBindings: clone(frameAudioBindings),
     frameImageAttachments: clone(frameImageAttachments),
+    attackTrails: clone(attackTrails),
   };
   const { animation } = findAnimation(manifest, profileId, animationId);
   const workspaceDir = projectStore.projectWorkspaceDir(project);
@@ -408,7 +452,11 @@ function reorganizeAnimation(options) {
     const inlineBuffer = decodePngDataUrl(item.data);
     if (inlineBuffer) return inlineBuffer;
     const sourcePath = safeResolve(root, item.sourcePath);
-    if (!sourcePath || !sourcePath.startsWith(`${workspaceDir}${path.sep}`) || path.extname(sourcePath).toLowerCase() !== ".png") {
+    if (
+      !sourcePath ||
+      !sourcePath.startsWith(`${workspaceDir}${path.sep}`) ||
+      path.extname(sourcePath).toLowerCase() !== ".png"
+    ) {
       throw new Error(`Invalid organizer source frame: ${item.sourcePath || "missing path"}`);
     }
     return fs.readFileSync(sourcePath);
@@ -457,6 +505,7 @@ function reorganizeAnimation(options) {
   });
   const nextAudioBindings = remapBindings(frameAudioBindings, animationKey, items);
   const nextImageAttachments = remapBindings(frameImageAttachments, animationKey, items);
+  const nextAttackTrails = remapAttackTrails(attackTrails, animationKey, items);
   animation.frames = nextFrames;
   animation.source = reslash(path.relative(root, targetDir));
 
@@ -473,6 +522,7 @@ function reorganizeAnimation(options) {
     projectStore.writeJson(paths.tuning, tuning);
     projectStore.writeJson(paths.frameAudio, nextAudioBindings);
     projectStore.writeJson(paths.frameImageAttachments, nextImageAttachments);
+    projectStore.writeJson(paths.attackTrails, nextAttackTrails);
     fs.rmSync(backupDir, { recursive: true, force: true });
   } catch (error) {
     if (directorySwapped) fs.rmSync(targetDir, { recursive: true, force: true });
@@ -482,6 +532,7 @@ function reorganizeAnimation(options) {
     projectStore.writeJson(paths.tuning, originals.tuning);
     projectStore.writeJson(paths.frameAudio, originals.frameAudioBindings);
     projectStore.writeJson(paths.frameImageAttachments, originals.frameImageAttachments);
+    projectStore.writeJson(paths.attackTrails, originals.attackTrails);
     throw error;
   }
 
@@ -490,6 +541,7 @@ function reorganizeAnimation(options) {
     tuning,
     frameAudioBindings: nextAudioBindings,
     frameImageAttachments: nextImageAttachments,
+    attackTrails: nextAttackTrails,
     frameCount: nextFrames.length,
     targetDir,
   };
@@ -499,6 +551,7 @@ module.exports = {
   importAnimation,
   mirrorBoxes,
   remapBindings,
+  remapAttackTrails,
   remapIndexedDictionary,
   reorganizeAnimation,
 };

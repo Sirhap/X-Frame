@@ -72,7 +72,30 @@ test("routing reads canonical and legacy workbench routes", () => {
     createControllerFixture("http://localhost/?tool=organizer").controller.currentWorkbenchRoute(),
     "organizer",
   );
+  assert.equal(
+    createControllerFixture("http://localhost/tools/organizer").controller.currentWorkbenchRoute(),
+    "import",
+  );
+  assert.equal(
+    createControllerFixture("http://localhost/workspace/tools/organizer").controller.currentWorkbenchRoute(),
+    "organizer",
+  );
+  assert.equal(
+    createControllerFixture("http://localhost/tools/scatter-slice").controller.currentWorkbenchRoute(),
+    "scatter",
+  );
   assert.equal(createControllerFixture("http://localhost/unknown").controller.currentWorkbenchRoute(), "");
+});
+
+test("routing distinguishes project and standalone navigation domains", () => {
+  assert.equal(
+    createControllerFixture("http://localhost/workspace/tools/cutout").controller.currentNavigationContext(),
+    "project",
+  );
+  assert.equal(
+    createControllerFixture("http://localhost/tools/cutout").controller.currentNavigationContext(),
+    "standalone",
+  );
 });
 
 test("routing updates the document title from the active animation", () => {
@@ -91,9 +114,22 @@ test("route and selection synchronization preserve URL state", () => {
   assert.equal(storage.value("xsxbFrameTuner.recentWorkbench"), "cutout");
   assert.equal(windowRef.historyCalls[0].method, "pushState");
 
+  controller.syncWorkbenchRoute("cutout", { context: "project" });
+  assert.equal(windowRef.location.pathname, "/workspace/tools/cutout");
+
   controller.syncUrlState({ push: true });
   assert.equal(windowRef.location.search, "?legacy=1&project=project-1&group=idle&frame=1");
-  assert.equal(windowRef.historyCalls[1].state.xsxbSelection, true);
+  assert.equal(windowRef.historyCalls[2].state.xsxbSelection, true);
+});
+
+test("workspace selection synchronization keeps project animation state", () => {
+  const { controller, windowRef } = createControllerFixture(
+    "http://localhost/workspace?animation=hero%2Fidle",
+  );
+
+  controller.syncUrlState();
+
+  assert.equal(windowRef.location.search, "?project=project-1&group=idle&frame=1");
 });
 
 test("returning to the workspace route restores the frame editor", () => {
@@ -147,7 +183,7 @@ test("route application restores home when the requested controller is unavailab
   });
 
   assert.equal(await controller.applyWorkbenchRoute(), false);
-  assert.equal(windowRef.location.pathname, "/workspace");
+  assert.equal(windowRef.location.pathname, "/tools");
 });
 
 test("route application restores the open organizer when close is cancelled", async () => {
@@ -171,7 +207,7 @@ test("route application restores the open organizer when close is cancelled", as
   });
 
   assert.equal(await controller.applyWorkbenchRoute(), false);
-  assert.equal(windowRef.location.pathname, "/tools/import");
+  assert.equal(windowRef.location.pathname, "/tools/organizer");
   assert.deepEqual(events, ["cancel-close"]);
 });
 
@@ -189,7 +225,7 @@ test("route application rolls URL back when opening a workbench throws", async (
   });
 
   await assert.rejects(() => controller.applyWorkbenchRoute(), /cutout failed/);
-  assert.equal(windowRef.location.pathname, "/workspace");
+  assert.equal(windowRef.location.pathname, "/tools");
 });
 
 test("workspace route guard saves dirty tuning before opening a tool", async () => {
@@ -215,7 +251,7 @@ test("workspace route guard saves dirty tuning before opening a tool", async () 
 });
 
 test("workspace route guard discards or cancels dirty tuning explicitly", async () => {
-  const discardWindow = createWindow("http://localhost/tools/organizer");
+  const discardWindow = createWindow("http://localhost/workspace/tools/organizer");
   const discardEvents = [];
   const discardController = createController({
     windowRef: discardWindow,
@@ -240,5 +276,5 @@ test("workspace route guard discards or cancels dirty tuning explicitly", async 
     getBatchCutout: () => ({ isOpen: () => false, open() {} }),
   });
   assert.equal(await cancelController.applyWorkbenchRoute(), false);
-  assert.equal(cancelWindow.location.pathname, "/workspace");
+  assert.equal(cancelWindow.location.pathname, "/tools");
 });

@@ -181,3 +181,55 @@ test("process controller previews staged recolor but commits only stored repairs
   assert.deepEqual(processedRepairSets[1], [committedRepair]);
   assert.equal(item.resultVariant, "committed");
 });
+
+test("cutout results can be handed to a project while retaining frame mapping", async () => {
+  const sourceFrame = { name: "idle.png" };
+  let projectRequest = null;
+  const { controller, state } = createFixture({
+    state: { thumbnailRevision: 2, sourceKind: "group" },
+    dependencies: {
+      resultArtifacts: {
+        get: () => "data:image/png;base64,result",
+        put() {},
+      },
+      outputCore: {
+        uniquePngName: (name) => name,
+        createOutput: (output) => output,
+      },
+      premiumFeatures: { detectCutoutFeatures: () => [], normalizeFeatureIds: (values) => values },
+      ensurePremiumActivated: async () => true,
+      host: {
+        getCurrentAnimation: () => ({
+          name: "idle",
+          profileLabel: "Hero",
+          frames: [sourceFrame],
+        }),
+        addToProject: async (request) => {
+          projectRequest = request;
+        },
+      },
+    },
+  });
+  state.items = [
+    {
+      id: "frame-1",
+      name: "idle.png",
+      frame: sourceFrame,
+      excluded: false,
+      processingRevision: 0,
+    },
+  ];
+
+  await controller.addToProject();
+
+  assert.equal(projectRequest.sourceTool, "cutout");
+  assert.equal(projectRequest.worksets[0].profileLabel, "Hero");
+  assert.deepEqual(projectRequest.worksets[0].items, [
+    {
+      sourceIndex: 0,
+      name: "idle.png",
+      data: "data:image/png;base64,result",
+      flipped: false,
+    },
+  ]);
+});

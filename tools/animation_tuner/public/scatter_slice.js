@@ -13,6 +13,7 @@
   const MAX_FILE_BYTES = 20 * 1024 * 1024;
   const MAX_SOURCE_PIXELS = 20_000_000;
   const MAX_OUTPUT_PIXELS = 64_000_000;
+  const MAX_HANDOFF_PIXELS = 24_000_000;
   const MAX_CANVAS_SIDE = 32_767;
   const ACCEPTED_IMAGE_TYPE = /^image\/(png|jpeg|webp)$/i;
   const GROUP_COLORS = Object.freeze([
@@ -37,6 +38,8 @@
     boxXInput: requireElement("#scatterBoxX"),
     boxYInput: requireElement("#scatterBoxY"),
     boxCount: requireElement("#scatterBoxCount"),
+    addProjectButton: requireElement("#scatterAddProject"),
+    animationNameInput: requireElement("#scatterAnimationName"),
     colorInput: requireElement("#scatterColor"),
     colorValue: requireElement("#scatterColorValue"),
     columnsInput: requireElement("#scatterColumns"),
@@ -57,6 +60,7 @@
     paddingInput: requireElement("#scatterPadding"),
     playAllButton: requireElement("#scatterPlayAll"),
     playAllCanvas: requireElement("#scatterPlaybackAll"),
+    projectModeInput: requireElement("#scatterProjectMode"),
     previewCanvas: requireElement("#scatterPreview"),
     sampleButton: requireElement("#scatterSample"),
     sampleModeButton: requireElement("#scatterSampleMode"),
@@ -88,6 +92,7 @@
     playbackCanvas: null,
     playbackIdleLabel: null,
     previewFrameId: null,
+    suppressBeforeUnload: false,
     toolMode: "sample",
   };
 
@@ -431,6 +436,9 @@
         name: file.name || "untitled-image",
         width: sourceCanvas.width,
       };
+      if (!elements.animationNameInput.value.trim()) {
+        elements.animationNameInput.value = state.source.name.replace(/\.[^.]+$/, "") || "sprites";
+      }
 
       const rgba = context.getImageData(0, 0, state.source.width, state.source.height).data;
       state.smartBackgroundColor = smartCutout.detectBackgroundColor(
@@ -785,6 +793,7 @@
       elements.deleteButton.disabled = !selected;
       elements.downloadSliceButton.disabled = !selected;
       elements.downloadSheetButton.disabled = includedGroups.length === 0;
+      elements.addProjectButton.disabled = state.busy || includedGroups.length === 0;
       syncBoxInspector();
     } catch (error) {
       console.error(error);
@@ -905,6 +914,105 @@
     } catch (error) {
       console.error(error);
       setStatus(errorMessage(error, "拼接导出失败"), "error");
+    }
+  }
+
+  /** Draws a cropped frame onto a shared transparent canvas using a bottom-center anchor. */
+  function bottomCenterFrame(frame, width, height) {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("无法创建合并动画画布");
+    context.imageSmoothingEnabled = false;
+    context.drawImage(frame, Math.floor((width - frame.width) / 2), height - frame.height);
+    return canvas;
+  }
+
+  /** Builds one or more ordered worksets from the selected visual row groups. */
+  function projectWorksets() {
+    const groups = selectedGroups();
+    if (!groups.length) throw new Error("请至少选择一个动画组");
+    const baseName = elements.animationNameInput.value.trim() || "sprites";
+    if (elements.projectModeInput.value === "merge") {
+      const frames = groups.flatMap((group) => group.boxes.map(createSliceCanvas));
+      const width = Math.max(...frames.map((frame) => frame.width));
+      const height = Math.max(...frames.map((frame) => frame.height));
+      if (
+        width > MAX_CANVAS_SIDE ||
+        height > MAX_CANVAS_SIDE ||
+        width * height * frames.length > MAX_HANDOFF_PIXELS
+      ) {
+        throw new Error("合并动画的统一画布总量过大，请减少切片数量、留白或源图尺寸");
+      }
+      return [
+        {
+          id: `scatter-merged-${Date.now()}`,
+          label: baseName,
+          animationName: baseName,
+          profileLabel: "character",
+          profileKind: "actor",
+          animationType: "actor",
+          anchorMode: "canvas_bottom_center",
+          fps: 12,
+          items: frames.map((frame, sourceIndex) => ({
+            sourceIndex,
+            name: `frame_${String(sourceIndex + 1).padStart(4, "0")}.png`,
+            data: bottomCenterFrame(frame, width, height).toDataURL("image/png"),
+            flipped: false,
+          })),
+        },
+      ];
+    }
+    const totalPixels = groups.reduce(
+      (total, group) =>
+        total +
+        group.boxes.reduce((groupTotal, box) => {
+          const frame = createSliceCanvas(box);
+          return groupTotal + frame.width * frame.height;
+        }, 0),
+      0,
+    );
+    if (totalPixels > MAX_HANDOFF_PIXELS) {
+      throw new Error("所选切片的项目写入总量过大，请减少切片数量、留白或源图尺寸");
+    }
+    return groups.map((group) => {
+      const groupIndex = state.groups.indexOf(group);
+      const animationName = `${baseName}-group-${String(groupIndex + 1).padStart(2, "0")}`;
+      return {
+        id: `scatter-${group.id}-${Date.now()}`,
+        label: animationName,
+        animationName,
+        profileLabel: "character",
+        profileKind: "actor",
+        animationType: "actor",
+        anchorMode: "canvas_bottom_center",
+        fps: 12,
+        items: group.boxes.map((box, sourceIndex) => ({
+          sourceIndex,
+          name: `frame_${String(sourceIndex + 1).padStart(4, "0")}.png`,
+          data: createSliceCanvas(box).toDataURL("image/png"),
+          flipped: false,
+        })),
+      };
+    });
+  }
+
+  /** Opens the parent application's shared project handoff without discarding slice state. */
+  async function addSelectedGroupsToProject() {
+    if (state.busy) return;
+    setStatus("正在准备动画项目目标…", "working");
+    try {
+      const parentWindow = root.parent && root.parent !== root ? root.parent : root;
+      const openHandoff = parentWindow.XSXBOpenWorksetHandoff;
+      if (typeof openHandoff !== "function") {
+        throw new Error("请从 /tools/scatter-slice 打开统一工具界面后再加入项目");
+      }
+      await openHandoff({ sourceTool: "scatter-slice", worksets: projectWorksets() });
+      setStatus("已打开项目目标选择；切片会话仍然保留。", "success");
+    } catch (error) {
+      console.error(error);
+      setStatus(errorMessage(error, "加入动画项目失败"), "error");
     }
   }
 
@@ -1128,7 +1236,7 @@
    * @returns {boolean} Whether the shortcut must be ignored.
    */
   function isInteractiveTarget(target) {
-    if (!(target instanceof Element)) return false;
+    if (typeof root.Element !== "function" || !(target instanceof root.Element)) return false;
     if (target.closest("input, select, textarea, button, a")) return true;
     const editable = target.closest("[contenteditable]");
     return Boolean(editable?.isContentEditable);
@@ -1219,6 +1327,20 @@
   });
   elements.downloadSliceButton.addEventListener("click", () => void downloadSelectedSlice());
   elements.downloadSheetButton.addEventListener("click", () => void downloadStitchedSheet());
+  elements.addProjectButton.addEventListener("click", () => void addSelectedGroupsToProject());
+  root.XSXBScatterSliceSession = Object.freeze({
+    allowDiscard() {
+      state.suppressBeforeUnload = true;
+    },
+    hasUnsavedChanges() {
+      return Boolean(state.source);
+    },
+  });
+  root.addEventListener("beforeunload", (event) => {
+    if (state.suppressBeforeUnload || !state.source) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
   for (const eventName of ["dragenter", "dragover"]) {
     elements.dropZone.addEventListener(eventName, (event) => {
       event.preventDefault();

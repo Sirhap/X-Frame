@@ -42,3 +42,79 @@ test("organizer UI exposes normalized image order strategy selection", () => {
   controller.setImportOrderStrategy("unsupported");
   assert.equal(state.importOrderStrategy, "filename");
 });
+
+/** Creates the import fields needed to verify project-intent defaults. */
+function createImportContextFixture() {
+  const location = new URL("http://localhost/tools/organizer?createProject=1&source=projects");
+  const replaceCalls = [];
+  const projectSelect = {
+    _options: [],
+    value: "",
+    get innerHTML() {
+      return "";
+    },
+    set innerHTML(_value) {
+      this._options = [];
+      this.value = "";
+    },
+    get options() {
+      return this._options;
+    },
+    appendChild(option) {
+      this._options.push(option);
+    },
+  };
+  const field = (value = "") => ({ value });
+  const elements = {
+    organizerAnimationName: field(),
+    organizerAnimationType: field(),
+    organizerImportFps: field(),
+    organizerProfileName: field(),
+    organizerProjectName: field(),
+    organizerProjectNameField: { hidden: true },
+    organizerProjectSelect: projectSelect,
+  };
+  const document = {
+    createElement: () => ({ textContent: "", value: "" }),
+  };
+  const window = {
+    history: {
+      state: { xsxbWorkbench: "import" },
+      replaceState(state, _title, nextUrl) {
+        replaceCalls.push({ state, url: String(nextUrl) });
+        location.href = String(nextUrl);
+      },
+    },
+    location,
+  };
+  const controller = createController({
+    document,
+    elements,
+    hooks: {
+      getImportContext: () => ({
+        activeProject: { id: "project-1", label: "Existing Project" },
+        profiles: [{ id: "hero", label: "Hero", kind: "actor" }],
+      }),
+    },
+    state: { language: "en" },
+    text: (key) => key,
+    window,
+  });
+  return { controller, elements, location, replaceCalls };
+}
+
+test("organizer consumes the one-shot create-project navigation intent", () => {
+  const fixture = createImportContextFixture();
+
+  fixture.controller.renderImportContext(true);
+
+  assert.equal(fixture.elements.organizerProjectSelect.value, "__new__");
+  assert.equal(fixture.location.search, "?source=projects");
+  assert.equal(fixture.replaceCalls.length, 1);
+  assert.deepEqual(fixture.replaceCalls[0].state, { xsxbWorkbench: "import" });
+
+  fixture.controller.renderImportContext(true);
+
+  assert.equal(fixture.elements.organizerProjectSelect.value, "project-1");
+  assert.equal(fixture.replaceCalls.length, 1);
+});

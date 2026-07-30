@@ -1,0 +1,186 @@
+.worksetHandoffDialog {
+  position: fixed;
+  z-index: 5200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 7, 11, 0.76);
+  backdrop-filter: blur(10px);
+}
+
+.worksetHandoffDialog[hidden] {
+  display: none;
+}
+
+.worksetHandoffCard {
+  width: min(860px, 100%);
+  max-height: min(820px, calc(100dvh - 48px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--soft-shadow);
+  overflow: hidden;
+}
+
+.worksetHandoffCard > header,
+.worksetHandoffCard > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.worksetHandoffCard > footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.worksetHandoffCard > header span {
+  color: var(--accent-text);
+  font: 750 9px/1.4 var(--data-font);
+  letter-spacing: 0.14em;
+}
+
+.worksetHandoffCard > header h2 {
+  margin: 5px 0;
+  color: var(--ink);
+  font-size: 22px;
+}
+
+.worksetHandoffCard > header p,
+.worksetHandoffSuccess p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+#worksetHandoffClose {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 20px;
+}
+
+.worksetHandoffForm,
+.worksetHandoffSuccess {
+  padding: 20px;
+  overflow: auto;
+}
+
+.worksetHandoffForm > label,
+.worksetHandoffRow label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.worksetHandoffForm > label {
+  margin-bottom: 14px;
+}
+
+.worksetHandoffForm :is(input, select),
+.worksetHandoffRow :is(input, select) {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+}
+
+.worksetHandoffRows {
+  display: grid;
+  gap: 12px;
+}
+
+.worksetHandoffRow {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.worksetHandoffRow > header {
+  align-self: center;
+}
+
+.worksetHandoffRow > header span {
+  color: var(--accent-text);
+  font: 700 9px/1.4 var(--data-font);
+}
+
+.worksetHandoffRow > header strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.worksetHandoffImpact {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-3) 55%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-3) 7%, var(--panel));
+}
+
+.worksetHandoffImpact strong,
+.worksetHandoffSuccess > strong {
+  color: var(--ink);
+}
+
+.worksetHandoffImpact ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.worksetHandoffStatus {
+  min-height: 20px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.worksetHandoffStatus[data-tone="error"] {
+  color: var(--danger);
+}
+
+.worksetHandoffSuccess > div {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.worksetHandoffTarget {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+@media (max-width: 760px) {
+  .worksetHandoffDialog {
+    padding: 10px;
+  }
+
+  .worksetHandoffRow {
+    grid-template-columns: 1fr;
+  }
+}

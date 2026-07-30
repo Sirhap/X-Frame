@@ -28,7 +28,7 @@
    *   elements:Record<string,any>,
    *   state:Record<string,any>,
    *   text:(key:string,variables?:Record<string,string|number>)=>string,
-   *   hooks?:{browserExportOnly?:boolean,getCurrentAnimation?:()=>object|null,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,createSessionAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,exportAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<object|null>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
+   *   hooks?:{browserExportOnly?:boolean,getCurrentAnimation?:()=>object|null,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,createSessionAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,exportAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<object|null>,addToProject?:(request:{worksets:object[],sourceTool:string})=>Promise<void>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
    *   includedFrames:()=>object[],
    *   imageCanvas:(image:CanvasImageSource)=>HTMLCanvasElement,
    *   renderCounts:()=>void,
@@ -46,7 +46,7 @@
    *   cssEscape?:(value:string)=>string,
    *   premiumFeatures?:{normalizeFeatureIds?:(featureIds:Iterable<string>)=>string[]}
    * }} dependencies Organizer state and host callbacks.
-   * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,editBatchCutout:()=>Promise<void>,applyPlan:()=>Promise<void>,importIntoSession:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>,exportIncludedFrames:()=>Promise<void>}}
+   * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,editBatchCutout:()=>Promise<void>,applyPlan:()=>Promise<void>,importIntoSession:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>,addIncludedFramesToProject:()=>Promise<void>,exportIncludedFrames:()=>Promise<void>}}
    */
   function createController(dependencies = {}) {
     const {
@@ -327,6 +327,62 @@
       }
     }
 
+    /** Opens the shared project-target dialog for the current ordered workset. */
+    async function addIncludedFramesToProject() {
+      const frames = includedFrames();
+      if (!frames.length || typeof hooks.addToProject !== "function") return;
+      let metadata;
+      try {
+        const animation = hooks.getCurrentAnimation?.() || {};
+        metadata =
+          state.mode === "import"
+            ? importMetadata()
+            : {
+                animationName: animation.name || state.animationName || "animation",
+                profileLabel: animation.profileLabel || animation.profileId || "character",
+                profileKind: animation.profileKind || "actor",
+                animationType: animation.animationType || "actor",
+                fps: Number(animation.fps || 12),
+                anchorMode: animation.anchorMode || "canvas_bottom_center",
+              };
+      } catch (error) {
+        setStatus(error.message, "error");
+        return;
+      }
+      state.busy = true;
+      renderCounts();
+      setStatus(text("addingToProject"), "busy");
+      try {
+        await hooks.addToProject({
+          sourceTool: "organizer",
+          worksets: [
+            {
+              id: `organizer-${Date.now()}`,
+              label: metadata.animationName,
+              animationName: metadata.animationName,
+              profileLabel: metadata.profileLabel,
+              profileKind: metadata.profileKind || "actor",
+              animationType: metadata.animationType || "actor",
+              fps: Number(metadata.fps || 12),
+              anchorMode: metadata.anchorMode || "canvas_bottom_center",
+              items: frames.map((frame) => ({
+                sourceIndex: frame.sourceIndex,
+                name: frame.name,
+                flipped: frame.flipped,
+                data: frame.editedCanvas.toDataURL("image/png"),
+              })),
+            },
+          ],
+        });
+        setStatus(text("ready"), "idle");
+      } catch (error) {
+        setStatus(text("failed", { message: error.message }), "error");
+      } finally {
+        state.busy = false;
+        renderCounts();
+      }
+    }
+
     /**
      * Downloads the included processed frames as an animation ZIP.
      * @param {{confirmed?:boolean,formats?:{frames?:boolean,spritesheet?:boolean,gif?:boolean,mov?:boolean},signal?:AbortSignal}} [exportOptions] Selected export formats and cancellation signal.
@@ -415,6 +471,7 @@
       applyPlan,
       importIntoSession,
       addIncludedFramesToAssets,
+      addIncludedFramesToProject,
       exportIncludedFrames,
     };
   }

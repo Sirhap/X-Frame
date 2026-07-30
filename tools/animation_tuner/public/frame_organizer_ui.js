@@ -53,6 +53,7 @@
    *   editBatchCutout:()=>Promise<void>,
    *   importIntoSession:()=>Promise<void>,
    *   addIncludedFramesToAssets:()=>Promise<void>,
+   *   addIncludedFramesToProject:()=>Promise<void>,
    *   exportIncludedFrames:()=>Promise<void>,
    *   openExportDialog?:()=>void,
    *   selectFrame:(index:number,event:object)=>void,
@@ -99,6 +100,7 @@
       editBatchCutout,
       importIntoSession,
       addIncludedFramesToAssets,
+      addIncludedFramesToProject,
       exportIncludedFrames,
       openExportDialog,
       selectFrame,
@@ -112,6 +114,7 @@
     const documentApi = dependencies.document || root.document;
     const windowApi = dependencies.window || root.window;
     const sequenceOrder = dependencies.sequenceOrder || defaultSequenceOrder;
+    let createProjectIntentConsumed = false;
     if (!sequenceOrder?.restoreImportOrder) throw new Error("FrameSequenceOrder is required.");
 
     /** Renders segmented ordering controls from the current strategy. @returns {void} */
@@ -244,6 +247,25 @@
       elements.organizerProjectName.required = creatingProject;
     }
 
+    /**
+     * Reads and consumes the one-shot request to start with a new project.
+     * @returns {boolean} Whether the current import should default to a new project.
+     */
+    function consumeCreateProjectIntent() {
+      if (createProjectIntentConsumed) return false;
+      const requested = new URLSearchParams(windowApi.location?.search || "").get("createProject") === "1";
+      if (!requested) return false;
+      createProjectIntentConsumed = true;
+      try {
+        const url = new URL(windowApi.location.href);
+        url.searchParams.delete("createProject");
+        windowApi.history.replaceState(windowApi.history.state, "", url);
+      } catch (_error) {
+        // URL cleanup is best-effort; the current import must still honor the request.
+      }
+      return true;
+    }
+
     /** Populates import defaults from the host's active project. @param {boolean} resetValues Whether defaults reset. @returns {void} */
     function renderImportContext(resetValues = false) {
       const context = hooks.getImportContext?.() || {};
@@ -262,6 +284,7 @@
         elements.organizerGodotHandoffBadge.dataset.state = handoffState;
       }
       const selectedValue = elements.organizerProjectSelect.value;
+      const createProjectRequested = resetValues && consumeCreateProjectIntent();
       elements.organizerProjectSelect.innerHTML = "";
       if (activeProject?.id) {
         const currentOption = documentApi.createElement("option");
@@ -276,9 +299,11 @@
       newOption.textContent = text("importProjectNew");
       elements.organizerProjectSelect.appendChild(newOption);
       const nextProjectValue = resetValues
-        ? activeProject?.id
-          ? String(activeProject.id)
-          : "__new__"
+        ? createProjectRequested
+          ? "__new__"
+          : activeProject?.id
+            ? String(activeProject.id)
+            : "__new__"
         : selectedValue;
       elements.organizerProjectSelect.value = Array.from(elements.organizerProjectSelect.options).some(
         (option) => option.value === nextProjectValue,
@@ -484,6 +509,7 @@
       elements.organizerApply.addEventListener("click", applyPlan);
       elements.organizerGodotPlaceholder.addEventListener("click", importIntoSession);
       elements.organizerAddAssets.addEventListener("click", addIncludedFramesToAssets);
+      elements.organizerAddProject?.addEventListener("click", addIncludedFramesToProject);
       elements.organizerExport.addEventListener("click", () =>
         typeof openExportDialog === "function" ? openExportDialog() : exportIncludedFrames(),
       );
