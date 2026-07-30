@@ -63,9 +63,10 @@ function createElement() {
 
 /**
  * Creates a shell fixture with mapped selectors.
+ * @param {{pathname?:string}} [options] Initial browser location.
  * @returns {{controller:object,elements:Record<string,object>,storage:object}}
  */
-function createFixture() {
+function createFixture(options = {}) {
   const elements = {
     body: createElement(),
     sidebar: createElement(),
@@ -146,7 +147,7 @@ function createFixture() {
   };
   const windowRef = {
     clearTimeout() {},
-    location: { pathname: "/workspace" },
+    location: { pathname: options.pathname || "/workspace" },
     setTimeout() {
       return 1;
     },
@@ -222,4 +223,49 @@ test("scatter slice uses the shared tool shell surface", () => {
   assert.equal(fixture.elements.body.dataset.appSurface, "scatter");
   assert.equal(fixture.elements.scatterSliceSurface.hidden, false);
   assert.equal(fixture.elements.workspace.inert, true);
+});
+
+test("top-level routes expose exactly one primary surface", () => {
+  const cases = [
+    {
+      pathname: "/workspace",
+      surface: "workspace",
+      visible: "workspace",
+    },
+    {
+      pathname: "/projects",
+      surface: "projects",
+      visible: "projectHub",
+    },
+    {
+      pathname: "/tools",
+      surface: "tools",
+      visible: "quickToolsHub",
+    },
+    {
+      pathname: "/tools/scatter-slice",
+      surface: "scatter",
+      visible: "scatterSliceSurface",
+    },
+    {
+      pathname: "/tools/cutout",
+      surface: "tool",
+      visible: null,
+    },
+  ];
+
+  for (const routeCase of cases) {
+    const fixture = createFixture({ pathname: routeCase.pathname });
+    fixture.controller.bind();
+
+    assert.equal(fixture.elements.body.dataset.appSurface, routeCase.surface, routeCase.pathname);
+    assert.equal(fixture.elements.sidebar.hidden, routeCase.visible !== "workspace", routeCase.pathname);
+    for (const surface of ["workspace", "projectHub", "quickToolsHub", "scatterSliceSurface"]) {
+      assert.equal(
+        fixture.elements[surface].hidden,
+        surface !== routeCase.visible,
+        `${routeCase.pathname}: ${surface}`,
+      );
+    }
+  }
 });

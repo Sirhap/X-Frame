@@ -96,6 +96,11 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
   transform: none;
 }
 
+/* Hidden is the shared surface contract; component display rules must never override it. */
+[hidden] {
+  display: none !important;
+}
+
 .app {
   grid-template-columns: var(--shell-rail-width) var(--shell-sidebar-width) minmax(0, 1fr);
   transition: grid-template-columns var(--motion-standard) var(--ease-standard);

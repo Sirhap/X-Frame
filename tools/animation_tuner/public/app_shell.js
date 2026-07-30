@@ -246,10 +246,12 @@
       const workspaceVisible = surface === "workspace";
       const sidebarHidden = !workspaceVisible || elements.body?.classList.contains("sidebarCollapsed");
       if (elements.sidebar) {
+        elements.sidebar.hidden = !workspaceVisible;
         elements.sidebar.inert = Boolean(sidebarHidden);
         elements.sidebar.setAttribute("aria-hidden", sidebarHidden ? "true" : "false");
       }
       if (elements.workspace) {
+        elements.workspace.hidden = !workspaceVisible;
         elements.workspace.inert = Boolean(!workspaceVisible);
         elements.workspace.setAttribute("aria-hidden", workspaceVisible ? "false" : "true");
       }
