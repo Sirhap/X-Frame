@@ -136,8 +136,10 @@
      */
     function renderSessionMode() {
       const single = state.sessionMode === "single";
+      const workset = state.sourceKind === "workset";
       const activeItem = selectedItem();
       elements.cutoutModal.classList.toggle("singleEditSession", single);
+      elements.cutoutModal.classList.toggle("worksetSession", workset);
       elements.cutoutTitle.textContent = text(single ? "singleTitle" : "title");
       elements.cutoutFramePrefix.textContent = text(single ? "singleFramePrefix" : "framePrefix");
       elements.cutoutPrevious.textContent = single ? "《" : "◀";

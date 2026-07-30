@@ -11,8 +11,9 @@
   overscroll-behavior: contain;
 }
 
-/* Embedded single-image editing stays above its owning organizer workset. */
-.cutoutModal.singleEditSession {
+/* Organizer-owned worksets stay above their owning organizer, regardless of editing mode. */
+.cutoutModal.singleEditSession,
+.cutoutModal.worksetSession {
   z-index: 1002;
 }
 

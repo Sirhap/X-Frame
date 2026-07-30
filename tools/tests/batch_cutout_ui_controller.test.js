@@ -12,7 +12,24 @@ class HTMLElementStub {
 }
 
 function classList() {
-  return { add() {}, remove() {}, toggle() {} };
+  const names = new Set();
+  return {
+    add(...tokens) {
+      tokens.forEach((token) => names.add(token));
+    },
+    remove(...tokens) {
+      tokens.forEach((token) => names.delete(token));
+    },
+    toggle(token, force) {
+      const enabled = force === undefined ? !names.has(token) : Boolean(force);
+      if (enabled) names.add(token);
+      else names.delete(token);
+      return enabled;
+    },
+    contains(token) {
+      return names.has(token);
+    },
+  };
 }
 
 /**
@@ -135,6 +152,27 @@ function createFixture() {
 
 test("UI controller validates required dependencies", () => {
   assert.throws(() => createController(), /dependencies are required/);
+});
+
+test("batch workset exposes embedded stacking state without single-image layout", () => {
+  const { controller, elements, state } = createFixture();
+  controller.renderSessionMode();
+  assert.equal(elements.cutoutModal.classList.contains("worksetSession"), false);
+
+  state.sourceKind = "workset";
+  state.sessionMode = "batch";
+  controller.renderSessionMode();
+  assert.equal(elements.cutoutModal.classList.contains("worksetSession"), true);
+  assert.equal(elements.cutoutModal.classList.contains("singleEditSession"), false);
+
+  state.sessionMode = "single";
+  controller.renderSessionMode();
+  assert.equal(elements.cutoutModal.classList.contains("worksetSession"), true);
+  assert.equal(elements.cutoutModal.classList.contains("singleEditSession"), true);
+
+  state.sourceKind = "files";
+  controller.renderSessionMode();
+  assert.equal(elements.cutoutModal.classList.contains("worksetSession"), false);
 });
 
 test("preview pan controller preserves viewport state and redraws", () => {
