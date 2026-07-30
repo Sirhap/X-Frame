@@ -75,3 +75,24 @@ test("static handler supports a dedicated factory homepage without changing work
   ]);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("static handler maps the dedicated watermark tool document", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-watermark-static-test-"));
+  fs.writeFileSync(path.join(root, "watermark_studio.html"), "watermark");
+  const responses = [];
+  const handler = createStaticHandler({
+    publicRoot: root,
+    workbenchRoutes: new Set(),
+    documentRoutes: { "/tools/watermark": "watermark_studio.html" },
+    safeResolve: (base, requested) => path.resolve(base, requested),
+    send: (_response, status, body) => {
+      responses.push({ status, body: body.toString() });
+      return true;
+    },
+  });
+
+  handler({}, {}, "/tools/watermark");
+
+  assert.deepEqual(responses, [{ status: 200, body: "watermark" }]);
+  fs.rmSync(root, { recursive: true, force: true });
+});

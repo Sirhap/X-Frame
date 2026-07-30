@@ -320,7 +320,11 @@
 }
 
 .tool-scatter {
-  --card-accent: #f7b84b;
+  --tool-color: #f7b84b;
+}
+
+.tool-watermark {
+  --tool-color: #f05b62;
 }
 
 .tool-organizer {

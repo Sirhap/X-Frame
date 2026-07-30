@@ -4,10 +4,13 @@ const browserGlobals = {
   ArrayBuffer: "readonly",
   Blob: "readonly",
   CSS: "readonly",
+  clearTimeout: "readonly",
   console: "readonly",
+  crypto: "readonly",
   DOMException: "readonly",
   File: "readonly",
   FileReader: "readonly",
+  fetch: "readonly",
   HTMLCanvasElement: "readonly",
   ImageData: "readonly",
   MessageEvent: "readonly",
@@ -22,6 +25,7 @@ const browserGlobals = {
   module: "readonly",
   navigator: "readonly",
   performance: "readonly",
+  requestAnimationFrame: "readonly",
   require: "readonly",
   setTimeout: "readonly",
   self: "readonly",
@@ -30,6 +34,7 @@ const browserGlobals = {
 
 const nodeGlobals = {
   Buffer: "readonly",
+  URL: "readonly",
   __dirname: "readonly",
   clearInterval: "readonly",
   clearTimeout: "readonly",
@@ -44,6 +49,39 @@ const nodeGlobals = {
 module.exports = [
   {
     ignores: ["coverage/**", "node_modules/**", "playwright-report/**", "test-results/**"],
+  },
+  {
+    files: [
+      "tools/animation_tuner/public/watermark_studio.js",
+      "tools/animation_tuner/public/watermark_smart_controls.js",
+    ],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: "module",
+      globals: browserGlobals,
+    },
+    rules: {
+      "no-constant-condition": "error",
+      "no-dupe-keys": "error",
+      "no-undef": "error",
+      "no-unreachable": "error",
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", caughtErrors: "none" }],
+    },
+  },
+  {
+    files: ["tools/animation_tuner/watermark_studio/*.js"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: "module",
+      globals: nodeGlobals,
+    },
+    rules: {
+      "no-constant-condition": "error",
+      "no-dupe-keys": "error",
+      "no-undef": "error",
+      "no-unreachable": "error",
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", caughtErrors: "none" }],
+    },
   },
   {
     files: [
@@ -126,6 +164,7 @@ module.exports = [
       "tools/animation_tuner/server_media_export.js",
       "tools/animation_tuner/server_static.js",
       "tools/animation_tuner/server_validation.js",
+      "tools/animation_tuner/server_watermark_studio.js",
       "tools/animation_mutations.js",
       "tools/attachment_alignment_core.js",
       "tools/auto_align_attachments.js",

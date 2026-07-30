@@ -37,6 +37,7 @@ const { createServerIoOperations } = require("./server_io_operations");
 const { createActivationService } = require("./server_activation");
 const { createPremiumAuthorizer } = require("./server_premium_authorization");
 const { createMediaExportService } = require("./server_media_export");
+const { createWatermarkStudioService } = require("./server_watermark_studio");
 const { segmentSubject } = require("./server_subject_segmentation");
 const {
   decodeDataUrl,
@@ -108,10 +109,18 @@ const serveStatic = createStaticHandler({
   publicRoot: PUBLIC,
   workbenchRoutes: WORKBENCH_ROUTES,
   landingDocument: "animation_factory.html",
+  documentRoutes: { "/tools/watermark": "watermark_studio.html" },
   safeResolve,
   send,
 });
 const mediaExportService = createMediaExportService({ root: ROOT });
+const watermarkStudioService = createWatermarkStudioService({
+  root: ROOT,
+  port: PORT,
+  HttpError,
+  send,
+  readJsonBody,
+});
 const activationService = createActivationService({
   codeHashes: process.env.XSXB_ACTIVATION_CODE_HASHES || "",
   secret: process.env.XSXB_ACTIVATION_SECRET || "",
@@ -788,8 +797,13 @@ const server = http.createServer(async (req, res) => {
   try {
     const parsed = new URL(req.url, "http://127.0.0.1");
     if (req.method === "POST") {
-      validateWriteRequest(req);
+      if (watermarkStudioService.isUploadRequest(req, parsed)) {
+        watermarkStudioService.validateUploadRequest(req);
+      } else {
+        validateWriteRequest(req);
+      }
     }
+    if (await watermarkStudioService.handle(req, res, parsed)) return;
     if (req.method === "GET" && parsed.pathname === "/api/media-export/capabilities") {
       return send(res, 200, await mediaExportService.capabilities());
     }
@@ -1037,6 +1051,8 @@ server.on("clientError", (error, socket) => {
   if (socket.destroyed) return;
   socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
 });
+
+server.on("close", () => watermarkStudioService.dispose());
 
 /**
  * Reports startup failures without emitting Node's unhandled EventEmitter stack trace.

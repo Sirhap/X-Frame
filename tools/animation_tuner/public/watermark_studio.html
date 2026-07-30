@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="本地运行、支持框选区域的 FFmpeg 视频去水印工作台。" />
+    <meta name="theme-color" content="#0a1017" />
+    <title>视频去水印 · XSXB Frame Tuner</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="stylesheet" href="/watermark_studio.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#watermarkWorkspace">跳到视频工作区</a>
+    <div class="grain" aria-hidden="true"></div>
+    <aside class="tool-rail" aria-label="快速工具导航">
+      <a class="rail-brand" href="/" aria-label="动画工厂首页">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M5 9 16 3l11 6v14l-11 6-11-6zM11 12l5-3 5 3v8l-5 3-5-3z" />
+        </svg>
+      </a>
+      <nav>
+        <a href="/tools" aria-label="快速工具中心"
+          ><svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" /></svg
+          ><span>工具</span></a
+        >
+        <a href="/tools/import" aria-label="导入与预处理"
+          ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17v3h16v-3M12 3v13m-5-5 5 5 5-5" /></svg
+          ><span>导入</span></a
+        >
+        <a href="/tools/cutout" aria-label="批量抠图"
+          ><svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8" />
+            <path d="M4 12h16M12 4c2 2 3 5 3 8s-1 6-3 8c-2-2-3-5-3-8s1-6 3-8" /></svg
+          ><span>抠图</span></a
+        >
+        <a href="/tools/organizer" aria-label="整理与导出"
+          ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 10h16M9 5v14M14 10v9" /></svg
+          ><span>整理</span></a
+        >
+        <a href="/tools/scatter-slice" aria-label="零散切图"
+          ><svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 4h7v6H3zM14 3h7v6h-7zM4 15h6v6H4zM13 13h8v8h-8z" /></svg
+          ><span>切图</span></a
+        >
+        <a class="active" href="/tools/watermark" aria-current="page" aria-label="视频去水印"
+          ><svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 6h18v12H3zM9 9l6 3-6 3zM17 5l2-2M5 21l2-2" /></svg
+          ><span>去印</span></a
+        >
+      </nav>
+    </aside>
+    <header class="topbar">
+      <a class="brand" href="/tools" aria-label="返回快速工具">
+        <span class="brand-mark" aria-hidden="true">净</span>
+        <span>视频去水印 <small>XSXB / WATERMARK REPAIR</small></span>
+      </a>
+      <div class="topbar-actions">
+        <a class="back-link" href="/tools">← 返回快速工具</a>
+        <div class="local-badge" id="processingBadge"><span></span>检测本地引擎…</div>
+      </div>
+    </header>
+
+    <main class="workspace" id="watermarkWorkspace">
+      <section class="stage-panel" aria-label="视频框选工作区">
+        <div class="stage-heading">
+          <div>
+            <p class="eyebrow">01 / SELECT REGION</p>
+            <h1>把不需要的痕迹，<em>框</em>出来。</h1>
+          </div>
+          <p class="stage-hint">拖拽画框 · 每个区域独立设置生效时间 · 按 Delete 删除选中项</p>
+        </div>
+
+        <div class="video-shell" id="videoShell">
+          <video id="video" playsinline preload="metadata"></video>
+          <canvas
+            id="selectionCanvas"
+            role="img"
+            tabindex="0"
+            aria-label="视频水印选区；可拖拽创建，选中后用方向键移动，Shift 加方向键调整大小"
+          ></canvas>
+          <div class="empty-state" id="emptyState">
+            <span>NO SIGNAL</span>
+            <p>载入一个视频开始修复</p>
+          </div>
+          <div class="timecode" id="timecode">00:00.00</div>
+        </div>
+
+        <div class="transport">
+          <button class="icon-button" id="playButton" type="button" aria-label="播放视频">
+            <svg id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7 8 5-8 5z" /></svg>
+          </button>
+          <input id="timeline" type="range" min="0" max="1000" value="0" aria-label="视频进度" />
+          <span id="duration">00:00</span>
+        </div>
+      </section>
+
+      <aside class="control-panel">
+        <section class="control-section source-section">
+          <p class="section-number">SOURCE / 01</p>
+          <div class="source-card">
+            <div class="file-icon">MP4</div>
+            <div class="file-info">
+              <strong id="sourceName">等待视频</strong>
+              <span id="sourceMeta">— × — · — FPS</span>
+            </div>
+          </div>
+          <label class="upload-button" for="fileInput">
+            <input
+              id="fileInput"
+              type="file"
+              accept=".mp4,.m4v,.mov,.webm,video/mp4,video/x-m4v,video/quicktime,video/webm"
+            />
+            <span>载入视频</span
+            ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17v3h16v-3M12 3v13m-5-5 5 5 5-5" /></svg>
+          </label>
+        </section>
+
+        <section class="control-section mode-section">
+          <p class="section-number">METHOD / 02</p>
+          <fieldset class="mode-switcher" aria-label="修复方式">
+            <label>
+              <input type="radio" name="repairMode" value="delogo" checked />
+              <span><b>矩形修复</b><small>快速 · 多区域</small></span>
+            </label>
+            <label>
+              <input type="radio" name="repairMode" value="smart" />
+              <span><b>智能白印</b><small>逐帧 · 保前景</small></span>
+            </label>
+          </fieldset>
+
+          <div class="smart-panel" id="smartPanel" hidden>
+            <div class="smart-callout">
+              <span>SMART</span>
+              <p>从无前景遮挡的参考帧提取白色水印，只修复模板像素。</p>
+            </div>
+            <p class="smart-selection" id="smartSelection">尚未选择模板区域</p>
+            <div class="smart-field full-field">
+              <label for="referenceTime">参考帧 / 秒</label>
+              <div class="time-input-row">
+                <input id="referenceTime" type="number" min="0" step="0.01" value="5" />
+                <button class="set-time-button" id="setReferenceTime" type="button">当前</button>
+              </div>
+            </div>
+            <label class="title-toggle">
+              <input id="titleEnabled" type="checkbox" />
+              <span><b>重绘前景标题</b><small>适合文字与水印发生重叠的片段</small></span>
+            </label>
+            <div class="title-fields" id="titleFields" hidden>
+              <div class="smart-field full-field">
+                <label for="titleText">标题文字</label>
+                <input id="titleText" type="text" maxlength="100" value="地址放在简介" />
+              </div>
+              <div class="smart-field full-field">
+                <label for="titleStart">开始重绘 / 秒</label>
+                <div class="time-input-row">
+                  <input id="titleStart" type="number" min="0" step="0.01" value="28.43" />
+                  <button class="set-time-button" id="setTitleStart" type="button">当前</button>
+                </div>
+              </div>
+              <div class="smart-grid">
+                <div class="smart-field">
+                  <label for="titleSize">字号</label
+                  ><input id="titleSize" type="number" min="8" max="400" value="88" />
+                </div>
+                <div class="smart-field">
+                  <label for="titleBorder">描边</label
+                  ><input id="titleBorder" type="number" min="0" max="50" value="9" />
+                </div>
+                <div class="smart-field">
+                  <label for="titleX">X</label><input id="titleX" type="number" min="0" value="40" />
+                </div>
+                <div class="smart-field">
+                  <label for="titleY">Y</label><input id="titleY" type="number" min="0" value="41" />
+                </div>
+              </div>
+              <div class="smart-field full-field color-field">
+                <label for="titleColor">标题颜色</label>
+                <input id="titleColor" type="color" value="#ffdf22" />
+                <code>#ffdf22</code>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <div class="section-title-row">
+            <p class="section-number">MASKS / 03</p>
+            <button class="text-button" id="clearButton" type="button">全部清除</button>
+          </div>
+          <div class="corner-actions" aria-label="快捷添加角落选区">
+            <button type="button" data-corner="top-left">左上</button>
+            <button type="button" data-corner="top-right">右上</button>
+            <button type="button" data-corner="bottom-left">左下</button>
+            <button type="button" data-corner="bottom-right">右下</button>
+          </div>
+          <div class="mask-list" id="maskList">
+            <p class="empty-list">尚未框选区域</p>
+          </div>
+        </section>
+
+        <section class="control-section export-section">
+          <p class="section-number">EXPORT / 04</p>
+          <div class="quality-row">
+            <span>输出质量</span><strong id="qualityOutput">高质量 · CRF 18</strong>
+          </div>
+          <button class="export-button" id="exportButton" type="button" disabled>
+            <span id="exportLabel">导出修复视频</span
+            ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+          </button>
+          <div
+            class="progress-wrap"
+            id="progressWrap"
+            role="progressbar"
+            aria-label="视频修复进度"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            hidden
+          >
+            <div class="progress-track"><div id="progressBar"></div></div>
+            <span id="progressText">处理中 0%</span>
+          </div>
+          <a class="download-button" id="downloadButton" hidden
+            ><span>下载视频</span
+            ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v13m-5-5 5 5 5-5M4 20h16" /></svg
+          ></a>
+          <p class="privacy-note">视频仅在本机处理，不会上传到云端。</p>
+        </section>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/watermark_studio.js"></script>
+  </body>
+</html>
