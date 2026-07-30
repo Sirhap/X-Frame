@@ -95,6 +95,7 @@
       filmstripPanel: documentRef.querySelector(".filmstripPanel"),
       filmstripButtons: Array.from(documentRef.querySelectorAll("[data-filmstrip-layout]")),
       routeItems: Array.from(documentRef.querySelectorAll("[data-app-mode]")),
+      workbenchRouteItems: Array.from(documentRef.querySelectorAll("[data-workbench-route]")),
       brandMark: documentRef.querySelector("#brandMark"),
       kunkunButtons: Array.from(documentRef.querySelectorAll(".kunkunThemeButton")),
       actionFeedback: documentRef.querySelector(".contextActionFeedback"),
@@ -313,7 +314,8 @@
     /** @param {MouseEvent} event Tool-rail navigation event. */
     async function handleRouteClick(event) {
       event.preventDefault();
-      const route = event.currentTarget.dataset.appMode || "projects";
+      const route =
+        event.currentTarget.dataset.workbenchRoute || event.currentTarget.dataset.appMode || "projects";
       try {
         await navigate(route);
       } finally {
@@ -348,6 +350,7 @@
         listen(button, "click", () => setFilmstripLayout(button.dataset.filmstripLayout));
       }
       for (const item of elements.routeItems) listen(item, "click", handleRouteClick);
+      for (const item of elements.workbenchRouteItems) listen(item, "click", handleRouteClick);
       listen(elements.collapse, "click", () =>
         setSidebarCollapsed(!elements.body?.classList.contains("sidebarCollapsed")),
       );

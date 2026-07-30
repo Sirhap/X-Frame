@@ -636,6 +636,8 @@ const {
   syncWorkbenchRoute,
   updateDocumentTitle,
 } = routing;
+cutoutNavigationContext = currentNavigationContext();
+organizerNavigationContext = currentNavigationContext();
 const playbackTiming = globalThis.XSXBPlaybackTiming.createController({
   minFrameDurationMs: MIN_FRAME_DURATION_MS,
   getCurrentGroup: () => currentGroup,
@@ -3322,10 +3324,12 @@ frameOrganizer =
         context: organizerNavigationContext,
       });
     },
-    onClose: () =>
-      syncWorkbenchRoute(organizerNavigationContext === "standalone" ? "tools" : "", {
-        context: organizerNavigationContext,
-      }),
+    onClose: () => {
+      const completedImport = currentWorkbenchRoute() === "import" && frameOrganizer?.getMode?.() === "edit";
+      syncWorkbenchRoute(completedImport ? "" : organizerNavigationContext === "standalone" ? "tools" : "", {
+        context: completedImport ? "project" : organizerNavigationContext,
+      });
+    },
     onStatus: (message) => status(message),
   }) || null;
 const characterStarterGuide = window.CharacterStarterGuide?.createController({

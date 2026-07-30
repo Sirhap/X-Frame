@@ -155,6 +155,9 @@
       const url = new URL(windowRef.location.href);
       url.pathname = targetPath;
       url.searchParams.delete("tool");
+      if (!targetPath.startsWith(`${WORKSPACE_PATH}/`) && targetPath !== WORKSPACE_PATH) {
+        for (const key of ["project", "group", "frame", "animation"]) url.searchParams.delete(key);
+      }
       const method = options.push ? "pushState" : "replaceState";
       windowRef.history[method]({ xsxbWorkbench: route || "home" }, "", url);
       if (route) writeStorage("xsxbFrameTuner.recentWorkbench", route);
@@ -245,13 +248,13 @@
         if (route && !visibleRoute && getWorkspaceDirty()) {
           const decision = await requestWorkspaceDecision();
           if (decision === "cancel") {
-            restoreParentRoute();
+            syncWorkbenchRoute("", { context: "project" });
             return false;
           }
           if (decision === "save") await saveWorkspace();
           else if (decision === "discard") await discardWorkspaceChanges();
           else {
-            restoreParentRoute();
+            syncWorkbenchRoute("", { context: "project" });
             return false;
           }
         }

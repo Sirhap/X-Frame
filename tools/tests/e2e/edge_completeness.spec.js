@@ -101,28 +101,31 @@ test("Edge route guard supports cancel, save, and discard decisions", async ({ p
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
   const savedValue = await baseX.inputValue();
   expect(savedValue).not.toBe(initialValue);
-  await page.locator('[data-workbench-route="cutout"]').click();
+  const quickToolsLink = page.getByRole("link", { name: "快速工具" });
+  await quickToolsLink.click();
   await expect(page.locator("#appConfirmPanel")).toBeVisible();
   await expect(page.locator("#appConfirmAlternate")).toBeVisible();
   await page.locator("#appConfirmCancel").click();
   await expect(page).toHaveURL(/\/workspace/);
-  await expect(page.locator("#cutoutModal")).toBeHidden();
+  await expect(page.locator("#stage")).toBeVisible();
 
-  await page.locator('[data-workbench-route="cutout"]').click();
+  await quickToolsLink.click();
   await page.locator("#appConfirmAlternate").click();
+  await expect(page).toHaveURL(/\/tools$/);
+  await page.getByRole("link", { name: /批量抠图/ }).click();
   await expect(page).toHaveURL(/\/tools\/cutout/);
   await expect(page.locator("#cutoutModal")).toBeVisible();
 
-  await page.getByRole("link", { name: "动画调参" }).click();
+  await page.goto("/workspace");
   await expect(page).toHaveURL(/\/workspace/);
   await expect(baseX).toHaveValue(savedValue);
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
-  await page.locator('[data-workbench-route="organizer"]').click();
+  await quickToolsLink.click();
   await expect(page.locator("#appConfirmPanel")).toBeVisible();
   await page.locator("#appConfirmAccept").click();
-  await expect(page).toHaveURL(/\/tools\/organizer/);
+  await expect(page).toHaveURL(/\/tools$/);
 
-  await page.getByRole("link", { name: "动画调参" }).click();
+  await page.goto("/workspace");
   await expect(page).toHaveURL(/\/workspace/);
   await expect(baseX).toHaveValue(savedValue);
 });

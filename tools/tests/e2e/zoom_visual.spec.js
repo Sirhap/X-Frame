@@ -75,7 +75,8 @@ async function populateVisualPage(page, pageName) {
   }
 
   if (pageName === "organizer") {
-    await expect.poll(() => page.locator(".organizerFrame").count()).toBeGreaterThan(0);
+    await page.locator("#organizerFileInput").setInputFiles(files);
+    await expect(page.locator(".organizerFrame")).toHaveCount(files.length);
   }
 
   if (pageName === "cutout") {

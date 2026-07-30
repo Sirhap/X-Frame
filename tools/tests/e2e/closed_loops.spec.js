@@ -126,12 +126,14 @@ test("focused controls keep native Space behavior without starting playback", as
   await expect(page).toHaveURL(/frame=1/);
   await expect(page.locator("#playPause")).toHaveText("播放");
 
-  await page.getByRole("link", { name: "批量抠图" }).focus();
+  const quickToolsLink = page.getByRole("link", { name: "快速工具" });
+  await quickToolsLink.focus();
   await page.keyboard.press("Space");
-  await expect(page.locator("#cutoutModal")).toBeHidden();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#cutoutModal")).toBeVisible();
+  await expect(page).toHaveURL(/\/workspace/);
   await expect(page.locator("#playPause")).toHaveText("播放");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/tools$/);
+  await expect(page.locator("#quickToolsHub")).toBeVisible();
 });
 
 test("workspace starts when browser storage access is denied", async ({ page }) => {
@@ -200,7 +202,7 @@ test("organizer reorders data through the server and reloads the reduced animati
   request,
 }) => {
   await importProject(request, "reorganize", 4);
-  await page.goto("/tools/organizer");
+  await page.goto("/workspace/tools/organizer");
   await expect(page.locator(".organizerFrame")).toHaveCount(4);
   await page.locator("#organizerReduceStep").fill("2");
   await page.locator("#organizerReduce").click();

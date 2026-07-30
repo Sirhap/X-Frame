@@ -63,8 +63,8 @@ function createElement() {
 
 /**
  * Creates a shell fixture with mapped selectors.
- * @param {{pathname?:string}} [options] Initial browser location.
- * @returns {{controller:object,elements:Record<string,object>,storage:object}}
+ * @param {{pathname?:string,navigate?:(route:string)=>Promise<boolean>|boolean}} [options] Initial browser location and navigation adapter.
+ * @returns {{controller:object,elements:Record<string,object>,filmstripButtons:object[],routeItems:object[],sidebarTabs:object[],storage:object,workbenchRouteItems:object[]}}
  */
 function createFixture(options = {}) {
   const elements = {
@@ -100,6 +100,11 @@ function createFixture(options = {}) {
     element.dataset.appMode = route;
     return element;
   });
+  const workbenchRouteItems = ["cutout", "import", "scatter"].map((route) => {
+    const element = createElement();
+    element.dataset.workbenchRoute = route;
+    return element;
+  });
   const categories = new Map();
   const selectorMap = new Map([
     ["#workbenchSidebar", elements.sidebar],
@@ -128,6 +133,7 @@ function createFixture(options = {}) {
       if (selector === "[data-sidebar-tab]") return sidebarTabs;
       if (selector === "[data-filmstrip-layout]") return filmstripButtons;
       if (selector === "[data-app-mode]") return routeItems;
+      if (selector === "[data-workbench-route]") return workbenchRouteItems;
       if (selector === ".kunkunThemeButton") return [elements.kunkun];
       return [];
     },
@@ -152,8 +158,21 @@ function createFixture(options = {}) {
       return 1;
     },
   };
-  const controller = createController({ documentRef, storage, windowRef, navigate: async () => true });
-  return { controller, elements, filmstripButtons, routeItems, sidebarTabs, storage };
+  const controller = createController({
+    documentRef,
+    storage,
+    windowRef,
+    navigate: options.navigate || (async () => true),
+  });
+  return {
+    controller,
+    elements,
+    filmstripButtons,
+    routeItems,
+    sidebarTabs,
+    storage,
+    workbenchRouteItems,
+  };
 }
 
 test("shell normalizers reject unknown persisted values", () => {
@@ -191,6 +210,20 @@ test("five logo activations persist and reveal the kunkun theme", () => {
 
   assert.equal(fixture.elements.kunkun.hidden, false);
   assert.equal(fixture.storage.getItem("xsxbFrameTuner.kunkunUnlocked"), "true");
+});
+
+test("quick tool cards use in-app workbench navigation", async () => {
+  const routes = [];
+  const fixture = createFixture({
+    pathname: "/tools",
+    navigate: async (route) => routes.push(route),
+  });
+  fixture.controller.bind();
+
+  fixture.workbenchRouteItems[0].dispatch("click");
+  await Promise.resolve();
+
+  assert.deepEqual(routes, ["cutout"]);
 });
 
 test("scatter slice uses the shared tool shell surface", () => {

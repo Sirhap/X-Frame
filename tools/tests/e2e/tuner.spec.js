@@ -88,7 +88,10 @@ async function selectRepairTool(page, selector) {
  * @returns {Promise<void>}
  */
 async function selectProtectionTool(page) {
-  await page.locator("#cutoutTabAdvanced").click();
+  await selectRepairTool(page, "#cutoutRepairAutomaticQuick");
+  const advancedTab = page.locator("#cutoutTabAdvanced");
+  await advancedTab.scrollIntoViewIfNeeded();
+  await advancedTab.click();
   const disclosure = page.locator(".cutoutProtectionDisclosure");
   if (!(await disclosure.evaluate((element) => element.open))) await disclosure.locator("summary").click();
   await selectRepairTool(page, "#cutoutRepairProtect");
@@ -134,8 +137,10 @@ test("the website home, import flow, and tuning workbench use separate URLs", as
   await page.goto("/");
   await expect(page.locator("#factoryTitle")).toBeVisible();
   await expect(page.locator("#stage")).toHaveCount(0);
-  await page.getByRole("link", { name: "开始一条新生产线" }).click();
-  await expect(page).toHaveURL(/\/tools\/import/);
+  await page.getByRole("link", { name: "打开快速工具" }).click();
+  await expect(page).toHaveURL(/\/tools$/);
+  await page.getByRole("link", { name: /序列处理/ }).click();
+  await expect(page).toHaveURL(/\/tools\/organizer/);
   await expect(page.locator("#organizerModal")).toBeVisible();
   await page.goto("/workspace");
   await expect(page).toHaveURL(/\/workspace/);
@@ -147,6 +152,11 @@ test("the website home, import flow, and tuning workbench use separate URLs", as
   await page.goto("/tools/import");
   await expect(page.locator("#organizerModal")).toBeVisible();
   await page.locator("#organizerHome").click();
+  await expect(page).toHaveURL(/\/tools$/);
+  await expect(page.locator("#quickToolsHub")).toBeVisible();
+  await page.getByRole("link", { name: "转到动画项目" }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.locator("#projectHubContinue").click();
   await expect(page).toHaveURL(/\/workspace/);
   await expect(page.locator("#stage")).toBeVisible();
   await page.reload();
@@ -179,6 +189,10 @@ test("workbench controls expose specific accessible names without nested actions
   await page.locator("#appConfirmCancel").click();
 
   await page.goto("/tools/organizer");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
   const firstFrame = page.locator(".organizerFrame").first();
   await expect(firstFrame.getByRole("button", { name: /Select frame/ })).toBeVisible();
   await expect(firstFrame.getByRole("checkbox", { name: /Include .* in the workset/ })).toBeChecked();
@@ -190,7 +204,7 @@ test("workbench controls expose specific accessible names without nested actions
   await expect(page.locator(".organizerFrameSelect").nth(1)).toBeFocused();
 });
 
-test("tool paths refresh, update titles, and return to the tuning workbench", async ({ page }) => {
+test("tool paths refresh, update titles, and return to the quick tools hub", async ({ page }) => {
   await page.goto("/tools/import");
   await expect(page).toHaveURL(/\/tools\/import/);
   await expect(page).toHaveTitle(/导入与整理/);
@@ -198,9 +212,9 @@ test("tool paths refresh, update titles, and return to the tuning workbench", as
   await page.reload();
   await expect(page.locator("#organizerModal")).toBeVisible();
   await page.locator("#organizerHome").click();
-  await expect(page).toHaveURL(/\/workspace(?:\?|$)/);
+  await expect(page).toHaveURL(/\/tools$/);
   await expect(page.locator("#homeHub")).toHaveCount(0);
-  await expect(page.locator("#stage")).toBeVisible();
+  await expect(page.locator("#quickToolsHub")).toBeVisible();
 });
 
 test("native image import accepts valid files and reports unsupported input", async ({ page }) => {
@@ -508,7 +522,7 @@ test("organizer confirms before discarding an imported workset", async ({ page }
   await page.locator("#organizerHome").click();
   await page.locator("#organizerConfirmAccept").click();
   await expect(page.locator("#organizerModal")).toBeHidden();
-  await expect(page).toHaveURL(/\/workspace(?:\?|$)/);
+  await expect(page).toHaveURL(/\/tools$/);
 });
 
 test("cutout reports mixed-file skips and confirms destructive clearing", async ({ page }) => {
@@ -562,8 +576,8 @@ test("cutout restores a batch after leaving its URL and starts a new batch expli
 
   await page.locator("#cutoutHome").click();
   await expect(page.locator("#cutoutModal")).toBeHidden();
-  await expect(page).toHaveURL(/\/workspace(?:\?|$)/);
-  await page.getByRole("link", { name: "批量抠图" }).click();
+  await expect(page).toHaveURL(/\/tools$/);
+  await page.getByRole("link", { name: /批量抠图/ }).click();
   await expect(page.locator("#cutoutModal")).toBeVisible();
   await expect(page.locator("#cutoutStatus")).toHaveText("已恢复上次批次：1 张图片");
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
@@ -668,7 +682,7 @@ test("area tools expose and synchronize the transparent color shortcut", async (
   await quickTransparent.click();
   await expect(quickTransparent).toHaveAttribute("aria-pressed", "true");
   await expect(detailedTransparent).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#cutoutActiveToolTitle")).toHaveText("区域补色");
+  await expect(page.locator("#cutoutActiveToolTitle")).toHaveText("补色 / 替换");
   await detailedTransparent.click();
   await expect(quickTransparent).toHaveAttribute("aria-pressed", "false");
   await expect(detailedTransparent).toHaveAttribute("aria-pressed", "false");

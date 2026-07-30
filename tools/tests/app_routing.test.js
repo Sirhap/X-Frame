@@ -122,6 +122,17 @@ test("route and selection synchronization preserve URL state", () => {
   assert.equal(windowRef.historyCalls[2].state.xsxbSelection, true);
 });
 
+test("standalone route synchronization removes workspace selection parameters", () => {
+  const { controller, windowRef } = createControllerFixture(
+    "http://localhost/workspace?project=project-1&group=idle&frame=1&legacy=1",
+  );
+
+  controller.syncWorkbenchRoute("tools", { push: true });
+
+  assert.equal(windowRef.location.pathname, "/tools");
+  assert.equal(windowRef.location.search, "?legacy=1");
+});
+
 test("workspace selection synchronization keeps project animation state", () => {
   const { controller, windowRef } = createControllerFixture(
     "http://localhost/workspace?animation=hero%2Fidle",
@@ -144,6 +155,19 @@ test("applying the workspace URL keeps the frame editor route active", async () 
   const { controller, windowRef } = createControllerFixture("http://localhost/workspace");
 
   assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.equal(windowRef.location.pathname, "/workspace");
+});
+
+test("cancelling a standalone tool switch restores the project workspace", async () => {
+  const windowRef = createWindow("http://localhost/tools");
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => "cancel",
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), false);
   assert.equal(windowRef.location.pathname, "/workspace");
 });
 
@@ -276,5 +300,5 @@ test("workspace route guard discards or cancels dirty tuning explicitly", async 
     getBatchCutout: () => ({ isOpen: () => false, open() {} }),
   });
   assert.equal(await cancelController.applyWorkbenchRoute(), false);
-  assert.equal(cancelWindow.location.pathname, "/tools");
+  assert.equal(cancelWindow.location.pathname, "/workspace");
 });

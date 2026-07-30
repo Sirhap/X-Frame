@@ -20,13 +20,14 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("/tools/scatter-slice");
-  await page.locator("#scatterSample").click();
-  await expect.poll(() => page.locator(".sliceCard").count()).toBeGreaterThan(0);
-  await expect(page.locator("#scatterDetect")).toHaveText("智能识别主体");
-  await expect(page.locator("#scatterEditMode")).toHaveAttribute("aria-pressed", "true");
+  const tool = page.frameLocator('iframe[title="零散切片"]');
+  await tool.locator("#scatterSample").click();
+  await expect.poll(() => tool.locator(".sliceCard").count()).toBeGreaterThan(0);
+  await expect(tool.locator("#scatterDetect")).toHaveText("智能识别主体");
+  await expect(tool.locator("#scatterEditMode")).toHaveAttribute("aria-pressed", "true");
 
-  const playbackButton = page.locator(".sliceGroupPlay").first();
-  const playbackCanvas = page.locator(".sliceGroupPlayback").first();
+  const playbackButton = tool.locator(".sliceGroupPlay").first();
+  const playbackCanvas = tool.locator(".sliceGroupPlayback").first();
   await playbackButton.click();
   await expect(playbackCanvas).toBeVisible();
   await expect
@@ -35,8 +36,8 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   await playbackButton.click();
   await expect(playbackCanvas).toBeHidden();
 
-  const playAllButton = page.locator("#scatterPlayAll");
-  const playAllCanvas = page.locator("#scatterPlaybackAll");
+  const playAllButton = tool.locator("#scatterPlayAll");
+  const playAllCanvas = tool.locator("#scatterPlaybackAll");
   await expect(playAllButton).toBeVisible();
   await playAllButton.click();
   await expect(playAllCanvas).toBeVisible();
@@ -46,36 +47,36 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   await playAllButton.click();
   await expect(playAllCanvas).toBeHidden();
 
-  const xInput = page.locator("#scatterBoxX");
-  const yInput = page.locator("#scatterBoxY");
-  const widthInput = page.locator("#scatterBoxW");
-  const heightInput = page.locator("#scatterBoxH");
+  const xInput = tool.locator("#scatterBoxX");
+  const yInput = tool.locator("#scatterBoxY");
+  const widthInput = tool.locator("#scatterBoxW");
+  const heightInput = tool.locator("#scatterBoxH");
   const original = {
     x: Number(await xInput.inputValue()),
     y: Number(await yInput.inputValue()),
     w: Number(await widthInput.inputValue()),
     h: Number(await heightInput.inputValue()),
   };
-  const canvas = page.locator("#scatterPreview");
+  const canvas = tool.locator("#scatterPreview");
   await canvas.scrollIntoViewIfNeeded();
   let canvasBox = await canvas.boundingBox();
   expect(canvasBox).not.toBeNull();
   const source = await canvas.evaluate((element) => ({ width: element.width, height: element.height }));
 
-  const beforeAdd = await page.locator(".sliceCard").count();
-  await page.locator("#scatterAddMode").click();
+  const beforeAdd = await tool.locator(".sliceCard").count();
+  await tool.locator("#scatterAddMode").click();
   const addStart = toClientPoint({ x: 700, y: 390 }, canvasBox, source);
   const addEnd = toClientPoint({ x: 740, y: 430 }, canvasBox, source);
   await page.mouse.move(addStart.x, addStart.y);
   await page.mouse.down();
   await page.mouse.move(addEnd.x, addEnd.y, { steps: 4 });
   await page.mouse.up();
-  await expect(page.locator(".sliceCard")).toHaveCount(beforeAdd + 1);
+  await expect(tool.locator(".sliceCard")).toHaveCount(beforeAdd + 1);
   await expect.poll(async () => Number(await xInput.inputValue())).toBeGreaterThan(690);
   await expect.poll(async () => Number(await widthInput.inputValue())).toBeGreaterThan(30);
-  await page.locator("#scatterDelete").click();
-  await expect(page.locator(".sliceCard")).toHaveCount(beforeAdd);
-  await page.locator('.sliceCard[data-box-index="0"]').click();
+  await tool.locator("#scatterDelete").click();
+  await expect(tool.locator(".sliceCard")).toHaveCount(beforeAdd);
+  await tool.locator('.sliceCard[data-box-index="0"]').click();
   await canvas.scrollIntoViewIfNeeded();
   canvasBox = await canvas.boundingBox();
   expect(canvasBox).not.toBeNull();
@@ -123,16 +124,16 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   await xInput.blur();
   await expect(xInput).toHaveValue(String(original.x + 3));
 
-  const beforeInputShortcut = await page.locator(".sliceCard").count();
+  const beforeInputShortcut = await tool.locator(".sliceCard").count();
   await xInput.focus();
   await page.keyboard.press("Backspace");
-  await expect(page.locator(".sliceCard")).toHaveCount(beforeInputShortcut);
+  await expect(tool.locator(".sliceCard")).toHaveCount(beforeInputShortcut);
   await xInput.fill(String(original.x + 3));
   await xInput.blur();
 
-  await page.locator('.sliceCard[data-box-index="1"]').click();
+  await tool.locator('.sliceCard[data-box-index="1"]').click();
   const nextBoxX = await xInput.inputValue();
-  await page.locator('.sliceCard[data-box-index="0"]').click();
+  await tool.locator('.sliceCard[data-box-index="0"]').click();
   await canvas.scrollIntoViewIfNeeded();
   const active = {
     x: Number(await xInput.inputValue()),
@@ -145,18 +146,18 @@ test("detected slices can be moved, resized, edited, and deleted before export",
     canvasBox,
     source,
   );
-  const beforeDelete = await page.locator(".sliceCard").count();
+  const beforeDelete = await tool.locator(".sliceCard").count();
   await page.mouse.move(activeStart.x, activeStart.y);
   await page.mouse.down();
   await page.keyboard.press("Delete");
   await page.mouse.move(activeStart.x + 12, activeStart.y + 8);
   await page.mouse.up();
-  await expect(page.locator(".sliceCard")).toHaveCount(beforeDelete - 1);
+  await expect(tool.locator(".sliceCard")).toHaveCount(beforeDelete - 1);
   await expect(xInput).toHaveValue(nextBoxX);
 
-  const beforeButtonDelete = await page.locator(".sliceCard").count();
-  await page.locator(".sliceCardDelete").first().click();
-  await expect(page.locator(".sliceCard")).toHaveCount(beforeButtonDelete - 1);
+  const beforeButtonDelete = await tool.locator(".sliceCard").count();
+  await tool.locator(".sliceCardDelete").first().click();
+  await expect(tool.locator(".sliceCard")).toHaveCount(beforeButtonDelete - 1);
   expect(pageErrors).toEqual([]);
 });
 
@@ -164,7 +165,8 @@ test("smart cutout removes black backgrounds in alpha detection mode without era
   page,
 }) => {
   await page.goto("/tools/scatter-slice");
-  await page.evaluate(async () => {
+  const tool = page.frameLocator('iframe[title="零散切片"]');
+  await tool.locator("body").evaluate(async () => {
     const canvas = document.createElement("canvas");
     canvas.width = 100;
     canvas.height = 100;
@@ -185,11 +187,11 @@ test("smart cutout removes black backgrounds in alpha detection mode without era
     Object.defineProperty(input, "files", { configurable: true, value: transfer.files });
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  await expect(page.locator("#scatterSourceMeta")).toContainText("alpha-black.png");
-  await page.locator("#scatterDetect").click();
-  await expect(page.locator("#scatterStatus p")).toContainText("alpha");
+  await expect(tool.locator("#scatterSourceMeta")).toContainText("alpha-black.png");
+  await tool.locator("#scatterDetect").click();
+  await expect(tool.locator("#scatterStatus p")).toContainText("alpha");
 
-  const thumbnail = page.locator(".sliceThumbnail").first();
+  const thumbnail = tool.locator(".sliceThumbnail").first();
   const readAlpha = () =>
     thumbnail.evaluate((canvas) => {
       const rgba = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
@@ -203,7 +205,7 @@ test("smart cutout removes black backgrounds in alpha detection mode without era
       };
     });
   const smartAlpha = await readAlpha();
-  await page.locator("#scatterTransparent").uncheck();
+  await tool.locator("#scatterTransparent").uncheck();
   const originalAlpha = await readAlpha();
 
   expect(smartAlpha.background).toBe(0);
