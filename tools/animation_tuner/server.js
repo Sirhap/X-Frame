@@ -109,7 +109,10 @@ const serveStatic = createStaticHandler({
   publicRoot: PUBLIC,
   workbenchRoutes: WORKBENCH_ROUTES,
   landingDocument: "animation_factory.html",
-  documentRoutes: { "/tools/watermark": "watermark_studio.html" },
+  documentRoutes: {
+    "/admin/licenses": "admin.html",
+    "/tools/watermark": "watermark_studio.html",
+  },
   safeResolve,
   send,
 });
