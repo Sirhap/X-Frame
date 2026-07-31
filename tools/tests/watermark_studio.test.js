@@ -7,7 +7,10 @@ const path = require("node:path");
 const test = require("node:test");
 const { pathToFileURL } = require("node:url");
 const { HttpError } = require("../animation_tuner/server_http");
-const { createWatermarkStudioService } = require("../animation_tuner/server_watermark_studio");
+const {
+  createWatermarkStudioService,
+  validateJobOptions,
+} = require("../animation_tuner/server_watermark_studio");
 
 const videoUtilsPromise = import(
   pathToFileURL(path.join(__dirname, "../animation_tuner/watermark_studio/video-utils.js")).href
@@ -18,6 +21,17 @@ const smartLogoUtilsPromise = import(
 const smartExportPromise = import(
   pathToFileURL(path.join(__dirname, "../animation_tuner/watermark_studio/smart-export.js")).href
 );
+const smartControlsPromise = fs.promises
+  .readFile(path.join(__dirname, "../animation_tuner/public/watermark_smart_controls.js"), "utf8")
+  .then((source) => import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`));
+
+test("smart watermark reference time stays inside the final decodable frame", async () => {
+  const { safeReferenceTime } = await smartControlsPromise;
+  assert.equal(safeReferenceTime({ duration: 2, fps: 24 }), 1.95);
+  assert.equal(safeReferenceTime({ duration: 20, fps: 30 }), 5);
+  assert.equal(safeReferenceTime({ duration: 0.02, fps: 25 }), 0);
+  assert.equal(safeReferenceTime({ duration: Number.NaN, fps: 0 }), 0);
+});
 
 test("watermark regions clamp to FFmpeg-safe video bounds", async () => {
   const { normalizeRegions } = await videoUtilsPromise;
@@ -142,4 +156,19 @@ test("watermark raw uploads require local video requests", () => {
     service.dispose();
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("watermark job validation failures are reported as client errors", () => {
+  assert.throws(
+    () =>
+      validateJobOptions(
+        () => {
+          throw new Error("区域太小");
+        },
+        {},
+        {},
+        HttpError,
+      ),
+    (error) => error.status === 400 && error.message === "区域太小",
+  );
 });

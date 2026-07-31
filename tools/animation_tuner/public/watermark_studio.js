@@ -45,7 +45,7 @@ const DELOGO_SAFE_BORDER = 1;
 const smartControls = new SmartControls({
   root: elements.smartPanel,
   getCurrentTime: () => elements.video.currentTime || 0,
-  onChange: updateExportState,
+  onChange: invalidateExportResult,
   notify: showToast,
 });
 
@@ -135,7 +135,7 @@ function loadSource(sourceId, metadata, filename) {
   elements.duration.textContent = formatTime(metadata.duration);
   smartControls.reset(metadata);
   renderRegionList();
-  updateExportState();
+  invalidateExportResult();
 }
 
 /** Uploads the chosen file to the local Node process with visible failure handling. */
@@ -215,7 +215,7 @@ function commitRegion(region, successMessage) {
     state.regions.push(region);
     state.selectedId = region.id;
     renderRegionList();
-    updateExportState();
+    invalidateExportResult();
     showToast(successMessage);
   }
   drawCanvas();
@@ -267,6 +267,7 @@ function adjustSelectedRegionWithKeyboard(event) {
     region.y = clamp(region.y + direction[1] * step, 1, state.metadata.height - region.height - 1);
   }
   renderRegionList();
+  invalidateExportResult();
   drawCanvas();
 }
 
@@ -366,9 +367,10 @@ function renderRegionList() {
     item.className = `mask-item${region.id === state.selectedId ? " selected" : ""}`;
     item.innerHTML = `<div class="mask-main"><span class="mask-swatch"></span><div class="mask-copy"><strong>水印区域 ${String(index + 1).padStart(2, "0")}</strong><span>${region.x}, ${region.y} / ${region.width} × ${region.height}</span></div><button class="remove-mask" type="button" aria-label="删除区域">×</button></div><div class="time-editor"><div class="time-field"><label>开始 / 秒</label><div class="time-input-row"><input class="start-time" type="number" min="0" max="${state.metadata.duration}" step="0.1" value="${region.startTime.toFixed(2)}" aria-label="区域 ${index + 1} 开始时间"><button class="set-time-button set-start" type="button">当前</button></div></div><div class="time-field"><label>结束 / 秒</label><div class="time-input-row"><input class="end-time" type="number" min="0" max="${state.metadata.duration}" step="0.1" value="${region.endTime.toFixed(2)}" aria-label="区域 ${index + 1} 结束时间"><button class="set-time-button set-end" type="button">当前</button></div></div><p class="time-summary">仅在 ${formatTimecode(region.startTime)} — ${formatTimecode(region.endTime)} 生效</p></div>`;
     item.addEventListener("click", () => {
+      if (state.selectedId === region.id) return;
       state.selectedId = region.id;
       renderRegionList();
-      updateExportState();
+      invalidateExportResult();
       drawCanvas();
     });
     item.querySelector(".remove-mask").addEventListener("click", (event) => {
@@ -417,6 +419,7 @@ function updateRegionTime(id, field, rawValue) {
       region.startTime = roundTime(Math.max(0, region.endTime - minimumGap));
   }
   renderRegionList();
+  invalidateExportResult();
   drawCanvas();
 }
 
@@ -425,7 +428,7 @@ function removeRegion(id) {
   state.regions = state.regions.filter((region) => region.id !== id);
   if (state.selectedId === id) state.selectedId = state.regions.at(-1)?.id ?? null;
   renderRegionList();
-  updateExportState();
+  invalidateExportResult();
   drawCanvas();
 }
 
@@ -434,7 +437,7 @@ function clearRegions() {
   state.regions = [];
   state.selectedId = null;
   renderRegionList();
-  updateExportState();
+  invalidateExportResult();
   drawCanvas();
 }
 
@@ -444,6 +447,9 @@ async function startExport() {
   state.exporting = true;
   elements.downloadButton.hidden = true;
   elements.progressWrap.hidden = false;
+  elements.progressBar.style.width = "0%";
+  elements.progressWrap.setAttribute("aria-valuenow", "0");
+  elements.progressText.textContent = state.mode === "smart" ? "逐帧修复 0%" : "处理中 0%";
   updateExportCopy();
   updateExportState();
   try {
@@ -565,6 +571,19 @@ function updateExportState() {
   smartControls.setDisabled(state.exporting);
 }
 
+/** Clears a completed export whenever its source configuration becomes stale. */
+function invalidateExportResult() {
+  if (!state.exporting) {
+    elements.downloadButton.hidden = true;
+    elements.downloadButton.removeAttribute("href");
+    elements.progressWrap.hidden = true;
+    elements.progressBar.style.width = "0%";
+    elements.progressWrap.setAttribute("aria-valuenow", "0");
+    elements.progressText.textContent = "处理中 0%";
+  }
+  updateExportState();
+}
+
 /** Switches between the fast rectangle filter and frame-by-frame smart repair. */
 function setRepairMode(mode) {
   state.mode = mode === "smart" ? "smart" : "delogo";
@@ -573,7 +592,7 @@ function setRepairMode(mode) {
   elements.qualityOutput.textContent = state.mode === "smart" ? "逐帧模板 · CRF 18" : "高质量 · CRF 18";
   updateExportCopy();
   updateSmartSelection();
-  updateExportState();
+  invalidateExportResult();
   drawCanvas();
 }
 

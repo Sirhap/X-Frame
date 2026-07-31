@@ -22,6 +22,24 @@ const VIDEO_CONTENT_TYPES = Object.freeze({
 const ALLOWED_VIDEO_EXTENSIONS = new Set(Object.keys(VIDEO_CONTENT_TYPES));
 
 /**
+ * Converts deterministic job-option validation failures into client errors.
+ *
+ * @param {(input: unknown, metadata: object) => unknown} validator Mode-specific option validator.
+ * @param {unknown} input Candidate job options.
+ * @param {object} metadata Source video metadata.
+ * @param {typeof Error} HttpError HTTP-aware error constructor.
+ * @returns {unknown} Normalized job options.
+ */
+function validateJobOptions(validator, input, metadata, HttpError) {
+  try {
+    return validator(input, metadata);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(400, String(error?.message || error || "导出参数无效。"));
+  }
+}
+
+/**
  * Creates the local video watermark-repair service used by the main XSXB server.
  * @param {{root:string,port:number,HttpError:typeof Error,send:Function,readJsonBody:Function,fsApi?:typeof import("node:fs"),pathApi?:typeof import("node:path"),spawnImpl?:Function,execFileImpl?:Function,randomUUID?:()=>string,now?:()=>number}} options Service dependencies.
  * @returns {{handle:(request:object,response:object,url:URL)=>Promise<boolean>,isUploadRequest:(request:object,url:URL)=>boolean,validateUploadRequest:(request:object)=>void,dispose:()=>void}}
@@ -191,10 +209,12 @@ function createWatermarkStudioService(options) {
     const source = requireSource(payload.sourceId);
     const modules = await coreModulesPromise;
     const mode = payload.mode === "smart" ? "smart" : "delogo";
-    const normalized =
-      mode === "smart"
-        ? modules.normalizeSmartOptions(payload.smart, source.metadata)
-        : modules.normalizeRegions(payload.regions, source.metadata);
+    const normalized = validateJobOptions(
+      mode === "smart" ? modules.normalizeSmartOptions : modules.normalizeRegions,
+      mode === "smart" ? payload.smart : payload.regions,
+      source.metadata,
+      options.HttpError,
+    );
     const jobId = randomUUID();
     const finalPath = pathApi.join(exportRoot, `${mode === "smart" ? "clean-smart" : "clean"}-${jobId}.mp4`);
     const job = {
@@ -463,4 +483,4 @@ function createWatermarkStudioService(options) {
   return { dispose, handle, isUploadRequest, validateUploadRequest };
 }
 
-module.exports = { createWatermarkStudioService };
+module.exports = { createWatermarkStudioService, validateJobOptions };

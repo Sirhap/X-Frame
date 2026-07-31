@@ -1,6 +1,19 @@
 /**
  * Owns the smart-repair form while keeping export orchestration in app.js.
  */
+/**
+ * Returns a seek time that stays inside the source's final decodable frame.
+ *
+ * @param {{duration?: number, fps?: number}} metadata Video timing metadata.
+ * @returns {number} A centisecond-aligned time in seconds.
+ */
+export function safeReferenceTime(metadata) {
+  const duration = Math.max(0, Number(metadata.duration) || 0);
+  const fps = Math.max(1, Number(metadata.fps) || 25);
+  const finalFrameTime = Math.max(0, duration - 1 / fps);
+  return Math.floor(Math.min(5, finalFrameTime) * 100) / 100;
+}
+
 export class SmartControls {
   /**
    * @param {{root: HTMLElement, getCurrentTime: () => number, onChange: () => void, notify: (message: string) => void}} options Controller dependencies.
@@ -11,6 +24,7 @@ export class SmartControls {
     this.onChange = options.onChange;
     this.notify = options.notify;
     this.duration = 0;
+    this.fps = 25;
     this.elements = {
       selection: this.root.querySelector("#smartSelection"),
       referenceTime: this.root.querySelector("#referenceTime"),
@@ -51,10 +65,11 @@ export class SmartControls {
   /** Resets duration-dependent values for a newly loaded source. */
   reset(metadata) {
     this.duration = Math.max(0, Number(metadata.duration) || 0);
-    for (const input of [this.elements.referenceTime, this.elements.titleStart]) {
-      input.max = String(this.duration);
-    }
-    this.elements.referenceTime.value = String(Math.min(5, this.duration));
+    this.fps = Math.max(1, Number(metadata.fps) || 25);
+    const maximumReferenceTime = safeReferenceTime({ duration: this.duration, fps: this.fps });
+    this.elements.referenceTime.max = String(maximumReferenceTime);
+    this.elements.titleStart.max = String(this.duration);
+    this.elements.referenceTime.value = String(maximumReferenceTime);
     this.elements.titleStart.value = String(Math.min(28.43, this.duration));
     this.elements.titleX.max = String(metadata.width);
     this.elements.titleY.max = String(metadata.height);
@@ -122,7 +137,11 @@ export class SmartControls {
 
   /** Writes the current playback time to an input with user feedback. */
   setTimeValue(input, label) {
-    input.value = Math.min(this.duration, Math.max(0, this.getCurrentTime())).toFixed(2);
+    const maximumTime =
+      input === this.elements.referenceTime
+        ? safeReferenceTime({ duration: this.duration, fps: this.fps })
+        : this.duration;
+    input.value = Math.min(maximumTime, Math.max(0, this.getCurrentTime())).toFixed(2);
     this.notify(`${label}已设为 ${input.value} 秒`);
     this.onChange();
   }
