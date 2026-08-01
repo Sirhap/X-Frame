@@ -3209,10 +3209,45 @@ els.stage.addEventListener(
 keyboardController.bind();
 
 window.addEventListener("resize", resizeCanvas);
-window.addEventListener("beforeunload", (event) => {
-  if (!dirty && !frameOrganizer?.hasUnsavedChanges?.() && !batchCutout?.hasUnsavedChanges?.()) return;
-  event.preventDefault();
-  event.returnValue = "";
+const navigationGuardModule = globalThis.XSXBAppNavigationGuard;
+if (!navigationGuardModule) throw new Error("XSXBAppNavigationGuard is required.");
+navigationGuardModule.createController({
+  documentRef: globalThis.document,
+  windowRef: globalThis,
+  hasUnsavedChanges: () =>
+    dirty || frameOrganizer?.hasUnsavedChanges?.() || batchCutout?.hasUnsavedChanges?.(),
+  requestNavigation: async () => {
+    const hasToolChanges = frameOrganizer?.hasUnsavedChanges?.() || batchCutout?.hasUnsavedChanges?.();
+    if (hasToolChanges) {
+      return appConfirmation.requestConfirmation(
+        language === "en"
+          ? "Leaving will discard unapplied results in the current tool."
+          : "离开会丢弃当前工具中尚未应用的处理结果。",
+        [],
+        {
+          title: language === "en" ? "Leave the editor?" : "离开编辑器？",
+          confirmLabel: language === "en" ? "Discard and leave" : "放弃并离开",
+          cancelLabel: language === "en" ? "Keep editing" : "继续编辑",
+          tone: "danger",
+        },
+      );
+    }
+    const decision = await appConfirmation.requestDecision(
+      language === "en" ? "Your latest tuning changes have not been saved." : "刚才的调参改动尚未保存。",
+      {
+        title: language === "en" ? "Leave the editor?" : "离开编辑器？",
+        saveLabel: language === "en" ? "Save and leave" : "保存并离开",
+        discardLabel: language === "en" ? "Discard and leave" : "放弃并离开",
+        cancelLabel: language === "en" ? "Keep editing" : "继续编辑",
+      },
+    );
+    if (decision === "save") {
+      await save();
+      return !dirty;
+    }
+    return decision === "discard";
+  },
+  reportError: (error) => status(t("saveFailed", { message: error.message })),
 });
 window.addEventListener("popstate", () => {
   const urlState = new URLSearchParams(window.location.search);

@@ -179,7 +179,66 @@
         foregroundPixels += 1;
       }
     }
-    return { mask, mode, foregroundPixels };
+    const ignoredGuidePixels = mode === "colorkey" ? removeAxisAlignedGuides(mask, width, height) : 0;
+    return { mask, mode, foregroundPixels: foregroundPixels - ignoredGuidePixels, ignoredGuidePixels };
+  }
+
+  /**
+   * Marks thin runs of dense scan lines while leaving solid subjects intact.
+   * @param {Float64Array} densities Foreground density for each row or column.
+   * @param {number} maximumThickness Largest line thickness to suppress.
+   * @returns {Uint8Array} Dense line indexes that belong to thin runs.
+   */
+  function markThinDenseRuns(densities, maximumThickness) {
+    const marked = new Uint8Array(densities.length);
+    let start = 0;
+    while (start < densities.length) {
+      if (densities[start] < 0.72) {
+        start += 1;
+        continue;
+      }
+      let end = start + 1;
+      while (end < densities.length && densities[end] >= 0.72) end += 1;
+      if (end - start <= maximumThickness) marked.fill(1, start, end);
+      start = end;
+    }
+    return marked;
+  }
+
+  /**
+   * Removes long, thin horizontal and vertical editor guides from a color-key mask.
+   * Dense runs thicker than the guide limit are preserved so large subjects are not erased.
+   * @param {Uint8Array} mask Mutable foreground mask.
+   * @param {number} width Image width.
+   * @param {number} height Image height.
+   * @returns {number} Number of ignored foreground pixels.
+   */
+  function removeAxisAlignedGuides(mask, width, height) {
+    if (width < 48 || height < 48) return 0;
+    const rowDensities = new Float64Array(height);
+    const columnDensities = new Float64Array(width);
+    for (let y = 0; y < height; y += 1) {
+      const rowOffset = y * width;
+      for (let x = 0; x < width; x += 1) {
+        if (!mask[rowOffset + x]) continue;
+        rowDensities[y] += 1 / width;
+        columnDensities[x] += 1 / height;
+      }
+    }
+    const maximumThickness = Math.max(2, Math.min(8, Math.ceil(Math.min(width, height) * 0.004)));
+    const ignoredRows = markThinDenseRuns(rowDensities, maximumThickness);
+    const ignoredColumns = markThinDenseRuns(columnDensities, maximumThickness);
+    let ignoredPixels = 0;
+    for (let y = 0; y < height; y += 1) {
+      const rowOffset = y * width;
+      for (let x = 0; x < width; x += 1) {
+        const index = rowOffset + x;
+        if (!mask[index] || (!ignoredRows[y] && !ignoredColumns[x])) continue;
+        mask[index] = 0;
+        ignoredPixels += 1;
+      }
+    }
+    return ignoredPixels;
   }
 
   /**
@@ -346,10 +405,15 @@
   function detectScatterSlices(rgba, width, height, userOptions = {}) {
     validateRgba(rgba, width, height);
     const options = normalizeOptions(userOptions);
-    const { mask, mode, foregroundPixels } = createForegroundMask(rgba, width, height, options);
+    const { mask, mode, foregroundPixels, ignoredGuidePixels } = createForegroundMask(
+      rgba,
+      width,
+      height,
+      options,
+    );
     const components = findComponents(mask, width, height, options);
     const boxes = sortBoxes(mergeBoxes(components, options.mergeGap), options.sortOrder);
-    return { boxes, mode, foregroundPixels };
+    return { boxes, mode, foregroundPixels, ignoredGuidePixels };
   }
 
   /**

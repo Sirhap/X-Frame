@@ -16,12 +16,72 @@ function toClientPoint(point, canvasBox, source) {
   };
 }
 
+/**
+ * Loads the former generated sample through the real file-input path.
+ * @param {import("@playwright/test").FrameLocator} tool Scatter tool frame.
+ * @returns {Promise<void>}
+ */
+async function loadGeneratedScatterImage(tool) {
+  await tool.locator("body").evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 760;
+    canvas.height = 440;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#98d79b";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    const poses = [
+      [58, 70],
+      [220, 82],
+      [390, 64],
+      [574, 88],
+      [108, 274],
+      [336, 252],
+      [584, 280],
+    ];
+    poses.forEach(([x, y], index) => {
+      context.fillStyle = "#111923";
+      context.fillRect(x, y, 38, 64);
+      context.fillRect(x - 13, y + 52, 82, 21);
+      context.fillStyle = index % 2 ? "#f7b84b" : "#f05b62";
+      context.fillRect(x + 8, y + 13, 20, 20);
+      context.fillStyle = "#087f68";
+      context.fillRect(x + 55, y + 27, 14, 14);
+    });
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([blob], "scatter-test.png", { type: "image/png" }));
+    const input = document.querySelector("#scatterFileInput");
+    Object.defineProperty(input, "files", { configurable: true, value: transfer.files });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect(tool.locator("#scatterSourceMeta")).toContainText("scatter-test.png");
+}
+
+/**
+ * Reads the selected box geometry from the compact canvas toolbar.
+ * @param {import("@playwright/test").FrameLocator} tool Scatter tool frame.
+ * @returns {Promise<{x:number,y:number,w:number,h:number}>}
+ */
+async function readActiveBox(tool) {
+  const text = await tool.locator("#scatterActiveBox").innerText();
+  const match = /X:(\d+) Y:(\d+) W:(\d+) H:(\d+)/.exec(text);
+  if (!match) throw new Error(`无法读取选中切片：${text}`);
+  return { x: Number(match[1]), y: Number(match[2]), w: Number(match[3]), h: Number(match[4]) };
+}
+
 test("detected slices can be moved, resized, edited, and deleted before export", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("/tools/scatter-slice");
   const tool = page.frameLocator('iframe[title="零散切片"]');
-  await tool.locator("#scatterSample").click();
+  await loadGeneratedScatterImage(tool);
+  await expect(tool.locator("#scatterSample")).toHaveCount(0);
+  await expect(
+    tool.locator(
+      "#scatterThreshold, #scatterMergeGap, #scatterMinPixels, #scatterMinSide, #scatterBoxX, #scatterBoxY, #scatterBoxW, #scatterBoxH, #scatterPadding, #scatterColumns",
+    ),
+  ).toHaveCount(0);
+  await tool.locator("#scatterDetect").click();
   await expect.poll(() => tool.locator(".sliceCard").count()).toBeGreaterThan(0);
   await expect(tool.locator("#scatterDetect")).toHaveText("智能识别主体");
   await expect(tool.locator("#scatterEditMode")).toHaveAttribute("aria-pressed", "true");
@@ -47,16 +107,7 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   await playAllButton.click();
   await expect(playAllCanvas).toBeHidden();
 
-  const xInput = tool.locator("#scatterBoxX");
-  const yInput = tool.locator("#scatterBoxY");
-  const widthInput = tool.locator("#scatterBoxW");
-  const heightInput = tool.locator("#scatterBoxH");
-  const original = {
-    x: Number(await xInput.inputValue()),
-    y: Number(await yInput.inputValue()),
-    w: Number(await widthInput.inputValue()),
-    h: Number(await heightInput.inputValue()),
-  };
+  const original = await readActiveBox(tool);
   const canvas = tool.locator("#scatterPreview");
   await canvas.scrollIntoViewIfNeeded();
   let canvasBox = await canvas.boundingBox();
@@ -72,8 +123,8 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   await page.mouse.move(addEnd.x, addEnd.y, { steps: 4 });
   await page.mouse.up();
   await expect(tool.locator(".sliceCard")).toHaveCount(beforeAdd + 1);
-  await expect.poll(async () => Number(await xInput.inputValue())).toBeGreaterThan(690);
-  await expect.poll(async () => Number(await widthInput.inputValue())).toBeGreaterThan(30);
+  await expect.poll(async () => (await readActiveBox(tool)).x).toBeGreaterThan(690);
+  await expect.poll(async () => (await readActiveBox(tool)).w).toBeGreaterThan(30);
   await tool.locator("#scatterDelete").click();
   await expect(tool.locator(".sliceCard")).toHaveCount(beforeAdd);
   await tool.locator('.sliceCard[data-box-index="0"]').click();
@@ -95,15 +146,10 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   await page.mouse.down();
   await page.mouse.move(moved.x, moved.y, { steps: 4 });
   await page.mouse.up();
-  await expect.poll(async () => Number(await xInput.inputValue())).toBeGreaterThan(original.x);
-  await expect.poll(async () => Number(await yInput.inputValue())).toBeGreaterThan(original.y);
+  await expect.poll(async () => (await readActiveBox(tool)).x).toBeGreaterThan(original.x);
+  await expect.poll(async () => (await readActiveBox(tool)).y).toBeGreaterThan(original.y);
 
-  const movedBox = {
-    x: Number(await xInput.inputValue()),
-    y: Number(await yInput.inputValue()),
-    w: Number(await widthInput.inputValue()),
-    h: Number(await heightInput.inputValue()),
-  };
+  const movedBox = await readActiveBox(tool);
   const eastHandle = toClientPoint(
     { x: movedBox.x + movedBox.w, y: movedBox.y + movedBox.h / 2 },
     canvasBox,
@@ -118,29 +164,19 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   await page.mouse.down();
   await page.mouse.move(widened.x, widened.y, { steps: 4 });
   await page.mouse.up();
-  await expect.poll(async () => Number(await widthInput.inputValue())).toBeGreaterThan(original.w);
-
-  await xInput.fill(String(original.x + 3));
-  await xInput.blur();
-  await expect(xInput).toHaveValue(String(original.x + 3));
+  await expect.poll(async () => (await readActiveBox(tool)).w).toBeGreaterThan(original.w);
 
   const beforeInputShortcut = await tool.locator(".sliceCard").count();
-  await xInput.focus();
+  const animationNameInput = tool.locator("#scatterAnimationName");
+  await animationNameInput.focus();
   await page.keyboard.press("Backspace");
   await expect(tool.locator(".sliceCard")).toHaveCount(beforeInputShortcut);
-  await xInput.fill(String(original.x + 3));
-  await xInput.blur();
 
   await tool.locator('.sliceCard[data-box-index="1"]').click();
-  const nextBoxX = await xInput.inputValue();
+  const nextBoxX = (await readActiveBox(tool)).x;
   await tool.locator('.sliceCard[data-box-index="0"]').click();
   await canvas.scrollIntoViewIfNeeded();
-  const active = {
-    x: Number(await xInput.inputValue()),
-    y: Number(await yInput.inputValue()),
-    w: Number(await widthInput.inputValue()),
-    h: Number(await heightInput.inputValue()),
-  };
+  const active = await readActiveBox(tool);
   const activeStart = toClientPoint(
     { x: active.x + active.w / 2, y: active.y + active.h / 2 },
     canvasBox,
@@ -153,12 +189,46 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   await page.mouse.move(activeStart.x + 12, activeStart.y + 8);
   await page.mouse.up();
   await expect(tool.locator(".sliceCard")).toHaveCount(beforeDelete - 1);
-  await expect(xInput).toHaveValue(nextBoxX);
+  await expect.poll(async () => (await readActiveBox(tool)).x).toBe(nextBoxX);
 
   const beforeButtonDelete = await tool.locator(".sliceCard").count();
   await tool.locator(".sliceCardDelete").first().click();
   await expect(tool.locator(".sliceCard")).toHaveCount(beforeButtonDelete - 1);
   expect(pageErrors).toEqual([]);
+});
+
+test("automatic recognition ignores a decorative border and connected editor grid", async ({ page }) => {
+  await page.goto("/tools/scatter-slice");
+  const tool = page.frameLocator('iframe[title="零散切片"]');
+  await tool.locator("body").evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 200;
+    canvas.height = 140;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#28a08c";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#94d6ff";
+    context.fillRect(0, 0, canvas.width, 2);
+    context.fillRect(0, canvas.height - 2, canvas.width, 2);
+    context.fillRect(0, 0, 2, canvas.height);
+    context.fillRect(canvas.width - 2, 0, 2, canvas.height);
+    for (const y of [35, 105]) context.fillRect(0, y, canvas.width, 1);
+    for (const x of [50, 150]) context.fillRect(x, 0, 1, canvas.height);
+    context.fillStyle = "#111923";
+    context.fillRect(18, 58, 10, 20);
+    context.fillRect(82, 58, 10, 20);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([blob], "grid-sprites.png", { type: "image/png" }));
+    const input = document.querySelector("#scatterFileInput");
+    Object.defineProperty(input, "files", { configurable: true, value: transfer.files });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  await expect(tool.locator("#scatterColorValue")).toHaveText("#28A08C");
+  await tool.locator("#scatterDetect").click();
+  await expect(tool.locator(".sliceCard")).toHaveCount(2);
+  await expect(tool.locator("#scatterStatus p")).toContainText("已过滤");
 });
 
 test("smart cutout removes black backgrounds in alpha detection mode without erasing subject details", async ({

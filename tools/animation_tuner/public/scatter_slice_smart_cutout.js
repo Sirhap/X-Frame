@@ -36,6 +36,43 @@
   }
 
   /**
+   * Estimates the most frequent visible color across the complete image.
+   * Sampling the full image avoids mistaking a decorative border or editor grid for the background.
+   * @param {Uint8ClampedArray} rgba Source RGBA pixels.
+   * @param {number} width Image width.
+   * @param {number} height Image height.
+   * @returns {{r:number,g:number,b:number}|null} Dominant visible RGB color.
+   */
+  function detectDominantImageColor(rgba, width, height) {
+    const pixelCount = width * height;
+    const step = Math.max(1, Math.ceil(Math.sqrt(pixelCount / 100_000)));
+    const buckets = new Map();
+    for (let y = 0; y < height; y += step) {
+      for (let x = 0; x < width; x += step) {
+        const offset = (y * width + x) * 4;
+        if (rgba[offset + 3] < 16) continue;
+        const red = rgba[offset];
+        const green = rgba[offset + 1];
+        const blue = rgba[offset + 2];
+        const bucketKey = `${red >> 4},${green >> 4},${blue >> 4}`;
+        const bucket = buckets.get(bucketKey) || { count: 0, colors: new Map() };
+        const exactKey = (red << 16) | (green << 8) | blue;
+        const exact = bucket.colors.get(exactKey) || { r: red, g: green, b: blue, count: 0 };
+        exact.count += 1;
+        bucket.colors.set(exactKey, exact);
+        bucket.count += 1;
+        buckets.set(bucketKey, bucket);
+      }
+    }
+    let dominantBucket = null;
+    for (const bucket of buckets.values()) {
+      if (!dominantBucket || bucket.count > dominantBucket.count) dominantBucket = bucket;
+    }
+    if (!dominantBucket) return null;
+    return [...dominantBucket.colors.values()].sort((left, right) => right.count - left.count)[0] || null;
+  }
+
+  /**
    * Detects one shared background sample from the complete source image.
    * @param {Uint8ClampedArray} rgba Source RGBA pixels.
    * @param {number} width Image width.
@@ -44,7 +81,9 @@
    */
   function detectBackgroundColor(rgba, width, height) {
     validateImage(rgba, width, height);
-    const detected = cutoutCore.estimateBackgroundColor(rgba, width, height);
+    const detected =
+      detectDominantImageColor(rgba, width, height) ||
+      cutoutCore.estimateBackgroundColor(rgba, width, height);
     return { r: detected.r, g: detected.g, b: detected.b };
   }
 

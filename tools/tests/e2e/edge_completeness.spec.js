@@ -130,6 +130,48 @@ test("Edge route guard supports cancel, save, and discard decisions", async ({ p
   await expect(baseX).toHaveValue(savedValue);
 });
 
+test("Edge uses the app dialog when unsaved tuning returns to the website", async ({ page }) => {
+  await importProject(page.request, `website-leave-${Date.now()}`);
+  const nativeDialogs = [];
+  page.on("dialog", async (dialog) => {
+    nativeDialogs.push(dialog.type());
+    await dialog.dismiss();
+  });
+  await page.goto("/workspace");
+  await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
+  await expect(page.locator("#saveState")).toContainText("未保存");
+  const savedValue = await page.locator("#baseX").inputValue();
+
+  const websiteHome = page.locator(".toolRailBrand");
+  await websiteHome.click();
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await expect(page.locator("#appConfirmTitle")).toHaveText("离开编辑器？");
+  await expect(page.locator("#appConfirmAlternate")).toHaveText("保存并离开");
+  expect(nativeDialogs).toEqual([]);
+
+  await page.locator("#appConfirmCancel").click();
+  await expect(page).toHaveURL(/\/workspace/);
+  await websiteHome.click();
+  await page.locator("#appConfirmAlternate").click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator("#factoryTitle")).toBeVisible();
+  expect(nativeDialogs).toEqual([]);
+
+  await page.goto("/workspace");
+  await expect(page.locator("#baseX")).toHaveValue(savedValue);
+  await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
+  await page.goBack();
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await page.locator("#appConfirmCancel").click();
+  await expect(page).toHaveURL(/\/workspace/);
+
+  await page.goBack();
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await page.locator("#appConfirmAccept").click();
+  await expect(page).toHaveURL(/\/$/);
+  expect(nativeDialogs).toEqual([]);
+});
+
 test("Edge organizer exports PNG frames and a sprite sheet in one readable ZIP", async ({ page }) => {
   await activateExports(page);
   await page.goto("/tools/import");

@@ -37,7 +37,7 @@
   <body class="theme-dark" data-sidebar-tab="transform">
     <a class="skipLink" href="#mainWorkbench" data-i18n="skipToMain">跳到主要内容</a>
     <nav class="toolRail" aria-label="创作工具">
-      <a class="toolRailBrand" href="/" aria-label="网站首页" title="网站首页">
+      <a class="toolRailBrand" href="/" data-document-navigation aria-label="网站首页" title="网站首页">
         <span aria-hidden="true">X</span>
       </a>
       <div class="toolRailGroup">
@@ -857,7 +857,9 @@
                 100%
               </button>
             </div>
-            <a class="factoryHomeLaunch" href="/" data-i18n="factoryHomeOpen"> ← 网站首页 </a>
+            <a class="factoryHomeLaunch" href="/" data-document-navigation data-i18n="factoryHomeOpen">
+              ← 网站首页
+            </a>
             <button id="cutoutOpen" class="cutoutLaunch" type="button" data-cutout-i18n="open">
               批量抠图
             </button>
@@ -3507,6 +3509,7 @@
     <script src="/attack_trails.js"></script>
     <script src="/app_mode_hubs.js"></script>
     <script src="/app_navigation_context.js"></script>
+    <script src="/app_navigation_guard.js"></script>
     <script src="/workset_handoff_core.js"></script>
     <script src="/workset_handoff_runtime.js"></script>
     <script src="/workset_handoff_dialog.js"></script>

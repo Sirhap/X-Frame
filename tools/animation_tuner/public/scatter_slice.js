@@ -15,6 +15,8 @@
   const MAX_OUTPUT_PIXELS = 64_000_000;
   const MAX_HANDOFF_PIXELS = 24_000_000;
   const MAX_CANVAS_SIDE = 32_767;
+  const OUTPUT_PADDING = 2;
+  const OUTPUT_MAXIMUM_COLUMNS = 8;
   const ACCEPTED_IMAGE_TYPE = /^image\/(png|jpeg|webp)$/i;
   const GROUP_COLORS = Object.freeze([
     { stroke: "#31d6b4", fill: "rgba(49, 214, 180, .12)" },
@@ -33,16 +35,11 @@
   const elements = {
     activeBox: requireElement("#scatterActiveBox"),
     addModeButton: requireElement("#scatterAddMode"),
-    boxHInput: requireElement("#scatterBoxH"),
-    boxWInput: requireElement("#scatterBoxW"),
-    boxXInput: requireElement("#scatterBoxX"),
-    boxYInput: requireElement("#scatterBoxY"),
     boxCount: requireElement("#scatterBoxCount"),
     addProjectButton: requireElement("#scatterAddProject"),
     animationNameInput: requireElement("#scatterAnimationName"),
     colorInput: requireElement("#scatterColor"),
     colorValue: requireElement("#scatterColorValue"),
-    columnsInput: requireElement("#scatterColumns"),
     deleteButton: requireElement("#scatterDelete"),
     detectButton: requireElement("#scatterDetect"),
     downloadSheetButton: requireElement("#scatterDownloadSheet"),
@@ -52,24 +49,16 @@
     emptyStage: requireElement("#scatterEmptyStage"),
     fileInput: requireElement("#scatterFileInput"),
     groupSelection: requireElement("#scatterGroupSelection"),
-    mergeGapInput: requireElement("#scatterMergeGap"),
-    mergeGapValue: requireElement("#scatterMergeGapValue"),
-    minPixelsInput: requireElement("#scatterMinPixels"),
-    minSideInput: requireElement("#scatterMinSide"),
     modeInput: requireElement("#scatterMode"),
-    paddingInput: requireElement("#scatterPadding"),
     playAllButton: requireElement("#scatterPlayAll"),
     playAllCanvas: requireElement("#scatterPlaybackAll"),
     projectModeInput: requireElement("#scatterProjectMode"),
     previewCanvas: requireElement("#scatterPreview"),
-    sampleButton: requireElement("#scatterSample"),
     sampleModeButton: requireElement("#scatterSampleMode"),
     sliceList: requireElement("#scatterSliceList"),
     sourceMeta: requireElement("#scatterSourceMeta"),
     status: requireElement("#scatterStatus"),
     statusMessage: requireElement("#scatterStatus p"),
-    thresholdInput: requireElement("#scatterThreshold"),
-    thresholdValue: requireElement("#scatterThresholdValue"),
     transparentInput: requireElement("#scatterTransparent"),
     toggleGroupsButton: requireElement("#scatterToggleGroups"),
     uploadButton: requireElement("#scatterUpload"),
@@ -139,22 +128,7 @@
     state.busy = Boolean(busy);
     document.body.classList.toggle("isBusy", state.busy);
     elements.uploadButton.disabled = state.busy;
-    elements.sampleButton.disabled = state.busy;
     elements.detectButton.disabled = state.busy || !state.source;
-  }
-
-  /**
-   * Reads one finite integer from a numeric field.
-   * @param {HTMLInputElement} input Numeric input.
-   * @param {number} fallback Fallback value.
-   * @param {number} minimum Inclusive minimum.
-   * @param {number} [maximum] Inclusive maximum.
-   * @returns {number} Safe integer.
-   */
-  function readInteger(input, fallback, minimum, maximum = Number.MAX_SAFE_INTEGER) {
-    const value = Number(input.value);
-    if (!Number.isFinite(value)) return fallback;
-    return Math.max(minimum, Math.min(maximum, Math.round(value)));
   }
 
   /**
@@ -162,13 +136,16 @@
    * @returns {object} Core detection options.
    */
   function readDetectionOptions() {
+    const width = state.source?.width || 1;
+    const height = state.source?.height || 1;
+    const shortestSide = Math.min(width, height);
     return {
       mode: elements.modeInput.value,
       colorKey: elements.colorInput.value,
-      threshold: readInteger(elements.thresholdInput, 24, 0, 120),
-      mergeGap: readInteger(elements.mergeGapInput, 0, 0, 32),
-      minPixels: readInteger(elements.minPixelsInput, 4, 1),
-      minSide: readInteger(elements.minSideInput, 1, 1),
+      threshold: core.DEFAULT_OPTIONS.threshold,
+      mergeGap: Math.max(1, Math.min(4, Math.round(shortestSide / 600))),
+      minPixels: Math.max(4, Math.round((width * height) / 100_000)),
+      minSide: Math.max(1, Math.round(shortestSide / 500)),
       sortOrder: "row-major",
     };
   }
@@ -238,68 +215,6 @@
     }[state.toolMode];
     elements.previewCanvas.setAttribute("aria-label", description);
     elements.previewCanvas.title = description;
-  }
-
-  /**
-   * Synchronizes the numerical inspector with the selected box.
-   * @returns {void}
-   */
-  function syncBoxInspector() {
-    const selected = state.selectedIndex === null ? null : state.boxes[state.selectedIndex];
-    const inputs = [elements.boxXInput, elements.boxYInput, elements.boxWInput, elements.boxHInput];
-    inputs.forEach((input) => {
-      input.disabled = !selected;
-    });
-    elements.boxXInput.value = selected ? String(selected.x) : "";
-    elements.boxYInput.value = selected ? String(selected.y) : "";
-    elements.boxWInput.value = selected ? String(selected.w) : "";
-    elements.boxHInput.value = selected ? String(selected.h) : "";
-    if (state.source) {
-      elements.boxXInput.max = String(Math.max(0, state.source.width - 1));
-      elements.boxYInput.max = String(Math.max(0, state.source.height - 1));
-      elements.boxWInput.max = String(state.source.width);
-      elements.boxHInput.max = String(state.source.height);
-    }
-  }
-
-  /**
-   * Applies a validated rectangle to the selected box and refreshes derived state.
-   * @param {{x:number,y:number,w:number,h:number,pixels:number}} nextBox Edited rectangle.
-   * @param {string} message Success status.
-   * @returns {void}
-   */
-  function commitSelectedBox(nextBox, message) {
-    if (state.selectedIndex === null || !state.boxes[state.selectedIndex]) return;
-    const includedBoxes = includedBoxSet();
-    Object.assign(state.boxes[state.selectedIndex], nextBox);
-    state.sliceCanvasCache = new WeakMap();
-    regroupBoxes(includedBoxes);
-    renderAll();
-    setStatus(message, "success");
-  }
-
-  /**
-   * Commits X/Y/W/H inspector values to the selected rectangle.
-   * @returns {void}
-   */
-  function commitBoxInspector() {
-    if (state.selectedIndex === null || !state.source) return;
-    const values = [
-      elements.boxXInput.value,
-      elements.boxYInput.value,
-      elements.boxWInput.value,
-      elements.boxHInput.value,
-    ];
-    if (values.some((value) => value.trim() === "" || !Number.isFinite(Number(value)))) {
-      syncBoxInspector();
-      setStatus("切片坐标必须是有效数字。", "error");
-      return;
-    }
-    const nextBox = editorCore.normalizeBox(
-      { x: values[0], y: values[1], w: values[2], h: values[3] },
-      sourceBounds(),
-    );
-    commitSelectedBox(nextBox, "已更新选中切片范围。");
   }
 
   /**
@@ -380,44 +295,6 @@
   }
 
   /**
-   * Creates a generated sprite-scatter sample without external assets.
-   * @returns {Promise<File>} Generated PNG file.
-   */
-  async function createSampleFile() {
-    try {
-      const canvas = document.createElement("canvas");
-      canvas.width = 760;
-      canvas.height = 440;
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("无法创建示例图片画布");
-      context.fillStyle = "#98d79b";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      const poses = [
-        [58, 70],
-        [220, 82],
-        [390, 64],
-        [574, 88],
-        [108, 274],
-        [336, 252],
-        [584, 280],
-      ];
-      poses.forEach(([x, y], index) => {
-        context.fillStyle = "#111923";
-        context.fillRect(x, y, 38, 64);
-        context.fillRect(x - 13, y + 52, 82, 21);
-        context.fillStyle = index % 2 ? "#f7b84b" : "#f05b62";
-        context.fillRect(x + 8, y + 13, 20, 20);
-        context.fillStyle = "#087f68";
-        context.fillRect(x + 55, y + 27, 14, 14);
-      });
-      const blob = await canvasToBlob(canvas);
-      return new File([blob], "scatter-slice-sample.png", { type: "image/png" });
-    } catch (error) {
-      throw new Error(errorMessage(error, "内置示例生成失败"));
-    }
-  }
-
-  /**
    * Validates and installs a new source image.
    * @param {File} file Image selected by the user.
    * @returns {Promise<boolean>} Whether the image was installed.
@@ -487,11 +364,10 @@
    */
   function getPaddedBox(box) {
     if (!state.source) throw new Error("请先加载源图片");
-    const padding = readInteger(elements.paddingInput, 2, 0, 64);
-    const x = Math.max(0, box.x - padding);
-    const y = Math.max(0, box.y - padding);
-    const right = Math.min(state.source.width, box.x + box.w + padding);
-    const bottom = Math.min(state.source.height, box.y + box.h + padding);
+    const x = Math.max(0, box.x - OUTPUT_PADDING);
+    const y = Math.max(0, box.y - OUTPUT_PADDING);
+    const right = Math.min(state.source.width, box.x + box.w + OUTPUT_PADDING);
+    const bottom = Math.min(state.source.height, box.y + box.h + OUTPUT_PADDING);
     return { ...box, x, y, w: right - x, h: bottom - y };
   }
 
@@ -501,7 +377,7 @@
    */
   function sliceCanvasCacheKey() {
     return [
-      readInteger(elements.paddingInput, 2, 0, 64),
+      OUTPUT_PADDING,
       elements.transparentInput.checked ? "smart" : "original",
       state.resolvedMode,
     ].join(":");
@@ -801,7 +677,6 @@
       elements.downloadSliceButton.disabled = !selected;
       elements.downloadSheetButton.disabled = includedGroups.length === 0;
       elements.addProjectButton.disabled = state.busy || includedGroups.length === 0;
-      syncBoxInspector();
     } catch (error) {
       reportFailure(error, "预览更新失败");
     }
@@ -829,8 +704,11 @@
       setToolMode(state.boxes.length > 0 ? "edit" : "sample");
       renderAll();
       const duration = (performance.now() - startedAt).toFixed(1);
+      const guideSummary = result.ignoredGuidePixels
+        ? ` · 已过滤 ${result.ignoredGuidePixels} 个网格像素`
+        : "";
       setStatus(
-        `识别到 ${state.boxes.length} 个区域，自动分为 ${state.groups.length} 组 · ${result.mode} · ${duration} ms`,
+        `识别到 ${state.boxes.length} 个区域，自动分为 ${state.groups.length} 组 · ${result.mode}${guideSummary} · ${duration} ms`,
         "success",
       );
     } catch (error) {
@@ -849,7 +727,7 @@
     const cuts = cutsByGroup.flat();
     const plan = groupCore.createGroupedGridPlan(
       cutsByGroup.map((groupCuts) => groupCuts.length),
-      readInteger(elements.columnsInput, 8, 1, 64),
+      OUTPUT_MAXIMUM_COLUMNS,
     );
     const cellWidth = Math.max(...cuts.map((canvas) => canvas.width));
     const cellHeight = Math.max(...cuts.map((canvas) => canvas.height));
@@ -1097,7 +975,6 @@
       elements.previewCanvas.setPointerCapture(event.pointerId);
       elements.previewCanvas.style.cursor = "crosshair";
       renderPreview();
-      syncBoxInspector();
       return;
     }
     const hit = editorCore.hitTestBoxes(state.boxes, point, state.selectedIndex, editorHandleRadius());
@@ -1158,7 +1035,6 @@
     }
     Object.assign(state.pointerEdit.box, nextBox);
     schedulePreviewRender();
-    syncBoxInspector();
   }
 
   /**
@@ -1249,28 +1125,10 @@
     elements.fileInput.value = "";
     void handleFile(file);
   });
-  elements.sampleButton.addEventListener("click", () => {
-    void (async () => {
-      try {
-        const sample = await createSampleFile();
-        if (await applyFile(sample)) runDetection();
-      } catch (error) {
-        reportFailure(error, "示例加载失败");
-        setBusy(false);
-      }
-    })();
-  });
   elements.detectButton.addEventListener("click", runDetection);
   elements.colorInput.addEventListener("input", () => {
     elements.colorValue.textContent = elements.colorInput.value.toUpperCase();
   });
-  elements.thresholdInput.addEventListener("input", () => {
-    elements.thresholdValue.textContent = elements.thresholdInput.value;
-  });
-  elements.mergeGapInput.addEventListener("input", () => {
-    elements.mergeGapValue.textContent = elements.mergeGapInput.value;
-  });
-  elements.paddingInput.addEventListener("input", renderAll);
   elements.transparentInput.addEventListener("change", () => {
     state.sliceCanvasCache = new WeakMap();
     renderAll();
@@ -1299,9 +1157,6 @@
     setToolMode("sample");
     renderAll();
     setStatus("取色模式：点击源图选择背景色。", "success");
-  });
-  [elements.boxXInput, elements.boxYInput, elements.boxWInput, elements.boxHInput].forEach((input) => {
-    input.addEventListener("change", commitBoxInspector);
   });
   elements.toggleGroupsButton.addEventListener("click", () => {
     const allSelected = selectedGroups().length === state.groups.length;

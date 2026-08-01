@@ -66,6 +66,20 @@ test("smart slice cutout detects one dominant source background instead of trust
   assert.deepEqual(detectBackgroundColor(rgba, width, height), { r: 148, g: 214, b: 142 });
 });
 
+test("background detection prefers the image-wide dominant color over a decorative border", () => {
+  const width = 40;
+  const height = 40;
+  const border = [148, 214, 255, 255];
+  const background = [40, 160, 140, 255];
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < rgba.length; offset += 4) rgba.set(border, offset);
+  for (let y = 4; y < height - 4; y += 1) {
+    for (let x = 4; x < width - 4; x += 1) setPixel(rgba, width, x, y, background);
+  }
+
+  assert.deepEqual(detectBackgroundColor(rgba, width, height), { r: 40, g: 160, b: 140 });
+});
+
 test("regular background clear removes enclosed background regions instead of preserving them", () => {
   const width = 7;
   const height = 7;

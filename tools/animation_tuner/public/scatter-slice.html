@@ -86,7 +86,6 @@
             </header>
             <input id="scatterFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
             <button id="scatterUpload" class="actionButton primary" type="button">选择图片</button>
-            <button id="scatterSample" class="actionButton secondary" type="button">加载内置示例</button>
             <p id="scatterSourceMeta" class="sourceMeta">未加载图片</p>
           </section>
 
@@ -108,32 +107,15 @@
               <output id="scatterColorValue" for="scatterColor">#98D79B</output>
             </div>
 
-            <label class="rangeField" for="scatterThreshold">
-              <span>前景判定阈值 <output id="scatterThresholdValue">24</output></span>
-              <input id="scatterThreshold" type="range" min="0" max="120" value="24" />
-            </label>
-            <label class="rangeField" for="scatterMergeGap">
-              <span>合并间距 <output id="scatterMergeGapValue">0</output></span>
-              <input id="scatterMergeGap" type="range" min="0" max="32" value="0" />
-            </label>
-            <div class="fieldGrid">
-              <label>最少像素<input id="scatterMinPixels" type="number" min="1" value="4" /></label>
-              <label>最小边长<input id="scatterMinSide" type="number" min="1" value="1" /></label>
-            </div>
             <button id="scatterDetect" class="actionButton detect" type="button" disabled>
               智能识别主体
             </button>
+            <p class="automaticDetectionHint">自动过滤背景、网格线与微小噪点。</p>
             <div class="sliceEditorControls" aria-label="切片编辑工具">
               <div class="sliceToolModes" role="group" aria-label="画布工具">
                 <button id="scatterEditMode" type="button" aria-pressed="false" disabled>编辑切片</button>
                 <button id="scatterAddMode" type="button" aria-pressed="false" disabled>添加切片</button>
                 <button id="scatterSampleMode" type="button" aria-pressed="true" disabled>取背景色</button>
-              </div>
-              <div class="sliceBoxInspector" aria-label="选中切片坐标">
-                <label>X<input id="scatterBoxX" type="number" min="0" step="1" disabled /></label>
-                <label>Y<input id="scatterBoxY" type="number" min="0" step="1" disabled /></label>
-                <label>W<input id="scatterBoxW" type="number" min="1" step="1" disabled /></label>
-                <label>H<input id="scatterBoxH" type="number" min="1" step="1" disabled /></label>
               </div>
               <p class="sliceEditorHint">
                 编辑模式可移动/缩放；添加模式在原图拖出新切片；Delete / Backspace 删除选中切片。
@@ -146,10 +128,6 @@
               <span>03</span>
               <h2>拼接与导出</h2>
             </header>
-            <div class="fieldGrid">
-              <label>切片留白<input id="scatterPadding" type="number" min="0" max="64" value="2" /></label>
-              <label>每行最大帧<input id="scatterColumns" type="number" min="1" max="64" value="8" /></label>
-            </div>
             <label class="cutoutModeButton">
               <input id="scatterTransparent" type="checkbox" checked />
               <span><strong>智能抠图</strong><small>自动背景清除 · 常规模式</small></span>

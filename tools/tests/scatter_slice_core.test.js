@@ -73,6 +73,36 @@ test("automatic detection uses alpha and filters small noise", () => {
   assert.deepEqual(result.boxes, [{ x: 1, y: 1, w: 1, h: 2, pixels: 2 }]);
 });
 
+test("color-key detection removes thin editor guides before finding subjects", () => {
+  const width = 100;
+  const height = 80;
+  const background = [40, 160, 140, 255];
+  const rgba = createImage(width, height, background);
+  for (const y of [20, 60]) {
+    for (let x = 0; x < width; x += 1) setPixel(rgba, width, x, y, [148, 214, 255, 255]);
+  }
+  for (const x of [25, 75]) {
+    for (let y = 0; y < height; y += 1) setPixel(rgba, width, x, y, [148, 214, 255, 255]);
+  }
+  for (const left of [8, 42]) {
+    for (let y = 32; y < 42; y += 1) {
+      for (let x = left; x < left + 6; x += 1) setPixel(rgba, width, x, y, [20, 30, 40, 255]);
+    }
+  }
+
+  const result = detectScatterSlices(rgba, width, height, {
+    colorKey: "#28a08c",
+    minPixels: 10,
+    threshold: 8,
+  });
+
+  assert.ok(result.ignoredGuidePixels > 300);
+  assert.deepEqual(result.boxes, [
+    { x: 8, y: 32, w: 6, h: 10, pixels: 60 },
+    { x: 42, y: 32, w: 6, h: 10, pixels: 60 },
+  ]);
+});
+
 test("color sampling clamps coordinates and transparency removal keeps source immutable", () => {
   const rgba = createImage(2, 1, [152, 215, 155, 255]);
   setPixel(rgba, 2, 1, 0, [250, 80, 40, 255]);
