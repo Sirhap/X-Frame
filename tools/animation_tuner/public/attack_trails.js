@@ -98,6 +98,8 @@
       this.meshRepairContext = this.meshRepairCanvas.getContext("2d");
       this.gpuCanvas = document.createElement("canvas");
       this.gpuTextures = new WeakMap();
+      this.gpuFallbackNotified = false;
+      this.gpuFallbackReason = "";
       this.gpuRenderer = this._createGpuRenderer();
       this.els = Object.fromEntries(
         [
@@ -1743,7 +1745,7 @@
       const texture = this._processedTexture(image, segment);
       const ctx = this.hooks.ctx;
       if (
-        this._drawGpuMesh(
+        this._tryDrawGpuMesh(
           texture,
           grid,
           gridTimes,
@@ -1929,7 +1931,10 @@
           preserveDrawingBuffer: true,
           powerPreference: "high-performance",
         });
-        if (!gl) return null;
+        if (!gl) {
+          this._activateCanvasFallback(new Error("WebGL context is unavailable"));
+          return null;
+        }
         const compile = (type, source) => {
           const shader = gl.createShader(type);
           gl.shaderSource(shader, source);
@@ -1988,8 +1993,41 @@
           texture: gl.getUniformLocation(program, "u_texture"),
         };
       } catch (error) {
-        console.warn("Attack trail WebGL preview unavailable; using Canvas fallback.", error);
+        this._activateCanvasFallback(error);
         return null;
+      }
+    }
+
+    /**
+     * Disables the GPU preview and tells the user once that Canvas rendering is active.
+     * @param {unknown} error WebGL initialization or rendering failure.
+     * @returns {void}
+     */
+    _activateCanvasFallback(error) {
+      if (!this.gpuFallbackReason) {
+        this.gpuFallbackReason =
+          error && typeof error === "object" && typeof error.message === "string" && error.message
+            ? error.message
+            : "WebGL unavailable";
+      }
+      this.gpuRenderer = null;
+      this.gpuTextures = new WeakMap();
+      if (this.gpuFallbackNotified) return;
+      this.gpuFallbackNotified = true;
+      this.hooks?.status?.("WebGL 预览不可用，已自动切换到兼容的 Canvas 渲染。");
+    }
+
+    /**
+     * Attempts one GPU draw and permanently falls back when WebGL fails at runtime.
+     * @param {...unknown} args GPU mesh arguments.
+     * @returns {boolean} Whether the mesh was rendered by WebGL.
+     */
+    _tryDrawGpuMesh(...args) {
+      try {
+        return this._drawGpuMesh(...args);
+      } catch (error) {
+        this._activateCanvasFallback(error);
+        return false;
       }
     }
 
@@ -2017,7 +2055,11 @@
 
     _drawGpuMesh(textureSource, grid, gridTimes, segment, state, layer, width, height) {
       const renderer = this.gpuRenderer;
-      if (!renderer || renderer.gl.isContextLost()) return false;
+      if (!renderer) return false;
+      if (renderer.gl.isContextLost()) {
+        this._activateCanvasFallback(new Error("WebGL context was lost"));
+        return false;
+      }
       const rows = grid.length;
       const columns = grid[0]?.length || 0;
       if (rows < 2 || columns < 2 || rows * columns > 65535) return false;

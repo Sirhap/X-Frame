@@ -121,6 +121,16 @@
   }
 
   /**
+   * Routes recoverable UI failures through the tool's visible error boundary.
+   * @param {unknown} error Failure value.
+   * @param {string} fallback Fallback message.
+   * @returns {void}
+   */
+  function reportFailure(error, fallback) {
+    setStatus(errorMessage(error, fallback), "error");
+  }
+
+  /**
    * Locks file and detection actions while an asynchronous task is running.
    * @param {boolean} busy Whether work is running.
    * @returns {void}
@@ -463,8 +473,7 @@
       setStatus(`已自动识别背景色 ${sampledColor.toUpperCase()}，可以开始识别。`, "success");
       return true;
     } catch (error) {
-      console.error(error);
-      setStatus(errorMessage(error, "图片加载失败"), "error");
+      reportFailure(error, "图片加载失败");
       return false;
     } finally {
       setBusy(false);
@@ -651,15 +660,13 @@
           drawGroupPlaybackFrame(canvas, boxes[frameIndex], frameIndex);
         } catch (error) {
           stopGroupPlayback();
-          console.error(error);
-          setStatus(errorMessage(error, `${label}预览失败`), "error");
+          reportFailure(error, `${label}预览失败`);
         }
       }, 125);
       setStatus(`正在循环播放${label} · ${boxes.length} 帧。`, "success");
     } catch (error) {
       stopGroupPlayback();
-      console.error(error);
-      setStatus(errorMessage(error, `${label}预览失败`), "error");
+      reportFailure(error, `${label}预览失败`);
     }
   }
 
@@ -796,8 +803,7 @@
       elements.addProjectButton.disabled = state.busy || includedGroups.length === 0;
       syncBoxInspector();
     } catch (error) {
-      console.error(error);
-      setStatus(errorMessage(error, "预览更新失败"), "error");
+      reportFailure(error, "预览更新失败");
     }
   }
 
@@ -828,8 +834,7 @@
         "success",
       );
     } catch (error) {
-      console.error(error);
-      setStatus(errorMessage(error, "识别失败"), "error");
+      reportFailure(error, "识别失败");
     }
   }
 
@@ -881,8 +886,7 @@
       if (!file) return;
       await applyFile(file);
     } catch (error) {
-      console.error(error);
-      setStatus(errorMessage(error, "图片载入失败"), "error");
+      reportFailure(error, "图片载入失败");
     }
   }
 
@@ -897,8 +901,7 @@
       await downloadCanvas(canvas, `sprite-${String(state.selectedIndex + 1).padStart(3, "0")}.png`);
       setStatus("选中切片已导出。", "success");
     } catch (error) {
-      console.error(error);
-      setStatus(errorMessage(error, "切片导出失败"), "error");
+      reportFailure(error, "切片导出失败");
     }
   }
 
@@ -912,8 +915,7 @@
       await downloadCanvas(sheet, `${baseName}-${groupLabel}.png`);
       setStatus(`已导出 ${groups.length} 个动画组 · ${sheet.width} × ${sheet.height}`, "success");
     } catch (error) {
-      console.error(error);
-      setStatus(errorMessage(error, "拼接导出失败"), "error");
+      reportFailure(error, "拼接导出失败");
     }
   }
 
@@ -1011,8 +1013,7 @@
       await openHandoff({ sourceTool: "scatter-slice", worksets: projectWorksets() });
       setStatus("已打开项目目标选择；切片会话仍然保留。", "success");
     } catch (error) {
-      console.error(error);
-      setStatus(errorMessage(error, "加入动画项目失败"), "error");
+      reportFailure(error, "加入动画项目失败");
     }
   }
 
@@ -1208,8 +1209,7 @@
       elements.modeInput.value = "colorkey";
       setStatus(`已取色 ${sampled.toUpperCase()}，请重新识别。`, "success");
     } catch (error) {
-      console.error(error);
-      setStatus(errorMessage(error, "取色失败"), "error");
+      reportFailure(error, "取色失败");
     }
   }
 
@@ -1255,8 +1255,7 @@
         const sample = await createSampleFile();
         if (await applyFile(sample)) runDetection();
       } catch (error) {
-        console.error(error);
-        setStatus(errorMessage(error, "示例加载失败"), "error");
+        reportFailure(error, "示例加载失败");
         setBusy(false);
       }
     })();

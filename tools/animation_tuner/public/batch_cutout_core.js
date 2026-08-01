@@ -117,6 +117,83 @@
       isWithinConnectivityTolerance,
     } = connectivityCore;
 
+    const RGBA_CHANNEL_COUNT = 4;
+    const RGB_CHANNEL_KEYS = Object.freeze(["r", "g", "b"]);
+    const MAX_PROCESSING_PIXELS = 16_777_216;
+    const PERCENT_SCALE = 100;
+    const DEFAULT_CUTOUT_TOLERANCE = 18;
+    const DEFAULT_EDGE_RECOVERY_TOLERANCE = 30;
+    const DEFAULT_EDGE_RECOVERY_BACKGROUND_RADIUS = 30;
+    const MAX_EDGE_RECOVERY_BACKGROUND_RADIUS = 30;
+    const BLEND_NEUTRALIZATION_FACTOR = 0.2;
+    const BLEND_CORRECTION_FACTOR = 0.65;
+    const MAX_BLUR_RADIUS = 6;
+    const MIN_VISIBLE_ALPHA = 0.001;
+    const EDGE_RESTORE_COLOR_CACHE_LIMIT = 128;
+    const developmentEdgeRestoreColorCache = new Map();
+
+    /**
+     * Validates image dimensions and their RGBA byte buffer before allocations.
+     * Zero-sized images are accepted as stable no-op inputs.
+     * @param {Uint8ClampedArray|Uint8Array} source Source RGBA pixels.
+     * @param {number} width Image width.
+     * @param {number} height Image height.
+     * @param {string} operation Operation label used in validation errors.
+     * @returns {number} Validated pixel count.
+     */
+    function validateRgbaInput(source, width, height, operation) {
+      if (!ArrayBuffer.isView(source) || source.BYTES_PER_ELEMENT !== 1) {
+        throw new TypeError(`${operation} requires an 8-bit RGBA buffer.`);
+      }
+      if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 0 || height < 0) {
+        throw new RangeError(`${operation} dimensions must be non-negative safe integers.`);
+      }
+      const pixelCount = width * height;
+      const expectedLength = pixelCount * RGBA_CHANNEL_COUNT;
+      if (!Number.isSafeInteger(pixelCount) || !Number.isSafeInteger(expectedLength)) {
+        throw new RangeError(`${operation} dimensions exceed the safe allocation range.`);
+      }
+      if (pixelCount > MAX_PROCESSING_PIXELS) {
+        throw new RangeError(
+          `${operation} exceeds the ${MAX_PROCESSING_PIXELS.toLocaleString("en-US")} pixel memory limit.`,
+        );
+      }
+      if (source.length !== expectedLength) {
+        throw new RangeError(`${operation} RGBA length does not match its dimensions.`);
+      }
+      return pixelCount;
+    }
+
+    /**
+     * Compiles and caches immutable color-axis values used by the JavaScript edge fallback.
+     * @param {{r:number,g:number,b:number}} correctColor Desired edge color.
+     * @param {{r:number,g:number,b:number}} contaminatedColor Contaminated edge color.
+     * @returns {{correct:number[],contaminated:number[],axis:number[],axisLengthSquared:number}}
+     */
+    function compileDevelopmentEdgeRestoreColors(correctColor, contaminatedColor) {
+      const channels = [
+        ...RGB_CHANNEL_KEYS.map((key) => correctColor?.[key]),
+        ...RGB_CHANNEL_KEYS.map((key) => contaminatedColor?.[key]),
+      ];
+      if (channels.some((channel) => !Number.isFinite(channel) || channel < 0 || channel > 255)) {
+        throw new TypeError("Reference edge restoration colors require RGB channels in the range 0-255.");
+      }
+      const cacheKey = channels.join(":");
+      const cached = developmentEdgeRestoreColorCache.get(cacheKey);
+      if (cached) return cached;
+      const linear = (channel) => Math.fround(srgbToLinear(channel));
+      const correct = RGB_CHANNEL_KEYS.map((key) => linear(correctColor[key]));
+      const contaminated = RGB_CHANNEL_KEYS.map((key) => linear(contaminatedColor[key]));
+      const axis = contaminated.map((channel, index) => channel - correct[index]);
+      const axisLengthSquared = axis.reduce((sum, channel) => sum + channel * channel, 0);
+      const compiled = { correct, contaminated, axis, axisLengthSquared };
+      if (developmentEdgeRestoreColorCache.size >= EDGE_RESTORE_COLOR_CACHE_LIMIT) {
+        developmentEdgeRestoreColorCache.delete(developmentEdgeRestoreColorCache.keys().next().value);
+      }
+      developmentEdgeRestoreColorCache.set(cacheKey, compiled);
+      return compiled;
+    }
+
     const protectionSelector = protectionCore.createProtectionSelector({
       rgbToReferenceYcbcr,
       srgbToLinear,
@@ -165,10 +242,12 @@
       const foregroundAverage = (red + green + blue) / 3;
       const channels = [red, green, blue];
 
-      for (let channelIndex = 0; channelIndex < 3; channelIndex += 1) {
+      for (let channelIndex = 0; channelIndex < RGB_CHANNEL_KEYS.length; channelIndex += 1) {
+        const backgroundChannel = backgroundColor[RGB_CHANNEL_KEYS[channelIndex]];
         const neutralTarget =
-          foregroundAverage + (foregroundAverage - backgroundColor[["r", "g", "b"][channelIndex]]) * 0.2;
-        channels[channelIndex] += (neutralTarget - channels[channelIndex]) * strength * 0.65;
+          foregroundAverage + (foregroundAverage - backgroundChannel) * BLEND_NEUTRALIZATION_FACTOR;
+        channels[channelIndex] +=
+          (neutralTarget - channels[channelIndex]) * strength * BLEND_CORRECTION_FACTOR;
       }
 
       data[offset] = Math.round(clamp(channels[0], 0, 255));
@@ -186,8 +265,12 @@
      * @returns {void}
      */
     function blurPremultipliedEdges(data, width, height, radius, edgeDistance = null) {
-      const safeRadius = Math.max(0, Math.min(6, Math.round(radius)));
-      if (!safeRadius) return;
+      const pixelCount = width * height;
+      const safeRadius = Math.max(0, Math.min(MAX_BLUR_RADIUS, Math.round(radius)));
+      if (!pixelCount || !safeRadius) return;
+      if (edgeDistance && edgeDistance.length !== pixelCount) {
+        throw new RangeError("Blur edge-distance length does not match its dimensions.");
+      }
       const sigma = Math.max(0.7, safeRadius / 1.5);
       const kernel = [];
       let kernelTotal = 0;
@@ -197,7 +280,6 @@
         kernelTotal += weight;
       }
       for (let index = 0; index < kernel.length; index += 1) kernel[index] /= kernelTotal;
-      const pixelCount = width * height;
       const premultiplied = new Float32Array(pixelCount * 4);
       const horizontal = new Float32Array(pixelCount * 4);
       const verticalPixel = new Float32Array(4);
@@ -237,7 +319,7 @@
           const index = y * width + x;
           if (edgeDistance && edgeDistance[index] > safeRadius * 6 + 4) continue;
           const alpha = verticalPixel[3];
-          if (alpha <= 0.001) {
+          if (alpha <= MIN_VISIBLE_ALPHA) {
             data[outputOffset + 3] = 0;
             continue;
           }
@@ -300,11 +382,15 @@
      * @param {{strength:number,edgeRadius:number,backgroundRadius:number,tolerance:number}} options Recovery options.
      * @returns {void}
      */
-    function recoverEdgeColors(data, width, height, edgeDistance, backgroundColors, options) {
-      const strength = clamp(options.strength, 0, 100) / 100;
+    function recoverEdgeColors(data, width, height, edgeDistance, backgroundColors, options = {}) {
+      const pixelCount = width * height;
+      const strength = clamp(options.strength, 0, PERCENT_SCALE) / PERCENT_SCALE;
       const edgeLimit = Math.max(1, options.edgeRadius) * 3 + 4;
-      if (!strength) return;
-      for (let index = 0; index < width * height; index += 1) {
+      if (!pixelCount || !strength || !backgroundColors?.length) return;
+      if (!edgeDistance || edgeDistance.length !== pixelCount) {
+        throw new RangeError("Edge recovery distance length does not match its dimensions.");
+      }
+      for (let index = 0; index < pixelCount; index += 1) {
         const offset = index * 4;
         if (data[offset + 3] === 0 || edgeDistance[index] > edgeLimit) continue;
         const foreground = findInteriorColor(
@@ -357,7 +443,7 @@
         const residual = Math.hypot(
           ...pixelLinear.map((channel, channelIndex) => channel - projected[channelIndex]),
         );
-        if (residual * 100 > options.tolerance) continue;
+        if (residual * PERCENT_SCALE > options.tolerance) continue;
         const recovered = pixelLinear.map((channel, channelIndex) =>
           clamp((channel - projection * backgroundLinear[channelIndex]) / (1 - projection), 0, 1),
         );
@@ -386,28 +472,24 @@
       contaminatedColor,
       options = {},
     ) {
-      const pixelCount = width * height;
-      if (!source || source.length !== pixelCount * 4) {
-        throw new RangeError("Reference edge restoration RGBA length does not match its dimensions.");
-      }
+      const pixelCount = validateRgbaInput(source, width, height, "Reference edge restoration");
+      if (!pixelCount) return new Uint8ClampedArray(source);
       const mask = options.mask || null;
       if (mask && mask.length !== pixelCount) {
         throw new RangeError("Reference edge restoration mask length does not match its dimensions.");
       }
+      const { correct, contaminated, axis, axisLengthSquared } = compileDevelopmentEdgeRestoreColors(
+        correctColor,
+        contaminatedColor,
+      );
       const linear = (channel) => Math.fround(srgbToLinear(channel));
-      const correct = [linear(correctColor.r), linear(correctColor.g), linear(correctColor.b)];
-      const contaminated = [
-        linear(contaminatedColor.r),
-        linear(contaminatedColor.g),
-        linear(contaminatedColor.b),
-      ];
-      const axis = contaminated.map((channel, index) => channel - correct[index]);
-      const axisLengthSquared = axis.reduce((sum, channel) => sum + channel * channel, 0);
       if (axisLengthSquared < 0.0001) {
         throw new RangeError("Reference edge restoration colors are too similar.");
       }
       const edgeRadius = Math.trunc(options.edgeRadius ?? 0);
-      const backgroundRadius = Math.trunc(options.backgroundRadius ?? 30);
+      const backgroundRadius = Math.trunc(
+        options.backgroundRadius ?? DEFAULT_EDGE_RECOVERY_BACKGROUND_RADIUS,
+      );
       let edgeMask = null;
       if (edgeRadius > 0) {
         const candidates = new Uint8Array(pixelCount);
@@ -458,7 +540,7 @@
           }
         }
       }
-      const residualLimit = Math.trunc(options.tolerance ?? 30) / 1000;
+      const residualLimit = Math.trunc(options.tolerance ?? DEFAULT_EDGE_RECOVERY_TOLERANCE) / 1000;
       const residualLimitSquared = residualLimit * residualLimit;
       const output = new Uint8ClampedArray(source);
       for (let pixel = 0; pixel < pixelCount; pixel += 1) {
@@ -513,6 +595,8 @@
       contaminatedColor,
       options = {},
     ) {
+      const pixelCount = validateRgbaInput(source, width, height, "Reference edge restoration");
+      if (!pixelCount) return new Uint8ClampedArray(source);
       return protectedWasmKernelBridge?.isReady?.()
         ? protectedWasmKernelBridge.restoreEdges(
             source,
@@ -546,7 +630,7 @@
       const protectedColors = Array.isArray(options.protectedColors) ? options.protectedColors : [];
       if (!selectionMask && !protectedColors.length) return null;
       const operationMask = new Uint8Array(width * height);
-      const protectionTolerance = clamp(options.protectionTolerance ?? 8, 0, 100);
+      const protectionTolerance = clamp(options.protectionTolerance ?? 8, 0, PERCENT_SCALE);
       for (let pixel = 0; pixel < operationMask.length; pixel += 1) {
         if (selectionMask && !selectionMask[pixel]) continue;
         const offset = pixel * 4;
@@ -592,16 +676,20 @@
       operationMask,
       options,
     ) {
-      const strength = clamp(options.edgeRecoveryStrength ?? 0, 0, 100) / 100;
+      const strength = clamp(options.edgeRecoveryStrength ?? 0, 0, PERCENT_SCALE) / PERCENT_SCALE;
       if (!strength || !protectedColors.length || !backgroundColors.length) return;
       for (const correctColor of protectedColors.slice(0, 32)) {
         for (const contaminatedColor of backgroundColors) {
           let restored;
           try {
             restored = applyReferenceEdgeColorRestore(data, width, height, correctColor, contaminatedColor, {
-              tolerance: clamp(options.edgeRecoveryTolerance ?? 30, 0, 100),
+              tolerance: clamp(
+                options.edgeRecoveryTolerance ?? DEFAULT_EDGE_RECOVERY_TOLERANCE,
+                0,
+                PERCENT_SCALE,
+              ),
               edgeRadius: Math.max(0, Math.trunc(options.edgeDespillRadius || 0)),
-              backgroundRadius: clamp(options.backgroundRadius ?? 8, 1, 30),
+              backgroundRadius: clamp(options.backgroundRadius ?? 8, 1, MAX_EDGE_RECOVERY_BACKGROUND_RADIUS),
               mask: operationMask,
             });
           } catch (error) {
@@ -636,9 +724,11 @@
       // Keep the regular replacement controls byte-compatible with FramePacker.
       // Chroma cleanup belongs to the perceptual key path and must not silently
       // rewrite the tolerance shown in the regular panel.
-      const baseTolerance = Math.trunc(clamp(options.tolerance ?? 18, -1, 100));
-      const edgeEnhance = Math.trunc(clamp(options.edgeBoost ?? 0, 0, 100));
-      const edgeRecoveryStrength = clamp(options.edgeRecoveryStrength ?? 0, 0, 100);
+      const baseTolerance = Math.trunc(
+        clamp(options.tolerance ?? DEFAULT_CUTOUT_TOLERANCE, -1, PERCENT_SCALE),
+      );
+      const edgeEnhance = Math.trunc(clamp(options.edgeBoost ?? 0, 0, PERCENT_SCALE));
+      const edgeRecoveryStrength = clamp(options.edgeRecoveryStrength ?? 0, 0, PERCENT_SCALE);
       const protectedColors = Array.isArray(options.protectedColors) ? options.protectedColors : [];
       const edgeRestoreRadius = Math.max(0, Math.trunc(options.edgeDespillRadius || 0));
       const blendMode = referenceDespillMode(options.blendMode ?? options.despillMode ?? "blend");
@@ -656,10 +746,10 @@
           mask: operationMask,
           referenceColor,
           edgeEnhance,
-          blendStrength: clamp(options.blendStrength ?? edgeRecoveryStrength, 0, 100),
+          blendStrength: clamp(options.blendStrength ?? edgeRecoveryStrength, 0, PERCENT_SCALE),
           despillMode: blendMode,
           despillRefColor: backgroundColor,
-          despillStrength: clamp(options.despillStrength ?? 0, 0, 100),
+          despillStrength: clamp(options.despillStrength ?? 0, 0, PERCENT_SCALE),
           edgeRestoreRadius,
           edgeRestoreMode,
           alphaThresholdHigh: clamp(options.alphaHigh ?? 255, 0, 255),
@@ -742,7 +832,7 @@
             operationMask,
             null,
             backgroundColor,
-            clamp(options.despillStrength ?? 0, 0, 100),
+            clamp(options.despillStrength ?? 0, 0, PERCENT_SCALE),
           );
         }
       }
@@ -754,7 +844,8 @@
       }
       const featherRadius = clamp(
         Math.round(
-          (clamp(options.feather ?? 0, 0, 40) + clamp(options.chromaFeather ?? 0, 0, 100) * 0.25) / 10,
+          (clamp(options.feather ?? 0, 0, 40) + clamp(options.chromaFeather ?? 0, 0, PERCENT_SCALE) * 0.25) /
+            10,
         ),
         0,
         6,
@@ -779,8 +870,12 @@
         recoverEdgeColors(data, width, height, edgeDistance, backgroundColors, {
           strength: edgeRecoveryStrength,
           edgeRadius: Math.max(1, edgeRestoreRadius || 2),
-          backgroundRadius: clamp(options.backgroundRadius ?? 8, 1, 30),
-          tolerance: clamp(options.edgeRecoveryTolerance ?? 30, 0, 100),
+          backgroundRadius: clamp(options.backgroundRadius ?? 8, 1, MAX_EDGE_RECOVERY_BACKGROUND_RADIUS),
+          tolerance: clamp(
+            options.edgeRecoveryTolerance ?? DEFAULT_EDGE_RECOVERY_TOLERANCE,
+            0,
+            PERCENT_SCALE,
+          ),
         });
       }
       if (operationMask) {
@@ -834,6 +929,10 @@
      * @returns {{data:Uint8ClampedArray,removedPixels:number,partialPixels:number}}
      */
     function applyCutout(source, width, height, options = {}) {
+      const pixelCount = validateRgbaInput(source, width, height, "Cutout");
+      if (!pixelCount) {
+        return { data: new Uint8ClampedArray(source), removedPixels: 0, partialPixels: 0 };
+      }
       const data = new Uint8ClampedArray(source);
       const estimatedBackground = options.backgroundColor || estimateBackgroundColor(data, width, height);
       const backgroundColors =
@@ -844,37 +943,41 @@
       if (options.referenceChromaKey === true) {
         return applyReferenceCutout(source, width, height, options, backgroundColors);
       }
-      const tolerance = clamp(options.tolerance ?? 18, 0, 100);
+      const tolerance = clamp(options.tolerance ?? DEFAULT_CUTOUT_TOLERANCE, 0, PERCENT_SCALE);
       const feather = clamp(options.feather ?? 6, 0, 40);
       const alphaThreshold = clamp(options.alphaThreshold ?? 2, 0, 255);
-      const edgeBoost = clamp(options.edgeBoost ?? 0, 0, 100);
+      const edgeBoost = clamp(options.edgeBoost ?? 0, 0, PERCENT_SCALE);
       const alphaLow = clamp(options.alphaLow ?? 0, 0, 255);
       const alphaHigh = clamp(options.alphaHigh ?? 255, 0, 255);
-      const despillStrength = clamp(options.despillStrength ?? 0, 0, 100) / 100;
+      const despillStrength = clamp(options.despillStrength ?? 0, 0, PERCENT_SCALE) / PERCENT_SCALE;
       const despillMode = ["blend", "chroma"].includes(options.despillMode) ? options.despillMode : "general";
       const edgeDespillRadius = clamp(options.edgeDespillRadius ?? 0, 0, 12);
-      const edgeRecoveryStrength = clamp(options.edgeRecoveryStrength ?? 0, 0, 100);
-      const edgeRecoveryTolerance = clamp(options.edgeRecoveryTolerance ?? 30, 0, 100);
-      const backgroundRadius = clamp(options.backgroundRadius ?? 8, 1, 30);
-      const blurRadius = clamp(options.blurRadius ?? 0, 0, 6);
+      const edgeRecoveryStrength = clamp(options.edgeRecoveryStrength ?? 0, 0, PERCENT_SCALE);
+      const edgeRecoveryTolerance = clamp(
+        options.edgeRecoveryTolerance ?? DEFAULT_EDGE_RECOVERY_TOLERANCE,
+        0,
+        PERCENT_SCALE,
+      );
+      const backgroundRadius = clamp(options.backgroundRadius ?? 8, 1, MAX_EDGE_RECOVERY_BACKGROUND_RADIUS);
+      const blurRadius = clamp(options.blurRadius ?? 0, 0, MAX_BLUR_RADIUS);
       const protectedColors = Array.isArray(options.protectedColors) ? options.protectedColors : [];
-      const protectionTolerance = clamp(options.protectionTolerance ?? 8, 0, 100);
+      const protectionTolerance = clamp(options.protectionTolerance ?? 8, 0, PERCENT_SCALE);
       // Edge enhancement widens only the connected candidate search. Keeping it
       // out of the opacity curve avoids turning similarly colored foreground
       // details semi-transparent.
-      const keyTolerance = clamp(tolerance, 0, 100);
-      const featherLimit = clamp(keyTolerance + feather, 0, 100);
-      const maximumDistance = clamp(featherLimit + edgeBoost * 0.12, 0, 100);
+      const keyTolerance = clamp(tolerance, 0, PERCENT_SCALE);
+      const featherLimit = clamp(keyTolerance + feather, 0, PERCENT_SCALE);
+      const maximumDistance = clamp(featherLimit + edgeBoost * 0.12, 0, PERCENT_SCALE);
       const perceptual = options.perceptual !== false;
       const compiledBackgroundColors = perceptual
         ? backgroundColors.map((color) => compilePerceptualColor(color))
         : [];
       const connected = options.connected !== false;
-      const candidateStrength = new Uint8Array(width * height);
-      const candidates = new Uint8Array(width * height);
-      const protectedMask = protectedColors.length ? new Uint8Array(width * height) : null;
+      const candidateStrength = new Uint8Array(pixelCount);
+      const candidates = new Uint8Array(pixelCount);
+      const protectedMask = protectedColors.length ? new Uint8Array(pixelCount) : null;
 
-      for (let index = 0; index < width * height; index += 1) {
+      for (let index = 0; index < pixelCount; index += 1) {
         const offset = index * 4;
         const originalAlpha = data[offset + 3];
         if (!originalAlpha) continue;
@@ -920,7 +1023,7 @@
           })
         : candidates;
 
-      for (let index = 0; index < width * height; index += 1) {
+      for (let index = 0; index < pixelCount; index += 1) {
         if (!mask[index] || protectedMask?.[index]) continue;
         const offset = index * 4;
         const originalAlpha = data[offset + 3];
@@ -944,7 +1047,7 @@
         });
       }
       if (despillStrength > 0) {
-        for (let index = 0; index < width * height; index += 1) {
+        for (let index = 0; index < pixelCount; index += 1) {
           const offset = index * 4;
           if (data[offset + 3] === 0 || protectedMask?.[index]) continue;
           const nearestBackground = backgroundColors.reduce(
@@ -979,7 +1082,7 @@
 
       let removedPixels = 0;
       let partialPixels = 0;
-      for (let index = 0; index < width * height; index += 1) {
+      for (let index = 0; index < pixelCount; index += 1) {
         const offset = index * 4;
         if (protectedMask?.[index]) {
           data[offset] = source[offset];

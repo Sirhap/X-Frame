@@ -57,6 +57,26 @@ test("attack trail controls expose gradient-stop removal and default-texture rec
   assert.match(script, /_resetTexture\(\)/);
 });
 
+test("attack trail reports Canvas fallback once and disables the failed GPU renderer", () => {
+  const AttackTrailEditor = loadAttackTrailEditor();
+  const statuses = [];
+  const editor = Object.create(AttackTrailEditor.prototype);
+  editor.hooks = { status: (message) => statuses.push(message) };
+  editor.gpuFallbackNotified = false;
+  editor.gpuRenderer = { gl: {} };
+  editor.gpuTextures = new WeakMap();
+  editor._drawGpuMesh = () => {
+    throw new Error("context lost");
+  };
+
+  assert.equal(editor._tryDrawGpuMesh(), false);
+  editor._activateCanvasFallback(new Error("second failure"));
+
+  assert.equal(editor.gpuRenderer, null);
+  assert.equal(editor.gpuFallbackReason, "context lost");
+  assert.deepEqual(statuses, ["WebGL 预览不可用，已自动切换到兼容的 Canvas 渲染。"]);
+});
+
 test("attack trail guides show every key stick while hit testing stays on the current frame", () => {
   const AttackTrailEditor = loadAttackTrailEditor();
   const labels = [];
