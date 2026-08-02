@@ -85,7 +85,7 @@
               <h2>源图片</h2>
             </header>
             <input id="scatterFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
-            <button id="scatterUpload" class="actionButton primary" type="button">选择图片</button>
+            <button id="scatterUpload" class="actionButton primary" type="button">选择或粘贴图片</button>
             <p id="scatterSourceMeta" class="sourceMeta">未加载图片</p>
           </section>
 
@@ -169,8 +169,8 @@
           <div id="scatterDropZone" class="canvasStage">
             <button id="scatterEmptyStage" class="emptyStage" type="button">
               <span class="dropGlyph" aria-hidden="true"> <i></i><i></i><i></i><i></i> </span>
-              <strong>拖入一张零散素材图</strong>
-              <small>或点击选择 PNG / JPG / WebP · 最大 20 MB</small>
+              <strong>拖入或按 Ctrl/⌘V 粘贴素材图</strong>
+              <small>也可点击选择 PNG / JPG / WebP · 最大 20 MB</small>
             </button>
             <canvas
               id="scatterPreview"
@@ -209,6 +209,7 @@
       </section>
     </main>
 
+    <script src="/clipboard_media.js"></script>
     <script src="/smart_cutout_defaults.js"></script>
     <script src="/batch_cutout_color_core.js"></script>
     <script src="/batch_cutout_connectivity_core.js"></script>

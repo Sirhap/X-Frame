@@ -81,7 +81,7 @@
           ></canvas>
           <div class="empty-state" id="emptyState">
             <span>NO SIGNAL</span>
-            <p>载入一个视频开始修复</p>
+            <p>载入视频，或按 Ctrl/⌘V 直接粘贴</p>
           </div>
           <div class="timecode" id="timecode">00:00.00</div>
         </div>
@@ -111,7 +111,7 @@
               type="file"
               accept=".mp4,.m4v,.mov,.webm,video/mp4,video/x-m4v,video/quicktime,video/webm"
             />
-            <span>载入视频</span
+            <span>载入 / 粘贴视频</span
             ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17v3h16v-3M12 3v13m-5-5 5 5 5-5" /></svg>
           </label>
         </section>
@@ -231,6 +231,7 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/clipboard_media.js"></script>
     <script type="module" src="/watermark_studio.js"></script>
   </body>
 </html>

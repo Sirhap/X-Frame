@@ -5,10 +5,12 @@
   const groupCore = root.XSXBScatterSliceGroups;
   const smartCutout = root.XSXBScatterSliceSmartCutout;
   const editorCore = root.XSXBScatterSliceEditorCore;
+  const clipboardMedia = root.ClipboardMedia;
   if (!core) throw new Error("零散切图核心模块未加载");
   if (!groupCore) throw new Error("零散切图分组模块未加载");
   if (!smartCutout) throw new Error("智能抠图模块未加载");
   if (!editorCore) throw new Error("切片编辑核心模块未加载");
+  if (!clipboardMedia) throw new Error("剪贴板媒体模块未加载");
 
   const MAX_FILE_BYTES = 20 * 1024 * 1024;
   const MAX_SOURCE_PIXELS = 20_000_000;
@@ -757,14 +759,15 @@
   /**
    * Handles a selected or dropped file and clears the native input when needed.
    * @param {File|null|undefined} file Candidate file.
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>} Whether the source image was installed.
    */
   async function handleFile(file) {
     try {
-      if (!file) return;
-      await applyFile(file);
+      if (!file) return false;
+      return await applyFile(file);
     } catch (error) {
       reportFailure(error, "图片载入失败");
+      return false;
     }
   }
 
@@ -1124,6 +1127,19 @@
     const file = elements.fileInput.files?.[0];
     elements.fileInput.value = "";
     void handleFile(file);
+  });
+  clipboardMedia.bindPaste({
+    target: document,
+    accept: ["image"],
+    isActive: () => !state.busy,
+    onPaste: async ({ images }) => {
+      const installed = await handleFile(images[0]);
+      if (installed && images.length > 1) {
+        setStatus(`零散切片一次处理一张图片，已载入第 1 张并忽略其余 ${images.length - 1} 张。`, "success");
+      }
+    },
+    onUnsupported: () => setStatus("零散切片只支持粘贴 PNG、JPG 或 WebP 图片。", "error"),
+    onError: (error) => reportFailure(error, "粘贴图片失败"),
   });
   elements.detectButton.addEventListener("click", runDetection);
   elements.colorInput.addEventListener("input", () => {

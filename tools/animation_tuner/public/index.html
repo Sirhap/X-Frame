@@ -1075,8 +1075,8 @@
         <div class="cutoutBody">
           <aside id="cutoutSidebar" class="cutoutControls">
             <div id="cutoutDropzone" class="cutoutDropzone">
-              <strong data-cutout-i18n="emptyTitle">拖入 PNG / JPG / WebP</strong>
-              <span data-cutout-i18n="emptyHint">支持多选。默认从画布边缘识别背景，只清除连通区域。</span>
+              <strong data-cutout-i18n="emptyTitle">拖入或粘贴 PNG / JPG / WebP</strong>
+              <span data-cutout-i18n="emptyHint">支持多选与 Ctrl/⌘V 粘贴。默认从画布边缘识别背景。</span>
               <input
                 id="cutoutFileInput"
                 type="file"
@@ -2457,7 +2457,7 @@
                   class="organizerPickerFace"
                   aria-hidden="true"
                   data-organizer-i18n="import"
-                  >导入图片</span
+                  >选择 / 粘贴图片</span
                 >
                 <input
                   id="organizerFileInput"
@@ -2474,7 +2474,7 @@
                   class="organizerPickerFace organizerVideoButton"
                   aria-hidden="true"
                   data-organizer-i18n="importVideo"
-                  >导入视频</span
+                  >选择 / 粘贴视频</span
                 >
                 <input
                   id="organizerVideoInput"
@@ -3391,6 +3391,7 @@
       </div>
     </section>
     <script src="/premium_features.js"></script>
+    <script src="/clipboard_media.js"></script>
     <script src="/device_fingerprint.js"></script>
     <script src="/device_identity.js"></script>
     <script src="/activation_controller.js"></script>

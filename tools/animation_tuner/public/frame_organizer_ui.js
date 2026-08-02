@@ -58,7 +58,8 @@
    *   openExportDialog?:()=>void,
    *   selectFrame:(index:number,event:object)=>void,
    *   imageImporter:{importFiles:(files:File[])=>Promise<void>},
-   *   videoImporter:{close:()=>void,bindEvents:()=>void},
+   *   videoImporter:{close:()=>void,loadFile:(file:File)=>Promise<void>,bindEvents:()=>void},
+   *   clipboardMedia?:{bindPaste:(options:object)=>()=>void},
    *   loopFinder:{isOpen:()=>boolean,close:()=>void,bindEvents:()=>void},
    *   sequenceOrder?:typeof import("./frame_sequence_order"),
    *   document?:Document,
@@ -113,8 +114,10 @@
     }
     const documentApi = dependencies.document || root.document;
     const windowApi = dependencies.window || root.window;
+    const clipboardMedia = dependencies.clipboardMedia || root.ClipboardMedia;
     const sequenceOrder = dependencies.sequenceOrder || defaultSequenceOrder;
     let createProjectIntentConsumed = false;
+    let clipboardPasteBusy = false;
     if (!sequenceOrder?.restoreImportOrder) throw new Error("FrameSequenceOrder is required.");
 
     /** Renders segmented ordering controls from the current strategy. @returns {void} */
@@ -450,6 +453,31 @@
         imageImporter.importFiles(files).catch((error) => {
           setStatus(text("failed", { message: error.message }), "error");
         });
+      });
+      clipboardMedia?.bindPaste({
+        target: documentApi,
+        accept: ["image", "video"],
+        isActive: () =>
+          !elements.organizerModal.hidden &&
+          !elements.organizerModal.inert &&
+          elements.organizerConfirmPanel.hidden &&
+          !clipboardPasteBusy,
+        onPaste: async ({ images, videos }) => {
+          clipboardPasteBusy = true;
+          try {
+            if (images.length) await imageImporter.importFiles(images);
+            if (videos.length) {
+              if (videos.length > 1) setStatus(text("pasteVideoLimit"), "error");
+              await videoImporter.loadFile(videos[0]);
+            }
+          } finally {
+            clipboardPasteBusy = false;
+          }
+        },
+        onError: (error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          setStatus(text("failed", { message }), "error");
+        },
       });
       elements.organizerDeleteSelected.addEventListener("click", () => {
         const snapshot = state.frames.slice();

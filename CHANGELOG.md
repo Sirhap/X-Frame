@@ -4,6 +4,7 @@
 
 ### Features
 
+- Support guarded clipboard paste for image sequences, video frame extraction, batch cutout, scatter slicing, and local video watermark repair while reusing each tool's existing validation and processing pipeline.
 - Integrate a unified local video watermark-repair tool with time-scoped multi-region `delogo`, foreground-aware smart repair, isolated upload sessions, queued FFmpeg exports, progress reporting, and responsive keyboard-accessible controls.
 - Add portable frame-bound SFX to Frame Tuner Lite exports and restore those bindings when a Lite sprite sheet is imported again.
 - Replace Lite export FPS with a maximum trail-phase duration so authored group and per-frame milliseconds remain the only timing authority.

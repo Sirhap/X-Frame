@@ -214,6 +214,17 @@
       });
       elements.cutoutAddFiles.addEventListener("click", () => elements.cutoutFileInput.click());
       elements.cutoutFileInput.addEventListener("change", () => loadFiles(elements.cutoutFileInput.files));
+      root.ClipboardMedia?.bindPaste({
+        target: document,
+        accept: ["image"],
+        isActive: () => !elements.cutoutModal.hidden && elements.cutoutConfirmPanel.hidden && !state.busy,
+        onPaste: ({ images }) => loadFiles(images),
+        onUnsupported: () => setStatus(text("pasteUnsupported"), "error"),
+        onError: (error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          setStatus(text("failed", { message }), "error");
+        },
+      });
       elements.cutoutLoadGroup.addEventListener("click", loadCurrentGroup);
       elements.cutoutClear.addEventListener("click", () => {
         clear().catch((error) => setStatus(text("failed", { message: error.message }), "error"));

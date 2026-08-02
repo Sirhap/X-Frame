@@ -36,6 +36,7 @@ const state = {
   draft: null,
   pointerId: null,
   exporting: false,
+  uploading: false,
   engineAvailable: false,
   mode: "delogo",
   sourceId: null,
@@ -93,6 +94,17 @@ function bindEvents() {
   elements.canvas.addEventListener("pointerup", finishSelection);
   elements.canvas.addEventListener("pointercancel", cancelSelection);
   elements.fileInput.addEventListener("change", uploadSelectedFile);
+  window.ClipboardMedia?.bindPaste({
+    target: document,
+    accept: ["video"],
+    isActive: () => !state.exporting && !state.uploading,
+    onPaste: async ({ videos }) => {
+      await uploadFile(videos[0]);
+      if (videos.length > 1) showToast(`一次处理一个视频，已载入第 1 个并忽略其余 ${videos.length - 1} 个`);
+    },
+    onUnsupported: () => showToast("视频去水印工具只支持粘贴 MP4、MOV、M4V 或 WebM 视频"),
+    onError: (error) => showToast(error instanceof Error ? error.message : String(error)),
+  });
   elements.clearButton.addEventListener("click", clearRegions);
   elements.exportButton.addEventListener("click", startExport);
   elements.modeInputs.forEach((input) =>
@@ -138,17 +150,31 @@ function loadSource(sourceId, metadata, filename) {
   invalidateExportResult();
 }
 
-/** Uploads the chosen file to the local Node process with visible failure handling. */
+/** Uploads the selected file and resets the native picker. @param {Event} event File change event. */
 async function uploadSelectedFile(event) {
   const file = event.target.files?.[0];
-  if (!file) return;
+  try {
+    await uploadFile(file);
+  } finally {
+    event.target.value = "";
+  }
+}
+
+/**
+ * Uploads a local or pasted video to the local Node process with visible failure handling.
+ * @param {File|null|undefined} file Video file.
+ * @returns {Promise<void>}
+ */
+async function uploadFile(file) {
+  if (!file || state.uploading) return;
   if (file.size <= 0 || file.size > 1024 * 1024 * 1024) {
     showToast("请选择不超过 1 GB 的视频文件");
-    event.target.value = "";
     return;
   }
+  state.uploading = true;
   showToast("正在读取视频…");
   elements.exportButton.disabled = true;
+  elements.fileInput.disabled = true;
   try {
     const response = await fetch("/api/watermark/upload", {
       method: "POST",
@@ -164,7 +190,7 @@ async function uploadSelectedFile(event) {
   } catch (error) {
     showToast(error.message);
   } finally {
-    event.target.value = "";
+    state.uploading = false;
     updateExportState();
   }
 }
@@ -556,8 +582,13 @@ function updateExportState() {
   const hasValidInput =
     state.mode === "smart" ? smartControls.isValid(selectedRegion) : state.regions.length > 0;
   elements.exportButton.disabled =
-    !state.engineAvailable || !state.metadata || !state.sourceId || !hasValidInput || state.exporting;
-  elements.fileInput.disabled = state.exporting;
+    !state.engineAvailable ||
+    !state.metadata ||
+    !state.sourceId ||
+    !hasValidInput ||
+    state.exporting ||
+    state.uploading;
+  elements.fileInput.disabled = state.exporting || state.uploading;
   elements.clearButton.disabled = state.exporting;
   elements.cornerButtons.forEach((button) => {
     button.disabled = state.exporting || !state.metadata;
