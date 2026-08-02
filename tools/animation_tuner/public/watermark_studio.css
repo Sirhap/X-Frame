@@ -346,6 +346,82 @@ input[type="range"]::-webkit-slider-thumb {
 .upload-button input {
   display: none;
 }
+.source-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.clear-source-button {
+  min-width: 82px;
+  border: 1px solid color-mix(in srgb, var(--danger) 72%, var(--line));
+  border-radius: 6px;
+  color: var(--danger);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 800;
+}
+.clear-source-button:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.media-clear-dialog {
+  width: min(440px, calc(100vw - 32px));
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 0;
+  color: var(--ink);
+  background: var(--panel-raised);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.62);
+}
+.media-clear-dialog::backdrop {
+  background: rgba(2, 7, 10, 0.78);
+  backdrop-filter: blur(5px);
+}
+.media-clear-dialog form {
+  display: grid;
+  gap: 14px;
+  padding: 26px;
+}
+.media-clear-dialog form > span {
+  color: var(--danger);
+  font:
+    800 9px/1 "Avenir Next Condensed",
+    monospace;
+  letter-spacing: 0.14em;
+}
+.media-clear-dialog h2,
+.media-clear-dialog p {
+  margin: 0;
+}
+.media-clear-dialog h2 {
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+.media-clear-dialog p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.media-clear-dialog form > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+.media-clear-dialog button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 800;
+}
+.media-clear-dialog button.danger {
+  border-color: var(--danger);
+  color: #190607;
+  background: var(--danger);
+}
 .mode-section {
   background: rgba(255, 255, 255, 0.018);
 }

@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 const { createController, openCurrentAnimation } = require("../animation_tuner/public/frame_organizer_ui");
 
@@ -41,6 +43,19 @@ test("organizer UI exposes normalized image order strategy selection", () => {
   assert.equal(state.importOrderStrategy, "selection");
   controller.setImportOrderStrategy("unsupported");
   assert.equal(state.importOrderStrategy, "filename");
+});
+
+test("organizer exposes a dedicated confirmed workset clear action", () => {
+  const html = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const script = fs.readFileSync(
+    path.join(__dirname, "../animation_tuner/public/frame_organizer_ui.js"),
+    "utf8",
+  );
+
+  assert.match(html, /id="organizerClearWorkset"/);
+  assert.match(script, /async function clearWorkset\(\)/);
+  assert.match(script, /requestConfirmation\(/);
+  assert.match(script, /offerDeleteUndo\(snapshot\)/);
 });
 
 /** Creates the import fields needed to verify project-intent defaults. */

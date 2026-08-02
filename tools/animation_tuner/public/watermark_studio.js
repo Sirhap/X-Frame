@@ -11,6 +11,8 @@ const elements = {
   duration: document.querySelector("#duration"),
   timecode: document.querySelector("#timecode"),
   fileInput: document.querySelector("#fileInput"),
+  clearSourceButton: document.querySelector("#clearSourceButton"),
+  clearSourceDialog: document.querySelector("#clearSourceDialog"),
   sourceName: document.querySelector("#sourceName"),
   sourceMeta: document.querySelector("#sourceMeta"),
   maskList: document.querySelector("#maskList"),
@@ -94,6 +96,13 @@ function bindEvents() {
   elements.canvas.addEventListener("pointerup", finishSelection);
   elements.canvas.addEventListener("pointercancel", cancelSelection);
   elements.fileInput.addEventListener("change", uploadSelectedFile);
+  elements.clearSourceButton.addEventListener("click", requestClearSource);
+  elements.clearSourceDialog.addEventListener("click", (event) => {
+    if (event.target === elements.clearSourceDialog) elements.clearSourceDialog.close("cancel");
+  });
+  elements.clearSourceDialog.addEventListener("close", () => {
+    if (elements.clearSourceDialog.returnValue === "clear") void clearSource();
+  });
   window.ClipboardMedia?.bindPaste({
     target: document,
     accept: ["video"],
@@ -189,6 +198,58 @@ async function uploadFile(file) {
     showToast("视频已载入，可以开始框选");
   } catch (error) {
     showToast(error.message);
+  } finally {
+    state.uploading = false;
+    updateExportState();
+  }
+}
+
+/** Opens the destructive source-clear confirmation with a native fallback. */
+function requestClearSource() {
+  if (!state.sourceId || state.exporting || state.uploading) return;
+  elements.clearSourceDialog.returnValue = "cancel";
+  if (typeof elements.clearSourceDialog.showModal === "function") {
+    elements.clearSourceDialog.showModal();
+    return;
+  }
+  if (window.confirm("清空当前视频、全部水印选区和未下载结果？")) void clearSource();
+}
+
+/** Removes the local source video and resets every source-derived editor state. @returns {Promise<void>} */
+async function clearSource() {
+  if (!state.sourceId || state.exporting || state.uploading) return;
+  const sourceId = state.sourceId;
+  state.uploading = true;
+  updateExportState();
+  try {
+    const response = await fetch(`/api/watermark/source?source=${encodeURIComponent(sourceId)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (response.ok || response.status !== 404) await readJsonResponse(response);
+    elements.video.pause();
+    elements.video.removeAttribute("src");
+    elements.video.load();
+    state.sourceId = null;
+    state.metadata = null;
+    state.regions = [];
+    state.selectedId = null;
+    state.draft = null;
+    state.pointerId = null;
+    elements.videoShell.style.aspectRatio = "16 / 9";
+    elements.emptyState.hidden = false;
+    elements.sourceName.textContent = "等待视频";
+    elements.sourceMeta.textContent = "— × — · — FPS";
+    elements.duration.textContent = "00:00";
+    elements.timecode.textContent = "00:00.00";
+    elements.timeline.value = "0";
+    context.clearRect(0, 0, elements.canvas.width, elements.canvas.height);
+    renderRegionList();
+    smartControls.setSelectedRegion(null, -1);
+    invalidateExportResult();
+    showToast("已清空本地视频、选区和导出结果");
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
   } finally {
     state.uploading = false;
     updateExportState();
@@ -589,7 +650,8 @@ function updateExportState() {
     state.exporting ||
     state.uploading;
   elements.fileInput.disabled = state.exporting || state.uploading;
-  elements.clearButton.disabled = state.exporting;
+  elements.clearSourceButton.disabled = state.exporting || state.uploading || !state.sourceId;
+  elements.clearButton.disabled = state.exporting || !state.regions.length;
   elements.cornerButtons.forEach((button) => {
     button.disabled = state.exporting || !state.metadata;
   });

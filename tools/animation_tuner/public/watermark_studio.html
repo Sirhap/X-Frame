@@ -105,15 +105,22 @@
               <span id="sourceMeta">— × — · — FPS</span>
             </div>
           </div>
-          <label class="upload-button" for="fileInput">
-            <input
-              id="fileInput"
-              type="file"
-              accept=".mp4,.m4v,.mov,.webm,video/mp4,video/x-m4v,video/quicktime,video/webm"
-            />
-            <span>载入 / 粘贴视频</span
-            ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17v3h16v-3M12 3v13m-5-5 5 5 5-5" /></svg>
-          </label>
+          <div class="source-actions">
+            <label class="upload-button" for="fileInput">
+              <input
+                id="fileInput"
+                type="file"
+                accept=".mp4,.m4v,.mov,.webm,video/mp4,video/x-m4v,video/quicktime,video/webm"
+              />
+              <span>载入 / 粘贴视频</span
+              ><svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 17v3h16v-3M12 3v13m-5-5 5 5 5-5" />
+              </svg>
+            </label>
+            <button id="clearSourceButton" class="clear-source-button" type="button" disabled>
+              清空视频
+            </button>
+          </div>
         </section>
 
         <section class="control-section mode-section">
@@ -229,6 +236,23 @@
         </section>
       </aside>
     </main>
+
+    <dialog
+      id="clearSourceDialog"
+      class="media-clear-dialog"
+      aria-labelledby="clearSourceDialogTitle"
+      aria-describedby="clearSourceDialogMessage"
+    >
+      <form method="dialog">
+        <span>CLEAR SOURCE / LOCAL</span>
+        <h2 id="clearSourceDialogTitle">清空当前视频？</h2>
+        <p id="clearSourceDialogMessage">本地源视频、全部水印选区和未下载的导出结果都会被移除。</p>
+        <div>
+          <button type="submit" value="cancel">取消</button>
+          <button class="danger" type="submit" value="clear">确认清空</button>
+        </div>
+      </form>
+    </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="/clipboard_media.js"></script>

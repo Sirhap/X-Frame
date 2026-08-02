@@ -58,6 +58,7 @@
       elements.organizerGodotPlaceholder.disabled =
         dependencies.browserExportOnly !== true || state.mode !== "import" || !included || state.busy;
       elements.organizerDeleteSelected.disabled = !selected || state.busy;
+      elements.organizerClearWorkset.disabled = !state.frames.length || state.busy;
       elements.organizerBatchCutout.disabled = !included || state.busy;
       elements.organizerInvert.disabled = !state.frames.length || state.busy;
       elements.organizerFlip.disabled = (!selected && !included) || state.busy;

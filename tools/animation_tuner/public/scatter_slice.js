@@ -40,6 +40,8 @@
     boxCount: requireElement("#scatterBoxCount"),
     addProjectButton: requireElement("#scatterAddProject"),
     animationNameInput: requireElement("#scatterAnimationName"),
+    clearSourceButton: requireElement("#scatterClearSource"),
+    clearSourceDialog: requireElement("#scatterClearDialog"),
     colorInput: requireElement("#scatterColor"),
     colorValue: requireElement("#scatterColorValue"),
     deleteButton: requireElement("#scatterDelete"),
@@ -130,6 +132,7 @@
     state.busy = Boolean(busy);
     document.body.classList.toggle("isBusy", state.busy);
     elements.uploadButton.disabled = state.busy;
+    elements.clearSourceButton.disabled = state.busy || !state.source;
     elements.detectButton.disabled = state.busy || !state.source;
   }
 
@@ -679,6 +682,7 @@
       elements.downloadSliceButton.disabled = !selected;
       elements.downloadSheetButton.disabled = includedGroups.length === 0;
       elements.addProjectButton.disabled = state.busy || includedGroups.length === 0;
+      elements.clearSourceButton.disabled = state.busy || !state.source;
     } catch (error) {
       reportFailure(error, "预览更新失败");
     }
@@ -769,6 +773,46 @@
       reportFailure(error, "图片载入失败");
       return false;
     }
+  }
+
+  /** Removes the source image and every derived slice from the current browser session. @returns {void} */
+  function clearSource() {
+    if (!state.source || state.busy) return;
+    cancelPointerEdit();
+    stopGroupPlayback();
+    state.source = null;
+    state.smartBackgroundColor = null;
+    state.boxes = [];
+    state.groups = [];
+    state.selectedGroupIds.clear();
+    state.selectedIndex = null;
+    state.sliceCanvasCache = new WeakMap();
+    state.toolMode = "sample";
+    sourceCanvas.width = 0;
+    sourceCanvas.height = 0;
+    elements.previewCanvas.width = 0;
+    elements.previewCanvas.height = 0;
+    elements.previewCanvas.hidden = true;
+    elements.emptyStage.hidden = false;
+    elements.fileInput.value = "";
+    elements.sourceMeta.textContent = "未加载图片";
+    elements.animationNameInput.value = "";
+    elements.colorInput.value = "#98d79b";
+    elements.colorValue.textContent = "#98D79B";
+    renderAll();
+    setBusy(false);
+    setStatus("已清空源图片、识别框和切片分组。", "success");
+  }
+
+  /** Opens the destructive-action confirmation with a native fallback. @returns {void} */
+  function requestClearSource() {
+    if (!state.source || state.busy) return;
+    elements.clearSourceDialog.returnValue = "cancel";
+    if (typeof elements.clearSourceDialog.showModal === "function") {
+      elements.clearSourceDialog.showModal();
+      return;
+    }
+    if (root.confirm("清空当前素材、识别框和切片分组？")) clearSource();
   }
 
   /**
@@ -1122,6 +1166,13 @@
   }
 
   elements.uploadButton.addEventListener("click", () => elements.fileInput.click());
+  elements.clearSourceButton.addEventListener("click", requestClearSource);
+  elements.clearSourceDialog.addEventListener("click", (event) => {
+    if (event.target === elements.clearSourceDialog) elements.clearSourceDialog.close("cancel");
+  });
+  elements.clearSourceDialog.addEventListener("close", () => {
+    if (elements.clearSourceDialog.returnValue === "clear") clearSource();
+  });
   elements.emptyStage.addEventListener("click", () => elements.fileInput.click());
   elements.fileInput.addEventListener("change", () => {
     const file = elements.fileInput.files?.[0];

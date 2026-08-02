@@ -522,6 +522,89 @@ select:hover {
   background: #ffca67;
 }
 
+.sourceActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.sourceActions .actionButton.danger {
+  width: auto;
+  border-color: color-mix(in srgb, var(--scatter-coral) 72%, var(--scatter-line-strong));
+  color: var(--scatter-coral);
+}
+
+.sourceActions .actionButton.danger:hover:not(:disabled) {
+  border-color: var(--scatter-coral);
+  background: color-mix(in srgb, var(--scatter-coral) 12%, transparent);
+}
+
+.mediaClearDialog {
+  width: min(440px, calc(100vw - 32px));
+  border: 1px solid var(--scatter-coral);
+  border-radius: 8px;
+  padding: 0;
+  color: var(--scatter-ink);
+  background: var(--scatter-panel-2);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.62);
+}
+
+.mediaClearDialog::backdrop {
+  background: rgba(2, 7, 10, 0.78);
+  backdrop-filter: blur(5px);
+}
+
+.mediaClearDialog form {
+  display: grid;
+  gap: 14px;
+  padding: 26px;
+}
+
+.mediaClearDialog h2,
+.mediaClearDialog p {
+  margin: 0;
+}
+
+.mediaClearDialog h2 {
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+
+.mediaClearDialog p {
+  color: var(--scatter-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.dialogEyebrow {
+  color: var(--scatter-coral);
+  font: 800 9px/1 var(--data-font);
+  letter-spacing: 0.14em;
+}
+
+.mediaClearDialog form > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.mediaClearDialog button {
+  min-height: 40px;
+  border: 1px solid var(--scatter-line-strong);
+  border-radius: 6px;
+  color: var(--scatter-ink);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mediaClearDialog button.danger {
+  border-color: var(--scatter-coral);
+  color: #190607;
+  background: var(--scatter-coral);
+}
+
 .sourceMeta {
   margin: 11px 0 0;
   overflow-wrap: anywhere;

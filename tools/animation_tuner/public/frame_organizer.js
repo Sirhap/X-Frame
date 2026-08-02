@@ -139,6 +139,7 @@
       "organizerVideoExtract",
       "organizerDeleteSelected",
       "organizerDeleteExcluded",
+      "organizerClearWorkset",
       "organizerThreshold",
       "organizerThresholdValue",
       "organizerFindJump",

@@ -799,7 +799,7 @@ ensureDataFiles();
 const server = http.createServer(async (req, res) => {
   try {
     const parsed = new URL(req.url, "http://127.0.0.1");
-    if (req.method === "POST") {
+    if (["POST", "DELETE"].includes(req.method)) {
       if (watermarkStudioService.isUploadRequest(req, parsed)) {
         watermarkStudioService.validateUploadRequest(req);
       } else {

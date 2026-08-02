@@ -9,6 +9,7 @@ const { pathToFileURL } = require("node:url");
 const { HttpError } = require("../animation_tuner/server_http");
 const {
   createWatermarkStudioService,
+  removeStoredSource,
   validateJobOptions,
 } = require("../animation_tuner/server_watermark_studio");
 
@@ -158,6 +159,36 @@ test("watermark raw uploads require local video requests", () => {
   }
 });
 
+test("watermark source removal deletes idle local media and protects active exports", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-watermark-source-test-"));
+  const sourcePath = path.join(root, "source.mp4");
+  const outputPath = path.join(root, "output.mp4");
+  fs.writeFileSync(sourcePath, "video");
+  fs.writeFileSync(outputPath, "output");
+  const sources = new Map([["source-1", { filePath: sourcePath }]]);
+  const jobs = new Map([["job-1", { sourceId: "source-1", status: "processing", finalPath: outputPath }]]);
+  try {
+    assert.throws(
+      () => removeStoredSource({ sourceId: "source-1", sources, jobs, fsApi: fs, HttpError }),
+      (error) => error.status === 409,
+    );
+    assert.equal(fs.existsSync(sourcePath), true);
+    jobs.get("job-1").status = "completed";
+
+    assert.deepEqual(removeStoredSource({ sourceId: "source-1", sources, jobs, fsApi: fs, HttpError }), {
+      removed: true,
+      sourceId: "source-1",
+      removedJobs: 1,
+    });
+    assert.equal(fs.existsSync(sourcePath), false);
+    assert.equal(fs.existsSync(outputPath), false);
+    assert.equal(sources.has("source-1"), false);
+    assert.equal(jobs.has("job-1"), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("watermark job validation failures are reported as client errors", () => {
   assert.throws(
     () =>
@@ -171,4 +202,20 @@ test("watermark job validation failures are reported as client errors", () => {
       ),
     (error) => error.status === 400 && error.message === "区域太小",
   );
+});
+
+test("watermark studio separates source clearing from mask clearing", () => {
+  const html = fs.readFileSync(
+    path.join(__dirname, "../animation_tuner/public/watermark_studio.html"),
+    "utf8",
+  );
+  const script = fs.readFileSync(
+    path.join(__dirname, "../animation_tuner/public/watermark_studio.js"),
+    "utf8",
+  );
+
+  assert.match(html, /id="clearSourceButton"/);
+  assert.match(html, /id="clearButton"/);
+  assert.match(script, /async function clearSource\(\)/);
+  assert.match(script, /function clearRegions\(\)/);
 });

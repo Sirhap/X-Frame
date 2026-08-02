@@ -40,6 +40,33 @@ function validateJobOptions(validator, input, metadata, HttpError) {
 }
 
 /**
+ * Removes one stored source unless an active export still owns it.
+ * @param {{sourceId:string,sources:Map<string,object>,jobs:Map<string,object>,fsApi:typeof import("node:fs"),HttpError:typeof Error}} dependencies Source storage dependencies.
+ * @returns {{removed:true,sourceId:string,removedJobs:number}} Removal result.
+ */
+function removeStoredSource(dependencies) {
+  const sourceId = String(dependencies.sourceId || "");
+  const source = dependencies.sources.get(sourceId);
+  if (!source || !dependencies.fsApi.existsSync(source.filePath)) {
+    throw new dependencies.HttpError(404, "视频会话已失效，请重新载入视频。");
+  }
+  const activeJob = Array.from(dependencies.jobs.values()).find(
+    (job) => job.sourceId === sourceId && ["queued", "processing"].includes(job.status),
+  );
+  if (activeJob) throw new dependencies.HttpError(409, "视频正在导出，暂时不能清空。");
+  let removedJobs = 0;
+  for (const [jobId, job] of dependencies.jobs) {
+    if (job.sourceId !== sourceId) continue;
+    if (job.finalPath) dependencies.fsApi.rmSync(job.finalPath, { force: true });
+    dependencies.jobs.delete(jobId);
+    removedJobs += 1;
+  }
+  dependencies.fsApi.rmSync(source.filePath, { force: true });
+  dependencies.sources.delete(sourceId);
+  return { removed: true, sourceId, removedJobs };
+}
+
+/**
  * Creates the local video watermark-repair service used by the main XSXB server.
  * @param {{root:string,port:number,HttpError:typeof Error,send:Function,readJsonBody:Function,fsApi?:typeof import("node:fs"),pathApi?:typeof import("node:path"),spawnImpl?:Function,execFileImpl?:Function,randomUUID?:()=>string,now?:()=>number}} options Service dependencies.
  * @returns {{handle:(request:object,response:object,url:URL)=>Promise<boolean>,isUploadRequest:(request:object,url:URL)=>boolean,validateUploadRequest:(request:object)=>void,dispose:()=>void}}
@@ -438,6 +465,20 @@ function createWatermarkStudioService(options) {
       );
       return true;
     }
+    if (request.method === "DELETE" && pathname === "/api/watermark/source") {
+      options.send(
+        response,
+        200,
+        removeStoredSource({
+          sourceId: url.searchParams.get("source"),
+          sources,
+          jobs,
+          fsApi,
+          HttpError: options.HttpError,
+        }),
+      );
+      return true;
+    }
     if (request.method === "POST" && pathname === "/api/watermark/jobs") {
       options.send(response, 202, await createJob(await options.readJsonBody(request, pathname)));
       return true;
@@ -483,4 +524,4 @@ function createWatermarkStudioService(options) {
   return { dispose, handle, isUploadRequest, validateUploadRequest };
 }
 
-module.exports = { createWatermarkStudioService, validateJobOptions };
+module.exports = { createWatermarkStudioService, removeStoredSource, validateJobOptions };

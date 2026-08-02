@@ -85,7 +85,12 @@
               <h2>源图片</h2>
             </header>
             <input id="scatterFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
-            <button id="scatterUpload" class="actionButton primary" type="button">选择或粘贴图片</button>
+            <div class="sourceActions">
+              <button id="scatterUpload" class="actionButton primary" type="button">选择或粘贴图片</button>
+              <button id="scatterClearSource" class="actionButton danger" type="button" disabled>
+                清空素材
+              </button>
+            </div>
             <p id="scatterSourceMeta" class="sourceMeta">未加载图片</p>
           </section>
 
@@ -208,6 +213,23 @@
         </div>
       </section>
     </main>
+
+    <dialog
+      id="scatterClearDialog"
+      class="mediaClearDialog"
+      aria-labelledby="scatterClearDialogTitle"
+      aria-describedby="scatterClearDialogMessage"
+    >
+      <form method="dialog">
+        <span class="dialogEyebrow">CLEAR SOURCE / LOCAL</span>
+        <h2 id="scatterClearDialogTitle">清空当前素材？</h2>
+        <p id="scatterClearDialogMessage">源图片、识别框、切片分组和未导出的预览都会被移除。</p>
+        <div>
+          <button type="submit" value="cancel">取消</button>
+          <button class="danger" type="submit" value="clear">确认清空</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="/clipboard_media.js"></script>
     <script src="/smart_cutout_defaults.js"></script>

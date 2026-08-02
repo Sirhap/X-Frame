@@ -24,6 +24,7 @@ function createFixture(options = {}) {
     organizerApply: button(),
     organizerGodotPlaceholder: button(),
     organizerDeleteSelected: button(),
+    organizerClearWorkset: button(),
     organizerBatchCutout: button(),
     organizerInvert: button(),
     organizerFlip: button(),
@@ -63,6 +64,7 @@ test("attached-assets action remains available while editing an existing animati
   assert.equal(fixture.elements.organizerAddAssets.disabled, false);
   assert.equal(fixture.elements.organizerExport.hidden, false);
   assert.equal(fixture.elements.organizerExport.disabled, false);
+  assert.equal(fixture.elements.organizerClearWorkset.disabled, false);
 });
 
 test("attached-assets action can report a missing target instead of becoming inert", () => {
@@ -76,9 +78,11 @@ test("attached-assets action can report a missing target instead of becoming ine
 
 test("attached-assets action is disabled without frames and hidden without host support", () => {
   const emptyFixture = createFixture({ included: false });
+  emptyFixture.state.frames = [];
   emptyFixture.controller.renderCounts();
   assert.equal(emptyFixture.elements.organizerAddAssets.disabled, true);
   assert.equal(emptyFixture.elements.organizerAddAssets.title, "needFrames");
+  assert.equal(emptyFixture.elements.organizerClearWorkset.disabled, true);
 
   const unsupportedFixture = createFixture({ canAddAssets: false });
   unsupportedFixture.controller.renderCounts();

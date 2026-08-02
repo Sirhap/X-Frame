@@ -145,6 +145,30 @@
       renderImportOrderStrategy();
     }
 
+    /** Clears every staged frame after confirmation while retaining one-step undo. @returns {Promise<void>} */
+    async function clearWorkset() {
+      const snapshot = state.frames.slice();
+      if (!snapshot.length) return;
+      const accepted = await requestConfirmation(
+        text("clearWorksetConfirm", { count: snapshot.length }),
+        [[text("detailFrames"), snapshot.length]],
+        {
+          title: text("clearWorksetTitle"),
+          confirmLabel: text("clearWorkset"),
+          tone: "danger",
+        },
+      );
+      if (!accepted) return;
+      state.frames = [];
+      state.nextImportBatchIndex = 0;
+      state.anchorIndex = -1;
+      state.previewIndex = 0;
+      renderGrid();
+      restartPreview();
+      setStatus(text("worksetCleared", { count: snapshot.length }), "success");
+      offerDeleteUndo(snapshot);
+    }
+
     /** Resolves and closes the organizer confirmation layer. @param {boolean} accepted Whether accepted. @returns {void} */
     function resolveConfirmation(accepted) {
       if (elements.organizerConfirmPanel.hidden) return;
@@ -378,6 +402,7 @@
       elements.organizerGodotPlaceholder.hidden = true;
       elements.organizerGodotPlaceholder.textContent = text("importSession");
       elements.organizerReset.textContent = text(state.mode === "import" ? "clearWorkset" : "reset");
+      elements.organizerClearWorkset.hidden = state.mode === "import";
       elements.organizerImportSetup.hidden = state.mode !== "import";
       elements.organizerImportSetup
         .closest(".organizerWorkbench")
@@ -497,6 +522,9 @@
         setStatus(text("deleted", { count: before - state.frames.length }), "success");
         offerDeleteUndo(snapshot);
       });
+      elements.organizerClearWorkset.addEventListener("click", () => {
+        clearWorkset().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
+      });
       elements.organizerUndoDelete.addEventListener("click", () => {
         if (!state.deletedFramesSnapshot) return;
         state.frames = state.deletedFramesSnapshot;
@@ -518,16 +546,7 @@
       elements.organizerFindDuplicate.addEventListener("click", () => analyze("duplicate"));
       elements.organizerReset.addEventListener("click", () => {
         if (state.mode === "import") {
-          const snapshot = state.frames.slice();
-          if (!snapshot.length) return;
-          state.frames = [];
-          state.nextImportBatchIndex = 0;
-          state.anchorIndex = -1;
-          state.previewIndex = 0;
-          renderGrid();
-          restartPreview();
-          setStatus(text("worksetCleared", { count: snapshot.length }), "success");
-          offerDeleteUndo(snapshot);
+          clearWorkset().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
           return;
         }
         loadCurrentAnimation().catch((error) =>
