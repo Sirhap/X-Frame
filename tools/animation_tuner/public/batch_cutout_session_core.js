@@ -23,6 +23,22 @@
     ["cutoutBlurRadius", "cutoutBlurRadiusValue", "blurRadius"],
     ["cutoutProtectionTolerance", "cutoutProtectionToleranceValue", "protectionTolerance"],
   ]);
+  const NUMERIC_PARAMETER_LIMITS = Object.freeze({
+    tolerance: Object.freeze({ minimum: -1, maximum: 100, fallback: 1 }),
+    feather: Object.freeze({ minimum: 0, maximum: 24, fallback: 0 }),
+    alphaThreshold: Object.freeze({ minimum: 0, maximum: 48, fallback: 0 }),
+    chromaFeather: Object.freeze({ minimum: 0, maximum: 100, fallback: 0 }),
+    edgeBoost: Object.freeze({ minimum: 0, maximum: 100, fallback: 10 }),
+    blendStrength: Object.freeze({ minimum: 0, maximum: 100, fallback: 0 }),
+    alphaLow: Object.freeze({ minimum: 0, maximum: 255, fallback: 0 }),
+    alphaHigh: Object.freeze({ minimum: 0, maximum: 255, fallback: 0 }),
+    despillStrength: Object.freeze({ minimum: 0, maximum: 100, fallback: 0 }),
+    edgeDespillRadius: Object.freeze({ minimum: 0, maximum: 12, fallback: 0 }),
+    edgeRecoveryStrength: Object.freeze({ minimum: 0, maximum: 100, fallback: 0 }),
+    backgroundRadius: Object.freeze({ minimum: 0, maximum: 30, fallback: 0 }),
+    blurRadius: Object.freeze({ minimum: 0, maximum: 6, fallback: 0 }),
+    protectionTolerance: Object.freeze({ minimum: 0, maximum: 40, fallback: 0 }),
+  });
   const PROPAGATION_FIELDS = Object.freeze([
     "repairs",
     "undoneRepairs",
@@ -46,6 +62,50 @@
   function normalizeReferenceMode(value, fallback) {
     const mode = String(value || "");
     return REFERENCE_MODE_VALUES.has(mode) ? mode : fallback;
+  }
+
+  /**
+   * Normalizes persisted, preset, or generated automatic-processing parameters.
+   * @param {object|null|undefined} value Candidate parameter record.
+   * @param {object|null|undefined} fallback Existing parameters used for missing or invalid fields.
+   * @returns {object} Complete bounded automatic-processing snapshot.
+   */
+  function normalizeProcessingParameters(value, fallback = {}) {
+    const source = value && typeof value === "object" ? value : {};
+    const defaults = fallback && typeof fallback === "object" ? fallback : {};
+    const fallbackColor = /^#[0-9a-f]{6}$/i.test(String(defaults.backgroundColor || ""))
+      ? String(defaults.backgroundColor).toLowerCase()
+      : "#ffffff";
+    const backgroundColor = /^#[0-9a-f]{6}$/i.test(String(source.backgroundColor || ""))
+      ? String(source.backgroundColor).toLowerCase()
+      : fallbackColor;
+    const parameters = {
+      backgroundColor,
+      connected: source.connected === undefined ? Boolean(defaults.connected) : Boolean(source.connected),
+      perceptual: source.perceptual === undefined ? Boolean(defaults.perceptual) : Boolean(source.perceptual),
+      blendMode: normalizeReferenceMode(
+        source.blendMode,
+        normalizeReferenceMode(defaults.blendMode, "blend"),
+      ),
+      despillMode: normalizeReferenceMode(
+        source.despillMode,
+        normalizeReferenceMode(defaults.despillMode, "general"),
+      ),
+    };
+    for (const [parameterKey, limits] of Object.entries(NUMERIC_PARAMETER_LIMITS)) {
+      const candidate = Number(source[parameterKey]);
+      const fallbackValue = Number(defaults[parameterKey]);
+      const resolved = Number.isFinite(candidate)
+        ? candidate
+        : Number.isFinite(fallbackValue)
+          ? fallbackValue
+          : limits.fallback;
+      parameters[parameterKey] = Math.max(limits.minimum, Math.min(limits.maximum, Math.round(resolved)));
+    }
+    if (parameters.alphaLow > parameters.alphaHigh) {
+      [parameters.alphaLow, parameters.alphaHigh] = [parameters.alphaHigh, parameters.alphaLow];
+    }
+    return parameters;
   }
 
   /**
@@ -516,10 +576,55 @@
   }
 
   /**
+   * Applies one reviewable automatic candidate to an explicit target subset.
+   * Existing local repairs and protected colors remain owned by each target.
+   * @param {object[]} items Target session items.
+   * @param {object} sourceItem Item that owns the reversible transaction.
+   * @param {{parameters:object,backgroundSamples?:object[],seedPoints?:object[]}} candidate Candidate state.
+   * @param {{live?:boolean,mapSeedPoints?:boolean}} [options] Transaction behavior.
+   * @returns {number} Number of updated targets.
+   */
+  function applyAutomaticCandidate(items, sourceItem, candidate, options = {}) {
+    const targets = Array.from(items || []).filter(Boolean);
+    if (!sourceItem || !candidate?.parameters) {
+      throw new TypeError("Candidate application requires a source item and parameters.");
+    }
+    if (!targets.length) return 0;
+    const draft = {
+      ...sourceItem,
+      processingParameters: normalizeProcessingParameters(
+        candidate.parameters,
+        sourceItem.processingParameters,
+      ),
+      backgroundSamples: cloneSessionValue(candidate.backgroundSamples || []),
+      seedPoints: cloneSessionValue(candidate.seedPoints || []),
+      automaticCutoutActivated: true,
+      processingActivated: true,
+    };
+    beginPropagation(targets, sourceItem, { ...options, live: options.live === true });
+    for (const target of targets) {
+      if (target === sourceItem) {
+        target.processingParameters = cloneSessionValue(draft.processingParameters);
+        target.backgroundSamples = cloneSessionValue(draft.backgroundSamples);
+        target.seedPoints = cloneSessionValue(draft.seedPoints);
+        target.automaticCutoutActivated = true;
+        target.processingActivated = true;
+        target.pendingAutomaticPropagation = false;
+        resetItemProcessing(target);
+        continue;
+      }
+      copyAutomaticProcessingState(target, draft, {
+        mapSeedPoints: options.mapSeedPoints !== false,
+      });
+    }
+    return targets.length;
+  }
+
+  /**
    * Starts a reversible apply-to-all transaction on the source item.
    * @param {object[]} items Session items.
    * @param {object} sourceItem Selected source item.
-   * @param {{publishedCanvases?:object[]}} [options] Host canvases visible before propagation.
+   * @param {{publishedCanvases?:object[],live?:boolean}} [options] Host publication behavior.
    * @returns {void}
    */
   function beginPropagation(items, sourceItem, options = {}) {
@@ -528,6 +633,7 @@
       snapshot: captureItems(items),
       repairCount: sourceItem.repairs?.length || 0,
       editUndoCount: sourceItem.editUndo?.length || 0,
+      live: options.live !== false,
       publishedCanvases: Array.isArray(options.publishedCanvases)
         ? Array.from(options.publishedCanvases)
         : null,
@@ -547,12 +653,14 @@
     const hasNewerItemEdit = (sourceItem?.editUndo?.length || 0) > transaction?.editUndoCount;
     if (!transaction || hasNewerRepair || hasNewerItemEdit) return false;
     const redoSnapshot = captureItems(items);
-    const redoPublishedCanvases = Array.from(items || [], (item) => item.publishedCanvas || null);
+    const redoPublishedCanvases =
+      transaction.live === false ? null : Array.from(items || [], (item) => item.publishedCanvas || null);
     restoreItems(transaction.snapshot);
     sourceItem.propagationUndo = null;
     sourceItem.propagationRedo = {
       snapshot: redoSnapshot,
       publishedCanvases: redoPublishedCanvases,
+      live: transaction.live !== false,
     };
     return true;
   }
@@ -572,7 +680,9 @@
       snapshot: undoSnapshot,
       repairCount: sourceItem.repairs?.length || 0,
       editUndoCount: sourceItem.editUndo?.length || 0,
-      publishedCanvases: Array.from(items || [], (item) => item.publishedCanvas || null),
+      publishedCanvases:
+        transaction.live === false ? null : Array.from(items || [], (item) => item.publishedCanvas || null),
+      live: transaction.live !== false,
     };
     sourceItem.propagationRedo = null;
     return true;
@@ -585,11 +695,12 @@
    * @returns {{changed:boolean,live:boolean}} Undo result and live-publish requirement.
    */
   function undoEdit(items, sourceItem) {
-    const publishedCanvases = sourceItem?.propagationUndo?.publishedCanvases;
+    const transaction = sourceItem?.propagationUndo;
+    const publishedCanvases = transaction?.publishedCanvases;
     if (undoPropagation(items, sourceItem)) {
       return {
         changed: true,
-        live: true,
+        live: transaction?.live !== false,
         ...(publishedCanvases ? { publishedCanvases } : {}),
       };
     }
@@ -627,22 +738,25 @@
       resetItemProcessing(sourceItem);
       return { changed: true, live: Boolean(sourceItem.propagationRedo) };
     }
-    const publishedCanvases = sourceItem?.propagationRedo?.publishedCanvases;
+    const transaction = sourceItem?.propagationRedo;
+    const publishedCanvases = transaction?.publishedCanvases;
     if (!redoPropagation(items, sourceItem)) return { changed: false, live: false };
     return {
       changed: true,
-      live: true,
+      live: transaction?.live !== false,
       ...(publishedCanvases ? { publishedCanvases } : {}),
     };
   }
 
   return Object.freeze({
+    applyAutomaticCandidate,
     applyProcessingParameters,
     beginPropagation,
     captureProcessingParameters,
     clearBatchRepairPreview,
     copyAutomaticProcessingState,
     createProcessingOptions,
+    normalizeProcessingParameters,
     previewRepairsForItem,
     recordItemEdit,
     propagateAutomaticProcessing,

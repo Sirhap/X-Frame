@@ -106,6 +106,30 @@ test("negative-one tolerance survives capture, restore, and worker option creati
   assert.equal(processingOptions.tolerance, -1);
 });
 
+test("processing parameter normalization clamps persisted and candidate values", () => {
+  const fallback = sessionCore.captureProcessingParameters(createControls());
+  const parameters = sessionCore.normalizeProcessingParameters(
+    {
+      backgroundColor: "INVALID",
+      tolerance: 900,
+      feather: -4,
+      alphaLow: 240,
+      alphaHigh: 30,
+      connected: 1,
+      blendMode: "unknown",
+    },
+    fallback,
+  );
+
+  assert.equal(parameters.backgroundColor, fallback.backgroundColor);
+  assert.equal(parameters.tolerance, 100);
+  assert.equal(parameters.feather, 0);
+  assert.equal(parameters.alphaLow, 30);
+  assert.equal(parameters.alphaHigh, 240);
+  assert.equal(parameters.connected, true);
+  assert.equal(parameters.blendMode, fallback.blendMode);
+});
+
 test("blend recovery and edge restoration modes remain independent", () => {
   const controls = createControls();
   controls.cutoutBlendMode.value = "chroma";
@@ -502,6 +526,66 @@ test("apply-to-all transactions undo and redo every target while preserving sour
   assert.deepEqual(targetItem.repairs, []);
   assert.equal(sessionCore.redoPropagation(items, sourceItem), true);
   assert.deepEqual(targetItem.repairs, [{ id: "propagated", propagatedFrom: "source-repair" }]);
+});
+
+test("candidate application updates only targets and undoes without live publication", () => {
+  const sourceItem = {
+    id: "source",
+    repairs: [{ id: "source-repair", mode: "fill" }],
+    protectedColors: [{ r: 2, g: 3, b: 4 }],
+    backgroundSamples: [{ r: 255, g: 255, b: 255, a: 255 }],
+    seedPoints: [{ x: 0, y: 0 }],
+    processingParameters: { tolerance: 4, edgeBoost: 10 },
+    processingRevision: 0,
+  };
+  const targetItem = {
+    id: "target",
+    repairs: [{ id: "target-repair", mode: "clear" }],
+    protectedColors: [{ r: 8, g: 9, b: 10 }],
+    backgroundSamples: [{ r: 0, g: 0, b: 0, a: 255 }],
+    seedPoints: [],
+    processingParameters: { tolerance: 2, edgeBoost: 0 },
+    processingRevision: 0,
+  };
+  const untouchedItem = {
+    id: "untouched",
+    processingParameters: { tolerance: 7 },
+    processingRevision: 0,
+  };
+  const candidateParameters = sessionCore.captureProcessingParameters(createControls());
+  candidateParameters.tolerance = 20;
+  candidateParameters.edgeBoost = 40;
+
+  const updated = sessionCore.applyAutomaticCandidate(
+    [sourceItem, targetItem],
+    sourceItem,
+    {
+      parameters: candidateParameters,
+      backgroundSamples: [{ r: 30, g: 180, b: 40, a: 255 }],
+      seedPoints: [],
+    },
+    { live: false },
+  );
+
+  assert.equal(updated, 2);
+  assert.equal(sourceItem.processingParameters.tolerance, 20);
+  assert.equal(targetItem.processingParameters.tolerance, 20);
+  assert.deepEqual(sourceItem.repairs, [{ id: "source-repair", mode: "fill" }]);
+  assert.deepEqual(targetItem.protectedColors, [{ r: 8, g: 9, b: 10 }]);
+  assert.equal(untouchedItem.processingParameters.tolerance, 7);
+
+  assert.deepEqual(sessionCore.undoEdit([sourceItem, targetItem, untouchedItem], sourceItem), {
+    changed: true,
+    live: false,
+  });
+  assert.equal(sourceItem.processingParameters.tolerance, 4);
+  assert.equal(targetItem.processingParameters.tolerance, 2);
+
+  assert.deepEqual(sessionCore.redoEdit([sourceItem, targetItem, untouchedItem], sourceItem), {
+    changed: true,
+    live: false,
+  });
+  assert.equal(targetItem.processingParameters.tolerance, 20);
 });
 
 test("apply-to-all remains newer than parameter edits recorded before the transaction", () => {

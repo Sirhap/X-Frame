@@ -58,7 +58,7 @@
   /**
    * Creates the shared cutout preview viewport controller.
    * @param {{elements:Record<string,HTMLElement>,state:Record<string,any>,renderPreview:()=>void,getDevicePixelRatio?:()=>number}} dependencies Host integration dependencies.
-   * @returns {{drawPreviewCanvas:(target:HTMLCanvasElement,source:CanvasImageSource|null)=>void,renderPreviewZoom:()=>void,setPreviewScale:(scale:number|null,target?:HTMLCanvasElement|null,canvasPoint?:{x:number,y:number}|null)=>void,previewCanvasPoint:(event:PointerEvent|WheelEvent,target:HTMLCanvasElement)=>{x:number,y:number},previewSourcePoint:(event:PointerEvent|WheelEvent,target:HTMLCanvasElement)=>{canvasX:number,canvasY:number,sourceX:number,sourceY:number}|null}}
+   * @returns {{drawPreviewCanvas:(target:HTMLCanvasElement,source:CanvasImageSource|null)=>void,drawComparisonCanvas:(target:HTMLCanvasElement,left:CanvasImageSource|null,right:CanvasImageSource|null,splitRatio:number)=>void,renderPreviewZoom:()=>void,setPreviewScale:(scale:number|null,target?:HTMLCanvasElement|null,canvasPoint?:{x:number,y:number}|null)=>void,previewCanvasPoint:(event:PointerEvent|WheelEvent,target:HTMLCanvasElement)=>{x:number,y:number},previewSourcePoint:(event:PointerEvent|WheelEvent,target:HTMLCanvasElement)=>{canvasX:number,canvasY:number,sourceX:number,sourceY:number}|null}}
    */
   function createController(dependencies) {
     if (!dependencies?.elements || !dependencies.state || !dependencies.renderPreview) {
@@ -114,6 +114,43 @@
         sourceHeight * view.scale,
       );
       target._cutoutView = view;
+    }
+
+    /**
+     * Draws two same-sized candidate canvases through one shared viewport.
+     * Candidate A occupies the left side and candidate B the clipped right side.
+     * @param {HTMLCanvasElement} target Preview canvas.
+     * @param {CanvasImageSource|null} left Candidate A source.
+     * @param {CanvasImageSource|null} right Candidate B source.
+     * @param {number} splitRatio Divider position from zero to one.
+     * @returns {void}
+     */
+    function drawComparisonCanvas(target, left, right, splitRatio = 0.5) {
+      const source = left || right;
+      if (!source) {
+        drawPreviewCanvas(target, null);
+        return;
+      }
+      drawPreviewCanvas(target, left || source);
+      if (!right || !target._cutoutView) return;
+      const context = target.getContext("2d");
+      if (!context) return;
+      const view = target._cutoutView;
+      const ratio = Math.max(0.05, Math.min(0.95, Number(splitRatio) || 0.5));
+      const dividerX = target.width * ratio;
+      context.save();
+      context.beginPath();
+      context.rect(dividerX, 0, target.width - dividerX, target.height);
+      context.clip();
+      context.imageSmoothingEnabled = false;
+      context.drawImage(
+        right,
+        view.offsetX,
+        view.offsetY,
+        view.sourceWidth * view.scale,
+        view.sourceHeight * view.scale,
+      );
+      context.restore();
     }
 
     /** Updates zoom controls from the current preview transform. @returns {void} */
@@ -202,7 +239,14 @@
       return { canvasX: point.x, canvasY: point.y, sourceX, sourceY };
     }
 
-    return { drawPreviewCanvas, renderPreviewZoom, setPreviewScale, previewCanvasPoint, previewSourcePoint };
+    return {
+      drawPreviewCanvas,
+      drawComparisonCanvas,
+      renderPreviewZoom,
+      setPreviewScale,
+      previewCanvasPoint,
+      previewSourcePoint,
+    };
   }
 
   return { calculateFitScale, calculateView, createController };

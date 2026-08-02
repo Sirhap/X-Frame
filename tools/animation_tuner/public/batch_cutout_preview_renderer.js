@@ -30,6 +30,7 @@
       schedulePreview,
       processItem,
       drawPreviewCanvas,
+      drawComparisonCanvas,
       renderPreviewMode,
       renderPreviewZoom,
       setPreviewProcessing,
@@ -52,6 +53,7 @@
       typeof selectedBackgroundColor !== "function" ||
       typeof protectedColorEntries !== "function" ||
       typeof processItem !== "function" ||
+      typeof drawPreviewCanvas !== "function" ||
       typeof syncProtectionPreview !== "function" ||
       !colorUtils
     ) {
@@ -59,6 +61,10 @@
     }
 
     const documentApi = documentRef;
+    const drawComparison =
+      typeof drawComparisonCanvas === "function"
+        ? drawComparisonCanvas
+        : (target, variantA) => drawPreviewCanvas(target, variantA);
 
     /**
      * Processes and redraws the selected preview.
@@ -74,6 +80,31 @@
       drawPreviewCanvas(elements.cutoutOriginal, item?.sourceCanvas || null);
       if (!item) {
         drawPreviewCanvas(elements.cutoutResult, null);
+        renderPreviewMode();
+        renderPreviewZoom();
+        renderBackgroundSamples();
+        renderProtectedColors();
+        renderProtectionPreviewInfo();
+        renderStatus();
+        finishPreview();
+        return;
+      }
+      const comparison = state.comparison;
+      const comparisonReady =
+        comparison?.status === "ready" &&
+        comparison.sourceItemId === item.id &&
+        comparison.variants?.a?.canvas &&
+        comparison.variants?.b?.canvas;
+      if (comparisonReady) {
+        const variantA = comparison.variants.a.canvas;
+        const variantB = comparison.variants.b.canvas;
+        if (comparison.displayMode === "a") {
+          drawPreviewCanvas(elements.cutoutResult, variantA);
+        } else if (comparison.displayMode === "b") {
+          drawPreviewCanvas(elements.cutoutResult, variantB);
+        } else {
+          drawComparison(elements.cutoutResult, variantA, variantB, comparison.splitRatio);
+        }
         renderPreviewMode();
         renderPreviewZoom();
         renderBackgroundSamples();

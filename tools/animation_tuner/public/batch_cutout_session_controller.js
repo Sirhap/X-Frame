@@ -37,6 +37,7 @@
       requestConfirmation,
       estimateBackgroundColor = root?.BatchCutoutCore?.estimateBackgroundColor,
       backgroundController = root?.BatchCutoutBackgroundController,
+      onSessionReset = () => {},
     } = dependencies;
     if (!state || !elements || typeof selectedItem !== "function" || typeof createItem !== "function") {
       throw new TypeError("BatchCutoutSessionController dependencies are required.");
@@ -155,6 +156,7 @@
     async function clear(options = {}) {
       const newBatch = options.mode === "new";
       if (!state.items.length) {
+        onSessionReset();
         resetBatchPreviewState();
         setStatus(text("ready"));
         return true;
@@ -165,6 +167,7 @@
         tone: "danger",
       });
       if (!confirmed) return false;
+      onSessionReset();
       stopBatchPlayback();
       state.thumbnailJob += 1;
       resultArtifacts.clear();
@@ -204,6 +207,7 @@
         tone: "danger",
       });
       if (!confirmed) return;
+      onSessionReset();
       stopBatchPlayback();
       state.thumbnailJob += 1;
       const currentItemId = selectedItem()?.id;
@@ -264,6 +268,7 @@
       const inputs = Array.isArray(workset?.items) ? workset.items : [];
       if (!inputs.length) return Promise.reject(new Error(text("invalidFiles")));
       if (inputs.length > 240) return Promise.reject(new Error(text("tooMany")));
+      onSessionReset();
       if (state.worksetResolver) {
         const previousResolver = state.worksetResolver;
         state.worksetResolver = null;
@@ -345,6 +350,7 @@
      */
     function close(worksetResult = null, options = {}) {
       const embeddedWorkset = typeof state.worksetResolver === "function";
+      onSessionReset();
       stopBatchPlayback();
       cancelRepairGestureFrame();
       state.thumbnailJob += 1;

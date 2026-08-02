@@ -42,6 +42,11 @@
     const resultArtifacts = resultCacheCore.createResultArtifactCache();
     const elements = runtimeSetup.collectElements(document);
     const state = runtimeSetup.createInitialState(hooks.getLanguage?.());
+    let candidateController = null;
+    /** @param {object} [options] Candidate reset behavior. @returns {void} */
+    function invalidateCandidateComparison(options = {}) {
+      candidateController?.invalidate(options);
+    }
     if (elements.cutoutSidebarBatchPanel && elements.cutoutBatchTray) {
       elements.cutoutSidebarBatchPanel.append(elements.cutoutBatchTray);
     }
@@ -151,8 +156,14 @@
     }
     const previewModule = root.BatchCutoutPreview;
     if (!previewModule) throw new Error("BatchCutoutPreview is required.");
-    const { drawPreviewCanvas, renderPreviewZoom, setPreviewScale, previewCanvasPoint, previewSourcePoint } =
-      previewModule.createController({ elements, state, renderPreview });
+    const {
+      drawPreviewCanvas,
+      drawComparisonCanvas,
+      renderPreviewZoom,
+      setPreviewScale,
+      previewCanvasPoint,
+      previewSourcePoint,
+    } = previewModule.createController({ elements, state, renderPreview });
     elements.cutoutRepairTools.dataset.repairMode = state.repairMode;
 
     /**
@@ -261,6 +272,7 @@
      * @returns {void}
      */
     function setPreviewMode(mode) {
+      invalidateCandidateComparison({ cancel: true, redraw: false });
       state.previewMode = mode;
       state.repairDrag = null;
       renderPreview();
@@ -268,6 +280,7 @@
 
     /** @param {{recordHistory?:boolean}} [options] Preview history behavior. @returns {void} */
     function schedulePreview(options = {}) {
+      invalidateCandidateComparison({ cancel: false, redraw: false });
       cutoutExecutor.cancelAll();
       state.previewRevision += 1;
       state.thumbnailJob += 1;
@@ -326,6 +339,7 @@
       renderStatus,
       updateQueueCard: (...args) => updateQueueCard(...args),
       processItem: (...args) => processItem(...args),
+      onSelectionChange: () => invalidateCandidateComparison({ cancel: true, redraw: false }),
       windowRef: window,
     });
     const {
@@ -374,7 +388,12 @@
       stopBatchPlayback,
       scheduleBatchThumbnails,
     });
-    const { updateQueueCard, renderQueue } = queueController;
+    const { updateQueueCard, renderQueue: renderQueueInternal } = queueController;
+    /** Renders the queue and refreshes candidate availability after queue mutations. @returns {void} */
+    function renderQueue() {
+      renderQueueInternal();
+      candidateController?.render();
+    }
     const processingHelpersModule = root.BatchCutoutProcessingHelpers;
     if (!processingHelpersModule) {
       throw new Error("BatchCutoutProcessingHelpers is required.");
@@ -529,6 +548,7 @@
       schedulePreview: (...args) => schedulePreview(...args),
       processItem,
       drawPreviewCanvas,
+      drawComparisonCanvas,
       renderPreviewMode,
       renderPreviewZoom,
       setPreviewProcessing,
@@ -544,6 +564,44 @@
       documentRef: document,
     });
     const { renderProtectedColors, renderBackgroundSamples } = previewRenderer;
+
+    const candidateControllerModule = root.BatchCutoutCandidateController;
+    const candidateCore = root.BatchCutoutCandidateCore;
+    const presetStoreModule = root.BatchCutoutPresetStore;
+    if (!candidateControllerModule || !candidateCore || !presetStoreModule) {
+      throw new Error("Batch cutout candidate modules are required.");
+    }
+    let candidatePresetStorage = null;
+    try {
+      candidatePresetStorage = window.localStorage;
+    } catch (_error) {
+      // Candidate comparison remains available when browser storage is blocked.
+    }
+    candidateController = candidateControllerModule.createController({
+      state,
+      elements,
+      text,
+      selectedItem,
+      sessionCore,
+      candidateCore,
+      presetStore: presetStoreModule.createStore({ storage: candidatePresetStorage }),
+      cutoutExecutor,
+      cutoutAnalysisExecutor,
+      processItem,
+      estimateBackgroundColor: cutoutCore.estimateBackgroundColor,
+      colorUtils,
+      requestConfirmation,
+      applyProcessingParametersToControls,
+      renderPreview,
+      renderQueue,
+      renderStatus,
+      scheduleBatchThumbnails,
+      refreshQualityAnalysis,
+      setStatus,
+      getCurrentAnimation: () => hooks.getCurrentAnimation?.(),
+      documentRef: document,
+      imageDataConstructor: ImageData,
+    });
 
     const gestureControllerModule = globalThis.BatchCutoutGestureController;
     if (!gestureControllerModule) {
@@ -639,6 +697,7 @@
       requestConfirmation,
       estimateBackgroundColor: cutoutCore.estimateBackgroundColor,
       backgroundController,
+      onSessionReset: () => invalidateCandidateComparison({ cancel: true, redraw: false }),
     });
     const { clear, deleteSelectedItems, open, openWorkset, close, requestClose, hasWorksetChanges } =
       sessionController;
@@ -718,6 +777,7 @@
       schedulePreview,
     });
     eventController.bind();
+    candidateController.bind();
     renderLanguage();
     renderAdvancedMode();
     setPreviewBackground(state.previewBackground);
@@ -734,6 +794,7 @@
       setLanguage(nextLanguage) {
         state.language = nextLanguage === "en" ? "en" : "zh";
         renderLanguage();
+        candidateController.render();
       },
     };
   }

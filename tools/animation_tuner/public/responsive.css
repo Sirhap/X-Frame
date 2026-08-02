@@ -122,6 +122,21 @@
     grid-template-columns: 1fr;
     min-height: 540px;
   }
+
+  .cutoutCandidateHeader,
+  .cutoutCandidateApplyRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cutoutCandidateHeader > div:last-child,
+  .cutoutCandidateApplyRow button {
+    width: 100%;
+  }
+
+  .cutoutCandidatePresets {
+    grid-template-columns: 1fr 1fr;
+  }
   .cutoutBatchTrayHeader {
     align-items: flex-start;
     flex-direction: column;

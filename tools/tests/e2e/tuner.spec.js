@@ -758,6 +758,43 @@ test("cutout parameters follow the regular post-processing advanced layout", asy
   await expect(page.locator("#cutoutProtectSample")).toBeVisible();
 });
 
+test("@touch cutout generates, compares, presets, applies, and undoes a local B candidate", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles({
+    name: "candidate.png",
+    mimeType: "image/png",
+    buffer: ONE_PIXEL_PNG,
+  });
+  const baselineTolerance = await page.locator("#cutoutTolerance").inputValue();
+
+  await page.locator("#cutoutCandidateGenerate").click();
+  await expect(page.locator("#cutoutCandidateReview")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("#cutoutCandidateDivider")).toBeVisible();
+  await expect(page.locator("#cutoutSettings")).toHaveAttribute("inert", "");
+  await expect(page.locator("#cutoutCandidateDifferences span").first()).toBeVisible();
+
+  await page.locator("#cutoutCandidateSplitRange").fill("35");
+  await expect(page.locator("#cutoutCandidateDivider")).toHaveAttribute("aria-valuenow", "35");
+  await page.locator("#cutoutCandidateViewB").click();
+  await expect(page.locator("#cutoutCandidateViewB")).toHaveClass(/active/);
+
+  await page.locator("#cutoutCandidatePresetName").fill("本地候选");
+  await page.locator("#cutoutCandidatePresetSave").click();
+  await expect(page.locator("#cutoutStatus")).toContainText("本地候选");
+  await expect(page.locator("#cutoutCandidatePresetSelect")).not.toHaveValue("");
+
+  await page.locator("#cutoutCandidateApply").click();
+  await expect(page.locator("#cutoutCandidateReview")).toBeHidden();
+  await expect(page.locator("#cutoutSettings")).not.toHaveAttribute("inert", "");
+  await expect(page.locator("#cutoutTolerance")).not.toHaveValue(baselineTolerance);
+
+  await page.locator("#cutoutRepairUndo").click();
+  await expect(page.locator("#cutoutTolerance")).toHaveValue(baselineTolerance);
+  expect(errors).toEqual([]);
+});
+
 test("mobile cutout keeps preview first and supports keyboard repair", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));

@@ -47,6 +47,7 @@
       renderStatus,
       updateQueueCard,
       processItem,
+      onSelectionChange = () => {},
       windowRef = root?.window || root,
     } = dependencies;
     if (
@@ -96,6 +97,7 @@
         ? (Number(index) + total) % total
         : Math.max(0, Math.min(total - 1, Number(index) || 0));
       if (options.stopPlayback !== false) stopBatchPlayback();
+      if (nextIndex !== state.selectedIndex) onSelectionChange(nextIndex);
       state.selectedIndex = nextIndex;
       if (state.sessionMode === "single") {
         const targetItem = selectedItem();

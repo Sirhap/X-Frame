@@ -4,6 +4,7 @@
 
 ### Features
 
+- Add non-destructive local A/B cutout suggestions with a shared zoomable split preview, current/selected/all-frame application, reversible batch transactions, and reusable browser-local presets.
 - Add explicit, confirmed source-clearing actions across the frame organizer, batch cutout, scatter slicer, and video watermark studio; clearing watermark media also deletes its local temporary source and terminal exports.
 - Support guarded clipboard paste for image sequences, video frame extraction, batch cutout, scatter slicing, and local video watermark repair while reusing each tool's existing validation and processing pipeline.
 - Integrate a unified local video watermark-repair tool with time-scoped multi-region `delogo`, foreground-aware smart repair, isolated upload sessions, queued FFmpeg exports, progress reporting, and responsive keyboard-accessible controls.

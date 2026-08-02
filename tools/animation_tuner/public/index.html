@@ -1134,6 +1134,100 @@
               role="tabpanel"
               aria-labelledby="cutoutSidebarParametersTab"
             >
+              <section
+                id="cutoutCandidatePanel"
+                class="cutoutCandidatePanel"
+                aria-labelledby="cutoutCandidateTitle"
+              >
+                <header class="cutoutCandidateHeader">
+                  <div>
+                    <span>A/B LOCAL ADVISOR</span>
+                    <strong id="cutoutCandidateTitle" data-cutout-i18n="candidateTitle">智能对比</strong>
+                  </div>
+                  <div>
+                    <button id="cutoutCandidateGenerate" type="button" data-cutout-i18n="candidateGenerate">
+                      生成 A/B
+                    </button>
+                    <button
+                      id="cutoutCandidateExit"
+                      type="button"
+                      class="secondary"
+                      data-cutout-i18n="candidateExit"
+                      hidden
+                    >
+                      退出对比
+                    </button>
+                  </div>
+                </header>
+                <small
+                  id="cutoutCandidateStatus"
+                  class="cutoutCandidateStatus"
+                  aria-live="polite"
+                  data-cutout-i18n="candidateHint"
+                  >基于当前帧生成本地参数建议，不上传图片。</small
+                >
+                <div id="cutoutCandidateReview" class="cutoutCandidateReview" hidden>
+                  <div class="cutoutCandidateViews" role="group" aria-label="A/B preview mode">
+                    <button id="cutoutCandidateViewA" type="button" class="secondary">A</button>
+                    <button id="cutoutCandidateViewSplit" type="button" class="secondary active">A/B</button>
+                    <button id="cutoutCandidateViewB" type="button" class="secondary">B</button>
+                    <label class="cutoutCandidateSplitControl">
+                      <span data-cutout-i18n="candidateDivider">分割线</span>
+                      <input id="cutoutCandidateSplitRange" type="range" min="5" max="95" value="50" />
+                    </label>
+                  </div>
+                  <div id="cutoutCandidateReasons" class="cutoutCandidateReasons"></div>
+                  <div id="cutoutCandidateDifferences" class="cutoutCandidateDifferences"></div>
+                  <div class="cutoutCandidateApplyRow">
+                    <label>
+                      <span data-cutout-i18n="candidateScope">应用范围</span>
+                      <select id="cutoutCandidateScope">
+                        <option value="current" data-cutout-i18n="candidateCurrent">当前帧</option>
+                        <option value="selected" data-cutout-i18n="candidateSelected">已选帧</option>
+                        <option value="all" data-cutout-i18n="candidateAll">全部帧</option>
+                      </select>
+                    </label>
+                    <button id="cutoutCandidateApply" type="button" data-cutout-i18n="candidateApply">
+                      应用 B
+                    </button>
+                  </div>
+                </div>
+                <div class="cutoutCandidatePresets">
+                  <input
+                    id="cutoutCandidatePresetName"
+                    type="text"
+                    maxlength="40"
+                    data-cutout-i18n-aria-label="candidatePresetName"
+                    aria-label="预设名称"
+                    placeholder="预设名称"
+                  />
+                  <button
+                    id="cutoutCandidatePresetSave"
+                    type="button"
+                    class="secondary"
+                    data-cutout-i18n="candidatePresetSave"
+                  >
+                    保存
+                  </button>
+                  <select id="cutoutCandidatePresetSelect" aria-label="A/B presets"></select>
+                  <button
+                    id="cutoutCandidatePresetLoad"
+                    type="button"
+                    class="secondary"
+                    data-cutout-i18n="candidatePresetLoad"
+                  >
+                    载入为 B
+                  </button>
+                  <button
+                    id="cutoutCandidatePresetDelete"
+                    type="button"
+                    class="secondary"
+                    data-cutout-i18n="candidatePresetDelete"
+                  >
+                    删除
+                  </button>
+                </div>
+              </section>
               <div id="cutoutSettings" class="cutoutSettings">
                 <div class="cutoutSettingsHeading">
                   <div>
@@ -2050,6 +2144,18 @@
                   aria-busy="false"
                   aria-label="抠图编辑画布。方向键移动键盘修正光标，Enter 应用当前工具，减号和加号缩放。"
                 ></canvas>
+                <button
+                  id="cutoutCandidateDivider"
+                  type="button"
+                  class="cutoutCandidateDivider"
+                  role="slider"
+                  aria-valuemin="5"
+                  aria-valuemax="95"
+                  aria-valuenow="50"
+                  data-cutout-i18n-aria-label="candidateDivider"
+                  aria-label="分割线"
+                  hidden
+                ></button>
               </figure>
               <div class="cutoutZoomControls" aria-label="Preview zoom">
                 <button id="cutoutZoomOut" type="button" class="secondary" aria-label="Zoom out">−</button>
@@ -3416,6 +3522,8 @@
     <script src="/batch_zip.js"></script>
     <script src="/batch_cutout_output_core.js"></script>
     <script src="/batch_cutout_session_core.js"></script>
+    <script src="/batch_cutout_candidate_core.js"></script>
+    <script src="/batch_cutout_preset_store.js"></script>
     <script src="/batch_cutout_result_cache_core.js"></script>
     <script src="/batch_cutout_repair_replay_core.js"></script>
     <script src="/batch_cutout_worker_client.js"></script>
@@ -3440,6 +3548,7 @@
     <script src="/batch_cutout_repair_controller.js"></script>
     <script src="/batch_cutout_process_controller.js"></script>
     <script src="/batch_cutout_session_controller.js"></script>
+    <script src="/batch_cutout_candidate_controller.js"></script>
     <script src="/batch_cutout_events.js"></script>
     <script src="/batch_cutout_runtime_setup.js"></script>
     <script src="/batch_cutout.js"></script>

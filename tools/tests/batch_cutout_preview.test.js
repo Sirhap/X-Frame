@@ -101,3 +101,47 @@ test("cutout preview uses the frame stage twelve-percent lower zoom limit", () =
   controller.setPreviewScale(0.01);
   assert.equal(state.previewScale, 0.12);
 });
+
+test("cutout comparison preview clips B while sharing one viewport", () => {
+  const calls = [];
+  const context = {
+    clearRect: (...args) => calls.push(["clearRect", ...args]),
+    drawImage: (...args) => calls.push(["drawImage", ...args]),
+    save: () => calls.push(["save"]),
+    beginPath: () => calls.push(["beginPath"]),
+    rect: (...args) => calls.push(["rect", ...args]),
+    clip: () => calls.push(["clip"]),
+    restore: () => calls.push(["restore"]),
+  };
+  const target = {
+    width: 480,
+    height: 360,
+    getContext: () => context,
+    getBoundingClientRect: () => ({ width: 480, height: 360 }),
+  };
+  const state = { previewScale: null, previewFitScale: null, previewPanX: 0, previewPanY: 0 };
+  const controller = createController({
+    elements: {
+      cutoutResult: target,
+      cutoutOriginal: {},
+      cutoutZoom: {},
+      cutoutZoomValue: {},
+      cutoutZoomFit: { classList: { toggle() {} } },
+      cutoutZoomActual: { classList: { toggle() {} } },
+    },
+    state,
+    renderPreview() {},
+    getDevicePixelRatio: () => 1,
+  });
+  const sourceA = { width: 100, height: 80 };
+  const sourceB = { width: 100, height: 80 };
+
+  controller.drawComparisonCanvas(target, sourceA, sourceB, 0.25);
+
+  assert.equal(calls.filter(([name]) => name === "drawImage").length, 2);
+  assert.deepEqual(
+    calls.find(([name]) => name === "rect"),
+    ["rect", 120, 0, 360, 360],
+  );
+  assert.ok(target._cutoutView);
+});
