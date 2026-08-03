@@ -156,6 +156,8 @@ test("the website home, import flow, and tuning workbench use separate URLs", as
   await expect(page.locator("#quickToolsHub")).toBeVisible();
   await page.getByRole("link", { name: "转到动画项目" }).click();
   await expect(page).toHaveURL(/\/projects$/);
+  await expect(page.locator("#projectHubContinue")).toHaveAttribute("data-document-navigation", "");
+  await expect(page.locator(".projectHubCard").first()).toHaveAttribute("data-document-navigation", "");
   await page.locator("#projectHubContinue").click();
   await expect(page).toHaveURL(/\/workspace/);
   await expect(page.locator("#stage")).toBeVisible();

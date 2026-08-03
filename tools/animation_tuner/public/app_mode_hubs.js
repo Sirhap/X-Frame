@@ -44,6 +44,7 @@
       const card = documentRef.createElement("a");
       card.className = "projectHubCard";
       card.href = projectHref(project);
+      card.setAttribute("data-document-navigation", "");
       const eyebrow = documentRef.createElement("span");
       eyebrow.textContent = project.id === activeProjectId ? "CURRENT PROJECT" : "PROJECT";
       const title = documentRef.createElement("h2");
