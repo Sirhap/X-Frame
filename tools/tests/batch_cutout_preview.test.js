@@ -10,6 +10,7 @@ const {
 
 test("cutout fit zoom matches the frame stage padding and zoom limits", () => {
   assert.equal(calculateFitScale(480, 360, 480, 360), 0.8);
+  assert.equal(calculateFitScale(960, 720, 480, 360, 2), 0.8);
   assert.equal(calculateFitScale(480, 360, 1, 1), 8);
   assert.equal(calculateFitScale(480, 360, 8000, 8000), 0.12);
 });
@@ -50,7 +51,15 @@ test("cutout preview rejects hidden layouts and right-edge source coordinates", 
   const visibleCanvas = {
     width: 100,
     height: 100,
-    _cutoutView: { sourceWidth: 10, sourceHeight: 10, scale: 10, offsetX: 0, offsetY: 0 },
+    _cutoutView: {
+      sourceWidth: 10,
+      sourceHeight: 10,
+      scale: 10,
+      renderScale: 10,
+      pixelRatio: 1,
+      offsetX: 0,
+      offsetY: 0,
+    },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
   };
   assert.equal(controller.previewSourcePoint({ clientX: 100, clientY: 50 }, visibleCanvas), null);
@@ -144,4 +153,43 @@ test("cutout comparison preview clips B while sharing one viewport", () => {
     ["rect", 120, 0, 360, 360],
   );
   assert.ok(target._cutoutView);
+});
+
+test("cutout one-hundred-percent zoom maps one source pixel to one CSS pixel on Retina", () => {
+  const calls = [];
+  const context = {
+    clearRect() {},
+    drawImage: (...args) => calls.push(args),
+  };
+  const target = {
+    width: 400,
+    height: 200,
+    getContext: () => context,
+    getBoundingClientRect: () => ({ width: 200, height: 100 }),
+  };
+  const state = { previewScale: 1, previewFitScale: null, previewPanX: 0, previewPanY: 0 };
+  const controller = createController({
+    elements: {
+      cutoutResult: target,
+      cutoutOriginal: {},
+      cutoutZoom: {},
+      cutoutZoomValue: {},
+      cutoutZoomFit: { classList: { toggle() {} } },
+      cutoutZoomActual: { classList: { toggle() {} } },
+    },
+    state,
+    renderPreview() {},
+    getDevicePixelRatio: () => 2,
+  });
+
+  controller.drawPreviewCanvas(target, { width: 100, height: 50 });
+
+  assert.equal(target._cutoutView.scale, 1);
+  assert.equal(target._cutoutView.renderScale, 2);
+  assert.deepEqual(calls[0].slice(-2), [200, 100]);
+
+  controller.setPreviewScale(2, target, { x: 270, y: 220 });
+  assert.equal(state.previewScale, 2);
+  assert.equal(state.previewPanX, 50);
+  assert.equal(state.previewPanY, 20);
 });

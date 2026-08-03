@@ -16,14 +16,17 @@
    * @param {number} sourceWidth Source image width.
    * @param {number} sourceHeight Source image height.
    * @param {number} [pixelRatio=1] Canvas device-pixel ratio.
-   * @returns {number} Clamped fit zoom.
+   * @returns {number} Clamped CSS-pixel zoom, independent of the backing-store pixel ratio.
    */
   function calculateFitScale(canvasWidth, canvasHeight, sourceWidth, sourceHeight, pixelRatio = 1) {
-    const horizontalPadding = Math.max(96 * pixelRatio, canvasWidth * 0.14);
-    const verticalPadding = Math.max(72 * pixelRatio, canvasHeight * 0.14);
+    const safePixelRatio = Math.max(1, Number(pixelRatio) || 1);
+    const cssCanvasWidth = canvasWidth / safePixelRatio;
+    const cssCanvasHeight = canvasHeight / safePixelRatio;
+    const horizontalPadding = Math.max(96, cssCanvasWidth * 0.14);
+    const verticalPadding = Math.max(72, cssCanvasHeight * 0.14);
     const fitScale = Math.min(
-      (canvasWidth - horizontalPadding) / sourceWidth,
-      (canvasHeight - verticalPadding) / sourceHeight,
+      (cssCanvasWidth - horizontalPadding) / sourceWidth,
+      (cssCanvasHeight - verticalPadding) / sourceHeight,
     );
     return Math.min(MAX_PREVIEW_ZOOM, Math.max(MIN_PREVIEW_ZOOM, fitScale));
   }
@@ -31,27 +34,31 @@
   /**
    * Calculates the drawing transform for a preview source.
    * @param {{canvasWidth:number,canvasHeight:number,sourceWidth:number,sourceHeight:number,fitScale:number|null,scale:number|null,panX:number,panY:number,pixelRatio?:number}} options View inputs.
-   * @returns {{sourceWidth:number,sourceHeight:number,fitScale:number,scale:number,offsetX:number,offsetY:number}} Preview transform.
+   * @returns {{sourceWidth:number,sourceHeight:number,fitScale:number,scale:number,renderScale:number,pixelRatio:number,offsetX:number,offsetY:number}} Preview transform.
    */
   function calculateView(options) {
     const sourceWidth = Math.max(1, Number(options.sourceWidth) || 1);
     const sourceHeight = Math.max(1, Number(options.sourceHeight) || 1);
+    const pixelRatio = Math.max(1, Number(options.pixelRatio) || 1);
     const measuredFitScale = calculateFitScale(
       options.canvasWidth,
       options.canvasHeight,
       sourceWidth,
       sourceHeight,
-      Math.max(1, Number(options.pixelRatio) || 1),
+      pixelRatio,
     );
     const fitScale = options.fitScale ?? measuredFitScale;
     const scale = options.scale ?? fitScale;
+    const renderScale = scale * pixelRatio;
     return {
       sourceWidth,
       sourceHeight,
       fitScale,
       scale,
-      offsetX: (options.canvasWidth - sourceWidth * scale) / 2 + options.panX,
-      offsetY: (options.canvasHeight - sourceHeight * scale) / 2 + options.panY,
+      renderScale,
+      pixelRatio,
+      offsetX: (options.canvasWidth - sourceWidth * renderScale) / 2 + options.panX,
+      offsetY: (options.canvasHeight - sourceHeight * renderScale) / 2 + options.panY,
     };
   }
 
@@ -110,8 +117,8 @@
         source,
         view.offsetX,
         view.offsetY,
-        sourceWidth * view.scale,
-        sourceHeight * view.scale,
+        sourceWidth * view.renderScale,
+        sourceHeight * view.renderScale,
       );
       target._cutoutView = view;
     }
@@ -147,8 +154,8 @@
         right,
         view.offsetX,
         view.offsetY,
-        view.sourceWidth * view.scale,
-        view.sourceHeight * view.scale,
+        view.sourceWidth * view.renderScale,
+        view.sourceHeight * view.renderScale,
       );
       context.restore();
     }
@@ -187,12 +194,13 @@
       }
       const nextScale = Math.max(MIN_PREVIEW_ZOOM, Math.min(MAX_PREVIEW_ZOOM, Number(scale || 1)));
       if (view && canvasPoint) {
-        const sourceX = (canvasPoint.x - view.offsetX) / view.scale;
-        const sourceY = (canvasPoint.y - view.offsetY) / view.scale;
-        const centeredX = (target.width - view.sourceWidth * nextScale) / 2;
-        const centeredY = (target.height - view.sourceHeight * nextScale) / 2;
-        state.previewPanX = canvasPoint.x - sourceX * nextScale - centeredX;
-        state.previewPanY = canvasPoint.y - sourceY * nextScale - centeredY;
+        const sourceX = (canvasPoint.x - view.offsetX) / view.renderScale;
+        const sourceY = (canvasPoint.y - view.offsetY) / view.renderScale;
+        const nextRenderScale = nextScale * view.pixelRatio;
+        const centeredX = (target.width - view.sourceWidth * nextRenderScale) / 2;
+        const centeredY = (target.height - view.sourceHeight * nextRenderScale) / 2;
+        state.previewPanX = canvasPoint.x - sourceX * nextRenderScale - centeredX;
+        state.previewPanY = canvasPoint.y - sourceY * nextRenderScale - centeredY;
       }
       state.previewScale = nextScale;
       renderPreview();
@@ -231,8 +239,8 @@
       if (!view) return null;
       const point = previewCanvasPoint(event, target);
       if (!point) return null;
-      const sourceX = (point.x - view.offsetX) / view.scale;
-      const sourceY = (point.y - view.offsetY) / view.scale;
+      const sourceX = (point.x - view.offsetX) / view.renderScale;
+      const sourceY = (point.y - view.offsetY) / view.renderScale;
       if (sourceX < 0 || sourceY < 0 || sourceX >= view.sourceWidth || sourceY >= view.sourceHeight) {
         return null;
       }

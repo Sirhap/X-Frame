@@ -758,7 +758,9 @@ test("cutout parameters follow the regular post-processing advanced layout", asy
   await expect(page.locator("#cutoutProtectSample")).toBeVisible();
 });
 
-test("@touch cutout generates, compares, presets, applies, and undoes a local B candidate", async ({ page }) => {
+test("@touch cutout generates, compares, presets, applies, and undoes a local B candidate", async ({
+  page,
+}) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/tools/cutout");
@@ -774,6 +776,32 @@ test("@touch cutout generates, compares, presets, applies, and undoes a local B 
   await expect(page.locator("#cutoutCandidateDivider")).toBeVisible();
   await expect(page.locator("#cutoutSettings")).toHaveAttribute("inert", "");
   await expect(page.locator("#cutoutCandidateDifferences span").first()).toBeVisible();
+
+  await page.locator("#cutoutZoomActual").click();
+  await expect(page.locator("#cutoutZoomValue")).toHaveText("100%");
+  const actualZoomMetrics = await page.locator("#cutoutResult").evaluate((canvas) => {
+    const bounds = canvas.getBoundingClientRect();
+    const backingPixelsPerCssPixel = canvas.width / bounds.width;
+    return {
+      visibleScale: canvas._cutoutView.renderScale / backingPixelsPerCssPixel,
+    };
+  });
+  expect(actualZoomMetrics.visibleScale).toBeCloseTo(1, 3);
+
+  await page.locator("#cutoutZoomFit").click();
+  const fitZoomMetrics = await page.locator("#cutoutZoomValue").evaluate((output) => {
+    const bounds = output.getBoundingClientRect();
+    const style = getComputedStyle(output);
+    return {
+      height: bounds.height,
+      lineHeight: Number.parseFloat(style.lineHeight),
+      text: output.textContent,
+      whiteSpace: style.whiteSpace,
+    };
+  });
+  expect(fitZoomMetrics.text).toMatch(/^FIT · \d+%$/);
+  expect(fitZoomMetrics.whiteSpace).toBe("nowrap");
+  expect(fitZoomMetrics.height).toBeLessThanOrEqual(fitZoomMetrics.lineHeight + 1);
 
   await page.locator("#cutoutCandidateSplitRange").fill("35");
   await expect(page.locator("#cutoutCandidateDivider")).toHaveAttribute("aria-valuenow", "35");

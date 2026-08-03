@@ -571,6 +571,7 @@
   color: var(--accent-3);
   text-align: center;
   font: 950 9px/1 var(--data-font);
+  white-space: nowrap;
 }
 
 .cutoutCompare {
