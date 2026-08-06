@@ -125,6 +125,12 @@
               <p class="sliceEditorHint">
                 编辑模式可移动/缩放；添加模式在原图拖出新切片；Delete / Backspace 删除选中切片。
               </p>
+              <div class="sliceEditActions" role="group" aria-label="编辑历史与批量操作">
+                <button id="scatterUndo" type="button" disabled>撤销</button>
+                <button id="scatterRedo" type="button" disabled>重做</button>
+                <button id="scatterRegroup" type="button" disabled>按位置重分组</button>
+                <button id="scatterNormalizeBoxes" type="button" disabled>统一裁剪框</button>
+              </div>
             </div>
           </section>
 
@@ -136,6 +142,11 @@
             <label class="cutoutModeButton">
               <input id="scatterTransparent" type="checkbox" checked />
               <span><strong>智能抠图</strong><small>自动背景清除 · 常规模式</small></span>
+              <b aria-hidden="true">ON</b>
+            </label>
+            <label class="cutoutModeButton">
+              <input id="scatterUniformOutput" type="checkbox" checked />
+              <span><strong>统一输出画布</strong><small>组内最大画布 · 底部居中</small></span>
               <b aria-hidden="true">ON</b>
             </label>
             <div class="groupExportSelection">
@@ -211,6 +222,7 @@
         <div id="scatterSliceList" class="sliceGroups">
           <p class="emptyResults">识别结果会显示在这里。</p>
         </div>
+        <p id="scatterInteractionStatus" class="visuallyHidden" aria-live="polite"></p>
       </section>
     </main>
 
@@ -245,6 +257,9 @@
     <script src="/scatter_slice_groups.js"></script>
     <script src="/scatter_slice_smart_cutout.js"></script>
     <script src="/scatter_slice_editor_core.js"></script>
+    <script src="/scatter_slice_workspace_core.js"></script>
+    <script src="/scatter_slice_group_controller.js"></script>
+    <script src="/app_history.js"></script>
     <script src="/scatter_slice.js"></script>
   </body>
 </html>

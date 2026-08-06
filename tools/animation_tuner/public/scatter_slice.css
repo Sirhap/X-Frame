@@ -660,6 +660,39 @@ select:hover {
   line-height: 1.5;
 }
 
+.sliceEditActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.sliceEditActions button {
+  min-height: 36px;
+  border: 1px solid var(--scatter-line-strong);
+  border-radius: 5px;
+  background: #0d141d;
+  color: var(--scatter-ink);
+  font: 700 9px/1.2 var(--data-font);
+  cursor: pointer;
+}
+
+.sliceEditActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .previewDeck {
   min-width: 0;
   display: grid;
@@ -944,6 +977,15 @@ select:hover {
   border-color: color-mix(in srgb, var(--group-accent) 48%, var(--scatter-line));
 }
 
+.sliceGroup.dragging {
+  opacity: 0.48;
+}
+
+.sliceGroup.groupDropTarget {
+  border-color: var(--scatter-amber);
+  box-shadow: inset 0 0 0 1px var(--scatter-amber);
+}
+
 .sliceGroup:not(.included) .sliceGrid {
   opacity: 0.46;
 }
@@ -959,19 +1001,52 @@ select:hover {
   background: color-mix(in srgb, var(--group-accent) 7%, var(--scatter-panel));
 }
 
-.sliceGroupHeader label {
+.sliceGroupIdentity {
   min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 9px;
-  cursor: pointer;
 }
 
-.sliceGroupHeader input {
+.sliceGroupHeader input[type="checkbox"] {
   width: 16px;
   height: 16px;
   margin: 0;
   accent-color: var(--group-accent);
+}
+
+.sliceGroupDrag {
+  flex: 0 0 30px;
+  min-height: 30px;
+  border: 1px solid var(--scatter-line-strong);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--group-accent);
+  cursor: grab;
+}
+
+.sliceGroupDrag:active {
+  cursor: grabbing;
+}
+
+.sliceGroupName {
+  min-width: 90px;
+  width: min(180px, 22vw);
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0 7px;
+  background: transparent;
+  color: var(--scatter-ink);
+  font: 700 11px/1 var(--ui-font);
+}
+
+.sliceGroupName:hover,
+.sliceGroupName:focus {
+  border-color: var(--group-accent);
+  background: var(--scatter-stage);
+  outline: none;
 }
 
 .sliceGroupHeader strong {
@@ -995,6 +1070,7 @@ select:hover {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .sliceGroupPlay,
@@ -1010,6 +1086,29 @@ select:hover {
 
 .sliceGroupPlay {
   padding: 0 10px;
+}
+
+.sliceGroupAction {
+  min-width: 30px;
+  min-height: 30px;
+  border: 1px solid var(--scatter-line-strong);
+  border-radius: 4px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--scatter-muted);
+  font: 700 8px/1.2 var(--data-font);
+  cursor: pointer;
+}
+
+.sliceGroupAction:hover:not(:disabled),
+.sliceGroupAction:focus-visible {
+  border-color: var(--group-accent);
+  color: var(--group-accent);
+}
+
+.sliceGroupAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
 }
 
 .sliceGroupPlayback,
@@ -1052,11 +1151,47 @@ select:hover {
   padding: 12px;
 }
 
+.sliceGrid.frameDropTarget {
+  background: color-mix(in srgb, var(--group-accent) 8%, transparent);
+}
+
 .sliceCardShell {
+  position: relative;
   min-width: 0;
   display: grid;
   grid-template-rows: 1fr auto;
   gap: 6px;
+}
+
+.sliceCardShell.dragging {
+  opacity: 0.42;
+}
+
+.sliceCardShell.dropBefore::before,
+.sliceCardShell.dropAfter::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--scatter-amber);
+}
+
+.sliceCardShell.dropBefore::before {
+  left: -6px;
+}
+
+.sliceCardShell.dropAfter::after {
+  right: -6px;
+}
+
+.sliceGroupManagement {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 12px 12px;
 }
 
 .sliceCard {

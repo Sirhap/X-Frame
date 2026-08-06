@@ -30,3 +30,24 @@ test("scatter-slice exposes a confirmed full-source clear action", () => {
   assert.match(script, /function clearSource\(\)/);
   assert.match(script, /state\.source = null/);
 });
+
+test("scatter-slice exposes history, grouping, multi-selection, and sizing controls", () => {
+  const html = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/scatter-slice.html"),
+    "utf8",
+  );
+
+  for (const id of [
+    "scatterUndo",
+    "scatterRedo",
+    "scatterRegroup",
+    "scatterNormalizeBoxes",
+    "scatterUniformOutput",
+    "scatterInteractionStatus",
+  ]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(html, /src="\/app_history\.js"/);
+  assert.match(html, /src="\/scatter_slice_workspace_core\.js"/);
+  assert.match(html, /src="\/scatter_slice_group_controller\.js"/);
+});

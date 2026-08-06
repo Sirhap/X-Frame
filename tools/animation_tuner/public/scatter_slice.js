@@ -5,11 +5,17 @@
   const groupCore = root.XSXBScatterSliceGroups;
   const smartCutout = root.XSXBScatterSliceSmartCutout;
   const editorCore = root.XSXBScatterSliceEditorCore;
+  const workspaceCore = root.XSXBScatterSliceWorkspaceCore;
+  const groupControllerCore = root.XSXBScatterSliceGroupController;
+  const historyCore = root.XSXBHistory;
   const clipboardMedia = root.ClipboardMedia;
   if (!core) throw new Error("零散切图核心模块未加载");
   if (!groupCore) throw new Error("零散切图分组模块未加载");
   if (!smartCutout) throw new Error("智能抠图模块未加载");
   if (!editorCore) throw new Error("切片编辑核心模块未加载");
+  if (!workspaceCore) throw new Error("切片工作区核心模块未加载");
+  if (!groupControllerCore) throw new Error("切片分组控制器未加载");
+  if (!historyCore) throw new Error("编辑历史模块未加载");
   if (!clipboardMedia) throw new Error("剪贴板媒体模块未加载");
 
   const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -53,11 +59,15 @@
     emptyStage: requireElement("#scatterEmptyStage"),
     fileInput: requireElement("#scatterFileInput"),
     groupSelection: requireElement("#scatterGroupSelection"),
+    interactionStatus: requireElement("#scatterInteractionStatus"),
     modeInput: requireElement("#scatterMode"),
+    normalizeBoxesButton: requireElement("#scatterNormalizeBoxes"),
     playAllButton: requireElement("#scatterPlayAll"),
     playAllCanvas: requireElement("#scatterPlaybackAll"),
     projectModeInput: requireElement("#scatterProjectMode"),
     previewCanvas: requireElement("#scatterPreview"),
+    redoButton: requireElement("#scatterRedo"),
+    regroupButton: requireElement("#scatterRegroup"),
     sampleModeButton: requireElement("#scatterSampleMode"),
     sliceList: requireElement("#scatterSliceList"),
     sourceMeta: requireElement("#scatterSourceMeta"),
@@ -66,16 +76,15 @@
     transparentInput: requireElement("#scatterTransparent"),
     toggleGroupsButton: requireElement("#scatterToggleGroups"),
     uploadButton: requireElement("#scatterUpload"),
+    undoButton: requireElement("#scatterUndo"),
+    uniformOutputInput: requireElement("#scatterUniformOutput"),
   };
 
   const sourceCanvas = document.createElement("canvas");
   const state = {
-    boxes: [],
     busy: false,
-    groups: [],
+    redoStack: [],
     resolvedMode: "colorkey",
-    selectedGroupIds: new Set(),
-    selectedIndex: null,
     sliceCanvasCache: new WeakMap(),
     smartBackgroundColor: null,
     source: null,
@@ -87,7 +96,80 @@
     previewFrameId: null,
     suppressBeforeUnload: false,
     toolMode: "sample",
+    undoStack: [],
+    workspace: workspaceCore.createDetectedWorkspace([], []),
   };
+
+  /** Returns current frame objects in detector order. @returns {object[]} */
+  function workspaceFrames() {
+    return state.workspace.frames;
+  }
+
+  /** Returns editable groups with resolved frame objects. @returns {Array<object>} */
+  function workspaceGroups() {
+    const frameById = new Map(workspaceFrames().map((frame) => [frame.id, frame]));
+    return state.workspace.groups.map((group) => ({
+      ...group,
+      boxes: group.frameIds.map((id) => frameById.get(id)).filter(Boolean),
+    }));
+  }
+
+  /** Returns the primary selected frame index. @returns {number|null} */
+  function selectedIndex() {
+    const index = workspaceFrames().findIndex((frame) => frame.id === state.workspace.selection.primaryId);
+    return index >= 0 ? index : null;
+  }
+
+  /** Replaces selection with one index or clears it. @param {number|null} index Frame index. */
+  function selectIndex(index) {
+    const frame = Number.isInteger(index) ? workspaceFrames()[index] : null;
+    state.workspace = workspaceCore.setSelection(state.workspace, frame ? [frame.id] : [], frame?.id || null);
+  }
+
+  Object.defineProperties(state, {
+    boxes: { get: workspaceFrames },
+    groups: { get: workspaceGroups },
+    selectedIndex: { get: selectedIndex, set: selectIndex },
+  });
+
+  const history = historyCore.createController({
+    elements: { undo: elements.undoButton, redoTop: elements.redoButton },
+    getUndoStack: () => state.undoStack,
+    setUndoStack: (value) => {
+      state.undoStack = value;
+    },
+    getRedoStack: () => state.redoStack,
+    setRedoStack: (value) => {
+      state.redoStack = value;
+    },
+    getSnapshot: () => workspaceCore.snapshotWorkspace(state.workspace),
+    restoreSnapshot: (snapshot) => {
+      state.workspace = workspaceCore.restoreWorkspace(snapshot);
+      elements.uniformOutputInput.checked = state.workspace.uniformOutput;
+      state.sliceCanvasCache = new WeakMap();
+      renderAll();
+    },
+    status: (message) => setStatus(message, "success"),
+    translate: (key, variables = {}) => {
+      const label = variables.label || "编辑";
+      return {
+        undoReady: `${label}已记录。`,
+        undoNothing: "没有可撤销的编辑。",
+        redoNothing: "没有可重做的编辑。",
+        undone: `已撤销：${label}。`,
+        redone: `已重做：${label}。`,
+        loadFailed: `历史恢复失败：${variables.message || "未知错误"}`,
+      }[key];
+    },
+    maxDepth: 80,
+  });
+
+  /** Clears undo and redo history for a newly loaded source. @returns {void} */
+  function resetHistory() {
+    state.undoStack = [];
+    state.redoStack = [];
+    history.updateHistoryControls();
+  }
 
   /**
    * Converts an unknown failure into a readable Chinese message.
@@ -161,8 +243,9 @@
    * @returns {void}
    */
   function installGroups(boxes) {
-    state.groups = groupCore.groupBoxesByRows(boxes);
-    state.selectedGroupIds = new Set(state.groups.map((group) => group.id));
+    state.workspace = workspaceCore.createDetectedWorkspace(boxes, groupCore.groupBoxesByRows(boxes), {
+      uniformOutput: elements.uniformOutputInput.checked,
+    });
   }
 
   /**
@@ -170,7 +253,7 @@
    * @returns {Array<{id:string,boxes:object[]}>} Selected groups.
    */
   function selectedGroups() {
-    return state.groups.filter((group) => state.selectedGroupIds.has(group.id) && group.boxes.length > 0);
+    return state.groups.filter((group) => group.enabled && group.boxes.length > 0);
   }
 
   /**
@@ -180,24 +263,6 @@
   function sourceBounds() {
     if (!state.source) throw new Error("请先加载源图片");
     return { width: state.source.width, height: state.source.height };
-  }
-
-  /**
-   * Captures boxes that currently belong to export-enabled groups.
-   * @returns {Set<object>} Included box identities.
-   */
-  function includedBoxSet() {
-    return new Set(selectedGroups().flatMap((group) => group.boxes));
-  }
-
-  /**
-   * Rebuilds row groups while preserving inclusion through box identity.
-   * @param {Set<object>} includedBoxes Previously included boxes.
-   * @returns {void}
-   */
-  function regroupBoxes(includedBoxes) {
-    state.groups = groupCore.groupBoxesByRows(state.boxes);
-    state.selectedGroupIds = new Set(editorCore.selectedGroupIdsAfterRegroup(state.groups, includedBoxes));
   }
 
   /**
@@ -344,10 +409,10 @@
       elements.sourceMeta.textContent = `${state.source.name} · ${state.source.width} × ${state.source.height}`;
       elements.previewCanvas.hidden = false;
       elements.emptyStage.hidden = true;
-      state.boxes = [];
-      state.groups = [];
-      state.selectedGroupIds.clear();
-      state.selectedIndex = null;
+      state.workspace = workspaceCore.createDetectedWorkspace([], [], {
+        uniformOutput: elements.uniformOutputInput.checked,
+      });
+      resetHistory();
       state.sliceCanvasCache = new WeakMap();
       state.pointerEdit = null;
       setToolMode("sample");
@@ -420,6 +485,33 @@
     return output;
   }
 
+  /**
+   * Returns maximum rendered crop dimensions for one frame sequence.
+   * @param {object[]} boxes Ordered slice frames.
+   * @returns {{width:number,height:number}} Maximum dimensions.
+   */
+  function maximumFrameSize(boxes) {
+    const frames = boxes.map(createSliceCanvas);
+    return {
+      width: Math.max(0, ...frames.map((frame) => frame.width)),
+      height: Math.max(0, ...frames.map((frame) => frame.height)),
+    };
+  }
+
+  /**
+   * Creates a rendered frame using the current non-destructive output setting.
+   * @param {object} box Slice frame.
+   * @param {{width:number,height:number}|null} uniformSize Optional uniform canvas size.
+   * @returns {HTMLCanvasElement} Tight or unified frame canvas.
+   */
+  function createOutputFrame(box, uniformSize = null) {
+    const frame = createSliceCanvas(box);
+    if (!uniformSize || (frame.width === uniformSize.width && frame.height === uniformSize.height)) {
+      return frame;
+    }
+    return bottomCenterFrame(frame, uniformSize.width, uniformSize.height);
+  }
+
   /** Draws the source and all current detection boxes. @returns {void} */
   function renderPreview() {
     if (!state.source) return;
@@ -432,20 +524,21 @@
     context.drawImage(sourceCanvas, 0, 0);
     context.font = `700 ${Math.max(13, Math.round(state.source.width / 72))}px SFMono-Regular, monospace`;
     state.boxes.forEach((box, index) => {
-      const selected = index === state.selectedIndex;
+      const selected = state.workspace.selection.ids.includes(box.id);
+      const primary = index === state.selectedIndex;
       const position = locateBox(box);
       const groupIndex = position?.groupIndex ?? 0;
       const palette = GROUP_COLORS[groupIndex % GROUP_COLORS.length];
-      const included = position ? state.selectedGroupIds.has(state.groups[position.groupIndex].id) : false;
+      const included = position ? state.groups[position.groupIndex].enabled : false;
       context.globalAlpha = included ? 1 : 0.45;
       context.fillStyle = palette.fill;
-      context.strokeStyle = selected ? "#edf6f7" : palette.stroke;
-      context.lineWidth = selected
+      context.strokeStyle = primary ? "#edf6f7" : selected ? "#f7b84b" : palette.stroke;
+      context.lineWidth = primary
         ? Math.max(3, Math.round(state.source.width / 400))
         : Math.max(2, Math.round(state.source.width / 512));
       context.fillRect(box.x, box.y, box.w, box.h);
       context.strokeRect(box.x, box.y, box.w, box.h);
-      context.fillStyle = selected ? "#edf6f7" : palette.stroke;
+      context.fillStyle = primary ? "#edf6f7" : selected ? "#f7b84b" : palette.stroke;
       const label = position
         ? `G${ordinal(position.groupIndex)}.${ordinal(position.frameIndex)}`
         : String(index + 1);
@@ -492,10 +585,11 @@
    * @param {HTMLCanvasElement} canvas Playback canvas.
    * @param {object} box Slice rectangle.
    * @param {number} frameIndex Zero-based frame index.
+   * @param {{width:number,height:number}|null} [uniformSize] Optional output canvas size.
    * @returns {void}
    */
-  function drawGroupPlaybackFrame(canvas, box, frameIndex) {
-    const frame = createSliceCanvas(box);
+  function drawGroupPlaybackFrame(canvas, box, frameIndex, uniformSize = null) {
+    const frame = createOutputFrame(box, uniformSize);
     canvas.width = 180;
     canvas.height = 160;
     canvas.dataset.frameIndex = String(frameIndex);
@@ -528,9 +622,10 @@
     stopGroupPlayback();
     if (boxes.length === 0) return;
     let frameIndex = 0;
+    const uniformSize = state.workspace.uniformOutput ? maximumFrameSize(boxes) : null;
     try {
       canvas.hidden = false;
-      drawGroupPlaybackFrame(canvas, boxes[frameIndex], frameIndex);
+      drawGroupPlaybackFrame(canvas, boxes[frameIndex], frameIndex, uniformSize);
       state.playbackIdleLabel = button.textContent;
       button.textContent = "暂停播放";
       state.playbackButton = button;
@@ -538,7 +633,7 @@
       state.playbackTimerId = root.setInterval(() => {
         try {
           frameIndex = (frameIndex + 1) % boxes.length;
-          drawGroupPlaybackFrame(canvas, boxes[frameIndex], frameIndex);
+          drawGroupPlaybackFrame(canvas, boxes[frameIndex], frameIndex, uniformSize);
         } catch (error) {
           stopGroupPlayback();
           reportFailure(error, `${label}预览失败`);
@@ -551,105 +646,48 @@
     }
   }
 
-  /** Rebuilds the accessible slice thumbnail list. @returns {void} */
+  const groupController = groupControllerCore.createController({
+    colors: GROUP_COLORS,
+    createSliceCanvas,
+    deleteSelectedFrames: deleteSelectedBox,
+    documentApi: document,
+    getGroups: workspaceGroups,
+    getWorkspace: () => state.workspace,
+    hasSource: () => Boolean(state.source),
+    history,
+    interactionStatus: elements.interactionStatus,
+    invalidateSliceCache: () => {
+      state.sliceCanvasCache = new WeakMap();
+    },
+    listElement: elements.sliceList,
+    ordinal,
+    renderAll,
+    rootApi: root,
+    setStatus,
+    setToolMode,
+    setWorkspace: (workspace) => {
+      state.workspace = workspace;
+    },
+    stopGroupPlayback,
+    toggleSequencePlayback,
+    uniformOutputInput: elements.uniformOutputInput,
+    workspaceCore,
+  });
+
+  /**
+   * Applies a group or frame workspace mutation through the extracted controller.
+   * @param {string} label History label.
+   * @param {(workspace:object)=>object} mutate Pure mutation.
+   * @param {string} message Success message.
+   * @returns {boolean} Whether state changed.
+   */
+  function applyWorkspaceMutation(label, mutate, message) {
+    return groupController.applyWorkspaceMutation(label, mutate, message);
+  }
+
+  /** Rebuilds the accessible animation-group and frame list. @returns {void} */
   function renderSliceList() {
-    stopGroupPlayback();
-    elements.sliceList.replaceChildren();
-    if (state.boxes.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "emptyResults";
-      empty.textContent = state.source ? "尚未识别到切片，请调整参数后重试。" : "识别结果会显示在这里。";
-      elements.sliceList.append(empty);
-      return;
-    }
-    state.groups.forEach((group, groupIndex) => {
-      const palette = GROUP_COLORS[groupIndex % GROUP_COLORS.length];
-      const included = state.selectedGroupIds.has(group.id);
-      const section = document.createElement("section");
-      section.className = `sliceGroup${included ? " included" : ""}`;
-      section.style.setProperty("--group-accent", palette.stroke);
-
-      const header = document.createElement("header");
-      header.className = "sliceGroupHeader";
-      const label = document.createElement("label");
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = included;
-      checkbox.setAttribute("aria-label", `选择动画组 ${groupIndex + 1} 导出`);
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) state.selectedGroupIds.add(group.id);
-        else state.selectedGroupIds.delete(group.id);
-        renderAll();
-        setStatus(`已选择 ${selectedGroups().length} / ${state.groups.length} 个动画组。`, "success");
-      });
-      const code = document.createElement("span");
-      code.className = "sliceGroupCode";
-      code.textContent = `G${ordinal(groupIndex)}`;
-      const title = document.createElement("strong");
-      title.textContent = `动画组 ${ordinal(groupIndex)}`;
-      label.append(checkbox, code, title);
-      const top = Math.min(...group.boxes.map((box) => box.y));
-      const bottom = Math.max(...group.boxes.map((box) => box.y + box.h));
-      const meta = document.createElement("span");
-      meta.className = "sliceGroupMeta";
-      meta.textContent = `${group.boxes.length} FRAMES · Y ${top}—${bottom}`;
-      const groupActions = document.createElement("div");
-      groupActions.className = "sliceGroupActions";
-      const playbackButton = document.createElement("button");
-      playbackButton.type = "button";
-      playbackButton.className = "sliceGroupPlay";
-      playbackButton.textContent = "播放本组";
-      playbackButton.setAttribute("aria-label", `播放动画组 ${groupIndex + 1}`);
-      groupActions.append(meta, playbackButton);
-      header.append(label, groupActions);
-
-      const playbackCanvas = document.createElement("canvas");
-      playbackCanvas.className = "sliceGroupPlayback";
-      playbackCanvas.setAttribute("aria-label", `动画组 ${groupIndex + 1} 循环预览`);
-      playbackCanvas.hidden = true;
-      playbackButton.addEventListener("click", () => {
-        toggleSequencePlayback(group.boxes, playbackButton, playbackCanvas, `动画组 ${groupIndex + 1}`);
-      });
-
-      const grid = document.createElement("div");
-      grid.className = "sliceGrid";
-      group.boxes.forEach((box, frameIndex) => {
-        const index = state.boxes.indexOf(box);
-        const shell = document.createElement("div");
-        shell.className = "sliceCardShell";
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `sliceCard${state.selectedIndex === index ? " selected" : ""}`;
-        button.dataset.boxIndex = String(index);
-        button.setAttribute("aria-pressed", state.selectedIndex === index ? "true" : "false");
-        button.addEventListener("click", () => {
-          state.selectedIndex = index;
-          setToolMode("edit");
-          renderAll();
-        });
-        const indexLabel = document.createElement("strong");
-        indexLabel.textContent = `G${ordinal(groupIndex)} · F${ordinal(frameIndex)}`;
-        const crop = createSliceCanvas(box);
-        crop.className = "sliceThumbnail";
-        crop.setAttribute("aria-hidden", "true");
-        const size = document.createElement("small");
-        size.textContent = `${crop.width} × ${crop.height} · ${box.pixels} px`;
-        button.append(indexLabel, crop, size);
-        const deleteButton = document.createElement("button");
-        deleteButton.type = "button";
-        deleteButton.className = "sliceCardDelete";
-        deleteButton.textContent = "删除";
-        deleteButton.setAttribute("aria-label", `删除动画组 ${groupIndex + 1} 第 ${frameIndex + 1} 帧`);
-        deleteButton.addEventListener("click", () => {
-          state.selectedIndex = index;
-          deleteSelectedBox();
-        });
-        shell.append(button, deleteButton);
-        grid.append(shell);
-      });
-      section.append(header, playbackCanvas, grid);
-      elements.sliceList.append(section);
-    });
+    groupController.render();
   }
 
   /** Synchronizes previews, counters, selection details, and action state. @returns {void} */
@@ -671,18 +709,22 @@
       elements.addModeButton.disabled = !state.source;
       elements.sampleModeButton.disabled = !state.source;
       elements.playAllButton.disabled = state.boxes.length === 0;
+      elements.regroupButton.disabled = state.boxes.length === 0;
+      elements.normalizeBoxesButton.disabled = state.workspace.selection.ids.length < 2;
+      elements.uniformOutputInput.checked = state.workspace.uniformOutput;
       setToolMode(state.toolMode);
       const selected = state.selectedIndex === null ? null : state.boxes[state.selectedIndex];
       const position = selected ? locateBox(selected) : null;
       elements.activeBox.textContent =
         selected && position
-          ? `G${ordinal(position.groupIndex)} F${ordinal(position.frameIndex)} · X:${selected.x} Y:${selected.y} W:${selected.w} H:${selected.h}`
+          ? `已选 ${state.workspace.selection.ids.length} · G${ordinal(position.groupIndex)} F${ordinal(position.frameIndex)} · X:${selected.x} Y:${selected.y} W:${selected.w} H:${selected.h}`
           : "NO SELECTION";
-      elements.deleteButton.disabled = !selected;
+      elements.deleteButton.disabled = state.workspace.selection.ids.length === 0;
       elements.downloadSliceButton.disabled = !selected;
       elements.downloadSheetButton.disabled = includedGroups.length === 0;
       elements.addProjectButton.disabled = state.busy || includedGroups.length === 0;
       elements.clearSourceButton.disabled = state.busy || !state.source;
+      history.updateHistoryControls();
     } catch (error) {
       reportFailure(error, "预览更新失败");
     }
@@ -703,8 +745,8 @@
         state.source.height,
         readDetectionOptions(),
       );
-      state.boxes = result.boxes;
-      installGroups(state.boxes);
+      history.pushUndo(state.boxes.length ? "重新识别切片" : "识别切片");
+      installGroups(result.boxes);
       state.resolvedMode = result.mode;
       state.selectedIndex = state.boxes.length > 0 ? 0 : null;
       setToolMode(state.boxes.length > 0 ? "edit" : "sample");
@@ -782,10 +824,8 @@
     stopGroupPlayback();
     state.source = null;
     state.smartBackgroundColor = null;
-    state.boxes = [];
-    state.groups = [];
-    state.selectedGroupIds.clear();
-    state.selectedIndex = null;
+    state.workspace = workspaceCore.createDetectedWorkspace([], []);
+    resetHistory();
     state.sliceCanvasCache = new WeakMap();
     state.toolMode = "sample";
     sourceCanvas.width = 0;
@@ -844,7 +884,13 @@
     }
   }
 
-  /** Draws a cropped frame onto a shared transparent canvas using a bottom-center anchor. */
+  /**
+   * Draws a cropped frame onto a shared transparent canvas using a bottom-center anchor.
+   * @param {HTMLCanvasElement} frame Cropped frame.
+   * @param {number} width Output width.
+   * @param {number} height Output height.
+   * @returns {HTMLCanvasElement} Unified frame canvas.
+   */
   function bottomCenterFrame(frame, width, height) {
     const canvas = document.createElement("canvas");
     canvas.width = width;
@@ -891,21 +937,28 @@
         },
       ];
     }
-    const totalPixels = groups.reduce(
-      (total, group) =>
-        total +
-        group.boxes.reduce((groupTotal, box) => {
-          const frame = createSliceCanvas(box);
-          return groupTotal + frame.width * frame.height;
-        }, 0),
+    const outputs = groups.map((group) => {
+      const size = state.workspace.uniformOutput ? maximumFrameSize(group.boxes) : null;
+      return {
+        group,
+        frames: group.boxes.map((box) => createOutputFrame(box, size)),
+      };
+    });
+    const totalPixels = outputs.reduce(
+      (total, output) =>
+        total + output.frames.reduce((groupTotal, frame) => groupTotal + frame.width * frame.height, 0),
       0,
     );
     if (totalPixels > MAX_HANDOFF_PIXELS) {
       throw new Error("所选切片的项目写入总量过大，请减少切片数量、留白或源图尺寸");
     }
-    return groups.map((group) => {
-      const groupIndex = state.groups.indexOf(group);
-      const animationName = `${baseName}-group-${String(groupIndex + 1).padStart(2, "0")}`;
+    return outputs.map(({ group, frames }) => {
+      const groupIndex = state.groups.findIndex((candidate) => candidate.id === group.id);
+      const defaultName = `动画组 ${String(groupIndex + 1).padStart(2, "0")}`;
+      const animationName =
+        group.name === defaultName
+          ? `${baseName}-group-${String(groupIndex + 1).padStart(2, "0")}`
+          : `${baseName}-${group.name}`;
       return {
         id: `scatter-${group.id}-${Date.now()}`,
         label: animationName,
@@ -915,10 +968,10 @@
         animationType: "actor",
         anchorMode: "canvas_bottom_center",
         fps: 12,
-        items: group.boxes.map((box, sourceIndex) => ({
+        items: frames.map((frame, sourceIndex) => ({
           sourceIndex,
           name: `frame_${String(sourceIndex + 1).padStart(4, "0")}.png`,
-          data: createSliceCanvas(box).toDataURL("image/png"),
+          data: frame.toDataURL("image/png"),
           flipped: false,
         })),
       };
@@ -1005,18 +1058,22 @@
     event.preventDefault();
     const point = sourcePointFromEvent(event);
     if (state.toolMode === "add") {
-      const includedBoxes = includedBoxSet();
       const newBox = editorCore.createBoxFromPoints(point, point, sourceBounds());
-      includedBoxes.add(newBox);
-      state.boxes.push(newBox);
-      state.selectedIndex = state.boxes.length - 1;
+      const beforeSnapshot = workspaceCore.snapshotWorkspace(state.workspace);
+      const previousRedoStack = [...state.redoStack];
+      history.pushUndo("添加切片");
+      state.workspace = workspaceCore.insertFrame(state.workspace, newBox, {
+        afterFrameId: state.workspace.selection.primaryId,
+      });
+      const createdFrame = state.boxes.find((box) => box.id === state.workspace.selection.primaryId);
       state.pointerEdit = {
         action: "create",
-        box: newBox,
+        beforeSnapshot,
+        box: createdFrame,
         handle: null,
-        includedBoxes,
-        originalBox: { ...newBox },
+        originalBox: { ...createdFrame },
         pointerId: event.pointerId,
+        previousRedoStack,
         start: point,
       };
       elements.previewCanvas.setPointerCapture(event.pointerId);
@@ -1030,15 +1087,37 @@
       renderAll();
       return;
     }
-    state.selectedIndex = hit.index;
-    const editedBox = state.boxes[hit.index];
+    const hitFrameId = state.boxes[hit.index].id;
+    if (event.metaKey || event.ctrlKey || event.shiftKey) {
+      state.workspace = workspaceCore.selectFrame(state.workspace, hitFrameId, {
+        range: event.shiftKey,
+        toggle: event.metaKey || event.ctrlKey,
+      });
+      if (!state.workspace.selection.ids.includes(hitFrameId)) {
+        renderAll();
+        return;
+      }
+    } else if (state.workspace.selection.ids.includes(hitFrameId)) {
+      state.workspace = workspaceCore.setSelection(
+        state.workspace,
+        state.workspace.selection.ids,
+        hitFrameId,
+      );
+    } else {
+      state.workspace = workspaceCore.selectFrame(state.workspace, hitFrameId);
+    }
+    const editedBox = state.boxes.find((box) => box.id === hitFrameId);
+    const beforeSnapshot = workspaceCore.snapshotWorkspace(state.workspace);
+    const previousRedoStack = [...state.redoStack];
+    history.pushUndo(hit.action === "move" ? "移动切片" : "缩放切片");
     state.pointerEdit = {
       action: hit.action,
+      beforeSnapshot,
       box: editedBox,
       handle: hit.handle || null,
-      includedBoxes: includedBoxSet(),
       originalBox: { ...editedBox },
       pointerId: event.pointerId,
+      previousRedoStack,
       start: point,
     };
     elements.previewCanvas.setPointerCapture(event.pointerId);
@@ -1091,27 +1170,45 @@
    */
   function finishPointerEdit(event) {
     if (!state.pointerEdit || state.pointerEdit.pointerId !== event.pointerId) return;
-    const created = state.pointerEdit.action === "create";
-    const includedBoxes = state.pointerEdit.includedBoxes;
+    const pointerEdit = state.pointerEdit;
+    const created = pointerEdit.action === "create";
+    const changed =
+      created || ["x", "y", "w", "h"].some((key) => pointerEdit.box[key] !== pointerEdit.originalBox[key]);
     state.pointerEdit = null;
     if (elements.previewCanvas.hasPointerCapture(event.pointerId)) {
       elements.previewCanvas.releasePointerCapture(event.pointerId);
     }
+    if (!changed) {
+      state.undoStack.pop();
+      state.redoStack = pointerEdit.previousRedoStack;
+      history.updateHistoryControls();
+    }
     state.sliceCanvasCache = new WeakMap();
-    regroupBoxes(includedBoxes);
     if (created) setToolMode("edit");
     renderAll();
-    setStatus(created ? "已添加新切片并归入动画组。" : "已更新切片范围与动画分组。", "success");
+    setStatus(
+      created
+        ? "已添加新切片并归入当前动画组。"
+        : changed
+          ? "已更新切片范围；原动画分组与顺序保持不变。"
+          : "切片范围未变化。",
+      "success",
+    );
   }
 
   /** Cancels pointer capture before a destructive state change. @returns {void} */
   function cancelPointerEdit() {
     if (!state.pointerEdit) return;
-    const pointerId = state.pointerEdit.pointerId;
+    const pointerEdit = state.pointerEdit;
+    const pointerId = pointerEdit.pointerId;
+    state.workspace = workspaceCore.restoreWorkspace(pointerEdit.beforeSnapshot);
+    state.undoStack.pop();
+    state.redoStack = pointerEdit.previousRedoStack;
     state.pointerEdit = null;
     if (elements.previewCanvas.hasPointerCapture(pointerId)) {
       elements.previewCanvas.releasePointerCapture(pointerId);
     }
+    history.updateHistoryControls();
   }
 
   /**
@@ -1138,19 +1235,15 @@
 
   /** Deletes the selected rectangle and rebuilds derived views. @returns {void} */
   function deleteSelectedBox() {
-    if (state.selectedIndex === null) return;
+    if (state.workspace.selection.ids.length === 0) return;
     cancelPointerEdit();
-    const deletedIndex = state.selectedIndex;
-    const includedBoxes = includedBoxSet();
-    includedBoxes.delete(state.boxes[deletedIndex]);
-    const nextIndex = editorCore.selectionAfterDelete(state.boxes.length, deletedIndex);
-    state.boxes.splice(deletedIndex, 1);
-    state.selectedIndex = nextIndex;
+    const count = state.workspace.selection.ids.length;
+    history.pushUndo(count > 1 ? `删除 ${count} 个切片` : "删除切片");
+    state.workspace = workspaceCore.deleteSelectedFrames(state.workspace);
     state.sliceCanvasCache = new WeakMap();
-    regroupBoxes(includedBoxes);
     if (state.boxes.length === 0) setToolMode("sample");
     renderAll();
-    setStatus("已删除选中切片。", "success");
+    setStatus(`已删除 ${count} 个选中切片。`, "success");
   }
 
   /**
@@ -1193,6 +1286,27 @@
     onError: (error) => reportFailure(error, "粘贴图片失败"),
   });
   elements.detectButton.addEventListener("click", runDetection);
+  elements.undoButton.addEventListener("click", history.undo);
+  elements.redoButton.addEventListener("click", history.redo);
+  elements.regroupButton.addEventListener("click", () => {
+    applyWorkspaceMutation(
+      "按位置重新分组",
+      (workspace) => {
+        const rows = groupCore.groupBoxesByRows(workspace.frames).map((group) => ({
+          frameIds: group.boxes.map((box) => box.id),
+        }));
+        return workspaceCore.regroupWorkspace(workspace, rows);
+      },
+      "已按源图位置重新生成动画分组。",
+    );
+  });
+  elements.normalizeBoxesButton.addEventListener("click", () => {
+    applyWorkspaceMutation(
+      "统一裁剪框",
+      (workspace) => workspaceCore.normalizeSelectedBoxes(workspace, sourceBounds()),
+      `已将 ${state.workspace.selection.ids.length} 个裁剪框扩展为统一尺寸。`,
+    );
+  });
   elements.colorInput.addEventListener("input", () => {
     elements.colorValue.textContent = elements.colorInput.value.toUpperCase();
   });
@@ -1204,6 +1318,14 @@
         ? "智能抠图已开启，缩略图、动画预览与导出已更新。"
         : "智能抠图已关闭，当前显示源图裁剪结果。",
       "success",
+    );
+  });
+  elements.uniformOutputInput.addEventListener("change", () => {
+    const enabled = elements.uniformOutputInput.checked;
+    applyWorkspaceMutation(
+      enabled ? "开启统一输出画布" : "关闭统一输出画布",
+      (workspace) => workspaceCore.setUniformOutput(workspace, enabled),
+      enabled ? "动画预览与导出将使用组内统一画布。" : "独立动画将保留各帧原始裁剪尺寸。",
     );
   });
   elements.playAllButton.addEventListener("click", () => {
@@ -1227,9 +1349,15 @@
   });
   elements.toggleGroupsButton.addEventListener("click", () => {
     const allSelected = selectedGroups().length === state.groups.length;
-    state.selectedGroupIds = new Set(allSelected ? [] : state.groups.map((group) => group.id));
-    renderAll();
-    setStatus(allSelected ? "已取消全部动画组；请选择需要导出的组。" : "已选择全部动画组。", "success");
+    applyWorkspaceMutation(
+      allSelected ? "取消全部导出组" : "选择全部导出组",
+      (workspace) =>
+        workspace.groups.reduce(
+          (next, group) => workspaceCore.setGroupEnabled(next, group.id, !allSelected),
+          workspace,
+        ),
+      allSelected ? "已取消全部动画组；请选择需要导出的组。" : "已选择全部动画组。",
+    );
   });
   elements.previewCanvas.addEventListener("click", sampleBackgroundColor);
   elements.previewCanvas.addEventListener("pointerdown", beginPointerEdit);
@@ -1241,7 +1369,20 @@
   });
   elements.deleteButton.addEventListener("click", deleteSelectedBox);
   document.addEventListener("keydown", (event) => {
-    if (!["Delete", "Backspace"].includes(event.key) || isInteractiveTarget(event.target)) return;
+    if (isInteractiveTarget(event.target)) return;
+    const command = event.metaKey || event.ctrlKey;
+    if (command && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) history.redo();
+      else history.undo();
+      return;
+    }
+    if (event.ctrlKey && event.key.toLowerCase() === "y") {
+      event.preventDefault();
+      history.redo();
+      return;
+    }
+    if (!["Delete", "Backspace"].includes(event.key)) return;
     if (state.selectedIndex === null) return;
     event.preventDefault();
     deleteSelectedBox();

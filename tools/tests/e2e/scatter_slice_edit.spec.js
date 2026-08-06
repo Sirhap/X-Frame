@@ -1,5 +1,6 @@
 "use strict";
 
+const assert = require("node:assert/strict");
 const { expect, test } = require("@playwright/test");
 
 /**
@@ -282,4 +283,134 @@ test("smart cutout removes black backgrounds in alpha detection mode without era
   expect(smartAlpha.enclosedBlackDetail).toBe(255);
   expect(smartAlpha.pinkEffect).toBe(255);
   expect(smartAlpha.sum).toBeLessThan(originalAlpha.sum);
+});
+
+test("workspace editing supports multi-select, group management, history, and cross-group dragging", async ({
+  page,
+}) => {
+  await page.goto("/tools/scatter-slice");
+  const tool = page.frameLocator('iframe[title="零散切片"]');
+  await loadGeneratedScatterImage(tool);
+  await tool.locator("#scatterDetect").click();
+  await expect.poll(() => tool.locator(".sliceCard").count()).toBeGreaterThan(3);
+
+  const originalGroupCount = await tool.locator(".sliceGroup").count();
+  await tool.locator(".sliceCard").nth(0).click();
+  await tool
+    .locator(".sliceCard")
+    .nth(1)
+    .click({ modifiers: ["Meta"] });
+  await expect(tool.locator("#scatterActiveBox")).toContainText("已选 2");
+  await expect(tool.locator("#scatterNormalizeBoxes")).toBeEnabled();
+  await tool.locator("#scatterNormalizeBoxes").click();
+
+  const firstGroup = tool.locator(".sliceGroup").first();
+  const groupName = firstGroup.locator(".sliceGroupName");
+  await groupName.fill("待机");
+  await groupName.press("Enter");
+  await expect(groupName).toHaveValue("待机");
+
+  await firstGroup.getByRole("button", { name: /所选切片.*新建动画组/ }).click();
+  await expect(tool.locator(".sliceGroup")).toHaveCount(originalGroupCount + 1);
+  await tool.locator("#scatterUndo").click();
+  await expect(tool.locator(".sliceGroup")).toHaveCount(originalGroupCount);
+  await tool.locator("#scatterRedo").click();
+  await expect(tool.locator(".sliceGroup")).toHaveCount(originalGroupCount + 1);
+
+  const firstGroupId = await tool.locator(".sliceGroup").first().getAttribute("data-group-id");
+  await tool.locator(".sliceGroup").first().getByRole("button", { name: /下移/ }).click();
+  await expect(tool.locator(".sliceGroup").nth(1)).toHaveAttribute("data-group-id", firstGroupId);
+  await tool.locator("#scatterUndo").click();
+  await expect(tool.locator(".sliceGroup").first()).toHaveAttribute("data-group-id", firstGroupId);
+
+  const sourceGroup = tool.locator(".sliceGroup").first();
+  const targetGroup = tool.locator(".sliceGroup").last();
+  const sourceCount = await sourceGroup.locator(".sliceCardShell").count();
+  const targetCount = await targetGroup.locator(".sliceCardShell").count();
+  const targetGroupId = await targetGroup.getAttribute("data-group-id");
+  await sourceGroup
+    .locator(".sliceCardShell")
+    .first()
+    .evaluate((source, targetGroupId) => {
+      const target = document.querySelector(`.sliceGroup[data-group-id="${targetGroupId}"] .sliceGrid`);
+      if (!target) throw new Error("找不到拖拽测试目标");
+      const dataTransfer = new DataTransfer();
+      source.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer }));
+      target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
+      target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+      source.dispatchEvent(new DragEvent("dragend", { bubbles: true, cancelable: true, dataTransfer }));
+    }, targetGroupId);
+  await expect(sourceGroup.locator(".sliceCardShell")).toHaveCount(sourceCount - 1);
+  await expect(targetGroup.locator(".sliceCardShell")).toHaveCount(targetCount + 1);
+  await tool.locator("#scatterUndo").click();
+  await expect(sourceGroup.locator(".sliceCardShell")).toHaveCount(sourceCount);
+});
+
+test("uniform output produces equal frame canvases for each separate project workset", async ({ page }) => {
+  await page.goto("/tools/scatter-slice");
+  const tool = page.frameLocator('iframe[title="零散切片"]');
+  await loadGeneratedScatterImage(tool);
+  await tool.locator("#scatterDetect").click();
+  await expect.poll(() => tool.locator(".sliceCard").count()).toBeGreaterThan(3);
+
+  const canvas = tool.locator("#scatterPreview");
+  await canvas.scrollIntoViewIfNeeded();
+  const canvasBox = await canvas.boundingBox();
+  expect(canvasBox).not.toBeNull();
+  const source = await canvas.evaluate((element) => ({ width: element.width, height: element.height }));
+  await tool.locator("#scatterAddMode").click();
+  const addStart = toClientPoint({ x: 710, y: 16 }, canvasBox, source);
+  const addEnd = toClientPoint({ x: 728, y: 34 }, canvasBox, source);
+  await page.mouse.move(addStart.x, addStart.y);
+  await page.mouse.down();
+  await page.mouse.move(addEnd.x, addEnd.y, { steps: 3 });
+  await page.mouse.up();
+
+  await page.evaluate(() => {
+    window.XSXBOpenWorksetHandoff = async (payload) => {
+      window.__scatterHandoff = payload;
+    };
+  });
+  await tool.locator("#scatterAddProject").click();
+
+  const dimensions = await page.evaluate(async () => {
+    const readSize = (data) =>
+      new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve([image.naturalWidth, image.naturalHeight]);
+        image.onerror = () => reject(new Error("无法读取交接 PNG"));
+        image.src = data;
+      });
+    return Promise.all(
+      window.__scatterHandoff.worksets.map(async (workset) =>
+        Promise.all(workset.items.map((item) => readSize(item.data))),
+      ),
+    );
+  });
+
+  for (const worksetDimensions of dimensions) {
+    assert.equal(new Set(worksetDimensions.map((size) => size.join("x"))).size, 1);
+  }
+
+  await tool.locator("#scatterUniformOutput").uncheck();
+  await tool.locator("#scatterAddProject").click();
+  const variableDimensions = await page.evaluate(async () => {
+    const readSize = (data) =>
+      new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve([image.naturalWidth, image.naturalHeight]);
+        image.onerror = () => reject(new Error("无法读取交接 PNG"));
+        image.src = data;
+      });
+    return Promise.all(
+      window.__scatterHandoff.worksets.map(async (workset) =>
+        Promise.all(workset.items.map((item) => readSize(item.data))),
+      ),
+    );
+  });
+  assert.ok(
+    variableDimensions.some(
+      (worksetDimensions) => new Set(worksetDimensions.map((size) => size.join("x"))).size > 1,
+    ),
+  );
 });
