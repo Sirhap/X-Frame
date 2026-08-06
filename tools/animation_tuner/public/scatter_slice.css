@@ -681,6 +681,34 @@ select:hover {
   opacity: 0.4;
 }
 
+.sliceNoiseActions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+
+.sliceNoiseActions label {
+  grid-column: 1 / -1;
+  color: var(--scatter-muted);
+  font: 700 8px/1 var(--data-font);
+}
+
+.sliceNoiseActions select,
+.sliceNoiseActions button {
+  min-height: 34px;
+  border: 1px solid var(--scatter-line-strong);
+  border-radius: 5px;
+  background: #0d141d;
+  color: var(--scatter-ink);
+  font: 700 8px/1.2 var(--data-font);
+}
+
+.sliceNoiseActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 .visuallyHidden {
   position: absolute;
   width: 1px;
@@ -991,6 +1019,9 @@ select:hover {
 }
 
 .sliceGroupHeader {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   min-height: 48px;
   display: flex;
   align-items: center;
@@ -999,6 +1030,7 @@ select:hover {
   padding: 9px 12px;
   border-bottom: 1px solid var(--scatter-line);
   background: color-mix(in srgb, var(--group-accent) 7%, var(--scatter-panel));
+  backdrop-filter: blur(12px);
 }
 
 .sliceGroupIdentity {
@@ -1111,6 +1143,12 @@ select:hover {
   opacity: 0.35;
 }
 
+.sliceGroupAction.danger {
+  margin-left: auto;
+  border-color: color-mix(in srgb, var(--scatter-coral) 55%, var(--scatter-line));
+  color: var(--scatter-coral);
+}
+
 .sliceGroupPlayback,
 #scatterPlaybackAll {
   width: 180px;
@@ -1158,9 +1196,7 @@ select:hover {
 .sliceCardShell {
   position: relative;
   min-width: 0;
-  display: grid;
-  grid-template-rows: 1fr auto;
-  gap: 6px;
+  display: block;
 }
 
 .sliceCardShell.dragging {
@@ -1212,13 +1248,31 @@ select:hover {
 }
 
 .sliceCardDelete {
-  width: 100%;
+  position: absolute;
+  z-index: 2;
+  top: 7px;
+  right: 7px;
+  width: 28px;
+  min-height: 28px;
+  opacity: 0.18;
   border-color: color-mix(in srgb, var(--scatter-coral) 70%, var(--scatter-line));
+  background: color-mix(in srgb, var(--scatter-stage) 88%, transparent);
   color: var(--scatter-coral);
+  font-size: 15px;
+  transition: opacity 120ms ease;
 }
 
+.sliceCardShell:hover .sliceCardDelete,
+.sliceCardShell:focus-within .sliceCardDelete,
 .sliceCardDelete:hover {
+  opacity: 1;
   background: color-mix(in srgb, var(--scatter-coral) 10%, transparent);
+}
+
+@media (hover: none) {
+  .sliceCardDelete {
+    opacity: 1;
+  }
 }
 
 .sliceCard:hover,

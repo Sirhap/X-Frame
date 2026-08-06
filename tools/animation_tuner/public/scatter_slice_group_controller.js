@@ -345,7 +345,7 @@
           const deleteButton = documentApi.createElement("button");
           deleteButton.type = "button";
           deleteButton.className = "sliceCardDelete";
-          deleteButton.textContent = "删除";
+          deleteButton.textContent = "×";
           deleteButton.setAttribute("aria-label", `删除动画组 ${groupIndex + 1} 第 ${frameIndex + 1} 帧`);
           deleteButton.addEventListener("click", () => {
             setWorkspace(workspaceCore.setSelection(getWorkspace(), [box.id], box.id));
@@ -392,14 +392,18 @@
               ),
             groupIndex === groups.length - 1,
           ),
-          groupActionButton("删除组", `删除${group.name}及其全部切片`, () => {
-            if (!rootApi.confirm(`删除“${group.name}”及其中 ${group.boxes.length} 个切片？`)) return;
-            applyWorkspaceMutation(
-              "删除动画组",
-              (current) => workspaceCore.deleteGroup(current, group.id),
-              `${group.name}及其切片已删除。`,
-            );
-          }),
+          (() => {
+            const deleteGroupButton = groupActionButton("删除整组", `删除${group.name}及其全部切片`, () => {
+              if (!rootApi.confirm(`删除“${group.name}”及其中 ${group.boxes.length} 个切片？`)) return;
+              applyWorkspaceMutation(
+                "删除动画组",
+                (current) => workspaceCore.deleteGroup(current, group.id),
+                `${group.name}及其切片已删除。`,
+              );
+            });
+            deleteGroupButton.classList.add("danger");
+            return deleteGroupButton;
+          })(),
         );
         section.append(header, playbackCanvas, grid, management);
         listElement.append(section);

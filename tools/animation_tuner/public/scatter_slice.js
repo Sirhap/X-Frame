@@ -69,6 +69,8 @@
     redoButton: requireElement("#scatterRedo"),
     regroupButton: requireElement("#scatterRegroup"),
     sampleModeButton: requireElement("#scatterSampleMode"),
+    selectSmallSlicesButton: requireElement("#scatterSelectSmallSlices"),
+    smallSliceRatioInput: requireElement("#scatterSmallSliceRatio"),
     sliceList: requireElement("#scatterSliceList"),
     sourceMeta: requireElement("#scatterSourceMeta"),
     status: requireElement("#scatterStatus"),
@@ -82,6 +84,7 @@
 
   const sourceCanvas = document.createElement("canvas");
   const state = {
+    animationNameAuto: true,
     busy: false,
     redoStack: [],
     resolvedMode: "colorkey",
@@ -393,8 +396,9 @@
         name: file.name || "untitled-image",
         width: sourceCanvas.width,
       };
-      if (!elements.animationNameInput.value.trim()) {
+      if (state.animationNameAuto || !elements.animationNameInput.value.trim()) {
         elements.animationNameInput.value = state.source.name.replace(/\.[^.]+$/, "") || "sprites";
+        state.animationNameAuto = true;
       }
 
       const rgba = context.getImageData(0, 0, state.source.width, state.source.height).data;
@@ -711,6 +715,7 @@
       elements.playAllButton.disabled = state.boxes.length === 0;
       elements.regroupButton.disabled = state.boxes.length === 0;
       elements.normalizeBoxesButton.disabled = state.workspace.selection.ids.length < 2;
+      elements.selectSmallSlicesButton.disabled = state.boxes.length < 2;
       elements.uniformOutputInput.checked = state.workspace.uniformOutput;
       setToolMode(state.toolMode);
       const selected = state.selectedIndex === null ? null : state.boxes[state.selectedIndex];
@@ -837,6 +842,7 @@
     elements.fileInput.value = "";
     elements.sourceMeta.textContent = "未加载图片";
     elements.animationNameInput.value = "";
+    state.animationNameAuto = true;
     elements.colorInput.value = "#98d79b";
     elements.colorValue.textContent = "#98D79B";
     renderAll();
@@ -1306,6 +1312,25 @@
       (workspace) => workspaceCore.normalizeSelectedBoxes(workspace, sourceBounds()),
       `已将 ${state.workspace.selection.ids.length} 个裁剪框扩展为统一尺寸。`,
     );
+  });
+  elements.selectSmallSlicesButton.addEventListener("click", () => {
+    try {
+      const ratio = Number(elements.smallSliceRatioInput.value);
+      state.workspace = workspaceCore.selectFramesByRelativeArea(state.workspace, ratio);
+      renderAll();
+      const count = state.workspace.selection.ids.length;
+      setStatus(
+        count > 0
+          ? `已按尺寸选择 ${count} 个小切片；确认后可统一删除或另建组。`
+          : `没有找到面积不超过最大切片 ${Math.round(ratio * 100)}% 的区域。`,
+        count > 0 ? "success" : "working",
+      );
+    } catch (error) {
+      reportFailure(error, "小切片筛选失败");
+    }
+  });
+  elements.animationNameInput.addEventListener("input", () => {
+    state.animationNameAuto = !elements.animationNameInput.value.trim();
   });
   elements.colorInput.addEventListener("input", () => {
     elements.colorValue.textContent = elements.colorInput.value.toUpperCase();

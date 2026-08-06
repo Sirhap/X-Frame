@@ -20,10 +20,11 @@ function toClientPoint(point, canvasBox, source) {
 /**
  * Loads the former generated sample through the real file-input path.
  * @param {import("@playwright/test").FrameLocator} tool Scatter tool frame.
+ * @param {string} [fileName] Browser file name.
  * @returns {Promise<void>}
  */
-async function loadGeneratedScatterImage(tool) {
-  await tool.locator("body").evaluate(async () => {
+async function loadGeneratedScatterImage(tool, fileName = "scatter-test.png") {
+  await tool.locator("body").evaluate(async (_, requestedFileName) => {
     const canvas = document.createElement("canvas");
     canvas.width = 760;
     canvas.height = 440;
@@ -50,12 +51,12 @@ async function loadGeneratedScatterImage(tool) {
     });
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
     const transfer = new DataTransfer();
-    transfer.items.add(new File([blob], "scatter-test.png", { type: "image/png" }));
+    transfer.items.add(new File([blob], requestedFileName, { type: "image/png" }));
     const input = document.querySelector("#scatterFileInput");
     Object.defineProperty(input, "files", { configurable: true, value: transfer.files });
     input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  await expect(tool.locator("#scatterSourceMeta")).toContainText("scatter-test.png");
+  }, fileName);
+  await expect(tool.locator("#scatterSourceMeta")).toContainText(fileName);
 }
 
 /**
@@ -344,6 +345,45 @@ test("workspace editing supports multi-select, group management, history, and cr
   await expect(targetGroup.locator(".sliceCardShell")).toHaveCount(targetCount + 1);
   await tool.locator("#scatterUndo").click();
   await expect(sourceGroup.locator(".sliceCardShell")).toHaveCount(sourceCount);
+});
+
+test("real-material cleanup refreshes automatic names and selects small slices in one action", async ({
+  page,
+}) => {
+  await page.goto("/tools/scatter-slice");
+  const tool = page.frameLocator('iframe[title="零散切片"]');
+  const animationName = tool.locator("#scatterAnimationName");
+
+  await loadGeneratedScatterImage(tool, "first-sheet.png");
+  await expect(animationName).toHaveValue("first-sheet");
+  await loadGeneratedScatterImage(tool, "second-sheet.png");
+  await expect(animationName).toHaveValue("second-sheet");
+  await animationName.fill("custom-run");
+  await loadGeneratedScatterImage(tool, "third-sheet.png");
+  await expect(animationName).toHaveValue("custom-run");
+
+  await tool.locator("#scatterDetect").click();
+  const canvas = tool.locator("#scatterPreview");
+  await canvas.scrollIntoViewIfNeeded();
+  const canvasBox = await canvas.boundingBox();
+  expect(canvasBox).not.toBeNull();
+  const source = await canvas.evaluate((element) => ({ width: element.width, height: element.height }));
+  await tool.locator("#scatterAddMode").click();
+  const addStart = toClientPoint({ x: 720, y: 18 }, canvasBox, source);
+  const addEnd = toClientPoint({ x: 732, y: 30 }, canvasBox, source);
+  await page.mouse.move(addStart.x, addStart.y);
+  await page.mouse.down();
+  await page.mouse.move(addEnd.x, addEnd.y, { steps: 3 });
+  await page.mouse.up();
+
+  const frameCount = await tool.locator(".sliceCard").count();
+  expect(frameCount).toBeGreaterThan(3);
+  await tool.locator("#scatterSmallSliceRatio").selectOption("0.3");
+  await tool.locator("#scatterSelectSmallSlices").click();
+  const selectedCount = await tool.locator('.sliceCard[aria-pressed="true"]').count();
+  expect(selectedCount).toBeGreaterThan(0);
+  expect(selectedCount).toBeLessThan(frameCount);
+  await expect(tool.locator("#scatterStatus")).toContainText(`已按尺寸选择 ${selectedCount} 个小切片`);
 });
 
 test("uniform output produces equal frame canvases for each separate project workset", async ({ page }) => {

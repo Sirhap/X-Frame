@@ -42,6 +42,8 @@ test("scatter-slice exposes history, grouping, multi-selection, and sizing contr
     "scatterRedo",
     "scatterRegroup",
     "scatterNormalizeBoxes",
+    "scatterSmallSliceRatio",
+    "scatterSelectSmallSlices",
     "scatterUniformOutput",
     "scatterInteractionStatus",
   ]) {

@@ -123,13 +123,22 @@
                 <button id="scatterSampleMode" type="button" aria-pressed="true" disabled>取背景色</button>
               </div>
               <p class="sliceEditorHint">
-                编辑模式可移动/缩放；添加模式在原图拖出新切片；Delete / Backspace 删除选中切片。
+                编辑模式可移动/缩放；⌘/Ctrl 点击多选，Shift 点击连续选择；拖动卡片调整顺序。
               </p>
               <div class="sliceEditActions" role="group" aria-label="编辑历史与批量操作">
                 <button id="scatterUndo" type="button" disabled>撤销</button>
                 <button id="scatterRedo" type="button" disabled>重做</button>
                 <button id="scatterRegroup" type="button" disabled>按位置重分组</button>
                 <button id="scatterNormalizeBoxes" type="button" disabled>统一裁剪框</button>
+              </div>
+              <div class="sliceNoiseActions" role="group" aria-label="小切片快速筛选">
+                <label for="scatterSmallSliceRatio">小切片阈值</label>
+                <select id="scatterSmallSliceRatio">
+                  <option value="0.15">≤ 最大面积 15%</option>
+                  <option value="0.3" selected>≤ 最大面积 30%</option>
+                  <option value="0.5">≤ 最大面积 50%</option>
+                </select>
+                <button id="scatterSelectSmallSlices" type="button" disabled>选择小切片</button>
               </div>
             </div>
           </section>

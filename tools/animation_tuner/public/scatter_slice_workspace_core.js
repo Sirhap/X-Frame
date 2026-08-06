@@ -524,6 +524,29 @@
   }
 
   /**
+   * Selects crop boxes whose area is small relative to the largest current frame.
+   * @param {object} workspace Workspace.
+   * @param {number} maximumRatio Inclusive ratio in the range (0, 1].
+   * @returns {object} Workspace with matching frames selected in visual order.
+   */
+  function selectFramesByRelativeArea(workspace, maximumRatio) {
+    const ratio = Number(maximumRatio);
+    if (!Number.isFinite(ratio) || ratio <= 0 || ratio > 1) {
+      throw new RangeError("maximumRatio 必须大于 0 且不超过 1");
+    }
+    const maximumArea = Math.max(0, ...workspace.frames.map((frame) => frame.w * frame.h));
+    if (maximumArea <= 0) return cloneWorkspace(workspace);
+    const matchingIds = workspace.frames
+      .filter((frame) => frame.w * frame.h <= maximumArea * ratio)
+      .map((frame) => frame.id);
+    const next = cloneWorkspace(workspace);
+    next.selection.ids = orderIds(next, matchingIds);
+    next.selection.primaryId = next.selection.ids.at(-1) || null;
+    next.selection.anchorId = next.selection.ids[0] || null;
+    return next;
+  }
+
+  /**
    * Expands selected boxes to a common size around each bottom-center anchor.
    * @param {object} workspace Workspace.
    * @param {{width:number,height:number}} bounds Source bounds.
@@ -596,6 +619,7 @@
     renameGroup,
     restoreWorkspace,
     selectFrame,
+    selectFramesByRelativeArea,
     setGroupEnabled,
     setSelection,
     setUniformOutput,

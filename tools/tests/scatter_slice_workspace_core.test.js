@@ -100,6 +100,27 @@ test("selection supports toggle and same-group ranges in visual order", () => {
   assert.deepEqual(workspace.selection.ids, ["frame-3"]);
 });
 
+test("relative area selection finds visual noise without mutating frame order", () => {
+  const first = box(4, 5, 10, 10);
+  const second = box(24, 6, 20, 20);
+  const third = box(8, 40, 8, 8);
+  const workspace = workspaceCore.createDetectedWorkspace(
+    [first, second, third],
+    [{ boxes: [first, second] }, { boxes: [third] }],
+  );
+  const selected = workspaceCore.selectFramesByRelativeArea(workspace, 0.3);
+
+  assert.deepEqual(selected.selection, {
+    ids: ["frame-1", "frame-3"],
+    primaryId: "frame-3",
+    anchorId: "frame-1",
+  });
+  assert.deepEqual(selected.groups, workspace.groups);
+  assert.deepEqual(workspace.selection.ids, []);
+  assert.throws(() => workspaceCore.selectFramesByRelativeArea(workspace, 0), /maximumRatio/);
+  assert.throws(() => workspaceCore.selectFramesByRelativeArea(workspace, 1.1), /maximumRatio/);
+});
+
 test("selected frames move as one ordered block and empty groups disappear", () => {
   let workspace = createWorkspace();
   workspace = workspaceCore.selectFrame(workspace, "frame-1");
