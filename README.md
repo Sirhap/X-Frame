@@ -108,9 +108,13 @@ audio/projects/<project_id>/
 代码没有外部运行依赖，只需要 Node.js。维护者可以让 Agent 执行项目检查，检查内容等价于：
 
 ```powershell
+npm run check:quick
 npm run check
 npm test
 ```
+
+`npm run check:quick` 只运行语法、ESLint、Prettier 和类型检查，适合本地迭代；`npm run check`
+通过 `tools/quality_gate.js` 的数据驱动 `full` 配置保持完整生产检查顺序。任一子检查失败时，门禁会立即停止并保留其退出码。
 
 生成静态托管使用的白名单生产目录：
 

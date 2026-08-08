@@ -28,6 +28,7 @@ const {
 } = require("../codex_pets");
 const { createHttpUtilities } = require("./server_http");
 const { createProjectPersistence } = require("./server_project_persistence");
+const { createProjectSaveTransaction } = require("./server_project_save");
 const { createProjectValidation } = require("./server_project_validation");
 const { createProjectView } = require("./server_project_view");
 const { createProjectRoutes } = require("./server_project_routes");
@@ -243,6 +244,41 @@ async function syncGodotProjectAsync(project, options = {}) {
     throw error;
   }
 }
+
+const projectSaveTransaction = createProjectSaveTransaction({
+  root: ROOT,
+  projectStore,
+  writeLock: withProjectWrite,
+  revisions: { current: projectDataRevision },
+  snapshots: {
+    paths: saveTransactionPaths,
+    create: createFilesystemSnapshot,
+  },
+  persistence: {
+    saveTuning: saveTuningPayload,
+    saveFrameAudio: saveFrameAudioBindings,
+    saveFrameImages: saveFrameImageAttachments,
+    saveAttackTrails,
+    emptyAttackTrails: EMPTY_ATTACK_TRAILS,
+  },
+  pets: {
+    export: exportCodexPet,
+    clearTuning: clearExportedPetTuning,
+    sync: syncCodexPetProject,
+  },
+  godot: {
+    sync: syncGodotProjectAsync,
+    syncRuntimeProjectId: syncGodotRuntimeProjectId,
+    handoffStatus: (project) => godotHandoffService.status(project),
+    markSyncFailed: (project, error) => godotHandoffService.markSyncFailed(project, error),
+  },
+  projectView: {
+    readTuning: readTuningFile,
+    tuningForClient,
+    readManifest,
+    validate: validateProject,
+  },
+});
 
 const { handleProjectRoute } = createProjectRoutes({
   send,
@@ -898,130 +934,16 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJsonBody(req, parsed.pathname);
       premiumAuthorizer.assertAuthorized(req, parsed.pathname, payload);
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      return await withProjectWrite(project.id, async () => {
-        const currentRevision = projectDataRevision(project);
-        const baseRevision = String(payload.baseRevision || "");
-        if (baseRevision && baseRevision !== currentRevision) {
-          return send(res, 409, {
-            error:
-              "Project data changed in another window. Reload before saving to avoid overwriting newer work.",
-            code: "revision_conflict",
-            dataRevision: currentRevision,
-          });
-        }
-        const projectPaths = projectStore.projectPaths(project);
-        const localSavePaths = [
-          projectPaths.tuning,
-          projectPaths.frameAudio,
-          projectPaths.frameImageAttachments,
-          projectPaths.attackTrails,
-        ].filter(Boolean);
-        const localPathSet = new Set(localSavePaths.map((entry) => path.resolve(entry)));
-        const externalSavePaths = saveTransactionPaths(project).filter(
-          (entry) => !localPathSet.has(path.resolve(entry)),
-        );
-        const localTransaction = await createFilesystemSnapshot(localSavePaths);
-        const externalTransaction = await createFilesystemSnapshot(externalSavePaths);
-        let localSaved = false;
-        try {
-          saveTuningPayload(payload, project);
-          let frameAudioBindings = null;
-          if (
-            Array.isArray(payload.frame_audio_bindings) ||
-            Array.isArray(payload.frameAudioBindings) ||
-            payload.frameAudioBindings
-          ) {
-            frameAudioBindings = saveFrameAudioBindings(
-              payload.frame_audio_bindings || payload.frameAudioBindings,
-              project,
-            );
-          }
-          let frameImageAttachments = null;
-          if (
-            Array.isArray(payload.frame_image_attachments) ||
-            Array.isArray(payload.frameImageAttachments)
-          ) {
-            frameImageAttachments = saveFrameImageAttachments(
-              payload.frame_image_attachments || payload.frameImageAttachments,
-              project,
-            );
-          }
-          const attackTrails = saveAttackTrails(
-            payload.attack_trails || payload.attackTrails || EMPTY_ATTACK_TRAILS,
-            project,
-          );
-          const codexPetExports = [];
-          if (project.kind === "codex_pets") {
-            for (const entry of Array.isArray(payload.codex_pet_exports) ? payload.codex_pet_exports : []) {
-              codexPetExports.push(exportCodexPet(projectStore, project, entry));
-            }
-            clearExportedPetTuning(
-              projectStore,
-              project,
-              codexPetExports.map((entry) => entry.profileId),
-            );
-            syncCodexPetProject(ROOT, projectStore, project);
-          }
-          localSaved = true;
-          const godotSync = await syncGodotProjectAsync(project, {
-            ...(frameAudioBindings ? { frameAudioBindings } : {}),
-            ...(frameImageAttachments ? { frameImageAttachments } : {}),
-            attackTrails,
-          });
-          const changedRuntimeProjectIdFiles = syncGodotRuntimeProjectId(project);
-          const dataRevision = projectDataRevision(project);
-          await localTransaction.dispose();
-          await externalTransaction.dispose();
-          return send(res, 200, {
-            ok: true,
-            tuning: tuningForClient(readTuningFile(project)),
-            godotSync,
-            godotHandoff: godotHandoffService.status(project),
-            runtimeProjectIdFiles: changedRuntimeProjectIdFiles,
-            codexPetExports,
-            dataRevision,
-            warnings: validateProject(project, readManifest(project)),
-          });
-        } catch (error) {
-          if (localSaved) {
-            try {
-              await externalTransaction.restore();
-            } catch (rollbackError) {
-              await localTransaction.dispose();
-              await externalTransaction.dispose();
-              throw new AggregateError(
-                [error, rollbackError],
-                "Godot synchronization failed and external rollback was incomplete.",
-              );
-            }
-            godotHandoffService.markSyncFailed(project, error);
-            await localTransaction.dispose();
-            await externalTransaction.dispose();
-            return send(res, 500, {
-              ok: false,
-              localSaved: true,
-              error: String(error?.message || error),
-              godotSync: { ok: false, reason: String(error?.message || error) },
-              godotHandoff: godotHandoffService.status(project),
-              dataRevision: projectDataRevision(project),
-            });
-          }
-          try {
-            await localTransaction.restore();
-            await externalTransaction.restore();
-          } catch (rollbackError) {
-            await localTransaction.dispose();
-            await externalTransaction.dispose();
-            throw new AggregateError(
-              [error, rollbackError],
-              "Save failed and filesystem rollback was incomplete.",
-            );
-          }
-          await localTransaction.dispose();
-          await externalTransaction.dispose();
-          throw error;
-        }
-      });
+      const result = await projectSaveTransaction.save(project, payload);
+      if (result.kind === "revision_conflict") {
+        return send(res, 409, {
+          error:
+            "Project data changed in another window. Reload before saving to avoid overwriting newer work.",
+          code: "revision_conflict",
+          dataRevision: result.dataRevision,
+        });
+      }
+      return send(res, result.kind === "saved" ? 200 : 500, result.payload);
     }
     if (await handleMediaRoute(req, res, parsed)) return;
     if (req.method === "GET" && parsed.pathname === "/asset") {
