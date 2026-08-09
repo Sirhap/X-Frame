@@ -26,6 +26,8 @@ const { redactWasmSourcePaths } = require("./wasm_transform");
 
 const STYLESHEET_EXPRESSION = /<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/g;
 const SCRIPT_EXPRESSION = /<script\s+src="([^"]+)"\s*><\/script>/g;
+const SCATTER_PRODUCTION_ADAPTER = "/scatter_slice_production_adapter.js";
+const SCATTER_SMART_CUTOUT = "/scatter_slice_smart_cutout.js";
 const BUILD_FORMAT_VERSION = 2;
 const TEMPORARY_ROOT = path.join(PROJECT_ROOT, `.dist-build-${process.pid}`);
 const BACKUP_ROOT = path.join(PROJECT_ROOT, `.dist-backup-${process.pid}`);
@@ -46,6 +48,48 @@ async function minify(source, loader) {
     target: loader === "css" ? undefined : "es2020",
   });
   return result.code;
+}
+
+/**
+ * Replaces one required production template fragment and fails when the source contract drifts.
+ * @param {string} source Template source.
+ * @param {string} expected Required fragment.
+ * @param {string} replacement Production replacement.
+ * @param {string} label Human-readable fragment label.
+ * @returns {string} Updated template source.
+ */
+function replaceRequired(source, expected, replacement, label) {
+  if (!source.includes(expected)) throw new Error(`Production template is missing ${label}.`);
+  return source.replace(expected, replacement);
+}
+
+/**
+ * Creates the self-contained scatter-slice entry without shipping protected JavaScript kernels.
+ * @param {string} sourceHtml Development scatter-slice HTML.
+ * @param {string} styles Minified inline styles.
+ * @param {string} ui Minified inline UI runtime.
+ * @param {string} faviconUrl Content-addressed favicon URL.
+ * @returns {string} Production scatter-slice HTML.
+ */
+function createProductionScatterHtml(sourceHtml, styles, ui, faviconUrl) {
+  let output = sourceHtml.replace(STYLESHEET_EXPRESSION, "").replace(SCRIPT_EXPRESSION, "");
+  output = replaceRequired(output, 'href="/favicon.ico"', `href="${faviconUrl}"`, "scatter favicon");
+  output = replaceRequired(
+    output,
+    '<input id="scatterTransparent" type="checkbox" checked />',
+    '<input id="scatterTransparent" type="checkbox" disabled />',
+    "scatter transparent-output control",
+  );
+  output = replaceRequired(
+    output,
+    "<span><strong>智能抠图</strong><small>自动背景清除 · 常规模式</small></span>",
+    "<span><strong>智能抠图（本地版）</strong><small>云端保护构建暂不提供透明抠图</small></span>",
+    "scatter transparent-output description",
+  );
+  const safeStyles = styles.replaceAll("</style", "<\\/style");
+  const safeUi = ui.replaceAll("</script", "<\\/script");
+  output = output.replace("</head>", `    <style>${safeStyles}</style>\n  </head>`);
+  return output.replace("</body>", `    <script>${safeUi}</script>\n  </body>`);
 }
 
 /**
@@ -156,19 +200,36 @@ async function buildProduction() {
     throw new Error("Protected WASM core is missing. Run npm run build:protected-core first.");
   }
   const sourceHtml = fs.readFileSync(path.join(PUBLIC_ROOT, "index.html"), "utf8");
+  const scatterSourceHtml = fs.readFileSync(path.join(PUBLIC_ROOT, "scatter-slice.html"), "utf8");
   const favicon = fs.readFileSync(path.join(PUBLIC_ROOT, "favicon.ico"));
   const scriptUrls = extractAssetUrls(sourceHtml, SCRIPT_EXPRESSION);
   const productionScriptUrls = scriptUrls.filter((url) => !SENSITIVE_PUBLIC_SCRIPTS.includes(url));
   const stylesheetUrls = extractAssetUrls(sourceHtml, STYLESHEET_EXPRESSION);
+  const scatterScriptUrls = extractAssetUrls(scatterSourceHtml, SCRIPT_EXPRESSION);
+  const scatterProductionScriptUrls = [
+    "/batch_cutout_background_estimator.js",
+    SCATTER_PRODUCTION_ADAPTER,
+    ...scatterScriptUrls.filter(
+      (url) => url !== SCATTER_SMART_CUTOUT && !SENSITIVE_PUBLIC_SCRIPTS.includes(url),
+    ),
+  ].filter((url, index, urls) => urls.indexOf(url) === index);
+  const scatterStylesheetUrls = extractAssetUrls(scatterSourceHtml, STYLESHEET_EXPRESSION);
   if (scriptUrls.length === 0 || stylesheetUrls.length === 0) {
     throw new Error("Production entry must declare scripts and stylesheets.");
+  }
+  if (scatterScriptUrls.length === 0 || scatterStylesheetUrls.length === 0) {
+    throw new Error("Scatter-slice production entry must declare scripts and stylesheets.");
   }
 
   const rawUiSource = createProductionUiSource(combineScripts(PUBLIC_ROOT, productionScriptUrls, new Map()));
   const rawCutoutWorker = combineWorker(PUBLIC_ROOT, "batch_cutout_worker.js", new Map());
   const rawFrameWorker = combineWorker(PUBLIC_ROOT, "frame_organizer_worker.js", new Map());
+  const rawScatterUi = combineScripts(PUBLIC_ROOT, scatterProductionScriptUrls, new Map());
   const protectedCore = redactWasmSourcePaths(fs.readFileSync(PROTECTED_CORE_WASM_PATH));
   const cssSource = stylesheetUrls
+    .map((url) => fs.readFileSync(resolvePublicAsset(PUBLIC_ROOT, url), "utf8"))
+    .join("\n");
+  const scatterCssSource = scatterStylesheetUrls
     .map((url) => fs.readFileSync(resolvePublicAsset(PUBLIC_ROOT, url), "utf8"))
     .join("\n");
   const sourceFingerprint = sha256(
@@ -179,10 +240,13 @@ async function buildProduction() {
       fs.readFileSync(path.join(__dirname, "production_ui_transform.js"), "utf8"),
       fs.readFileSync(path.join(__dirname, "wasm_transform.js"), "utf8"),
       sourceHtml,
+      scatterSourceHtml,
       rawUiSource,
       rawCutoutWorker,
       rawFrameWorker,
+      rawScatterUi,
       cssSource,
+      scatterCssSource,
       sha256(favicon),
       sha256(protectedCore),
     ].join("\n\0\n"),
@@ -234,6 +298,8 @@ async function buildProduction() {
   const uiName = hashedFilename("ui", "js", ui);
 
   const styles = await minify(cssSource, "css");
+  const scatterStyles = await minify(scatterCssSource, "css");
+  const scatterUi = await minify(rawScatterUi, "js");
   const stylesName = hashedFilename("styles", "css", styles);
   const faviconName = hashedFilename("favicon", "ico", favicon);
 
@@ -251,6 +317,13 @@ async function buildProduction() {
     .replace("</head>", `    <link rel="stylesheet" href="/assets/${stylesName}" />\n  </head>`)
     .replace("</body>", `    <script src="/assets/${uiName}"></script>\n  </body>`);
   writeArtifact(TEMPORARY_ROOT, "index.html", productionHtml);
+  const productionScatterHtml = createProductionScatterHtml(
+    scatterSourceHtml,
+    scatterStyles,
+    scatterUi,
+    `/assets/${faviconName}`,
+  );
+  writeArtifact(TEMPORARY_ROOT, "scatter-slice.html", productionScatterHtml);
 
   const assets = [
     manifestAsset("ui", uiName, ui, "application/javascript"),

@@ -3,17 +3,25 @@
     typeof module === "object" && module.exports
       ? require("./batch_cutout_color_core")
       : root?.BatchCutoutColorCore;
-  const api = factory(colorCore);
+  const backgroundEstimator =
+    typeof module === "object" && module.exports
+      ? require("./batch_cutout_background_estimator")
+      : root?.BatchCutoutBackgroundEstimator;
+  const api = factory(colorCore, backgroundEstimator);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.BatchCutoutReferenceInput = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, (colorCore) => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (colorCore, backgroundEstimator) => {
   "use strict";
 
   if (!colorCore?.clamp || !colorCore?.rgbToOklab || !colorCore?.rgbToReferenceYcbcr) {
     throw new Error("BatchCutoutColorCore is required.");
   }
+  if (typeof backgroundEstimator?.estimateBackgroundColor !== "function") {
+    throw new Error("BatchCutoutBackgroundEstimator is required.");
+  }
 
-  const { clamp, hueDistance, oklabToRgb, rgbToHex, rgbToOklab, rgbToReferenceYcbcr } = colorCore;
+  const { clamp, hueDistance, oklabToRgb, rgbToOklab, rgbToReferenceYcbcr } = colorCore;
+  const { estimateBackgroundColor } = backgroundEstimator;
 
   /**
    * Applies the reference smooth-step curve.
@@ -192,88 +200,6 @@
       else if (data[offset + 3] < source[offset + 3]) partialPixels += 1;
     }
     return { data, removedPixels, partialPixels };
-  }
-
-  /**
-   * Estimates the dominant visible color around the image perimeter.
-   * @param {Uint8ClampedArray|Uint8Array} data RGBA pixel data.
-   * @param {number} width Image width.
-   * @param {number} height Image height.
-   * @returns {{r:number,g:number,b:number,hex:string,sampleCount:number}}
-   */
-  function estimateBackgroundColor(data, width, height) {
-    const buckets = new Map();
-    const edgeDepth = Math.max(1, Math.min(12, Math.ceil(Math.min(width, height) * 0.04)));
-    const addPixel = (x, y) => {
-      const offset = (y * width + x) * 4;
-      if ((data[offset + 3] || 0) < 16) return;
-      const red = data[offset];
-      const green = data[offset + 1];
-      const blue = data[offset + 2];
-      const key = `${red >> 4},${green >> 4},${blue >> 4}`;
-      const bucket = buckets.get(key) || {
-        r: 0,
-        g: 0,
-        b: 0,
-        count: 0,
-        colors: new Map(),
-      };
-      bucket.r += red;
-      bucket.g += green;
-      bucket.b += blue;
-      bucket.count += 1;
-      const packedColor = (red << 16) | (green << 8) | blue;
-      const exactColor = bucket.colors.get(packedColor) || {
-        r: red,
-        g: green,
-        b: blue,
-        count: 0,
-        firstSeen: bucket.count,
-      };
-      exactColor.count += 1;
-      bucket.colors.set(packedColor, exactColor);
-      buckets.set(key, bucket);
-    };
-
-    for (let y = 0; y < height; y += 1) {
-      for (let depth = 0; depth < edgeDepth; depth += 1) {
-        addPixel(depth, y);
-        addPixel(width - 1 - depth, y);
-      }
-    }
-    for (let x = edgeDepth; x < width - edgeDepth; x += 1) {
-      for (let depth = 0; depth < edgeDepth; depth += 1) {
-        addPixel(x, depth);
-        addPixel(x, height - 1 - depth);
-      }
-    }
-
-    let dominant = null;
-    for (const bucket of buckets.values()) {
-      if (!dominant || bucket.count > dominant.count) dominant = bucket;
-    }
-    if (!dominant?.count) {
-      return { r: 255, g: 255, b: 255, hex: "#ffffff", sampleCount: 0 };
-    }
-    const centroid = {
-      r: dominant.r / dominant.count,
-      g: dominant.g / dominant.count,
-      b: dominant.b / dominant.count,
-    };
-    const selectedColor = [...dominant.colors.values()].sort((left, right) => {
-      if (left.count !== right.count) return right.count - left.count;
-      const leftDistance =
-        (left.r - centroid.r) ** 2 + (left.g - centroid.g) ** 2 + (left.b - centroid.b) ** 2;
-      const rightDistance =
-        (right.r - centroid.r) ** 2 + (right.g - centroid.g) ** 2 + (right.b - centroid.b) ** 2;
-      return leftDistance - rightDistance || left.firstSeen - right.firstSeen;
-    })[0];
-    const color = {
-      r: selectedColor.r,
-      g: selectedColor.g,
-      b: selectedColor.b,
-    };
-    return { ...color, hex: rgbToHex(color), sampleCount: dominant.count };
   }
 
   return {

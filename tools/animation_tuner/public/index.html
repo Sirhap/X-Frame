@@ -36,8 +36,15 @@
   </head>
   <body class="theme-dark" data-sidebar-tab="transform">
     <a class="skipLink" href="#mainWorkbench" data-i18n="skipToMain">跳到主要内容</a>
-    <nav class="toolRail" aria-label="创作工具">
-      <a class="toolRailBrand" href="/" data-document-navigation aria-label="网站首页" title="网站首页">
+    <nav class="toolRail" aria-label="创作工具" data-i18n-aria-label="creativeTools">
+      <a
+        class="toolRailBrand"
+        href="/"
+        data-document-navigation
+        data-i18n-title="websiteHome"
+        aria-label="网站首页"
+        title="网站首页"
+      >
         <span aria-hidden="true">X</span>
       </a>
       <div class="toolRailGroup">
@@ -45,19 +52,27 @@
           class="toolRailItem"
           href="/projects"
           data-app-mode="projects"
+          data-i18n-title="projectHubTitle"
           aria-label="动画项目"
           title="动画项目"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 7h6l2 2h8v10H4zM7 4h5l2 3" />
           </svg>
-          <span>项目</span>
+          <span data-i18n="projectRail">项目</span>
         </a>
-        <a class="toolRailItem" href="/tools" data-app-mode="tools" aria-label="快速工具" title="快速工具">
+        <a
+          class="toolRailItem"
+          href="/tools"
+          data-app-mode="tools"
+          data-i18n-title="quickToolsTitle"
+          aria-label="快速工具"
+          title="快速工具"
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5zM13 13h6v6h-6z" />
           </svg>
-          <span>工具</span>
+          <span data-i18n="toolsRail">工具</span>
         </a>
       </div>
       <button
@@ -66,10 +81,11 @@
         type="button"
         aria-expanded="true"
         aria-controls="workbenchSidebar"
+        data-i18n-title="collapseSidebar"
         title="折叠参数栏"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg>
-        <span>侧栏</span>
+        <span data-i18n="sidebarRail">侧栏</span>
       </button>
     </nav>
     <main id="mainWorkbench" class="app" tabindex="-1">
@@ -93,22 +109,53 @@
             <p data-i18n="brandSubtitle">帧动画调参工作台</p>
           </div>
         </div>
-        <div class="sidebarTabs" role="tablist" aria-label="调参分类">
-          <button type="button" role="tab" data-sidebar-tab="project" aria-selected="false" tabindex="-1">
+        <div class="sidebarTabs" role="tablist" aria-label="调参分类" data-i18n-aria-label="tuningCategories">
+          <button
+            type="button"
+            role="tab"
+            data-sidebar-tab="project"
+            aria-selected="false"
+            tabindex="-1"
+            data-i18n="sidebarProject"
+          >
             项目
           </button>
-          <button type="button" role="tab" data-sidebar-tab="transform" aria-selected="true">变换</button>
-          <button type="button" role="tab" data-sidebar-tab="boxes" aria-selected="false" tabindex="-1">
+          <button
+            type="button"
+            role="tab"
+            data-sidebar-tab="transform"
+            aria-selected="true"
+            data-i18n="sidebarTransform"
+          >
+            变换
+          </button>
+          <button
+            type="button"
+            role="tab"
+            data-sidebar-tab="boxes"
+            aria-selected="false"
+            tabindex="-1"
+            data-i18n="sidebarBoxes"
+          >
             框体
           </button>
-          <button type="button" role="tab" data-sidebar-tab="effects" aria-selected="false" tabindex="-1">
+          <button
+            type="button"
+            role="tab"
+            data-sidebar-tab="effects"
+            aria-selected="false"
+            tabindex="-1"
+            data-i18n="sidebarEffects"
+          >
             特效
           </button>
         </div>
         <section id="browserModeBanner" class="browserModeBanner" hidden>
-          <span>WEB MODE / LOCAL PROCESSING</span>
-          <strong>素材只在当前浏览器处理</strong>
-          <p>导入后可在当前会话继续调参或下载动画包；直接写入 Godot 暂未开放。</p>
+          <span data-i18n="browserModeLocalProcessing">WEB MODE / LOCAL PROCESSING</span>
+          <strong data-i18n="browserAssetsLocal">素材只在当前浏览器处理</strong>
+          <p data-i18n="browserSessionHint">
+            导入后可在当前会话继续调参或下载动画包；直接写入 Godot 暂未开放。
+          </p>
         </section>
         <details id="projectContext" class="projectContext">
           <summary>
@@ -956,40 +1003,42 @@
         <header class="modeHubHeader">
           <div>
             <span>PROJECT LIBRARY / LOCAL</span>
-            <h1 id="projectHubTitle">动画项目</h1>
-            <p>继续长期制作，管理角色、动画组、调参数据与 Godot 同步。</p>
+            <h1 id="projectHubTitle" data-i18n="projectHubTitle">动画项目</h1>
+            <p data-i18n="projectHubDescription">继续长期制作，管理角色、动画组、调参数据与 Godot 同步。</p>
           </div>
-          <a class="modeHubSecondary" href="/tools">转到快速工具</a>
+          <a class="modeHubSecondary" href="/tools" data-i18n="goToQuickTools">转到快速工具</a>
         </header>
         <section id="projectHubRecent" class="modeHubFeatured" aria-labelledby="projectHubRecentTitle">
           <div>
             <span>RECENT PROJECT</span>
-            <h2 id="projectHubRecentTitle">最近项目</h2>
-            <p id="projectHubRecentSummary">正在读取项目…</p>
+            <h2 id="projectHubRecentTitle" data-i18n="recentProject">最近项目</h2>
+            <p id="projectHubRecentSummary" data-i18n="projectLoading">正在读取项目…</p>
           </div>
           <a id="projectHubContinue" class="modeHubPrimary" href="/workspace" data-document-navigation
-            >继续项目</a
+            ><span data-i18n="continueProject">继续项目</span></a
           >
         </section>
         <div class="modeHubSectionHeading">
           <div>
             <span>ALL PROJECTS</span>
-            <h2>全部项目</h2>
+            <h2 data-i18n="allProjects">全部项目</h2>
           </div>
-          <button id="projectHubNew" type="button" class="modeHubSecondary">新建项目</button>
+          <button id="projectHubNew" type="button" class="modeHubSecondary" data-i18n="newProject">
+            新建项目
+          </button>
         </div>
         <div id="projectHubList" class="projectHubList" aria-live="polite"></div>
         <div id="projectHubEmpty" class="modeHubEmpty" hidden>
-          <strong>还没有动画项目</strong>
-          <p>可以新建项目，或先用快速工具处理素材后再加入项目。</p>
-          <a class="modeHubPrimary" href="/tools/organizer">处理第一组素材</a>
+          <strong data-i18n="noProjects">还没有动画项目</strong>
+          <p data-i18n="noProjectsHint">可以新建项目，或先用快速工具处理素材后再加入项目。</p>
+          <a class="modeHubPrimary" href="/tools/organizer" data-i18n="processFirstAssets">处理第一组素材</a>
         </div>
       </section>
       <section id="quickToolsHub" class="modeHub" aria-labelledby="quickToolsTitle" hidden>
         <header class="modeHubHeader">
           <div>
             <span>QUICK TOOLS / SESSION</span>
-            <h1 id="quickToolsTitle">快速工具</h1>
+            <h1 id="quickToolsTitle" data-i18n="quickToolsTitle">快速工具</h1>
             <p>不必先创建项目。处理完成后可直接下载，也可以明确选择目标加入动画项目。</p>
           </div>
           <a class="modeHubSecondary" href="/projects">转到动画项目</a>
@@ -3513,6 +3562,7 @@
     <script src="/activation_controller.js"></script>
     <script src="/image_pixel_budget.js"></script>
     <script src="/batch_cutout_public_color.js"></script>
+    <script src="/batch_cutout_background_estimator.js"></script>
     <script src="/batch_cutout_color_core.js"></script>
     <script src="/batch_cutout_connectivity_core.js"></script>
     <script src="/batch_cutout_product_core.js"></script>

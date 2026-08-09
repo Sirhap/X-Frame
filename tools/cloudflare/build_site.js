@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { prepareCloudflareLanding } = require("./site_html");
 
 const projectRoot = path.resolve(__dirname, "../..");
 const protectedDist = path.join(projectRoot, "dist");
@@ -38,7 +39,8 @@ function buildSite() {
   fs.mkdirSync(siteDist, { recursive: true });
   fs.cpSync(protectedDist, siteDist, { recursive: true });
   fs.renameSync(path.join(siteDist, "index.html"), path.join(siteDist, "workbench.html"));
-  fs.copyFileSync(factoryEntry, path.join(siteDist, "index.html"));
+  const factoryHtml = fs.readFileSync(factoryEntry, "utf8");
+  fs.writeFileSync(path.join(siteDist, "index.html"), prepareCloudflareLanding(factoryHtml));
   fs.copyFileSync(path.join(publicRoot, "admin.html"), path.join(siteDist, "admin.html"));
   fs.copyFileSync(factoryStyles, path.join(siteDist, "animation_factory.css"));
   fs.copyFileSync(
@@ -62,9 +64,13 @@ function buildSite() {
   process.stdout.write(`Built Cloudflare site at ${path.relative(projectRoot, siteDist)}.\n`);
 }
 
-try {
-  buildSite();
-} catch (error) {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
+if (require.main === module) {
+  try {
+    buildSite();
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  }
 }
+
+module.exports = Object.freeze({ buildSite });

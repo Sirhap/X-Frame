@@ -9,6 +9,7 @@ importScripts(
   "batch_cutout_protection_core.js",
   "batch_cutout_reference_recovery_core.js",
   "batch_cutout_reference_replace_core.js",
+  "batch_cutout_background_estimator.js",
   "batch_cutout_reference_input.js",
   "batch_cutout_core.js",
   "cutout_quality_core.js",

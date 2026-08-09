@@ -64,6 +64,7 @@
    *   windowRef?:Window,
    *   storage?:Storage|null,
    *   navigate?:(route:string)=>Promise<boolean>|boolean,
+   *   translate?:(key:string)=>string,
    * }} [dependencies] Browser dependencies and route adapter.
    * @returns {{
    *   bind:()=>void,
@@ -79,6 +80,9 @@
     const windowRef = dependencies.windowRef || root?.window || root;
     const storage = dependencies.storage ?? resolveStorage(windowRef);
     const navigate = dependencies.navigate || defaultNavigate;
+    const translate =
+      dependencies.translate ||
+      ((key) => ({ collapseSidebar: "折叠参数栏", expandSidebar: "展开参数栏" })[key] || key);
     if (!documentRef?.querySelector || !documentRef?.querySelectorAll) {
       throw new TypeError("XSXB App Shell requires a document-like query interface.");
     }
@@ -187,8 +191,9 @@
       const isCollapsed = Boolean(collapsed);
       elements.body?.classList.toggle("sidebarCollapsed", isCollapsed);
       elements.collapse?.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
-      elements.collapse?.setAttribute("aria-label", isCollapsed ? "展开参数栏" : "折叠参数栏");
-      elements.collapse?.setAttribute("title", isCollapsed ? "展开参数栏" : "折叠参数栏");
+      const label = translate(isCollapsed ? "expandSidebar" : "collapseSidebar");
+      elements.collapse?.setAttribute("aria-label", label);
+      elements.collapse?.setAttribute("title", label);
       syncHiddenWorkbenchAccessibility();
       writePreference(STORAGE_KEYS.sidebarCollapsed, isCollapsed);
     }

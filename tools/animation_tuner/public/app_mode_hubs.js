@@ -9,7 +9,7 @@
 
   /**
    * Creates the project and quick-tool hub renderer.
-   * @param {{documentRef?:Document,windowRef?:Window,projectLabel?:(project:object)=>string}} dependencies Hub dependencies.
+   * @param {{documentRef?:Document,windowRef?:Window,projectLabel?:(project:object)=>string,translate?:(key:string,vars?:object)=>string}} dependencies Hub dependencies.
    * @returns {{bind:()=>void,renderProjects:(config:object|null)=>void}} Hub operations.
    */
   function createController(dependencies = {}) {
@@ -17,6 +17,20 @@
     const windowRef = dependencies.windowRef || root?.window || root;
     const projectLabel =
       dependencies.projectLabel || ((project) => project?.label || project?.name || project?.id || "");
+    const translate =
+      dependencies.translate ||
+      ((key, vars = {}) => {
+        const defaults = {
+          currentProjectEyebrow: "CURRENT PROJECT",
+          projectEyebrow: "PROJECT",
+          unnamedProject: "未命名项目",
+          localAnimationProject: "本地动画项目",
+          openProject: "打开项目 →",
+          localWorkspace: "本地工作区",
+          projectGroupSummary: `${vars.count ?? 0} 个动画组 · ${vars.workspace || "本地工作区"}`,
+        };
+        return defaults[key] || key;
+      });
     if (!documentRef?.querySelector || !documentRef?.createElement) {
       throw new TypeError("XSXB mode hubs require a document implementation.");
     }
@@ -46,13 +60,16 @@
       card.href = projectHref(project);
       card.setAttribute("data-document-navigation", "");
       const eyebrow = documentRef.createElement("span");
-      eyebrow.textContent = project.id === activeProjectId ? "CURRENT PROJECT" : "PROJECT";
+      eyebrow.textContent = translate(
+        project.id === activeProjectId ? "currentProjectEyebrow" : "projectEyebrow",
+      );
       const title = documentRef.createElement("h2");
-      title.textContent = projectLabel(project) || project.id || "未命名项目";
+      title.textContent = projectLabel(project) || project.id || translate("unnamedProject");
       const summary = documentRef.createElement("p");
-      summary.textContent = project.workspacePath || project.projectRoot || "本地动画项目";
+      summary.textContent =
+        project.workspacePath || project.projectRoot || translate("localAnimationProject");
       const action = documentRef.createElement("strong");
-      action.textContent = "打开项目 →";
+      action.textContent = translate("openProject");
       card.append(eyebrow, title, summary, action);
       return card;
     }
@@ -73,7 +90,10 @@
       if (elements.recentTitle) elements.recentTitle.textContent = projectLabel(recent) || recent.id;
       if (elements.recentSummary) {
         const groupCount = Number(config?.groups?.length || 0);
-        elements.recentSummary.textContent = `${groupCount} 个动画组 · ${recent.workspacePath || recent.projectRoot || "本地工作区"}`;
+        elements.recentSummary.textContent = translate("projectGroupSummary", {
+          count: groupCount,
+          workspace: recent.workspacePath || recent.projectRoot || translate("localWorkspace"),
+        });
       }
       if (elements.continueLink) elements.continueLink.href = projectHref(recent);
     }

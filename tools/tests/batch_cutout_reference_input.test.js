@@ -22,11 +22,14 @@ test("batch cutout core keeps reference input helper identities after extraction
 test("cutout worker loads reference input before the dependent batch core", () => {
   const workerPath = path.join(__dirname, "../animation_tuner/public/batch_cutout_worker.js");
   const workerSource = fs.readFileSync(workerPath, "utf8");
+  const backgroundEstimatorIndex = workerSource.indexOf('"batch_cutout_background_estimator.js"');
   const referenceInputIndex = workerSource.indexOf('"batch_cutout_reference_input.js"');
   const batchCoreIndex = workerSource.indexOf('"batch_cutout_core.js"');
 
+  assert.notEqual(backgroundEstimatorIndex, -1);
   assert.notEqual(referenceInputIndex, -1);
   assert.notEqual(batchCoreIndex, -1);
+  assert.ok(backgroundEstimatorIndex < referenceInputIndex);
   assert.ok(referenceInputIndex < batchCoreIndex);
 });
 

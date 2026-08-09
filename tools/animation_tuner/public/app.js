@@ -96,6 +96,9 @@ async function createBrowserSessionAnimation(metadata, items, options = {}) {
     renderChainGroupSelect();
     await selectGroup(group, { fitView: true });
     resizeCanvas();
+    const projectId = activeProjectId();
+    modeHubs?.renderProjects(config);
+    browserRuntime.commitSessionProjectConfig(projectId, browserProjectSnapshot(projectId));
     return group;
   } catch (error) {
     config.groups.splice(config.groups.indexOf(group), 1);
@@ -105,6 +108,7 @@ async function createBrowserSessionAnimation(metadata, items, options = {}) {
     renderProfileSelect();
     renderGroupSelect();
     renderChainGroupSelect();
+    modeHubs?.renderProjects(config);
     throw error;
   }
 }
@@ -1508,6 +1512,7 @@ function t(...args) {
 function applyLanguage(...args) {
   const result = projectStateCall("applyLanguage", ...args);
   activationController.renderStatus();
+  modeHubs?.renderProjects(config);
   return result;
 }
 function normalizeTheme(...args) {
@@ -3587,6 +3592,7 @@ modeHubs = modeHubsModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
   projectLabel,
+  translate: t,
 });
 modeHubs.bind();
 const navigationContextModule = globalThis.XSXBNavigationContext;
@@ -3659,6 +3665,7 @@ const appShell = appShellModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
   storage: browserStorage,
+  translate: t,
   navigate: async (route) => {
     if (!(await requestScatterSliceLeave())) return false;
     syncWorkbenchRoute(route, { push: true });

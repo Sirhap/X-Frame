@@ -30,9 +30,10 @@
     if (!repairReplayCore) throw new Error("BatchCutoutRepairReplayCore is required.");
     const backgroundController = root.BatchCutoutBackgroundController;
     if (!backgroundController) throw new Error("BatchCutoutBackgroundController is required.");
-    /** Public pixel estimator used by organizer-owned automatic worksets. */
-    const cutoutCore = root.BatchCutoutCore;
-    if (!cutoutCore?.estimateBackgroundColor) throw new Error("BatchCutoutCore is required.");
+    const backgroundEstimator = root.BatchCutoutBackgroundEstimator;
+    if (typeof backgroundEstimator?.estimateBackgroundColor !== "function") {
+      throw new Error("BatchCutoutBackgroundEstimator is required.");
+    }
     const protectedRuntimeModule = root.ProtectedAlgorithmRuntime;
     if (!protectedRuntimeModule) throw new Error("ProtectedAlgorithmRuntime is required.");
     const protectedRuntime = protectedRuntimeModule.getDefaultRuntime(root);
@@ -588,7 +589,7 @@
       cutoutExecutor,
       cutoutAnalysisExecutor,
       processItem,
-      estimateBackgroundColor: cutoutCore.estimateBackgroundColor,
+      estimateBackgroundColor: backgroundEstimator.estimateBackgroundColor,
       colorUtils,
       requestConfirmation,
       applyProcessingParametersToControls,
@@ -695,7 +696,7 @@
       renderQueue,
       setStatus,
       requestConfirmation,
-      estimateBackgroundColor: cutoutCore.estimateBackgroundColor,
+      estimateBackgroundColor: backgroundEstimator.estimateBackgroundColor,
       backgroundController,
       onSessionReset: () => invalidateCandidateComparison({ cancel: true, redraw: false }),
     });

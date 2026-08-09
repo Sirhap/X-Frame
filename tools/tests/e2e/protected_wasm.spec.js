@@ -15,6 +15,19 @@ const CONTENT_TYPES = Object.freeze({
   ".json": "application/json; charset=utf-8",
   ".wasm": "application/wasm",
 });
+const ONE_PIXEL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3n0AAAAASUVORK5CYII=",
+  "base64",
+);
+const WORKBENCH_PATHS = new Set([
+  "/projects",
+  "/tools",
+  "/tools/import",
+  "/tools/cutout",
+  "/tools/organizer",
+  "/tools/scatter-slice",
+  "/workspace",
+]);
 
 let productionOrigin = "";
 let productionServer = null;
@@ -30,7 +43,9 @@ function serveProductionAsset(request, response) {
   try {
     const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
     const relativePath = decodeURIComponent(
-      requestUrl.pathname === "/" ? "/index.html" : requestUrl.pathname,
+      requestUrl.pathname === "/" || WORKBENCH_PATHS.has(requestUrl.pathname)
+        ? "/index.html"
+        : requestUrl.pathname,
     );
     const filePath = path.resolve(DIST_ROOT, `.${relativePath}`);
     const insideDist = filePath === DIST_ROOT || filePath.startsWith(`${DIST_ROOT}${path.sep}`);
@@ -120,6 +135,67 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await closeProductionServer(productionServer);
+});
+
+test("@cross-browser production workbench opens the new-animation importer without startup errors", async ({
+  page,
+}) => {
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.goto(`${productionOrigin}/workspace`, { waitUntil: "load" });
+  await page.locator('[data-sidebar-tab="project"]').click();
+  await expect(page.locator("#importAnimationOpen")).toBeVisible();
+  await page.locator("#importAnimationOpen").click();
+
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  await expect(page.locator("#organizerModal")).not.toHaveAttribute("hidden", "");
+  expect(pageErrors).toEqual([]);
+});
+
+test("@cross-browser browser imports remain available after switching to the project hub", async ({
+  page,
+}) => {
+  await page.goto(`${productionOrigin}/tools/import`, { waitUntil: "load" });
+  await page.locator("#organizerAnimationName").fill("browser-session-idle");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await page.locator("#organizerApply").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
+  await page.locator("#organizerConfirmAccept").click();
+
+  await expect(page).toHaveURL(/\/workspace/);
+  await expect(page.locator(".thumb")).toHaveCount(2);
+  await page.locator('a[data-app-mode="projects"]').click();
+  await expect(page).toHaveURL(/\/projects/);
+  await expect(page.locator("#projectHubRecentSummary")).toContainText("1 个动画组");
+});
+
+test("@cross-browser production includes the embedded scatter-slice workbench", async ({ page }) => {
+  const response = await page.goto(`${productionOrigin}/scatter-slice.html?embedded=1`, {
+    waitUntil: "load",
+  });
+
+  expect(response?.status()).toBe(200);
+  await expect(page.locator("#scatterWorkbench")).toBeVisible();
+  await expect(page.locator("#scatterTransparent")).toBeDisabled();
+});
+
+test("@cross-browser English mode localizes the browser workbench shell", async ({ page }) => {
+  await page.goto(`${productionOrigin}/workspace`, { waitUntil: "load" });
+  await page.locator('[data-language="en"]').click();
+
+  await expect(page.locator('a[data-app-mode="projects"]')).toContainText("Projects");
+  await expect(page.locator('a[data-app-mode="tools"]')).toContainText("Tools");
+  await expect(page.locator("#sidebarCollapse")).toContainText("Sidebar");
+  await expect(page.locator('button[data-sidebar-tab="transform"]')).toHaveText("Transform");
+  await expect(page.locator("#browserModeBanner strong")).toHaveText("Assets stay in this browser");
+  await page.locator('a[data-app-mode="projects"]').click();
+  await expect(page.locator("#projectHubTitle")).toHaveText("Animation Projects");
+  await expect(page.locator("#projectHubRecentSummary")).toContainText("animation groups");
 });
 
 test("@cross-browser production Worker loads WASM locally without pixel POST", async ({ page }) => {

@@ -157,7 +157,12 @@ function readManifest(failures) {
 function auditArtifacts(manifest, failures) {
   const files = listFiles(DIST_ROOT);
   const relativeFiles = files.map((file) => path.relative(DIST_ROOT, file).split(path.sep).join("/"));
-  const expectedFiles = new Set(["index.html", "asset-manifest.json", "sbom.spdx.json"]);
+  const expectedFiles = new Set([
+    "index.html",
+    "scatter-slice.html",
+    "asset-manifest.json",
+    "sbom.spdx.json",
+  ]);
   const roles = new Set();
   const assetPaths = new Set();
   for (const asset of manifest?.assets || []) {
