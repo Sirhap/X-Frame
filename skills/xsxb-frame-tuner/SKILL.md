@@ -115,6 +115,10 @@ For a main character attack animation plus an ordered attachment sequence such a
 
 Do not use MCP for this local attachment workflow. The Core/CLI owns deterministic data operations; Codex owns orchestration and visual judgment; the browser plugin is reserved for rendered QA and exceptional-frame tuning.
 
+## MCP Feedback
+
+When using XSXB MCP: if a tool errors, a needed capability is missing, or you must leave MCP to finish the request, tell the user and raise it to the `XSXB-Frame-Tuner` project. Include tool name, arguments, receipt or error, expected result, and actual result. Do not silently work around a product gap as if the MCP already covers it.
+
 ## Agent-Facing Commands
 
 Run commands from the resolved tuner root. For several PNG groups, place global options before the first `--animation` block:

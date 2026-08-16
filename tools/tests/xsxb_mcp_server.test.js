@@ -7,20 +7,22 @@ const path = require("node:path");
 const test = require("node:test");
 const { PassThrough } = require("node:stream");
 const { createProjectStore } = require("../project_store");
-const { handleMessage, startServer } = require("../xsxb_mcp_server");
+const { INSTRUCTIONS, handleMessage, startServer } = require("../xsxb_mcp_server");
 const {
   MCP_TOOL_NAMES,
+  classifyValidationMessage,
   createTestWav,
   createXsxbMcpService,
   toolDefinitions,
 } = require("../xsxb_mcp_service");
+const { decodePngRgba, encodePngRgba, subjectAnchor } = require("../xsxb_mcp_cutout");
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XkM0WQAAAABJRU5ErkJggg==",
   "base64",
 );
 
-function fixture() {
+function fixture(options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-mcp-test-"));
   const godotRoot = path.join(root, "godot");
   fs.mkdirSync(godotRoot, { recursive: true });
@@ -45,11 +47,17 @@ function fixture() {
       return framePath;
     });
   };
+  const serviceOptions = { root, extractVideoFramesImpl };
+  if (!options.realCutout) {
+    serviceOptions.cutoutPngFileImpl = async (inputPath, outputPath) => {
+      fs.copyFileSync(inputPath, outputPath);
+    };
+  }
   return {
     root,
     godotRoot,
     video,
-    service: createXsxbMcpService({ root, extractVideoFramesImpl }),
+    service: createXsxbMcpService(serviceOptions),
     cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
   };
 }
@@ -72,6 +80,9 @@ test("MCP transport initializes, lists tools, and returns structured tool result
     service,
   );
   assert.equal(initialized.result.serverInfo.name, "xsxb-frame-tuner");
+  assert.match(initialized.result.instructions, /XSXB-Frame-Tuner/);
+  assert.match(initialized.result.instructions, /missing capability|leave MCP|raise it/i);
+  assert.equal(initialized.result.instructions, INSTRUCTIONS);
   const listed = await handleMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }, service);
   assert.equal(listed.result.tools.length, MCP_TOOL_NAMES.length);
   const called = await handleMessage(
@@ -283,4 +294,353 @@ animations = [{
   } finally {
     current.cleanup();
   }
+});
+
+test("MCP catalog exposes bind, cutout, active, and open-tuner tools", () => {
+  for (const name of ["xsxb_bind_godot", "xsxb_cutout", "xsxb_set_active_project", "xsxb_open_tuner"]) {
+    assert.ok(MCP_TOOL_NAMES.includes(name), name);
+  }
+});
+
+test("sync keeps the requested project and reports the missing Godot bind", async () => {
+  const current = fixture();
+  try {
+    const store = createProjectStore(current.root);
+    store.addProject({ id: "orphan", label: "Orphan", projectRoot: "" });
+    await assert.rejects(
+      () => current.service.call("xsxb_sync_godot", { project_id: "orphan" }),
+      /orphan[\s\S]*does not exist/i,
+    );
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("bind_godot retargets a project to an existing Godot root", async () => {
+  const current = fixture();
+  try {
+    const store = createProjectStore(current.root);
+    store.addProject({ id: "orphan", label: "Orphan", projectRoot: "" });
+    const bound = await current.service.call("xsxb_bind_godot", {
+      project_id: "orphan",
+      project_root: current.godotRoot,
+    });
+    assert.equal(bound.projectId, "orphan");
+    assert.equal(bound.godotProjectValid, true);
+    assert.equal(path.resolve(bound.projectRoot), path.resolve(current.godotRoot));
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("set_active_project and get_animation summary keep MCP context explicit", async () => {
+  const current = fixture();
+  try {
+    const store = createProjectStore(current.root);
+    store.addProject({ id: "other", label: "Other", projectRoot: "" });
+    const activated = await current.service.call("xsxb_set_active_project", { project_id: "other" });
+    assert.equal(activated.activeProjectId, "other");
+    const listed = await current.service.call("xsxb_list_projects");
+    assert.equal(listed.activeProjectId, "other");
+
+    const sequenceDir = path.join(current.root, "png-sequence");
+    fs.mkdirSync(sequenceDir, { recursive: true });
+    fs.writeFileSync(path.join(sequenceDir, "a.png"), ONE_PIXEL_PNG);
+    fs.writeFileSync(path.join(sequenceDir, "b.png"), ONE_PIXEL_PNG);
+    await current.service.call("xsxb_set_active_project", { project_id: "mcp-test" });
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "walk",
+    });
+    const full = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    assert.equal(full.summary, false);
+    assert.equal(full.frameCount, 2);
+    assert.equal(full.animation.frames.length, 2);
+    const summary = await current.service.call("xsxb_get_animation", {
+      animation_id: "walk",
+      frames: "summary",
+    });
+    assert.equal(summary.summary, true);
+    assert.ok(!summary.animation.frames);
+    const explicitFull = await current.service.call("xsxb_get_animation", {
+      animation_id: "walk",
+      frames: "full",
+    });
+    assert.equal(explicitFull.animation.frames.length, 2);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("import can slice frames, replace the same id, and cutout updates the files", async () => {
+  const current = fixture();
+  try {
+    const first = await current.service.call("xsxb_import_video", {
+      file_path: current.video,
+      animation_id: "attack",
+      fps: 24,
+      start_frame: 1,
+      end_frame: 2,
+    });
+    assert.equal(first.importedFrameCount, 2);
+    assert.equal(first.extractedFrameCount, 3);
+    assert.equal(first.fps, 24);
+
+    const replaced = await current.service.call("xsxb_import_video", {
+      file_path: current.video,
+      animation_id: "attack",
+      replace: true,
+      fps: 24,
+    });
+    assert.equal(replaced.animationId, "attack");
+    assert.equal(replaced.importedFrameCount, 3);
+    assert.equal(replaced.replaced, true);
+
+    const cut = await current.service.call("xsxb_cutout", {
+      animation_id: "attack",
+      key_color: "#00f002",
+      output_width: 256,
+      output_height: 256,
+    });
+    assert.equal(cut.frameCount, 3);
+    assert.equal(cut.outputWidth, 256);
+    assert.equal(cut.outputHeight, 256);
+    assert.ok(cut.processedFrameCount >= 1);
+
+    const validation = await current.service.call("xsxb_validate_project", { layer: "standalone" });
+    assert.ok(validation.layers.standalone);
+    assert.ok(validation.layers.bind);
+    assert.equal(validation.layer, "standalone");
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("xsxb_cutout uses the tuner smart-cutout path and keeps hit-frame feet", async () => {
+  const current = fixture({ realCutout: true });
+  try {
+    const sequenceDir = path.join(current.root, "green-sequence");
+    fs.mkdirSync(sequenceDir, { recursive: true });
+    const width = 16;
+    const height = 16;
+    const idle = new Uint8ClampedArray(width * height * 4);
+    const hit = new Uint8ClampedArray(width * height * 4);
+    for (let offset = 0; offset < idle.length; offset += 4) {
+      idle.set([0, 255, 0, 255], offset);
+      hit.set([0, 255, 0, 255], offset);
+    }
+    for (let y = 6; y <= 11; y += 1) {
+      idle.set([210, 36, 42, 255], (y * width + 7) * 4);
+      idle.set([210, 36, 42, 255], (y * width + 8) * 4);
+      hit.set([210, 36, 42, 255], (y * width + 7) * 4);
+      hit.set([210, 36, 42, 255], (y * width + 8) * 4);
+    }
+    for (let x = 6; x <= 14; x += 1) hit.set([240, 250, 255, 255], (14 * width + x) * 4);
+    fs.writeFileSync(path.join(sequenceDir, "idle.png"), encodePngRgba(idle, width, height));
+    fs.writeFileSync(path.join(sequenceDir, "hit.png"), encodePngRgba(hit, width, height));
+
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "slash",
+    });
+    const cut = await current.service.call("xsxb_cutout", { animation_id: "slash" });
+    assert.equal(cut.pipeline, "smart_product");
+    assert.equal(cut.rematched, false);
+    assert.equal(cut.processedFrameCount, 2);
+
+    const full = await current.service.call("xsxb_get_animation", {
+      animation_id: "slash",
+      frames: "full",
+    });
+    const idleCut = decodePngRgba(full.animation.frames[0].absolutePath);
+    const hitCut = decodePngRgba(full.animation.frames[1].absolutePath);
+    assert.ok(idleCut.data[3] <= 16);
+    assert.equal(idleCut.data[(6 * width + 7) * 4 + 3], 255);
+    assert.equal(subjectAnchor(idleCut.data, width, height).feetY, 11);
+    assert.equal(subjectAnchor(hitCut.data, width, height).feetY, 11);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("add tools accept real files and open_tuner can launch", async () => {
+  let launched = false;
+  const current = fixture();
+  const service = createXsxbMcpService({
+    root: current.root,
+    extractVideoFramesImpl: async (_videoPath, outputDirectory) => {
+      return Array.from({ length: 3 }, (_, index) => {
+        const framePath = path.join(outputDirectory, `frame_${String(index + 1).padStart(6, "0")}.png`);
+        fs.writeFileSync(framePath, ONE_PIXEL_PNG);
+        return framePath;
+      });
+    },
+    probeTunerImpl: async () => false,
+    launchTunerImpl: async () => {
+      launched = true;
+      return { pid: 99 };
+    },
+  });
+  try {
+    const sequenceDir = path.join(current.root, "seq");
+    fs.mkdirSync(sequenceDir, { recursive: true });
+    fs.writeFileSync(path.join(sequenceDir, "a.png"), ONE_PIXEL_PNG);
+    fs.writeFileSync(path.join(sequenceDir, "b.png"), ONE_PIXEL_PNG);
+    await service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "walk",
+    });
+
+    const spark = path.join(current.root, "spark.png");
+    fs.writeFileSync(spark, ONE_PIXEL_PNG);
+    const attachment = await service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      file_path: spark,
+      sync: false,
+    });
+    assert.match(attachment.binding.path, /attachments/);
+    assert.equal(attachment.binding.name, "spark.png");
+
+    const hit = path.join(current.root, "hit.wav");
+    fs.writeFileSync(hit, createTestWav());
+    const sfx = await service.call("xsxb_add_sfx", {
+      animation_id: "walk",
+      file_path: hit,
+      sync: false,
+    });
+    assert.equal(sfx.binding.name, "hit.wav");
+    assert.match(String(sfx.binding.path), /audio/);
+
+    const trail = await service.call("xsxb_add_attack_trail", {
+      animation_id: "walk",
+      id: "arc",
+      color: "#112233",
+      sticks: [
+        { frame: 0, top: { x: -4, y: -8 }, bottom: { x: 4, y: 2 } },
+        { frame: 1, top: { x: 6, y: -6 }, bottom: { x: -2, y: 3 } },
+      ],
+      sync: false,
+    });
+    assert.equal(trail.segment.id, "arc");
+    assert.equal(trail.segment.color, "#112233");
+
+    const opened = await service.call("xsxb_open_tuner", { animation_id: "walk" });
+    assert.equal(launched, true);
+    assert.equal(opened.launched, true);
+    assert.equal(opened.pid, 99);
+    assert.match(opened.url, /animation=walk/);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("cutout writes each frame's own size when no canvas is requested", async () => {
+  const current = fixture({ realCutout: true });
+  try {
+    const sequenceDir = path.join(current.root, "mixed-size");
+    fs.mkdirSync(sequenceDir, { recursive: true });
+    const small = new Uint8ClampedArray(40 * 40 * 4);
+    const large = new Uint8ClampedArray(80 * 60 * 4);
+    for (let offset = 0; offset < small.length; offset += 4) small.set([0, 255, 0, 255], offset);
+    for (let offset = 0; offset < large.length; offset += 4) large.set([0, 255, 0, 255], offset);
+    small.set([210, 36, 42, 255], (20 * 40 + 20) * 4);
+    large.set([210, 36, 42, 255], (30 * 80 + 40) * 4);
+    fs.writeFileSync(path.join(sequenceDir, "a.png"), encodePngRgba(small, 40, 40));
+    fs.writeFileSync(path.join(sequenceDir, "b.png"), encodePngRgba(large, 80, 60));
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "mixed",
+    });
+    await current.service.call("xsxb_cutout", { animation_id: "mixed" });
+    const full = await current.service.call("xsxb_get_animation", {
+      animation_id: "mixed",
+      frames: "full",
+    });
+    assert.equal(full.animation.frames[0].width, 40);
+    assert.equal(full.animation.frames[0].height, 40);
+    assert.equal(full.animation.frames[1].width, 80);
+    assert.equal(full.animation.frames[1].height, 60);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("import_animation slices PNG sequences with start_frame and end_frame", async () => {
+  const current = fixture();
+  try {
+    const sequenceDir = path.join(current.root, "ten-frames");
+    fs.mkdirSync(sequenceDir, { recursive: true });
+    for (let index = 0; index < 10; index += 1) {
+      fs.writeFileSync(path.join(sequenceDir, `f${String(index).padStart(2, "0")}.png`), ONE_PIXEL_PNG);
+    }
+    const imported = await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "clip",
+      start_frame: 2,
+      end_frame: 4,
+    });
+    assert.equal(imported.importedFrameCount, 3);
+    assert.equal(imported.startFrame, 2);
+    assert.equal(imported.endFrame, 4);
+    assert.equal(imported.sourceFrameCount, 10);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("open_tuner can switch projects without leftover animation context", async () => {
+  const current = fixture();
+  const service = createXsxbMcpService({
+    root: current.root,
+    probeTunerImpl: async () => true,
+    launchTunerImpl: async () => ({ pid: 1 }),
+  });
+  try {
+    const sequenceDir = path.join(current.root, "seq-a");
+    fs.mkdirSync(sequenceDir, { recursive: true });
+    fs.writeFileSync(path.join(sequenceDir, "a.png"), ONE_PIXEL_PNG);
+    await service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "walk",
+    });
+    await service.call("xsxb_open_tuner", { animation_id: "walk" });
+
+    const otherGodot = path.join(current.root, "godot-b");
+    fs.mkdirSync(otherGodot, { recursive: true });
+    fs.writeFileSync(path.join(otherGodot, "project.godot"), '[application]\nconfig/name="B"\n');
+    createProjectStore(current.root).addProject({
+      id: "proj-b",
+      label: "B",
+      projectRoot: otherGodot,
+    });
+    const opened = await service.call("xsxb_open_tuner", { project_id: "proj-b" });
+    assert.equal(opened.projectId, "proj-b");
+    assert.equal(opened.animationId, "");
+    assert.match(opened.url, /project=proj-b/);
+    assert.doesNotMatch(opened.url, /animation=/);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("bind validation layer keeps standalone/game-local mismatch errors", () => {
+  assert.equal(classifyValidationMessage("Standalone and game-local animation_tuning.json differ."), "bind");
+  assert.equal(
+    classifyValidationMessage("hero/slash: standalone and game-local attack trail data differ."),
+    "bind",
+  );
+  assert.equal(classifyValidationMessage("Unstable frame binding key: bad"), "bind");
+  assert.equal(classifyValidationMessage("project.godot not found"), "bind");
+  assert.equal(classifyValidationMessage("Generated runtime is missing"), "gameplay");
+});
+
+test("cutout is marked destructive because it overwrites source frames", () => {
+  const cutout = toolDefinitions().find((tool) => tool.name === "xsxb_cutout");
+  assert.equal(cutout.annotations.destructiveHint, true);
 });

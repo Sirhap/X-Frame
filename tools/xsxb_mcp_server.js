@@ -6,7 +6,7 @@ const { createXsxbMcpService } = require("./xsxb_mcp_service");
 
 const SERVER_INFO = Object.freeze({ name: "xsxb-frame-tuner", version: "0.1.0" });
 const INSTRUCTIONS =
-  "Use xsxb_list_projects or xsxb_get_project before mutations. Import with xsxb_import_animation (video, PNG sequence, SpriteFrames, or items); xsxb_import_video remains a video alias. Edit boxes and timing without syncing, then call xsxb_sync_godot explicitly. Delete mistaken imports with dry_run first. Validate after synchronization and report all tool results without inventing success.";
+  "Use xsxb_list_projects or xsxb_get_project before mutations. Bind Godot with xsxb_bind_godot before xsxb_sync_godot. Import with xsxb_import_animation (start_frame/end_frame/replace supported); xsxb_import_video remains a video alias. Cut frames with xsxb_cutout (smart-cutout; optional protected_colors; already-cut frames are skipped unless force). Bind real assets with xsxb_add_attachment and xsxb_add_sfx via file_path; author trails with xsxb_add_attack_trail sticks/texture_path. xsxb_open_tuner starts the local Tuner when it is down. Set the default project with xsxb_set_active_project. Edit boxes and timing without syncing, then sync explicitly. Validate with layer=standalone|bind|gameplay. Delete mistaken imports with dry_run first. Report all tool results without inventing success. If MCP errors, a needed capability is missing, or you must leave MCP to finish the request, do not hide it: tell the user and raise it to the XSXB-Frame-Tuner project with tool name, arguments, receipt or error, expected result, and actual result.";
 
 /**
  * Creates one successful JSON-RPC response.
@@ -97,4 +97,4 @@ function startServer(options = {}) {
 
 if (require.main === module) startServer();
 
-module.exports = { handleMessage, startServer };
+module.exports = { INSTRUCTIONS, handleMessage, startServer };

@@ -9,7 +9,7 @@
     "start": "node tools/animation_tuner/server.js",
     "start:local": "node --env-file-if-exists=.env.local tools/animation_tuner/server.js",
     "mcp:start": "node tools/xsxb_mcp_server.js",
-    "check:mcp": "node --check tools/xsxb_mcp_service.js tools/xsxb_mcp_server.js && prettier --check tools/xsxb_mcp_service.js tools/xsxb_mcp_server.js tools/tests/xsxb_mcp_server.test.js && node --test tools/tests/xsxb_mcp_server.test.js",
+    "check:mcp": "node --check tools/xsxb_mcp_service.js tools/xsxb_mcp_server.js tools/xsxb_mcp_cutout.js tools/xsxb_mcp_tool_usability.js && prettier --check tools/xsxb_mcp_service.js tools/xsxb_mcp_server.js tools/xsxb_mcp_cutout.js tools/xsxb_mcp_tool_usability.js tools/tests/xsxb_mcp_server.test.js tools/tests/xsxb_mcp_cutout.test.js tools/tests/xsxb_mcp_tool_usability.test.js && node --test tools/tests/xsxb_mcp_server.test.js tools/tests/xsxb_mcp_cutout.test.js tools/tests/xsxb_mcp_tool_usability.test.js",
     "animation:workflow": "node tools/animation_production_workflow.js",
     "start:lite": "node tools/frame_tuner_lite/server.js",
     "validate:lite": "node tools/frame_tuner_lite/validate.js",

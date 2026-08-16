@@ -2,14 +2,16 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
-const { execFile } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 const { promisify } = require("node:util");
 const {
   DEFAULT_ATTACK_TRAIL_PRESET_TEXTURE,
   EMPTY_ATTACK_TRAILS,
   normalizeAttackTrails,
+  pngInfo,
   validateAttackTrails,
 } = require("./attack_trails");
 const { deleteAnimation } = require("./animation_mutations");
@@ -19,9 +21,12 @@ const { syncGodotProject, validGodotProjectRoot } = require("./godot_sync");
 const { parseSpriteFrames } = require("./import_spriteframes");
 const { createProjectStore, EMPTY_TUNING, reslash, slug } = require("./project_store");
 const { validateImport } = require("./validate_import");
+const { cutoutFrameFiles } = require("./xsxb_mcp_cutout");
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_PROFILE_ID = "mcp_imports";
+const DEFAULT_TUNER_HOST = "127.0.0.1";
+const DEFAULT_TUNER_PORT = 5179;
 const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_list_projects",
   "xsxb_get_project",
@@ -37,6 +42,10 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_delete_animation",
   "xsxb_sync_godot",
   "xsxb_validate_project",
+  "xsxb_set_active_project",
+  "xsxb_bind_godot",
+  "xsxb_cutout",
+  "xsxb_open_tuner",
 ]);
 const BOX_NAMES = Object.freeze(["hurtbox", "collisionbox", "hitbox"]);
 const PNG_NAME = /\.png$/i;
@@ -173,6 +182,135 @@ function mergeBox(existing, patch, options = {}) {
   return next;
 }
 
+/**
+ * Classifies one validate_import message into standalone, bind, or gameplay.
+ * @param {string} message Validation message.
+ * @returns {"standalone"|"bind"|"gameplay"} Layer name.
+ */
+function classifyValidationMessage(message) {
+  const text = String(message || "");
+  if (/Generated runtime|gameplay scene|xsxb_frame_actor|animation_duration|scene_scale/i.test(text)) {
+    return "gameplay";
+  }
+  if (
+    /project\.godot not found|Game-local|game-local|bound game asset|res:\/\/|Unstable frame binding key/i.test(
+      text,
+    )
+  ) {
+    return "bind";
+  }
+  return "standalone";
+}
+
+/**
+ * Slices extracted video frames by inclusive start/end indexes.
+ * @param {string[]} extractedPaths Extracted PNG paths.
+ * @param {{start_frame?:number,end_frame?:number}} [args] Inclusive indexes.
+ * @returns {{paths:string[],extractedCount:number,startFrame:number,endFrame:number}} Sliced paths.
+ */
+function sliceExtractedFrames(extractedPaths, args = {}) {
+  const paths = Array.isArray(extractedPaths) ? extractedPaths : [];
+  const last = Math.max(0, paths.length - 1);
+  const start = Number.isInteger(Number(args.start_frame))
+    ? Math.max(0, Math.min(last, Number(args.start_frame)))
+    : 0;
+  const end = Number.isInteger(Number(args.end_frame))
+    ? Math.max(start, Math.min(last, Number(args.end_frame)))
+    : last;
+  return {
+    paths: paths.slice(start, end + 1),
+    extractedCount: paths.length,
+    startFrame: start,
+    endFrame: end,
+  };
+}
+
+/**
+ * Resolves an existing local file or throws.
+ * @param {string} filePath Candidate path.
+ * @param {string} label Error label.
+ * @returns {string} Absolute path.
+ */
+function requireExistingFile(filePath, label) {
+  const absolute = path.resolve(String(filePath || ""));
+  if (!filePath || !fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
+    throw new Error(`${label} not found: ${filePath || "(empty)"}`);
+  }
+  return absolute;
+}
+
+/**
+ * MIME type for a supported SFX file.
+ * @param {string} filePath Audio path.
+ * @returns {string} MIME type.
+ */
+function audioMimeType(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".wav") return "audio/wav";
+  if (extension === ".ogg") return "audio/ogg";
+  if (extension === ".mp3") return "audio/mpeg";
+  throw new Error(`Unsupported SFX type ${extension || "(none)"}. Use .wav, .ogg, or .mp3.`);
+}
+
+/**
+ * Probes whether the Tuner HTTP port answers.
+ * @param {string} url Workspace URL.
+ * @returns {Promise<boolean>} True when the server responds.
+ */
+function probeTunerUrl(url) {
+  return new Promise((resolve) => {
+    const request = http.get(url, { timeout: 800 }, (response) => {
+      response.resume();
+      resolve(Number(response.statusCode) >= 200 && Number(response.statusCode) < 500);
+    });
+    request.on("error", () => resolve(false));
+    request.on("timeout", () => {
+      request.destroy();
+      resolve(false);
+    });
+  });
+}
+
+/**
+ * Spawns the Tuner Node server detached.
+ * @param {{root:string,port:number,host:string}} options Launch options.
+ * @returns {{pid:number}} Child process id.
+ */
+function launchTunerProcess(options) {
+  const preferred = path.join(options.root, "tools/animation_tuner/server.js");
+  const script = fs.existsSync(preferred) ? preferred : path.join(__dirname, "animation_tuner/server.js");
+  const child = spawn(process.execPath, [script], {
+    env: {
+      ...process.env,
+      XSXB_ROOT: options.root,
+      PORT: String(options.port),
+      HOST: options.host,
+      XSXB_HOST: options.host,
+    },
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  return { pid: child.pid };
+}
+
+/**
+ * Waits until the Tuner answers or the attempt budget runs out.
+ * @param {Function} probe Probe function.
+ * @param {string} url Workspace URL.
+ * @param {number} [attempts=20] Poll count.
+ * @returns {Promise<boolean>} True when ready.
+ */
+async function waitForTuner(probe, url, attempts = 20) {
+  for (let index = 0; index < attempts; index += 1) {
+    if (await probe(url)) return true;
+    await new Promise((resolve) => {
+      setTimeout(resolve, 150);
+    });
+  }
+  return false;
+}
+
 function toolDefinitions() {
   const projectProperty = {
     type: "string",
@@ -211,6 +349,17 @@ function toolDefinitions() {
         properties: {
           file_path: { type: "string", description: "Absolute local video path." },
           fps: { type: "number", minimum: 1, maximum: 120, default: 12 },
+          start_frame: {
+            type: "integer",
+            minimum: 0,
+            description: "Inclusive 0-based extracted frame index.",
+          },
+          end_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based extracted frame index." },
+          replace: {
+            type: "boolean",
+            default: false,
+            description: "Replace an existing animation id atomically.",
+          },
           sync: { type: "boolean", default: false },
           validate: { type: "boolean", default: false },
           project_id: projectProperty,
@@ -241,6 +390,9 @@ function toolDefinitions() {
             description: "PNG data-URL items for source=items.",
           },
           fps: { type: "number", minimum: 1, maximum: 120, default: 12 },
+          start_frame: { type: "integer", minimum: 0 },
+          end_frame: { type: "integer", minimum: 0 },
+          replace: { type: "boolean", default: false },
           sync: { type: "boolean", default: false },
           validate: { type: "boolean", default: false },
           project_id: projectProperty,
@@ -254,8 +406,16 @@ function toolDefinitions() {
     },
     {
       name: "xsxb_get_animation",
-      description: "Return complete metadata and on-disk generation status for an XSXB animation.",
-      inputSchema: { type: "object", properties: animationProperties, additionalProperties: false },
+      description:
+        "Return animation metadata and frames. Pass frames=summary for a compact sample without animation.frames.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          frames: { type: "string", enum: ["summary", "full"], default: "full" },
+        },
+        additionalProperties: false,
+      },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
     {
@@ -317,24 +477,75 @@ function toolDefinitions() {
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
-    ...[
-      ["xsxb_add_attack_trail", "Add a deterministic attack-trail test segment to an animation."],
-      ["xsxb_add_attachment", "Add a deterministic image-attachment test binding to an animation frame."],
-      ["xsxb_add_sfx", "Add a generated WAV test SFX binding to an animation frame."],
-    ].map(([name, description]) => ({
-      name,
-      description,
+    {
+      name: "xsxb_add_attack_trail",
+      description:
+        "Add or replace one attack-trail segment. Pass sticks and optional texture_path; omitting sticks writes a default two-stick trail.",
       inputSchema: {
         type: "object",
         properties: {
           ...animationProperties,
-          frame: { type: "integer", minimum: 0, default: 0 },
+          id: { type: "string", description: "Segment id. Defaults to the texture basename or trail." },
+          name: { type: "string" },
+          color: { type: "string", description: "#RRGGBB solid color." },
+          color_mode: { type: "string", enum: ["solid", "original", "gradient"], default: "solid" },
+          texture_path: {
+            type: "string",
+            description: "Absolute PNG trail texture. Defaults to the built-in luma preset.",
+          },
+          start_frame: { type: "integer", minimum: 0 },
+          end_frame: { type: "integer", minimum: 0 },
+          sticks: {
+            type: "array",
+            items: { type: "object" },
+            description: "Trail sticks with frame, top, and bottom points.",
+          },
           sync: { type: "boolean", default: true },
         },
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-    })),
+    },
+    {
+      name: "xsxb_add_attachment",
+      description: "Bind a local PNG as a frame image attachment. file_path is required for a real asset.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          file_path: { type: "string", description: "Absolute PNG path to attach." },
+          frame: { type: "integer", minimum: 0, default: 0 },
+          id: { type: "string" },
+          name: { type: "string" },
+          layer: { type: "string", enum: ["above", "below"], default: "above" },
+          layer_order: { type: "integer", default: 1 },
+          offset_x: { type: "number", default: 0 },
+          offset_y: { type: "number" },
+          scale: { type: "number", default: 1 },
+          rotation: { type: "number", default: 0 },
+          sync: { type: "boolean", default: true },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_add_sfx",
+      description: "Bind a local WAV/OGG/MP3 to one animation frame. file_path is required for a real clip.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          file_path: { type: "string", description: "Absolute audio path." },
+          frame: { type: "integer", minimum: 0, default: 0 },
+          id: { type: "string" },
+          name: { type: "string" },
+          sync: { type: "boolean", default: true },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
     {
       name: "xsxb_delete_animation",
       description:
@@ -370,38 +581,148 @@ function toolDefinitions() {
           project_id: projectProperty,
           strict: { type: "boolean", default: false },
           require_gameplay: { type: "boolean", default: false },
+          layer: {
+            type: "string",
+            enum: ["all", "standalone", "bind", "gameplay"],
+            default: "all",
+            description: "Report only one validation layer. Default all, bind errors listed first.",
+          },
         },
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_set_active_project",
+      description: "Set the registry active XSXB project used when project_id is omitted.",
+      inputSchema: {
+        type: "object",
+        required: ["project_id"],
+        properties: { project_id: projectProperty },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_bind_godot",
+      description:
+        "Point one XSXB project at an existing Godot root that contains project.godot. Does not sync files.",
+      inputSchema: {
+        type: "object",
+        required: ["project_root"],
+        properties: {
+          project_id: projectProperty,
+          project_root: { type: "string", description: "Absolute Godot project directory." },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_cutout",
+      description:
+        "Run the tuner smart-cutout product path on every animation frame. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          key_color: {
+            type: "string",
+            description: "Optional #RRGGBB key. Omit to auto-detect the same background as the tuner.",
+          },
+          output_width: {
+            type: "integer",
+            minimum: 8,
+            maximum: 4096,
+            description: "Optional canvas width. Omit to keep each frame's source size.",
+          },
+          output_height: {
+            type: "integer",
+            minimum: 8,
+            maximum: 4096,
+            description: "Optional canvas height. Defaults to output_width when only width is set.",
+          },
+          protected_colors: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional #RRGGBB colors to keep, same as the tuner protect-color list.",
+          },
+          protection_tolerance: { type: "number", minimum: 0, maximum: 100, default: 8 },
+          force: {
+            type: "boolean",
+            default: false,
+            description: "Re-cut frames whose borders are already transparent.",
+          },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+    },
+    {
+      name: "xsxb_open_tuner",
+      description:
+        "Start the local Tuner if needed and return a workspace URL focused on one project, profile, and animation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          start: {
+            type: "boolean",
+            default: true,
+            description: "Start the Tuner process when it is not listening.",
+          },
+          port: { type: "integer", minimum: 1, maximum: 65535, default: 5179 },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
   ];
 }
 
 /**
  * Creates the business service used by the XSXB MCP transport.
- * @param {{root?:string,extractVideoFramesImpl?:typeof extractVideoFrames}} [options] Service dependencies.
+ * @param {{root?:string,extractVideoFramesImpl?:Function,cutoutPngFileImpl?:Function,probeTunerImpl?:Function,launchTunerImpl?:Function}} [options] Service dependencies.
  * @returns {{tools:object[],call:(name:string,args?:object)=>Promise<object>}} MCP-facing service.
  */
 function createXsxbMcpService(options = {}) {
   const root = path.resolve(options.root || path.join(__dirname, ".."));
   const projectStore = createProjectStore(root);
   const extractVideoFramesImpl = options.extractVideoFramesImpl || extractVideoFrames;
+  const cutoutPngFileImpl = options.cutoutPngFileImpl || null;
+  const probeTunerImpl = options.probeTunerImpl || probeTunerUrl;
+  const launchTunerImpl = options.launchTunerImpl || launchTunerProcess;
   const context = { projectId: "", profileId: "", animationId: "" };
+
+  /**
+   * Copies a local file into the project workspace and returns the repo-relative path.
+   * @param {object} project Project record.
+   * @param {string} subdir Workspace subdirectory.
+   * @param {string} absolutePath Source file.
+   * @returns {string} Relative POSIX path.
+   */
+  function copyIntoWorkspace(project, subdir, absolutePath) {
+    const destDir = path.join(projectStore.projectWorkspaceDir(project), subdir);
+    fs.mkdirSync(destDir, { recursive: true });
+    const destPath = path.join(destDir, path.basename(absolutePath));
+    fs.copyFileSync(absolutePath, destPath);
+    return reslash(path.relative(root, destPath));
+  }
 
   function registryProject(projectId, syncRequested = false) {
     const registry = projectStore.readRegistry();
     const requested = String(projectId || context.projectId || "").trim();
-    let project = requested
+    const project = requested
       ? registry.projects.find((entry) => entry.id === slug(requested))
       : projectStore.resolveProject(registry);
     if (!project && requested) throw new Error(`XSXB project not found: ${requested}`);
-    if (syncRequested && !validGodotProjectRoot(project)) {
-      project = registry.projects.find((entry) => validGodotProjectRoot(entry));
-    }
     if (!project) throw new Error("No XSXB project is available.");
     if (syncRequested && !validGodotProjectRoot(project)) {
-      throw new Error("No XSXB project is bound to an existing Godot project.godot.");
+      const boundPath = project.projectRoot || "(empty)";
+      throw new Error(
+        `XSXB project ${project.id} Godot binding does not exist: ${boundPath}. Use xsxb_bind_godot to retarget.`,
+      );
     }
     context.projectId = project.id;
     return project;
@@ -497,17 +818,25 @@ function createXsxbMcpService(options = {}) {
       "video_import",
     );
     const used = new Set((profile?.animations || []).map((entry) => String(entry.id || entry.name)));
+    const replaced = args.replace === true && used.has(baseAnimationId);
     let animationId = baseAnimationId;
-    let suffix = 2;
-    while (used.has(animationId)) {
-      animationId = `${baseAnimationId}_${suffix}`;
-      suffix += 1;
+    if (replaced) {
+      deleteAnimation({ root, projectStore, project, profileId, animationId: baseAnimationId });
+    } else {
+      let suffix = 2;
+      while (used.has(animationId)) {
+        animationId = `${baseAnimationId}_${suffix}`;
+        suffix += 1;
+      }
     }
     const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-mcp-video-"));
     try {
-      const extractedPaths = await extractVideoFramesImpl(videoPath, temporaryDirectory, args);
-      if (!extractedPaths.length) throw new Error("Video extraction produced no PNG frames.");
-      const items = extractedPaths.map((framePath) => ({
+      const extracted = sliceExtractedFrames(
+        await extractVideoFramesImpl(videoPath, temporaryDirectory, args),
+        args,
+      );
+      if (!extracted.paths.length) throw new Error("Video extraction produced no PNG frames.");
+      const items = extracted.paths.map((framePath) => ({
         name: path.basename(framePath),
         data: `data:image/png;base64,${fs.readFileSync(framePath).toString("base64")}`,
       }));
@@ -537,8 +866,11 @@ function createXsxbMcpService(options = {}) {
         animationId,
         sourceVideo: videoPath,
         fps: Math.max(1, Math.min(120, Number(args.fps || 12))),
-        extractedFrameCount: extractedPaths.length,
+        extractedFrameCount: extracted.extractedCount,
         importedFrameCount: imported.frameCount,
+        startFrame: extracted.startFrame,
+        endFrame: extracted.endFrame,
+        replaced,
         targetDirectory: imported.targetDir,
         sync,
         validation: args.validate === true ? { requested: true, ...validation } : validation,
@@ -548,11 +880,15 @@ function createXsxbMcpService(options = {}) {
     }
   }
 
-  function uniqueAnimationId(project, profileId, requestedId, fallback) {
+  function uniqueAnimationId(project, profileId, requestedId, fallback, replace = false) {
     const manifest = manifestFor(project);
     const profile = (manifest.profiles || []).find((entry) => entry.id === profileId);
     const used = new Set((profile?.animations || []).map((entry) => String(entry.id || entry.name)));
     const base = slug(requestedId || fallback, fallback);
+    if (replace && used.has(base)) {
+      deleteAnimation({ root, projectStore, project, profileId, animationId: base });
+      return base;
+    }
     let animationId = base;
     let suffix = 2;
     while (used.has(animationId)) {
@@ -567,11 +903,21 @@ function createXsxbMcpService(options = {}) {
     const syncRequested = args.sync === true;
     const project = registryProject(args.project_id || args.project, syncRequested);
     const profileId = slug(args.profile_id || args.profile || DEFAULT_PROFILE_ID, DEFAULT_PROFILE_ID);
+    const requestedId = slug(
+      args.animation_id || args.animation,
+      sourceLabel === "png_sequence" ? "png_sequence" : "imported",
+    );
+    const replaced =
+      args.replace === true &&
+      (manifestFor(project).profiles || [])
+        .find((entry) => entry.id === profileId)
+        ?.animations?.some((entry) => String(entry.id || entry.name) === requestedId);
     const animationId = uniqueAnimationId(
       project,
       profileId,
       args.animation_id || args.animation,
       sourceLabel === "png_sequence" ? "png_sequence" : "imported",
+      args.replace === true,
     );
     const imported = importAnimation({
       root,
@@ -600,6 +946,7 @@ function createXsxbMcpService(options = {}) {
       animationId,
       fps: Math.max(1, Math.min(120, Number(args.fps || 12))),
       importedFrameCount: imported.frameCount,
+      replaced: Boolean(replaced),
       targetDirectory: imported.targetDir,
       sync,
       validation,
@@ -613,7 +960,13 @@ function createXsxbMcpService(options = {}) {
     }
     if (source === "png_sequence") {
       const directory = path.resolve(String(args.directory || args.file_path || args.path || ""));
-      return importPngItems(args, listPngSequence(directory).map(pngFileToItem), "png_sequence");
+      const sliced = sliceExtractedFrames(listPngSequence(directory), args);
+      return {
+        ...importPngItems(args, sliced.paths.map(pngFileToItem), "png_sequence"),
+        startFrame: sliced.startFrame,
+        endFrame: sliced.endFrame,
+        sourceFrameCount: sliced.extractedCount,
+      };
     }
     if (source === "items") {
       const items = Array.isArray(args.items) ? args.items : [];
@@ -625,7 +978,13 @@ function createXsxbMcpService(options = {}) {
         }
         return pngFileToItem(filePath);
       });
-      return importPngItems(args, normalized, "items");
+      const sliced = sliceExtractedFrames(normalized, args);
+      return {
+        ...importPngItems(args, sliced.paths, "items"),
+        startFrame: sliced.startFrame,
+        endFrame: sliced.endFrame,
+        sourceFrameCount: sliced.extractedCount,
+      };
     }
     if (source === "spriteframes") {
       const filePath = path.resolve(String(args.file_path || args.path || ""));
@@ -640,7 +999,11 @@ function createXsxbMcpService(options = {}) {
       const profileId = slug(args.profile_id || args.profile || DEFAULT_PROFILE_ID, DEFAULT_PROFILE_ID);
       const imported = [];
       for (const animation of animations) {
-        const items = animation.frames.map((frame) => pngFileToItem(frame.source));
+        const sliced = sliceExtractedFrames(
+          animation.frames.map((frame) => pngFileToItem(frame.source)),
+          args,
+        );
+        const items = sliced.paths;
         imported.push(
           importPngItems(
             {
@@ -852,12 +1215,49 @@ function createXsxbMcpService(options = {}) {
   }
 
   async function getAnimation(args = {}) {
-    return animationResult(animationFor(args));
+    const result = animationResult(animationFor(args));
+    const framesMode = String(args.frames || "full").toLowerCase();
+    if (framesMode !== "summary") return { ...result, summary: false };
+    const samples = (result.animation.frames || []).slice(0, 3).map((frame) => ({
+      index: frame.index,
+      width: frame.width,
+      height: frame.height,
+      exists: frame.exists,
+      absolutePath: frame.absolutePath,
+    }));
+    return {
+      ...result,
+      summary: true,
+      sampleFrames: samples,
+      animation: { ...result.animation, frames: undefined },
+    };
+  }
+
+  function layerValidation(raw, layer = "all") {
+    const requested = ["standalone", "bind", "gameplay"].includes(layer) ? layer : "all";
+    const layers = { standalone: [], bind: [], gameplay: [] };
+    const warningLayers = { standalone: [], bind: [], gameplay: [] };
+    for (const message of raw.errors || []) layers[classifyValidationMessage(message)].push(message);
+    for (const message of raw.warnings || []) warningLayers[classifyValidationMessage(message)].push(message);
+    const selectedErrors = requested === "all" ? raw.errors : layers[requested];
+    const selectedWarnings = requested === "all" ? raw.warnings : warningLayers[requested];
+    return {
+      ...raw,
+      layer: requested,
+      errors: selectedErrors,
+      warnings: selectedWarnings,
+      layers: {
+        standalone: { errors: layers.standalone, warnings: warningLayers.standalone },
+        bind: { errors: layers.bind, warnings: warningLayers.bind },
+        gameplay: { errors: layers.gameplay, warnings: warningLayers.gameplay },
+      },
+      ok: selectedErrors.length === 0 && (!raw.strict || selectedWarnings.length === 0),
+    };
   }
 
   async function validateProject(args = {}) {
     const project = registryProject(args.project_id || args.project, false);
-    return validateImport(
+    const raw = validateImport(
       {
         project: project.id,
         strict: args.strict === true,
@@ -865,6 +1265,180 @@ function createXsxbMcpService(options = {}) {
       },
       { root, projectStore },
     );
+    return layerValidation({ ...raw, strict: args.strict === true }, args.layer || "all");
+  }
+
+  function setActiveProject(args = {}) {
+    const project = registryProject(args.project_id || args.project, false);
+    projectStore.setActiveProject(project.id);
+    context.projectId = project.id;
+    return { activeProjectId: project.id, project: projectStore.projectForClient(project) };
+  }
+
+  function bindGodot(args = {}) {
+    const project = registryProject(args.project_id || args.project, false);
+    const previousRoot = project.projectRoot || "";
+    const projectRoot = path.resolve(String(args.project_root || args.root || ""));
+    if (!fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) {
+      throw new Error(`Godot project folder not found: ${projectRoot}`);
+    }
+    if (!fs.existsSync(path.join(projectRoot, "project.godot"))) {
+      throw new Error(`Godot project.godot not found in ${projectRoot}`);
+    }
+    const updated = projectStore.setProjectRoot(project.id, projectRoot).project;
+    context.projectId = updated.id;
+    return {
+      projectId: updated.id,
+      projectRoot: updated.projectRoot,
+      previousRoot,
+      godotProjectValid: Boolean(validGodotProjectRoot(updated)),
+    };
+  }
+
+  async function cutoutAnimation(args = {}) {
+    const selection = animationFor(args);
+    const { project, profile, animation } = selection;
+    const explicitCanvas = Number.isInteger(Number(args.output_width || args.canvas))
+      ? Math.max(8, Number(args.output_width || args.canvas))
+      : Number.isInteger(Number(args.output_height))
+        ? Math.max(8, Number(args.output_height))
+        : 0;
+    const outputWidth = explicitCanvas
+      ? Math.max(8, Number(args.output_width || args.canvas || explicitCanvas))
+      : undefined;
+    const outputHeight = explicitCanvas
+      ? Math.max(8, Number(args.output_height || args.canvas || explicitCanvas))
+      : undefined;
+    const keyColor = args.key_color || args.color || undefined;
+    const frames = Array.from(animation.frames || []);
+    if (!frames.length) throw new Error("Cannot cut out an animation without frames.");
+    const jobs = [];
+    for (const [index, frame] of frames.entries()) {
+      const rawPath = String(frame.path || "");
+      const absolutePath = rawPath.startsWith("res://")
+        ? path.join(project.projectRoot || "", rawPath.slice(6))
+        : path.resolve(root, rawPath);
+      if (!fs.existsSync(absolutePath)) continue;
+      jobs.push({ index, absolutePath });
+    }
+    if (!jobs.length) throw new Error("Cutout found no on-disk frames to process.");
+    const paths = projectStore.projectPaths(project);
+    const manifest = manifestFor(project);
+    const stored = (manifest.profiles || [])
+      .find((entry) => entry.id === profile.id)
+      ?.animations?.find(
+        (entry) => String(entry.id || entry.name) === String(animation.id || animation.name),
+      );
+    let processedFrameCount = 0;
+    let receipt = {
+      pipeline: "smart_product",
+      rematched: Boolean(explicitCanvas),
+      backgroundColor: keyColor || "",
+      outputWidth: outputWidth || 0,
+      outputHeight: outputHeight || 0,
+    };
+    if (cutoutPngFileImpl) {
+      for (const job of jobs) {
+        const temporaryPath = `${job.absolutePath}.cutout-tmp.png`;
+        await cutoutPngFileImpl(job.absolutePath, temporaryPath, {
+          keyColor,
+          outputWidth,
+          outputHeight,
+        });
+        if (!fs.existsSync(temporaryPath)) {
+          throw new Error(`Cutout produced no file for frame ${job.index}: ${job.absolutePath}`);
+        }
+        fs.renameSync(temporaryPath, job.absolutePath);
+        processedFrameCount += 1;
+        if (stored?.frames?.[job.index] && outputWidth && outputHeight) {
+          stored.frames[job.index].width = outputWidth;
+          stored.frames[job.index].height = outputHeight;
+        }
+      }
+    } else {
+      receipt = cutoutFrameFiles(
+        jobs.map((job) => job.absolutePath),
+        {
+          keyColor,
+          outputWidth,
+          outputHeight,
+          protectedColors: args.protected_colors || args.protectedColors,
+          protectionTolerance: args.protection_tolerance,
+          force: args.force === true,
+        },
+      );
+      processedFrameCount = receipt.processedFrameCount;
+      jobs.forEach((job, order) => {
+        if (!stored?.frames?.[job.index]) return;
+        const size = receipt.frameSizes?.[order];
+        if (!size) return;
+        stored.frames[job.index].width = size.width;
+        stored.frames[job.index].height = size.height;
+      });
+    }
+    projectStore.writeJson(paths.manifest, manifest);
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId: String(animation.id || animation.name),
+      pipeline: receipt.pipeline,
+      rematched: receipt.rematched,
+      backgroundColor: receipt.backgroundColor,
+      keyColor: keyColor || receipt.backgroundColor,
+      outputWidth: receipt.outputWidth || outputWidth || 0,
+      outputHeight: receipt.outputHeight || outputHeight || 0,
+      frameCount: frames.length,
+      processedFrameCount,
+      skippedFrameCount: Number(receipt.skippedFrameCount || 0),
+      sync: synchronize(project, args.sync === true),
+    };
+  }
+
+  async function openTuner(args = {}) {
+    const requestedAnimation = Boolean(args.animation_id || args.animation);
+    let project;
+    let profileId = String(args.profile_id || args.profile || "").trim();
+    let animationId = String(args.animation_id || args.animation || "").trim();
+    if (requestedAnimation) {
+      const selection = animationFor(args);
+      project = selection.project;
+      profileId = selection.profile.id;
+      animationId = String(selection.animation.id || selection.animation.name);
+    } else {
+      project = registryProject(args.project_id || args.project, false);
+    }
+    const port = Math.max(1, Number(args.port || process.env.PORT || DEFAULT_TUNER_PORT));
+    const host = DEFAULT_TUNER_HOST;
+    const url = new URL(`http://${host}:${port}/workspace`);
+    url.searchParams.set("project", project.id);
+    if (profileId) url.searchParams.set("profile", profileId);
+    if (animationId) url.searchParams.set("animation", animationId);
+    const workspaceUrl = url.toString();
+    const shouldStart = args.start !== false;
+    let reused = await probeTunerImpl(workspaceUrl);
+    let launched = false;
+    let pid = null;
+    if (!reused && shouldStart) {
+      const spawned = (await launchTunerImpl({ root, port, host, url: workspaceUrl })) || {};
+      pid = spawned.pid || null;
+      launched = true;
+      reused = options.launchTunerImpl
+        ? Boolean(await probeTunerImpl(workspaceUrl))
+        : await waitForTuner(probeTunerImpl, workspaceUrl);
+      if (!reused && !options.launchTunerImpl) {
+        throw new Error(`Tuner did not start at http://${host}:${port}.`);
+      }
+    }
+    return {
+      projectId: project.id,
+      profileId,
+      animationId,
+      url: workspaceUrl,
+      launched,
+      reused: Boolean(reused && !launched),
+      started: Boolean(reused || launched),
+      pid,
+    };
   }
 
   async function addAttackTrail(args = {}) {
@@ -877,26 +1451,62 @@ function createXsxbMcpService(options = {}) {
     const lastFrame = Math.max(1, frames.length - 1);
     const width = Number(frames[0]?.width || 320);
     const height = Number(frames[0]?.height || 320);
+    const startFrame = Number.isInteger(Number(args.start_frame)) ? Math.max(0, Number(args.start_frame)) : 0;
+    const endFrame = Number.isInteger(Number(args.end_frame))
+      ? Math.max(startFrame, Number(args.end_frame))
+      : lastFrame;
+    let texture = DEFAULT_ATTACK_TRAIL_PRESET_TEXTURE;
+    if (args.texture_path) {
+      const absolute = requireExistingFile(args.texture_path, "Trail texture");
+      const buffer = fs.readFileSync(absolute);
+      const info = pngInfo(buffer);
+      const hash = crypto.createHash("sha256").update(buffer).digest("hex");
+      const destDir = path.join(
+        projectStore.projectWorkspaceDir(project),
+        "attack_trails",
+        profile.id,
+        String(animation.id || animation.name),
+      );
+      fs.mkdirSync(destDir, { recursive: true });
+      const destPath = path.join(destDir, `${hash}.png`);
+      fs.writeFileSync(destPath, buffer);
+      texture = {
+        path: reslash(path.relative(root, destPath)),
+        assetHash: hash,
+        name: path.basename(absolute),
+        type: "image/png",
+        width: info.width,
+        height: info.height,
+        hasEffectiveAlpha: info.hasEffectiveAlpha,
+      };
+    }
+    const defaultSticks = [
+      {
+        frame: startFrame,
+        top: { x: -width * 0.15, y: -height * 0.3 },
+        bottom: { x: width * 0.15, y: height * 0.1 },
+      },
+      {
+        frame: endFrame,
+        top: { x: width * 0.15, y: -height * 0.3 },
+        bottom: { x: -width * 0.15, y: height * 0.1 },
+      },
+    ];
+    const sticks = Array.isArray(args.sticks) && args.sticks.length ? args.sticks : defaultSticks;
+    const segmentId = slug(
+      args.id ||
+        (args.texture_path ? path.basename(args.texture_path, path.extname(args.texture_path)) : "trail"),
+      "trail",
+    );
     const segment = {
-      id: "mcp_test_trail",
-      name: "MCP Test Trail",
+      id: segmentId,
+      name: String(args.name || segmentId),
       profileId: profile.id,
       animationId: String(animation.id || animation.name),
-      texture: DEFAULT_ATTACK_TRAIL_PRESET_TEXTURE,
-      colorMode: "solid",
-      color: "#d9364a",
-      sticks: [
-        {
-          frame: 0,
-          top: { x: -width * 0.15, y: -height * 0.3 },
-          bottom: { x: width * 0.15, y: height * 0.1 },
-        },
-        {
-          frame: lastFrame,
-          top: { x: width * 0.15, y: -height * 0.3 },
-          bottom: { x: -width * 0.15, y: height * 0.1 },
-        },
-      ],
+      texture,
+      colorMode: args.color_mode || args.colorMode || "solid",
+      color: args.color || "#d9364a",
+      sticks,
     };
     trails.bindings[bindingKey] = [
       ...(trails.bindings[bindingKey] || []).filter((entry) => entry.id !== segment.id),
@@ -922,21 +1532,38 @@ function createXsxbMcpService(options = {}) {
     const paths = projectStore.projectPaths(project);
     const bindings = projectStore.readJson(paths.frameImageAttachments, []);
     const key = `${profile.id}/${animation.id || animation.name}:${frame}`;
-    const id = "mcp_test_attachment";
     const source = frames[0];
+    let relativePath = source.path;
+    let name = String(args.name || "MCP Test Attachment");
+    let id = slug(args.id || "mcp_test_attachment", "mcp_test_attachment");
+    if (args.file_path) {
+      const absolute = requireExistingFile(args.file_path, "Attachment image");
+      if (!/\.png$/i.test(absolute)) throw new Error("Attachment image must be a PNG.");
+      relativePath = copyIntoWorkspace(
+        project,
+        path.join("attachments", profile.id, String(animation.id || animation.name)),
+        absolute,
+      );
+      name = String(args.name || path.basename(absolute));
+      id = slug(args.id || path.basename(absolute, path.extname(absolute)), "attachment");
+    }
+    const scale = Number(args.scale ?? 1);
     const attachment = {
       id,
       key,
       frameKey: key,
-      name: "MCP Test Attachment",
-      path: source.path,
+      name,
+      path: relativePath,
       type: "image/png",
-      layer: "above",
-      layerOrder: 1,
+      layer: String(args.layer || "above") === "below" ? "below" : "above",
+      layerOrder: Number(args.layer_order || args.layerOrder || 1),
       transform: {
-        offset: { x: 0, y: -Number(source.height || 100) * 0.2 },
-        scale: { x: 0.25, y: 0.25 },
-        rotation: 0,
+        offset: {
+          x: Number(args.offset_x || 0),
+          y: args.offset_y === undefined ? -Number(source.height || 100) * 0.2 : Number(args.offset_y),
+        },
+        scale: { x: scale, y: scale },
+        rotation: Number(args.rotation || 0),
       },
       metadata: {
         profileId: profile.id,
@@ -968,14 +1595,27 @@ function createXsxbMcpService(options = {}) {
       ? raw
       : Object.entries(raw || {}).map(([key, value]) => ({ key, ...(value || {}) }));
     const key = `${profile.id}/${animation.id || animation.name}:${frame}`;
-    const wav = createTestWav();
+    let buffer = createTestWav();
+    let mime = "audio/wav";
+    let name = "mcp_test_sfx.wav";
+    let id = slug(args.id || "mcp_test_sfx", "mcp_test_sfx");
+    let relativePath = "";
+    if (args.file_path) {
+      const absolute = requireExistingFile(args.file_path, "SFX file");
+      mime = audioMimeType(absolute);
+      buffer = fs.readFileSync(absolute);
+      name = String(args.name || path.basename(absolute));
+      id = slug(args.id || path.basename(absolute, path.extname(absolute)), "sfx");
+      relativePath = copyIntoWorkspace(project, path.join("audio", profile.id), absolute);
+    }
     const binding = {
-      id: "mcp_test_sfx",
+      id,
       key,
-      name: "mcp_test_sfx.wav",
-      type: "audio/wav",
-      size: wav.length,
-      data: `data:audio/wav;base64,${wav.toString("base64")}`,
+      name,
+      type: mime,
+      size: buffer.length,
+      path: relativePath,
+      data: `data:${mime};base64,${buffer.toString("base64")}`,
       metadata: {
         profileId: profile.id,
         animation: `${profile.id}/${animation.id || animation.name}`,
@@ -986,7 +1626,7 @@ function createXsxbMcpService(options = {}) {
     projectStore.writeJson(paths.frameAudio, next);
     return {
       projectId: project.id,
-      binding: { ...binding, data: "[base64 WAV omitted]" },
+      binding: { ...binding, data: `[${mime} omitted]` },
       bindingCount: next.length,
       sync: synchronize(project, args.sync !== false),
     };
@@ -1024,6 +1664,7 @@ function createXsxbMcpService(options = {}) {
       outputFrameCount: result.frameCount,
       order,
       identityOrder: order.every((sourceIndex, index) => sourceIndex === index),
+      fps: Number(animation.fps || 0),
       targetDirectory: result.targetDir,
       sync: synchronize(project, args.sync !== false),
     };
@@ -1044,6 +1685,10 @@ function createXsxbMcpService(options = {}) {
     xsxb_reorganize_frames: reorganizeFrames,
     xsxb_delete_animation: removeAnimation,
     xsxb_sync_godot: syncGodot,
+    xsxb_set_active_project: setActiveProject,
+    xsxb_bind_godot: bindGodot,
+    xsxb_cutout: cutoutAnimation,
+    xsxb_open_tuner: openTuner,
   };
 
   return {
@@ -1058,6 +1703,7 @@ function createXsxbMcpService(options = {}) {
 
 module.exports = {
   MCP_TOOL_NAMES,
+  classifyValidationMessage,
   createTestWav,
   createXsxbMcpService,
   extractVideoFrames,

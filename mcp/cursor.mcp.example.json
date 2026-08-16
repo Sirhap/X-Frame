@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "xsxb": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/tools/xsxb_mcp_server.js"]
+    }
+  }
+}
