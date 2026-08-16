@@ -87,7 +87,13 @@ function createLocalAccountAuthService(options = {}) {
   function readToken(request) {
     for (const entry of String(request?.headers?.cookie || "").split(";")) {
       const [name, ...parts] = entry.trim().split("=");
-      if (name === COOKIE_NAME) return decodeURIComponent(parts.join("="));
+      if (name === COOKIE_NAME) {
+        try {
+          return decodeURIComponent(parts.join("="));
+        } catch {
+          return "";
+        }
+      }
     }
     return "";
   }

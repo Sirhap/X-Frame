@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { EMPTY_MANIFEST, EMPTY_TUNING, reslash } = require("./project_store");
+const { EMPTY_MANIFEST, EMPTY_TUNING, reslash, writeJson } = require("./project_store");
 const { ensureGodotRuntime } = require("./godot_runtime");
 const { EMPTY_ATTACK_TRAILS, clone: cloneAttackTrails, normalizeAttackTrails } = require("./attack_trails");
 
@@ -96,8 +96,12 @@ function localFrameRelPath(framePath, fallbackName = "frame.png") {
   const raw = reslash(framePath || fallbackName)
     .replace(/^res:\/\//, "")
     .replace(/^\/+/, "");
-  if (raw.startsWith(`${GODOT_SYNC_ROOT}/`)) return raw;
-  return godotProjectRelPath(raw || fallbackName);
+  const candidate = raw.startsWith(`${GODOT_SYNC_ROOT}/`) ? raw : godotProjectRelPath(raw || fallbackName);
+  const normalized = path.posix.normalize(candidate).replace(/^\/+/, "");
+  if (normalized.startsWith(`${GODOT_SYNC_ROOT}/`) && !normalized.split("/").includes("..")) {
+    return normalized;
+  }
+  return godotProjectRelPath(path.posix.basename(raw || fallbackName));
 }
 
 function syncManifest(root, projectStore, project, manifestInput = null) {
@@ -116,18 +120,18 @@ function syncManifest(root, projectStore, project, manifestInput = null) {
       for (const frame of frames) {
         const source = sourcePathForFrame(root, projectRoot, frame.path);
         const nextRel = localFrameRelPath(frame.path, frame.name || "frame.png");
+        const target = path.join(projectRoot, nextRel);
         frame.path = nextRel;
         frameCount += 1;
+        if (!isInside(target, path.join(projectRoot, GODOT_SYNC_ROOT))) continue;
         if (!source || path.extname(source).toLowerCase() !== ".png") continue;
-        const target = path.join(projectRoot, nextRel);
         if (copyFileIfChanged(source, target)) copiedFrames += 1;
       }
     }
   }
 
   const targetManifest = path.join(godotDataDir(projectRoot, project), "animation_manifest.json");
-  fs.mkdirSync(path.dirname(targetManifest), { recursive: true });
-  fs.writeFileSync(targetManifest, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  writeJson(targetManifest, manifest);
   return { copiedFrames, frameCount };
 }
 
@@ -137,8 +141,7 @@ function syncTuning(projectStore, project, tuningInput = null) {
   const paths = projectStore.projectPaths(project);
   const tuning = clone(tuningInput || projectStore.readJson(paths.tuning, EMPTY_TUNING));
   const targetTuning = path.join(godotDataDir(projectRoot, project), "animation_tuning.json");
-  fs.mkdirSync(path.dirname(targetTuning), { recursive: true });
-  fs.writeFileSync(targetTuning, `${JSON.stringify(tuning, null, 2)}\n`, "utf8");
+  writeJson(targetTuning, tuning);
   return { wroteTuning: true };
 }
 
@@ -257,8 +260,7 @@ function syncFrameAudio(projectStore, project, bindingsInput = null) {
   });
 
   const targetAudio = path.join(godotDataDir(projectRoot, project), "frame_audio_bindings.json");
-  fs.mkdirSync(path.dirname(targetAudio), { recursive: true });
-  fs.writeFileSync(targetAudio, `${JSON.stringify(localBindings, null, 2)}\n`, "utf8");
+  writeJson(targetAudio, localBindings);
   return { audioCount: localBindings.length, copiedAudio };
 }
 
@@ -287,8 +289,7 @@ function syncFrameImageAttachments(root, projectStore, project, attachmentsInput
   });
 
   const targetFile = path.join(godotDataDir(projectRoot, project), "frame_image_attachments.json");
-  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
-  fs.writeFileSync(targetFile, `${JSON.stringify(localAttachments, null, 2)}\n`, "utf8");
+  writeJson(targetFile, localAttachments);
   return { imageAttachmentCount: localAttachments.length, copiedImageAttachments };
 }
 
@@ -335,8 +336,7 @@ function syncAttackTrails(root, projectStore, project, trailsInput = null) {
   }
   pruneGeneratedDirectory(projectTextureRoot, retainedProjectTextures);
   const targetFile = path.join(godotDataDir(projectRoot, project), "attack_trails.json");
-  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
-  fs.writeFileSync(targetFile, `${JSON.stringify(local, null, 2)}\n`, "utf8");
+  writeJson(targetFile, local);
   return { attackTrailCount, copiedAttackTrailTextures };
 }
 
@@ -384,6 +384,7 @@ function syncGodotProject(root, projectStore, project, options = {}) {
 module.exports = {
   GODOT_SYNC_ROOT,
   godotDataRelPath,
+  localFrameRelPath,
   syncFrameAudio,
   syncFrameImageAttachments,
   syncAttackTrails,

@@ -26,6 +26,33 @@ function createRequest(headers = {}) {
   return Object.assign(new EventEmitter(), { headers, resume() {} });
 }
 
+test("pipeFile destroys the response when the read stream errors", async () => {
+  const { pipeFile } = createFixture();
+  const { PassThrough } = require("node:stream");
+  const { EventEmitter } = require("node:events");
+  const stream = new PassThrough();
+  const response = Object.assign(new EventEmitter(), {
+    destroyed: false,
+    headersSent: false,
+    writeHead() {},
+    destroy() {
+      this.destroyed = true;
+    },
+  });
+  pipeFile(
+    response,
+    "/tmp/missing-asset.png",
+    { "content-type": "image/png" },
+    {
+      createReadStream() {
+        return stream;
+      },
+    },
+  );
+  stream.emit("error", new Error("EACCES"));
+  assert.equal(response.destroyed, true);
+});
+
 test("HTTP utilities enforce JSON content type and local origins", () => {
   const { HttpError, validateWriteRequest } = createFixture();
   assert.throws(

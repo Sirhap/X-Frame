@@ -163,6 +163,54 @@ test("administrator workbench session grants Pro without consuming the regular a
   assert.match(service.clearAdminWorkbenchCookieHeader(request), /^xsxb_admin_workbench=/u);
 });
 
+test("password login OTP uses the same send budget as requestCode", async () => {
+  const sends = [];
+  const repository = {
+    async findAccountByEmail() {
+      return null;
+    },
+    async findLatestVerificationCode() {
+      return { created_at: "2026-08-10T00:00:00.000Z" };
+    },
+    async findLatestAuthChallenge() {
+      return { created_at: "2026-08-10T00:00:00.000Z" };
+    },
+    async countRecentCodesForEmail() {
+      return 0;
+    },
+    async countRecentCodesForIp() {
+      return 0;
+    },
+    async countRecentAuthChallengesForEmail() {
+      return 0;
+    },
+    async countRecentAuthChallengesForIp() {
+      return 0;
+    },
+    async createAuthChallenge() {
+      throw new Error("should not create a challenge while rate limited");
+    },
+  };
+  const service = createAccountAuthService(
+    { XSXB_ACTIVATION_SECRET: "x".repeat(32) },
+    {
+      repository,
+      now: () => Date.parse("2026-08-10T00:00:30.000Z"),
+      emailSender: {
+        configured: true,
+        async sendVerificationCode() {
+          sends.push("sent");
+        },
+      },
+    },
+  );
+  await assert.rejects(
+    () => service.startPasswordLogin("person@example.com", "password", new Request("https://example.test/")),
+    (error) => error.status === 429 && /过于频繁/u.test(error.message),
+  );
+  assert.equal(sends.length, 0);
+});
+
 test("Resend sender submits bounded verification email content", async () => {
   const calls = [];
   const sender = createEmailSender(

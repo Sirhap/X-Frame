@@ -115,7 +115,7 @@ const DEFAULT_SUPPORTS = [
   "reference_frame",
 ];
 
-const { HttpError, readJsonBody, send, validateWriteRequest } = createHttpUtilities({
+const { HttpError, pipeFile, readJsonBody, send, validateWriteRequest } = createHttpUtilities({
   port: PORT,
   mediaRoutes: MEDIA_ROUTES,
   defaultBodyLimit: DEFAULT_BODY_LIMIT,
@@ -451,14 +451,21 @@ function contentHash(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
+const MAX_ATTACHMENT_HASH_BYTES = 16 * 1024 * 1024;
+
 function attachmentImageSourcePath(project, attachment) {
   const raw = String(attachment?.path || "");
   if (!raw) return "";
-  if (path.isAbsolute(raw)) return fs.existsSync(raw) ? raw : "";
+  const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
   if (raw.startsWith("res://")) {
-    const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
-    const fullPath = projectRoot ? path.join(projectRoot, raw.slice("res://".length)) : "";
-    return fullPath && fs.existsSync(fullPath) ? fullPath : "";
+    if (!projectRoot) return "";
+    const fullPath = path.resolve(projectRoot, raw.slice("res://".length));
+    return isInside(fullPath, projectRoot) && fs.existsSync(fullPath) ? fullPath : "";
+  }
+  if (path.isAbsolute(raw)) {
+    const absolute = path.resolve(raw);
+    const allowed = isInside(absolute, ROOT) || (projectRoot && isInside(absolute, projectRoot));
+    return allowed && fs.existsSync(absolute) ? absolute : "";
   }
   const fullPath = safeResolve(ROOT, raw);
   return fullPath && fs.existsSync(fullPath) ? fullPath : "";
@@ -468,7 +475,11 @@ function withFrameAttachmentHash(project, attachment) {
   const next = { ...attachment };
   if (!next.assetHash) {
     const source = attachmentImageSourcePath(project, next);
-    if (source) next.assetHash = contentHash(fs.readFileSync(source));
+    if (source) {
+      const size = fs.statSync(source).size;
+      if (size > 0 && size <= MAX_ATTACHMENT_HASH_BYTES)
+        next.assetHash = contentHash(fs.readFileSync(source));
+    }
   }
   return next;
 }
@@ -880,19 +891,12 @@ const server = http.createServer(async (req, res) => {
         parsed.searchParams.get("job"),
         parsed.searchParams.get("name"),
       );
-      res.writeHead(200, {
+      return pipeFile(res, output.filename, {
         "content-type": output.contentType,
         "content-length": output.size,
         "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(output.filename))}`,
         "cache-control": "no-store",
       });
-      const outputStream = fs.createReadStream(output.filename);
-      outputStream.on("error", (error) => {
-        console.error("Media export download failed:", error);
-        if (!res.destroyed) res.destroy(error);
-      });
-      res.on("close", () => outputStream.destroy());
-      return outputStream.pipe(res);
     }
     if (req.method === "POST" && parsed.pathname === "/api/media-export/jobs") {
       return send(res, 201, mediaExportService.createJob(await readJsonBody(req, parsed.pathname)));
@@ -988,7 +992,9 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (req.method === "GET" && parsed.pathname === "/api/config") {
-      return send(res, 200, configResponse(parsed.searchParams.get("project")));
+      return withProjectWrite("__registry__", () =>
+        send(res, 200, configResponse(parsed.searchParams.get("project"))),
+      );
     }
     if (req.method === "POST" && parsed.pathname === "/api/save") {
       const payload = await readJsonBody(req, parsed.pathname);
@@ -1029,8 +1035,7 @@ const server = http.createServer(async (req, res) => {
       ) {
         return send(res, 404, "Not found", "text/plain");
       }
-      res.writeHead(200, { "content-type": imageTypes[ext], "cache-control": "no-store" });
-      return fs.createReadStream(full).pipe(res);
+      return pipeFile(res, full, { "content-type": imageTypes[ext], "cache-control": "no-store" });
     }
     return serveStatic(req, res, parsed.pathname);
   } catch (error) {

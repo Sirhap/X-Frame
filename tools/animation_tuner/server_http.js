@@ -1,5 +1,6 @@
 "use strict";
 
+const fs = require("node:fs");
 const { URL } = require("node:url");
 
 /** HTTP-safe application error carrying a response status. */
@@ -158,7 +159,26 @@ function createHttpUtilities(options) {
     }
   }
 
-  return { HttpError, send, validateWriteRequest, readJsonBody };
+  /**
+   * Pipes a local file to the response and destroys the stream on read errors.
+   * @param {import("node:http").ServerResponse} response HTTP response.
+   * @param {string} filePath Absolute file path.
+   * @param {Record<string,string|number>} headers Response headers.
+   * @param {{createReadStream?:Function}} [fsApi] Filesystem override.
+   * @returns {import("node:stream").Writable} Piped destination.
+   */
+  function pipeFile(response, filePath, headers, fsApi = fs) {
+    const stream = fsApi.createReadStream(filePath);
+    stream.on("error", (error) => {
+      logger.error("Asset stream failed:", error);
+      if (!response.destroyed) response.destroy(error);
+    });
+    response.on("close", () => stream.destroy());
+    if (!response.headersSent) response.writeHead(200, headers);
+    return stream.pipe(response);
+  }
+
+  return { HttpError, send, validateWriteRequest, readJsonBody, pipeFile };
 }
 
 module.exports = { HttpError, createHttpUtilities };

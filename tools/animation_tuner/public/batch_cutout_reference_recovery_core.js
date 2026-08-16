@@ -533,7 +533,7 @@
       const minimumVisitedNeighborAlpha = (pixel) => {
         const x = pixel % width;
         const y = Math.floor(pixel / width);
-        let minimum = 0;
+        let minimum = Number.POSITIVE_INFINITY;
         for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
           for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
             if (!offsetX && !offsetY) continue;
@@ -543,10 +543,10 @@
             const neighbor = neighborY * width + neighborX;
             if (!visited[neighbor]) continue;
             const alpha = data[neighbor * 4 + 3];
-            if (!minimum || alpha < minimum) minimum = alpha;
+            if (alpha < minimum) minimum = alpha;
           }
         }
-        return minimum;
+        return Number.isFinite(minimum) ? minimum : 0;
       };
 
       /**

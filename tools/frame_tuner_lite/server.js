@@ -635,8 +635,14 @@ const server = http.createServer(async (req, res) => {
       };
       const type = types[path.extname(full || "").toLowerCase()];
       if (!full || !fs.existsSync(full) || !type) return send(res, 404, "Not found", "text/plain");
+      const stream = fs.createReadStream(full);
+      stream.on("error", (error) => {
+        console.error("Lite asset stream failed:", error);
+        if (!res.destroyed) res.destroy(error);
+      });
+      res.on("close", () => stream.destroy());
       res.writeHead(200, { "content-type": type, "cache-control": "no-store" });
-      return fs.createReadStream(full).pipe(res);
+      return stream.pipe(res);
     }
     return serveStatic(res, url.pathname);
   } catch (error) {

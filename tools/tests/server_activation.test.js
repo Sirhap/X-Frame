@@ -33,6 +33,16 @@ test("activation service validates configured hashes and signed cookies", () => 
   assert.equal(service.status({ headers: { cookie } }).activated, true);
 });
 
+test("malformed activation cookies do not throw", () => {
+  const service = createActivationService({
+    codeHashes: [codeHash("XSXB-PRO-TEST")],
+    secret: "test-secret-with-at-least-thirty-two-characters",
+  });
+  const request = { headers: { cookie: "xsxb_activation=%E0%A4%A" } };
+  assert.doesNotThrow(() => service.status(request));
+  assert.equal(service.status(request).activated, false);
+});
+
 test("activation service fails closed when code verification is unconfigured", () => {
   for (const options of [
     { secret: "test-secret-with-at-least-thirty-two-characters" },

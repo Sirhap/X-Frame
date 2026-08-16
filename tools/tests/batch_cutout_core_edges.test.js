@@ -22,6 +22,18 @@ test("cutout core returns a stable empty result for zero-sized input", () => {
   );
 });
 
+test("alphaHigh 0 leaves feathered edges instead of flattening them", () => {
+  const source = new Uint8ClampedArray([0, 255, 0, 255, 10, 200, 10, 80, 200, 30, 30, 255, 0, 255, 0, 255]);
+  const result = applyCutout(source, 2, 2, {
+    backgroundColor: { r: 0, g: 255, b: 0 },
+    tolerance: 4,
+    feather: 40,
+    connected: false,
+    alphaHigh: 0,
+  });
+  assert.ok(result.data[7] < 255, "semi-transparent edge must survive alphaHigh=0");
+});
+
 test("cutout core rejects unsafe dimensions and mismatched RGBA buffers", () => {
   assert.throws(() => applyCutout(new Uint8ClampedArray(4), -1, 1), /dimensions/i);
   assert.throws(() => applyCutout(new Uint8ClampedArray(4), 1.5, 1), /dimensions/i);

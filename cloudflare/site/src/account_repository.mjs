@@ -41,6 +41,37 @@ export function createAccountRepository(database) {
         .first();
     },
 
+    /** @param {string} email Normalized email. @returns {Promise<object|null>} Latest challenge. */
+    findLatestAuthChallenge(email) {
+      return database
+        .prepare(
+          `SELECT * FROM auth_challenges
+            WHERE email = ?1
+            ORDER BY created_at DESC LIMIT 1`,
+        )
+        .bind(email)
+        .first();
+    },
+
+    /** @param {string} email Normalized email. @param {string} since ISO lower bound. @returns {Promise<number>} Count. */
+    async countRecentAuthChallengesForEmail(email, since) {
+      const row = await database
+        .prepare("SELECT COUNT(*) AS count FROM auth_challenges WHERE email = ?1 AND created_at >= ?2")
+        .bind(email, since)
+        .first();
+      return Number(row?.count || 0);
+    },
+
+    /** @param {string} ipHash Hashed IP. @param {string} since ISO lower bound. @returns {Promise<number>} Count. */
+    async countRecentAuthChallengesForIp(ipHash, since) {
+      if (!ipHash) return 0;
+      const row = await database
+        .prepare("SELECT COUNT(*) AS count FROM auth_challenges WHERE ip_hash = ?1 AND created_at >= ?2")
+        .bind(ipHash, since)
+        .first();
+      return Number(row?.count || 0);
+    },
+
     /** Records an unsuccessful challenge verification. */
     recordAuthChallengeAttempt(id, attempts) {
       return database

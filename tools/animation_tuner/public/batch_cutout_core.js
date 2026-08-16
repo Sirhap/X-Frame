@@ -1056,7 +1056,7 @@
         const nextAlpha = Math.round(originalAlpha * (1 - candidateStrength[index] / 255));
         data[offset + 3] = nextAlpha <= alphaThreshold ? 0 : nextAlpha;
         if (alphaLow > 0 && data[offset + 3] < alphaLow) data[offset + 3] = 0;
-        if (alphaHigh < 255 && data[offset + 3] > alphaHigh) data[offset + 3] = 255;
+        if (alphaHigh > 0 && alphaHigh < 255 && data[offset + 3] > alphaHigh) data[offset + 3] = 255;
       }
 
       let edgeDistance = chamferDistanceToTransparent(data, width, height);

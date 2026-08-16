@@ -57,7 +57,13 @@ function createActivationService(options = {}) {
     const cookies = String(request?.headers?.cookie || "").split(";");
     for (const entry of cookies) {
       const [name, ...parts] = entry.trim().split("=");
-      if (name === COOKIE_NAME) return decodeURIComponent(parts.join("="));
+      if (name === COOKIE_NAME) {
+        try {
+          return decodeURIComponent(parts.join("="));
+        } catch {
+          return "";
+        }
+      }
     }
     return "";
   }

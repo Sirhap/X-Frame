@@ -26,7 +26,8 @@ function reslash(value) {
 function slug(value, fallback = "project") {
   const text = String(value || "")
     .trim()
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .replace(/[/\\]/g, "-")
+    .replace(/[<>:"|?*\x00-\x1F]/g, "_")
     .replace(/\s+/g, "_")
     .replace(/\.\./g, "_")
     .replace(/^_+|_+$/g, "");
@@ -377,4 +378,5 @@ module.exports = {
   godotProjectName,
   reslash,
   slug,
+  writeJson,
 };

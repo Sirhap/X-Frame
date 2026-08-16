@@ -165,6 +165,54 @@ export function createAccountAuthService(env, options = {}) {
     }
   }
 
+  /**
+   * Shared send budget for verification codes and password-login OTPs.
+   * @param {string} email Normalized email.
+   * @param {Request} request Incoming request.
+   * @returns {Promise<{limited:boolean,retryAfterSeconds:number}>} Budget result.
+   */
+  async function emailSendBudget(email, request) {
+    const currentTime = now();
+    const latestCode =
+      typeof repository.findLatestVerificationCode === "function"
+        ? await repository.findLatestVerificationCode(email)
+        : null;
+    const latestChallenge =
+      typeof repository.findLatestAuthChallenge === "function"
+        ? await repository.findLatestAuthChallenge(email)
+        : null;
+    const latestAt = Math.max(
+      latestCode ? Date.parse(latestCode.created_at) : 0,
+      latestChallenge ? Date.parse(latestChallenge.created_at) : 0,
+    );
+    if (latestAt && currentTime - latestAt < MIN_RESEND_INTERVAL_MS) {
+      return { limited: true, retryAfterSeconds: 60 };
+    }
+    const since = new Date(currentTime - HOUR_MS).toISOString();
+    const ipHash = await requestIpHash(request);
+    const [emailCodes, ipCodes, emailChallenges, ipChallenges] = await Promise.all([
+      typeof repository.countRecentCodesForEmail === "function"
+        ? repository.countRecentCodesForEmail(email, since)
+        : 0,
+      typeof repository.countRecentCodesForIp === "function"
+        ? repository.countRecentCodesForIp(ipHash, since)
+        : 0,
+      typeof repository.countRecentAuthChallengesForEmail === "function"
+        ? repository.countRecentAuthChallengesForEmail(email, since)
+        : 0,
+      typeof repository.countRecentAuthChallengesForIp === "function"
+        ? repository.countRecentAuthChallengesForIp(ipHash, since)
+        : 0,
+    ]);
+    if (
+      emailCodes + emailChallenges >= MAX_EMAIL_SENDS_PER_HOUR ||
+      ipCodes + ipChallenges >= MAX_IP_SENDS_PER_HOUR
+    ) {
+      return { limited: true, retryAfterSeconds: 3600 };
+    }
+    return { limited: false, retryAfterSeconds: 0 };
+  }
+
   return {
     configured,
 
@@ -174,6 +222,13 @@ export function createAccountAuthService(env, options = {}) {
         throw Object.assign(new Error("邮箱登录服务尚未配置。"), { status: 503 });
       }
       const email = normalizeEmail(identifierValue);
+      const budget = await emailSendBudget(email, request);
+      if (budget.limited) {
+        throw Object.assign(new Error("验证码发送过于频繁，请稍后再试。"), {
+          status: 429,
+          retryAfterSeconds: budget.retryAfterSeconds,
+        });
+      }
       const password = String(passwordValue || "");
       const account = await repository.findAccountByEmail(email);
       assertAccountCanAuthenticate(account);
@@ -301,19 +356,11 @@ export function createAccountAuthService(env, options = {}) {
       const email = normalizeEmail(value);
       assertAccountCanAuthenticate(await repository.findAccountByEmail(email));
       const currentTime = now();
-      const latest = await repository.findLatestVerificationCode(email);
-      if (latest && currentTime - Date.parse(latest.created_at) < MIN_RESEND_INTERVAL_MS) {
-        return { sent: true, retryAfterSeconds: 60 };
+      const budget = await emailSendBudget(email, request);
+      if (budget.limited) {
+        return { sent: true, retryAfterSeconds: budget.retryAfterSeconds };
       }
-      const since = new Date(currentTime - HOUR_MS).toISOString();
       const ipHash = await requestIpHash(request);
-      const [emailCount, ipCount] = await Promise.all([
-        repository.countRecentCodesForEmail(email, since),
-        repository.countRecentCodesForIp(ipHash, since),
-      ]);
-      if (emailCount >= MAX_EMAIL_SENDS_PER_HOUR || ipCount >= MAX_IP_SENDS_PER_HOUR) {
-        return { sent: true, retryAfterSeconds: 3600 };
-      }
       const code = String(cryptoApi.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
       const createdAt = new Date(currentTime).toISOString();
       await repository.createVerificationCode({

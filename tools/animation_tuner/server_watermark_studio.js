@@ -401,9 +401,17 @@ function createWatermarkStudioService(options) {
     const headers = { "content-type": contentType, "accept-ranges": "bytes", "cache-control": "no-store" };
     if (attachmentName)
       headers["content-disposition"] = `attachment; filename*=UTF-8''${encodeURIComponent(attachmentName)}`;
+    const attachGuards = (stream) => {
+      stream.on("error", (error) => {
+        console.error("Watermark media stream failed:", error);
+        if (!response.destroyed) response.destroy(error);
+      });
+      response.on("close", () => stream.destroy());
+      return stream;
+    };
     if (!range) {
       response.writeHead(200, { ...headers, "content-length": stats.size });
-      return fsApi.createReadStream(filePath).pipe(response);
+      return attachGuards(fsApi.createReadStream(filePath)).pipe(response);
     }
     const match = range.match(/^bytes=(\d+)-(\d*)$/);
     const start = Number(match?.[1]);
@@ -425,7 +433,7 @@ function createWatermarkStudioService(options) {
       "content-length": end - start + 1,
       "content-range": `bytes ${start}-${end}/${stats.size}`,
     });
-    return fsApi.createReadStream(filePath, { start, end }).pipe(response);
+    return attachGuards(fsApi.createReadStream(filePath, { start, end })).pipe(response);
   }
 
   /** Removes expired or terminal local resources without touching active jobs. */

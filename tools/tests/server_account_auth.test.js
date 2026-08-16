@@ -24,6 +24,18 @@ test("local account service verifies email and issues a seven-day session", asyn
   assert.equal(service.status({ headers: { cookie } }).authenticated, false);
 });
 
+test("malformed account cookies do not throw and logout still clears the cookie", async () => {
+  const service = createLocalAccountAuthService({
+    secret: "z".repeat(32),
+    development: true,
+  });
+  const request = { headers: { cookie: "xsxb_account=%E0%A4%A" } };
+  assert.doesNotThrow(() => service.status(request));
+  assert.equal(service.status(request).authenticated, false);
+  assert.doesNotThrow(() => service.logout(request));
+  assert.match(service.clearCookieHeader(), /Max-Age=0/u);
+});
+
 test("local account export permits are account-bound and short-lived", async () => {
   const crypto = require("node:crypto");
   let timingSafeCalls = 0;
