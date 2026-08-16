@@ -103,10 +103,7 @@
             },
           );
         } catch (error) {
-          setStatus(
-            text("failed", { message: engineMessage(error) }),
-            "error",
-          );
+          setStatus(text("failed", { message: engineMessage(error) }), "error");
           return false;
         }
         if (!region.count) {

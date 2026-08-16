@@ -70,7 +70,7 @@
       automaticToolSettingsHint: "这些参数只用于背景识别与透明边缘处理",
       needsBackgroundSampleHint: "参数还不会生效：先点「背景清除」，再在画布上点选背景色。",
       toleranceAggressiveHint: "容差 100 会把整张图当成背景，主体可能被全部抠掉。",
-      alphaWindowHint: "半透明高阈值必须大于低阈值，单独调高阈值不会产生效果。",
+      alphaWindowRangeHint: "半透明高阈值必须大于低阈值，单独调高阈值不会产生效果。",
       engineMemoryExhausted: "图片太大，处理引擎内存不足。请缩小尺寸或改用较小的 RGBA PNG 后重试。",
       engineExecutionFailed: "处理引擎执行失败。大尺寸 RGB 图可先缩小或转为 RGBA PNG 再试。",
       toolSettingsHint: "显示当前工具的参数或画布操作说明",
@@ -391,8 +391,10 @@
       needsBackgroundSampleHint:
         "Parameters do nothing yet: click Background Removal, then sample a background color on the canvas.",
       toleranceAggressiveHint: "Tolerance 100 treats every pixel as background and can erase the subject.",
-      alphaWindowHint: "The high alpha threshold must be greater than the low threshold or it has no effect.",
-      engineMemoryExhausted: "The image is too large for the processing engine. Reduce its size or use a smaller RGBA PNG.",
+      alphaWindowRangeHint:
+        "The high alpha threshold must be greater than the low threshold or it has no effect.",
+      engineMemoryExhausted:
+        "The image is too large for the processing engine. Reduce its size or use a smaller RGBA PNG.",
       engineExecutionFailed:
         "The processing engine failed. For large RGB images, shrink the file or convert it to RGBA PNG and retry.",
       toolSettingsHint: "Shows controls or canvas instructions for the active tool",

@@ -1,4 +1,6 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 const {
@@ -227,11 +229,27 @@ test("batch settings warns when automatic parameters cannot take effect", () => 
   elements.cutoutTolerance.value = "24";
   elements.cutoutAlphaHigh.value = "4";
   controller.setSettingsMode("automatic");
-  assert.match(elements.cutoutActiveToolHint.textContent, /alphaWindowHint/);
+  assert.match(elements.cutoutActiveToolHint.textContent, /alphaWindowRangeHint/);
 
   state.items = [];
   controller.setSettingsMode("automatic");
   assert.match(elements.cutoutActiveToolHint.textContent, /settingsEmptyHint/);
+});
+
+test("batch cutout text keeps the alpha-window label and range warning on different keys", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/batch_cutout_text.js"),
+    "utf8",
+  );
+  const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
+
+  assert.equal(
+    [...source.matchAll(/^\s+alphaWindowHint:/gmu)].length,
+    2,
+    "one description key in zh and one in en",
+  );
+  assert.equal([...source.matchAll(/^\s+alphaWindowRangeHint:/gmu)].length, 2);
+  assert.match(html, /data-cutout-i18n="alphaWindowHint"/);
 });
 
 test("batch settings explains that automatic parameters are already shared", () => {

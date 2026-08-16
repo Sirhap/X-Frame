@@ -21,7 +21,10 @@ test("scatter detection updates counters before preview and does not mask render
   );
   const successIndex = script.indexOf("识别到 ${state.boxes.length} 个区域");
   const renderedGuard = script.indexOf("if (!rendered) return;");
-  assert.ok(renderedGuard > 0 && renderedGuard < successIndex, "success status requires renderAll to succeed");
+  assert.ok(
+    renderedGuard > 0 && renderedGuard < successIndex,
+    "success status requires renderAll to succeed",
+  );
 });
 
 test("scatter-slice routes recoverable failures through one error boundary", () => {

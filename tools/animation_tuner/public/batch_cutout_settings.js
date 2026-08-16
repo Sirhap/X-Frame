@@ -469,7 +469,7 @@
       const alphaHigh = Number(elements.cutoutAlphaHigh?.value);
       if (itemAvailable && automatic && tolerance >= 100) hintKey = "toleranceAggressiveHint";
       else if (itemAvailable && automatic && Number.isFinite(alphaHigh) && alphaHigh <= alphaLow) {
-        hintKey = "alphaWindowHint";
+        hintKey = "alphaWindowRangeHint";
       }
       elements.cutoutActiveToolHint.textContent = text(hintKey);
     }
