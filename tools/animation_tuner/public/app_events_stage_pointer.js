@@ -38,8 +38,10 @@
       frameBox,
       hitTestBoxes,
       hitTestDirectManipulationAttachment,
+      hitTestDirectManipulationFrame = () => null,
       isCollisionBox,
       markDirty,
+      moveDirectManipulationFrameByClientDelta = () => {},
       normalizeAttachmentTransform,
       pushUndo,
       renderFilmstrip,
@@ -73,6 +75,19 @@
           stage.classList.add("dragging");
           state.drag = nextDrag;
         };
+        // The Transform sidebar is dedicated to moving the visible animation frame.
+        // Give that direct manipulation precedence over collision-box hit targets.
+        const frameTransform = hitTestDirectManipulationFrame(event);
+        if (frameTransform) {
+          pushUndo("drag frame transform");
+          beginDrag({
+            mode: "frame-transform",
+            x: event.clientX,
+            y: event.clientY,
+            transform: structuredClone(frameTransform),
+          });
+          return;
+        }
         const boxHit = hitTestBoxes(event);
         if (boxHit) {
           state.selectedBox = boxHit.boxName;
@@ -258,6 +273,14 @@
           syncAdjustmentInputs();
           renderFilmstrip();
           draw();
+          return;
+        }
+        if (state.drag.mode === "frame-transform") {
+          moveDirectManipulationFrameByClientDelta(
+            state.drag.transform,
+            event.clientX - state.drag.x,
+            event.clientY - state.drag.y,
+          );
           return;
         }
         state.drag = null;

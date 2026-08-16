@@ -44,6 +44,7 @@
    *   renderGrid:()=>void,
    *   restartPreview:()=>void,
    *   setStatus:(message:string,tone?:string)=>void,
+   *   setDefaultAnimationName?:(filename:string)=>void,
    *   imageConstructor?:typeof Image,
    *   urlApi?:typeof URL,
    *   maxWorksetFrames?:number,
@@ -189,41 +190,44 @@
       dependencies.renderCounts();
       dependencies.setStatus(text("importBusy"), "busy");
       try {
-        const results = await loadImageFiles(orderedEntries);
         const additions = [];
         let rejectionMessage = "";
-        let retainedPixels = dependencies.imagePixelBudget.totalPixels(
-          state.frames.map((frame) => frame.originalCanvas),
-        );
-        results.forEach((result, index) => {
-          const entry = orderedEntries[index];
-          if (result.status === "fulfilled") {
-            try {
-              const budget = dependencies.assertImagePixelBudget(result.value, retainedPixels);
-              additions.push(
-                dependencies.createFrame(result.value, {
-                  sourceType: sequenceOrder.SOURCE_TYPES.IMAGE,
-                  importBatchIndex: batchIndex,
-                  importSelectionIndex: entry.selectionIndex,
-                  importFilenameIndex: entry.filenameIndex,
-                  name: entry.item.name,
-                  imported: true,
-                }),
-              );
-              retainedPixels = budget.totalPixels;
-            } catch (error) {
-              rejectionMessage ||= normalizeError(error, text("importInvalid")).message;
+        for (let start = 0; start < orderedEntries.length; start += concurrency) {
+          const decodeWindow = orderedEntries.slice(start, start + concurrency);
+          const results = await loadImageFiles(decodeWindow);
+          results.forEach((result, index) => {
+            const entry = decodeWindow[index];
+            if (result.status === "fulfilled") {
+              try {
+                // The organizer can hold video-derived worksets above 64MP. Validate the
+                // per-image allocation here and leave processing-session totals to the
+                // pixel-safe cutout batching boundary.
+                dependencies.assertImagePixelBudget(result.value, 0);
+                additions.push(
+                  dependencies.createFrame(result.value, {
+                    sourceType: sequenceOrder.SOURCE_TYPES.IMAGE,
+                    importBatchIndex: batchIndex,
+                    importSelectionIndex: entry.selectionIndex,
+                    importFilenameIndex: entry.filenameIndex,
+                    name: entry.item.name,
+                    imported: true,
+                  }),
+                );
+              } catch (error) {
+                rejectionMessage ||= normalizeError(error, text("importInvalid")).message;
+                skipped += 1;
+              }
+            } else {
               skipped += 1;
             }
-          } else {
-            skipped += 1;
-          }
-        });
+          });
+        }
         if (!additions.length) {
           dependencies.setStatus(rejectionMessage || text("importInvalid"), "error");
           return;
         }
         state.frames.push(...additions);
+        dependencies.setDefaultAnimationName?.(acceptedEntries[0].item.name);
         dependencies.renderGrid();
         dependencies.restartPreview();
         dependencies.elements.organizerGrid.lastElementChild?.scrollIntoView({

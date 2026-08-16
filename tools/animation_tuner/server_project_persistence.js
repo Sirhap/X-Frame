@@ -18,6 +18,7 @@
  * @param {(value:string)=>string} dependencies.reslash Slash-normalization helper.
  * @param {(filePath:string)=>{width:number,height:number}} dependencies.getPngSize PNG dimension reader.
  * @param {(values:object)=>object} dependencies.normalizeTuningScaleValues Tuning-value normalizer.
+ * @param {(value:unknown)=>object|null} dependencies.normalizeReferenceFrameDescriptor Reference-frame normalizer.
  * @param {(project:object,attachment:object)=>object} dependencies.withFrameAttachmentHash Attachment hash enricher.
  * @param {class} dependencies.HttpError HTTP error constructor.
  * @returns {object} Project persistence operations.
@@ -35,6 +36,7 @@ function createProjectPersistence({
   reslash,
   getPngSize,
   normalizeTuningScaleValues,
+  normalizeReferenceFrameDescriptor,
   withFrameAttachmentHash,
   HttpError,
 }) {
@@ -65,6 +67,7 @@ function createProjectPersistence({
       values: normalizeTuningScaleValues(payload.values),
       scene_settings:
         payload.scene_settings && typeof payload.scene_settings === "object" ? payload.scene_settings : {},
+      reference_frame: normalizeReferenceFrameDescriptor(payload.reference_frame),
       frame_visual_overrides:
         payload.frame_visual_overrides && typeof payload.frame_visual_overrides === "object"
           ? payload.frame_visual_overrides

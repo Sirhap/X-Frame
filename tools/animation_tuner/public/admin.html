@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0b0d0c" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>激活码管理 — XSXB Frame Tuner</title>
+    <title>账户与授权管理 — XSXB Frame Tuner</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="stylesheet" href="/landing.css" />
     <link rel="stylesheet" href="/landing-admin.css" />
+    <script src="/admin_error_text.js" defer></script>
     <script src="/landing-admin.js" defer></script>
   </head>
   <body class="admin-page">
@@ -18,7 +19,7 @@
         <header class="admin-panel-header">
           <div>
             <p>SECURE CONSOLE / TOTP</p>
-            <h1 id="adminPageTitle">激活码管理</h1>
+            <h1 id="adminPageTitle">账户与授权管理</h1>
           </div>
           <a class="admin-home-link" href="/">返回首页 <span aria-hidden="true">↗</span></a>
         </header>
@@ -29,8 +30,8 @@
             <p>GOOGLE AUTHENTICATOR</p>
             <h2 id="adminLoginTitle">验证管理员身份</h2>
             <span
-              >输入管理员用户名，以及 Google 二次验证工具中当前显示的 6 位验证码。验证码每 30
-              秒轮换，验证成功后才能查看和复制完整激活码。</span
+              >输入管理员用户名和密码，再使用 Google 二次验证工具中当前显示的 6 位验证码。 验证码每 30
+              秒轮换，三项验证成功后才能进入后台。</span
             >
           </div>
           <form id="adminLoginForm" class="admin-login-form">
@@ -46,25 +47,37 @@
               placeholder="请输入用户名"
               required
             />
-            <label for="adminTotpCode">动态验证码</label>
+            <label for="adminPassword">密码</label>
             <input
-              id="adminTotpCode"
-              name="code"
-              type="text"
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              pattern="[0-9]{6}"
-              maxlength="6"
-              placeholder="000 000"
+              id="adminPassword"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              minlength="8"
+              maxlength="256"
+              placeholder="请输入管理员密码"
               required
             />
-            <div class="admin-code-clock" aria-live="polite">
-              <span>GOOGLE TOTP / 30 SEC</span>
-              <b id="adminCodeCountdown">-- 秒后更新</b>
-              <i><span id="adminCodeProgress"></span></i>
+            <div id="adminTotpStep" hidden>
+              <label for="adminTotpCode">动态验证码</label>
+              <input
+                id="adminTotpCode"
+                name="code"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxlength="6"
+                placeholder="000 000"
+              />
+              <div class="admin-code-clock" aria-live="polite">
+                <span>GOOGLE TOTP / 30 SEC</span>
+                <b id="adminCodeCountdown">-- 秒后更新</b>
+                <i><span id="adminCodeProgress"></span></i>
+              </div>
             </div>
             <button id="adminLoginButton" class="admin-action-button" type="submit">
-              验证并进入 <span>→</span>
+              继续 <span>→</span>
             </button>
             <p id="adminLoginStatus" class="admin-status" role="status"></p>
           </form>
@@ -77,7 +90,10 @@
               <p>管理员会话已验证</p>
               <small id="adminSessionExpiry"></small>
             </div>
-            <button id="adminLogoutButton" type="button">退出登录</button>
+            <span class="admin-session-actions">
+              <a href="/projects">进入工作台 →</a>
+              <button id="adminLogoutButton" type="button">退出登录</button>
+            </span>
           </div>
 
           <section class="admin-overview" aria-label="授权概览">
@@ -87,9 +103,9 @@
               <small>可管理授权</small>
             </article>
             <article>
-              <span>试用设备</span>
+              <span>默认 Pro</span>
               <strong id="adminTrialCount">—</strong>
-              <small>自动领取试用</small>
+              <small>新账户策略</small>
             </article>
             <article>
               <span>活跃授权</span>
@@ -97,10 +113,30 @@
               <small>当前有效</small>
             </article>
             <article>
-              <span>设备绑定</span>
-              <strong id="adminDeviceCount">—</strong>
-              <small>未撤销设备</small>
+              <span>邮箱账户</span>
+              <strong id="adminAccountCount">—</strong>
+              <small>已验证账户</small>
             </article>
+          </section>
+
+          <section class="admin-account-console" aria-labelledby="adminAccountTitle">
+            <header>
+              <div>
+                <p>EMAIL ACCOUNTS / PRO ACCESS</p>
+                <h2 id="adminAccountTitle">邮箱账户与 Pro 权限</h2>
+              </div>
+              <label class="admin-default-pro-toggle">
+                <input id="adminDefaultProEnabled" type="checkbox" />
+                <span>新账户默认开启 Pro</span>
+              </label>
+            </header>
+            <div class="admin-account-tools">
+              <label for="adminAccountSearch">搜索邮箱</label>
+              <input id="adminAccountSearch" type="search" maxlength="254" placeholder="name@example.com" />
+              <button id="adminAccountRefresh" type="button">刷新账户</button>
+            </div>
+            <p id="adminAccountStatus" class="admin-status" role="status"></p>
+            <div id="adminAccountItems" class="admin-account-items" aria-live="polite"></div>
           </section>
 
           <div class="admin-dashboard-grid">
@@ -154,14 +190,6 @@
                     </button>
                   </div>
                 </div>
-                <div class="admin-field admin-device-limit-field">
-                  <label for="adminMaxDevices">最多激活设备</label>
-                  <input id="adminMaxDevices" name="maxDevices" type="number" min="1" value="1" required />
-                  <label class="admin-unlimited-toggle">
-                    <input id="adminUnlimitedDevices" type="checkbox" />
-                    <span>不限设备数量</span>
-                  </label>
-                </div>
               </div>
 
               <label for="adminRedeemBy">最晚兑换时间</label>
@@ -200,28 +228,55 @@
               <header>
                 <div>
                   <p>LICENSE MANAGEMENT / 02</p>
-                  <h2 id="adminLicenseListTitle">授权与设备</h2>
+                  <h2 id="adminLicenseListTitle">激活码与绑定邮箱</h2>
                 </div>
-                <button id="adminRefreshButton" type="button" aria-label="刷新授权与设备列表">↻</button>
+                <button id="adminRefreshButton" type="button" aria-label="刷新激活码列表">↻</button>
               </header>
               <div class="admin-list-tools">
                 <div class="admin-source-tabs" role="group" aria-label="授权类型筛选">
                   <button type="button" data-source-filter="code" aria-pressed="true">
                     激活码 <span id="adminCodeTabCount">0</span>
                   </button>
-                  <button type="button" data-source-filter="automatic_trial" aria-pressed="false">
-                    试用设备 <span id="adminTrialTabCount">0</span>
+                  <button type="button" data-source-filter="email_trial" aria-pressed="false">
+                    邮箱试用 <span id="adminTrialTabCount">0</span>
+                  </button>
+                  <button type="button" data-source-filter="admin_grant" aria-pressed="false">
+                    管理员授权 <span id="adminGrantTabCount">0</span>
                   </button>
                 </div>
+                <div class="admin-list-order" aria-label="授权列表排序与分页设置">
+                  <label for="adminLicenseSort">
+                    <span>排序</span>
+                    <select id="adminLicenseSort">
+                      <option value="created-desc">最新创建</option>
+                      <option value="expires-asc">最近到期</option>
+                      <option value="expires-desc">最晚到期</option>
+                      <option value="status">授权状态</option>
+                    </select>
+                  </label>
+                  <label for="adminLicensePageSize">
+                    <span>每页</span>
+                    <select id="adminLicensePageSize">
+                      <option value="20">20</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                    </select>
+                  </label>
+                </div>
+                <nav class="admin-pagination" aria-label="授权列表分页">
+                  <button id="adminLicensePreviousPage" type="button">← 上一页</button>
+                  <span id="adminLicensePageStatus" aria-live="polite">第 1 / 1 页</span>
+                  <button id="adminLicenseNextPage" type="button">下一页 →</button>
+                </nav>
                 <label class="admin-search-field">
-                  <span class="visually-hidden">搜索授权或设备</span>
+                  <span class="visually-hidden">搜索激活码或绑定邮箱</span>
                   <span aria-hidden="true">⌕</span>
                   <input
                     id="adminLicenseSearch"
                     name="licenseSearch"
                     type="search"
                     autocomplete="off"
-                    placeholder="搜索激活码、设备或地区…"
+                    placeholder="搜索激活码或绑定邮箱…"
                   />
                 </label>
               </div>
@@ -250,14 +305,6 @@
                     value="9999-12-31T23:59"
                   />
                 </label>
-                <div class="admin-field admin-device-limit-field">
-                  <label for="adminBulkMaxDevices">最多激活设备</label>
-                  <input id="adminBulkMaxDevices" type="number" min="1" value="1" />
-                  <label class="admin-unlimited-toggle">
-                    <input id="adminBulkUnlimitedDevices" type="checkbox" />
-                    <span>不限设备数量</span>
-                  </label>
-                </div>
                 <button id="adminBulkApplyButton" type="button">应用设置</button>
                 <button id="adminBulkRevokeButton" type="button">撤销</button>
                 <button id="adminBulkRestoreButton" type="button">恢复</button>

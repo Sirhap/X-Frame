@@ -78,6 +78,108 @@ test("production product entry routes automatic reference cutout through WASM", 
     assert.ok(protectedCalls > 0);
     assert.deepEqual([...actual.data], [...expected.data]);
     assert.deepEqual([...actual.automaticData], [...expected.automaticData]);
+
+    const green = { r: 0, g: 255, b: 0, a: 255 };
+    const featheredSource = Uint8ClampedArray.from([
+      0, 255, 0, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+    ]);
+    const featheredOptions = {
+      referenceChromaKey: true,
+      connected: false,
+      backgroundColors: [green],
+      tolerance: 0,
+      feather: 24,
+      alphaLow: 0,
+      alphaHigh: 255,
+    };
+    const softAlpha = productionCore.applyCutout(featheredSource, 5, 1, {
+      ...featheredOptions,
+      alphaThreshold: 0,
+    });
+    const hardAlpha = productionCore.applyCutout(featheredSource, 5, 1, {
+      ...featheredOptions,
+      alphaThreshold: 48,
+    });
+    assert.deepEqual(
+      [...softAlpha.data].filter((_value, offset) => offset % 4 === 3),
+      [26, 87, 168, 229, 255],
+    );
+    assert.deepEqual(
+      [...hardAlpha.data].filter((_value, offset) => offset % 4 === 3),
+      [0, 87, 168, 229, 255],
+    );
+
+    const recoverySource = Uint8ClampedArray.from([
+      0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 48, 207, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0,
+      0, 255,
+    ]);
+    const recoveryOptions = {
+      referenceChromaKey: true,
+      connected: false,
+      backgroundColors: [green],
+      tolerance: 0,
+      blendStrength: 0,
+      feather: 0,
+      chromaFeather: 0,
+      despillStrength: 0,
+      alphaLow: 0,
+      alphaHigh: 255,
+      edgeDespillRadius: 3,
+      backgroundRadius: 8,
+    };
+    const recoveryOff = productionCore.applyCutout(recoverySource, 7, 1, {
+      ...recoveryOptions,
+      edgeRecoveryStrength: 0,
+    });
+    const recoveryOn = productionCore.applyCutout(recoverySource, 7, 1, {
+      ...recoveryOptions,
+      edgeRecoveryStrength: 100,
+    });
+    assert.notDeepEqual([...recoveryOff.data], [...recoveryOn.data]);
+
+    const radiusSource = Uint8ClampedArray.from([
+      ...Array.from({ length: 3 }, () => [0, 255, 0, 255]).flat(),
+      ...Array.from({ length: 2 }, () => [48, 207, 0, 255]).flat(),
+      ...Array.from({ length: 8 }, () => [255, 0, 0, 255]).flat(),
+    ]);
+    const radiusOptions = {
+      ...recoveryOptions,
+      edgeDespillRadius: 6,
+      edgeRecoveryStrength: 100,
+    };
+    const narrowSearch = productionCore.applyCutout(radiusSource, 13, 1, {
+      ...radiusOptions,
+      backgroundRadius: 1,
+    });
+    const wideSearch = productionCore.applyCutout(radiusSource, 13, 1, {
+      ...radiusOptions,
+      backgroundRadius: 16,
+    });
+    assert.notDeepEqual([...narrowSearch.data], [...wideSearch.data]);
+
+    const modeSource = Uint8ClampedArray.from([
+      0, 255, 0, 255, 0, 255, 0, 255, 0, 32, 0, 255, 255, 0, 0, 255,
+    ]);
+    const modeOptions = {
+      referenceChromaKey: true,
+      connected: false,
+      backgroundColors: [green],
+      tolerance: 8,
+      edgeBoost: 20,
+      feather: 12,
+      chromaFeather: 50,
+      despillStrength: 100,
+      edgeDespillRadius: 3,
+    };
+    const generalMode = productionCore.applyCutout(modeSource, 4, 1, {
+      ...modeOptions,
+      despillMode: "general",
+    });
+    const chromaMode = productionCore.applyCutout(modeSource, 4, 1, {
+      ...modeOptions,
+      despillMode: "chroma",
+    });
+    assert.notDeepEqual([...generalMode.data], [...chromaMode.data]);
   } finally {
     delete globalThis.ProtectedWasmKernelBridge;
     delete require.cache[batchCorePath];

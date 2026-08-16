@@ -20,7 +20,14 @@ const VISUAL_PAGES = Object.freeze([
   { name: "import-populated", path: "/tools/import", shell: "#organizerModal" },
   { name: "organizer", path: "/tools/organizer", shell: "#organizerModal" },
   { name: "cutout", path: "/tools/cutout", shell: "#cutoutModal" },
+  { name: "scatter-slice", path: "/tools/scatter-slice", shell: "#scatterSliceSurface" },
+  { name: "watermark", path: "/tools/watermark", shell: "#watermarkWorkspace" },
 ]);
+const ENGLISH_LAYOUT_PAGES = Object.freeze(
+  VISUAL_PAGES.filter(({ name }) =>
+    ["workspace", "import-empty", "import-populated", "organizer", "cutout"].includes(name),
+  ),
+);
 
 /**
  * Activates fresh deterministic content so prior end-to-end mutations cannot affect snapshots.
@@ -126,6 +133,79 @@ async function expectNoHorizontalOverflow(page, selector) {
   expect(widths.scrollWidth).toBeLessThanOrEqual(widths.clientWidth + 1);
 }
 
+/**
+ * Verifies that visible controls and important copy are not silently clipped by an ancestor.
+ * Whole-page scrollWidth checks cannot detect this when the ancestor uses overflow-x: hidden.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @param {string} selector Application shell selector.
+ * @returns {Promise<void>}
+ */
+async function expectNoClippedDescendants(page, selector) {
+  const offenders = await page.locator(selector).evaluate((shell) => {
+    const candidateSelector = [
+      "button",
+      "input",
+      "select",
+      "textarea",
+      "label",
+      "[role='button']",
+      "[role='tab']",
+      "[role='slider']",
+      "[role='status']",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "p",
+      "small",
+      "strong",
+    ].join(",");
+    const tolerance = 1;
+
+    return [...shell.querySelectorAll(candidateSelector)].flatMap((element) => {
+      const style = getComputedStyle(element);
+      const bounds = element.getBoundingClientRect();
+      if (
+        !element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) ||
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        bounds.width <= 0 ||
+        bounds.height <= 0
+      ) {
+        return [];
+      }
+
+      let ancestor = element.parentElement;
+      while (ancestor && ancestor !== shell.parentElement) {
+        const ancestorStyle = getComputedStyle(ancestor);
+        if (["hidden", "clip"].includes(ancestorStyle.overflowX)) {
+          const ancestorBounds = ancestor.getBoundingClientRect();
+          if (
+            bounds.left < ancestorBounds.left - tolerance ||
+            bounds.right > ancestorBounds.right + tolerance
+          ) {
+            return [
+              {
+                ancestor: ancestor.id || ancestor.className || ancestor.tagName,
+                element:
+                  element.id || element.getAttribute("aria-label") || element.className || element.tagName,
+                left: Math.round(bounds.left * 10) / 10,
+                right: Math.round(bounds.right * 10) / 10,
+                visibleLeft: Math.round(ancestorBounds.left * 10) / 10,
+                visibleRight: Math.round(ancestorBounds.right * 10) / 10,
+              },
+            ];
+          }
+        }
+        ancestor = ancestor.parentElement;
+      }
+      return [];
+    });
+  });
+
+  expect(offenders).toEqual([]);
+}
+
 for (const zoomCase of ZOOM_CASES) {
   test.describe(`browser zoom ${zoomCase.label}%`, () => {
     test.use({
@@ -141,6 +221,11 @@ for (const zoomCase of ZOOM_CASES) {
         await populateVisualPage(page, visualPage.name);
         await stabilizeVisualPage(page);
         await expectNoHorizontalOverflow(page, visualPage.shell);
+        await expectNoClippedDescendants(page, visualPage.shell);
+        if (visualPage.name === "scatter-slice") {
+          await expectNoHorizontalOverflow(page, "#scatterSliceSurface");
+          await expectNoClippedDescendants(page, "#scatterSliceSurface");
+        }
         await expect(page).toHaveScreenshot(`${visualPage.name}-zoom-${zoomCase.label}.png`, {
           animations: "disabled",
           caret: "hide",
@@ -152,3 +237,26 @@ for (const zoomCase of ZOOM_CASES) {
     }
   });
 }
+
+test.describe("explicit English layout", () => {
+  test.use({ viewport: BASE_PHYSICAL_VIEWPORT });
+
+  for (const visualPage of ENGLISH_LAYOUT_PAGES) {
+    test(`${visualPage.name} keeps visible descendants inside clipping boundaries`, async ({
+      page,
+      request,
+    }) => {
+      await page.addInitScript(() => {
+        localStorage.setItem("xsxbFrameTuner.language", "en");
+        localStorage.setItem("xsxbFrameTuner.languageExplicit", "true");
+      });
+      await activateVisualFixture(request);
+      await page.goto(visualPage.path, { waitUntil: "networkidle" });
+      await expect(page.locator(visualPage.shell)).toBeVisible();
+      await populateVisualPage(page, visualPage.name);
+      await stabilizeVisualPage(page);
+      await expectNoHorizontalOverflow(page, visualPage.shell);
+      await expectNoClippedDescendants(page, visualPage.shell);
+    });
+  }
+});

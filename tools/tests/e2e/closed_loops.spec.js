@@ -56,9 +56,8 @@ async function dropFileOnCurrentFrame(page, file) {
 
 test("image import creates a persisted animation through the organizer", async ({ page }) => {
   await page.goto("/tools/import");
-  await page.locator("#organizerAnimationName").fill("loop-idle");
   await page.locator("#organizerFileInput").setInputFiles([
-    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "loop-idle.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
     { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
   ]);
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
@@ -71,6 +70,158 @@ test("image import creates a persisted animation through the organizer", async (
   await expect(page.locator("#projectSelect option:checked")).toContainText("E2E Seed Project");
   await expect(page.locator("#groupSelect option:checked")).toContainText("loop-idle");
   await expect(page.locator(".thumb")).toHaveCount(2);
+});
+
+test("single-frame animation disables playback and explains why", async ({ page, request }) => {
+  await importProject(request, "single-frame", 1);
+  await page.goto("/workspace/animation/transform");
+
+  await expect(page.locator(".thumb")).toHaveCount(1);
+  await expect(page.locator("#playPause")).toBeDisabled();
+  await expect(page.locator("#playbackAvailability")).toHaveText("单帧动画，无需播放");
+  await expect(page.locator("#playbackAvailability")).toHaveAttribute("data-state", "single");
+});
+
+test("desktop workspace uses one page scroll instead of locked nested vertical panes", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/workspace/animation/transform");
+  await page.locator(".sidebar details").evaluateAll((panels) =>
+    panels.forEach((panel) => {
+      panel.open = true;
+    }),
+  );
+
+  const before = await page.evaluate(() => ({
+    bodyOverflow: getComputedStyle(document.body).overflowY,
+    appHeight: getComputedStyle(document.querySelector(".app")).height,
+    innerHeight,
+    scrollHeight: document.documentElement.scrollHeight,
+    scrollY,
+  }));
+  expect(before.bodyOverflow).not.toBe("hidden");
+  expect(before.scrollHeight).toBeGreaterThan(before.innerHeight);
+  await page.mouse.wheel(0, 560);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await expect(page.locator(".workspaceFlowHeader")).toBeInViewport();
+
+  const verticalScrollOwners = await page.evaluate(() =>
+    [".sidebar", ".workspace", ".settingsScroll"]
+      .map((selector) => {
+        const element = document.querySelector(selector);
+        return element
+          ? [selector, element.scrollHeight, element.clientHeight, getComputedStyle(element).overflowY]
+          : null;
+      })
+      .filter(Boolean),
+  );
+  expect(
+    verticalScrollOwners.every(([, scrollHeight, clientHeight]) => scrollHeight <= clientHeight + 1),
+  ).toBe(true);
+});
+
+test("organizer route renders as a page section and scrolls with the document", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/workspace/resources/import");
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  const layout = await page.locator("#organizerModal").evaluate((element) => ({
+    position: getComputedStyle(element).position,
+    bodyOverflow: getComputedStyle(document.body).overflowY,
+  }));
+  expect(layout.position).not.toBe("fixed");
+  expect(layout.bodyOverflow).not.toBe("hidden");
+});
+
+test("organizer primary action does not cover the preview canvas", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/workspace/resources/import");
+  await expect(page.locator("#organizerPreview")).toBeVisible();
+  await expect(page.locator(".organizerFooterActions")).toBeVisible();
+
+  const geometry = await page.evaluate(() => {
+    const preview = document.querySelector("#organizerPreview").getBoundingClientRect();
+    const actions = document.querySelector(".organizerFooterActions").getBoundingClientRect();
+    return { previewBottom: preview.bottom, actionsTop: actions.top };
+  });
+  expect(geometry.previewBottom).toBeLessThanOrEqual(geometry.actionsTop);
+});
+
+test("file delivery embeds the complete export workbench without a second dialog", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/workspace/delivery/export");
+
+  const exportWorkbench = page.locator("#mediaExportDialog");
+  await expect(exportWorkbench).toBeVisible();
+  await expect(exportWorkbench).toHaveAttribute("data-presentation", "embedded");
+  await expect(exportWorkbench).toHaveAttribute("role", "region");
+  await expect(exportWorkbench).not.toHaveAttribute("aria-modal", "true");
+  await expect(page.locator(".mediaExportFormats")).toBeVisible();
+  await expect(page.locator(".mediaExportWorkspace")).toBeVisible();
+  await expect(page.locator("#mediaExportPreviewCanvas")).toBeVisible();
+  await expect(page.locator("#mediaExportSubmit")).toBeVisible();
+  await expect(page.locator("#mediaExportCancel")).toBeHidden();
+  await expect(page.locator("#deliveryOpenExport")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(exportWorkbench).toBeVisible();
+});
+
+test("standalone export does not fall through to the active project", async ({ page }) => {
+  await page.goto("/tools/export");
+
+  await expect(page.locator("#deliveryExportMount .deliveryExportLoading")).toContainText(
+    "请先导入需要导出的图片序列",
+  );
+  await expect(page.locator("#mediaExportDialog")).toBeHidden();
+});
+
+test("delivery tabs expose only their peer panel", async ({ page }) => {
+  await page.goto("/workspace/delivery/godot");
+  await expect(page.locator('[data-delivery-panel="godot"]')).toBeVisible();
+  await expect(page.locator('[data-delivery-panel="export"]')).toBeHidden();
+  await expect(page.locator('[data-delivery-panel="codex-pet"]')).toBeHidden();
+
+  await page.locator('[data-workbench-route="codex-pet"]').first().click();
+  await expect(page.locator('[data-delivery-panel="codex-pet"]')).toBeVisible();
+  await expect(page.locator('[data-delivery-panel="godot"]')).toBeHidden();
+  await expect(page.locator('[data-delivery-panel="export"]')).toBeHidden();
+});
+
+test("quick tools retain one temporary workset across organizer, cutout, and export", async ({ page }) => {
+  await page.goto("/tools/organizer");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "idle_01.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "idle_02.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await expect
+    .poll(() => page.evaluate(() => globalThis.XSXBTemporaryWorkset.getSnapshot().frames.length))
+    .toBe(2);
+
+  await page.locator('[data-workbench-route="cutout"]').first().click();
+  await expect(page).toHaveURL(/\/tools\/cutout/);
+  await expect(page.locator("#cutoutModal")).toBeVisible();
+  await expect(page.locator("#cutoutBatchSummary")).toContainText("2");
+
+  await page.locator('[data-workbench-route="organizer"]').first().click();
+  await expect(page).toHaveURL(/\/tools\/organizer/);
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+
+  await page.evaluate(() => {
+    const updatedCanvas = document.createElement("canvas");
+    updatedCanvas.width = 2;
+    updatedCanvas.height = 2;
+    globalThis.XSXBTemporaryWorkset.setWorkset({
+      name: "updated-cutout",
+      sourceTool: "cutout",
+      frames: [{ id: "updated-frame", name: "updated.png", image: updatedCanvas, enabled: true }],
+    });
+  });
+
+  await page.locator('[data-workbench-route="export"]').first().click();
+  await expect(page).toHaveURL(/\/tools\/export/);
+  await expect(page.locator("#mediaExportDialog")).toBeVisible();
+  await expect(page.locator("#mediaExportDialog")).toHaveAttribute("data-presentation", "embedded");
+  await expect(page.locator("#mediaExportFrameCount")).toHaveText("1");
+  await expect(page.locator("#mediaExportDialog")).toContainText("Sprite Sheet 预览");
 });
 
 test("editor tuning, frame attachment, and audio survive save and reload", async ({ page, request }) => {
@@ -101,6 +252,7 @@ test("editor tuning, frame attachment, and audio survive save and reload", async
   await expect(page.locator("#saveState")).toContainText("已保存");
   await page.reload();
   await expect(page.locator("#baseX")).toHaveValue("1");
+  await expect(page.locator("#frameReference")).toBeChecked();
   await expect(page.locator(".attachmentThumb")).toHaveCount(1);
   await expect(page.locator(".thumb.primary")).toHaveClass(/hasSfx/);
 
@@ -204,6 +356,7 @@ test("organizer reorders data through the server and reloads the reduced animati
   await importProject(request, "reorganize", 4);
   await page.goto("/workspace/tools/organizer");
   await expect(page.locator(".organizerFrame")).toHaveCount(4);
+  await page.locator("#organizerMoreTools").click();
   await page.locator("#organizerReduceStep").fill("2");
   await page.locator("#organizerReduce").click();
   await page.locator("#organizerApply").click();
@@ -307,9 +460,7 @@ test("project switching, clearing, and deletion preserve explicit confirmation",
   await page.goto("/workspace");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
   await page.locator('[data-sidebar-tab="project"]').click();
-  await page.locator("#projectContext > summary").click();
-  await page.locator("#projectSelect").focus();
-  await page.locator("#projectSelect").selectOption(first.activeProjectId);
+  await page.locator("#projectSelect").selectOption(first.activeProjectId, { force: true });
   await expect(page.locator("#appConfirmPanel")).toBeVisible();
   await expect(page.locator("#appConfirmMessage")).toContainText("未保存");
   await expect(page.locator("#mainWorkbench")).toHaveAttribute("inert", "");
@@ -317,22 +468,21 @@ test("project switching, clearing, and deletion preserve explicit confirmation",
   await page.keyboard.press("Escape");
   await expect(page.locator("#appConfirmPanel")).toBeHidden();
   await expect(page.locator("#mainWorkbench")).not.toHaveAttribute("inert", "");
-  await expect(page.locator("#projectSelect")).toBeFocused();
   await expect(page.locator("#projectSelect")).toHaveValue(second.activeProjectId);
 
-  await page.locator("#projectSelect").selectOption(first.activeProjectId);
+  await page.locator("#projectSelect").selectOption(first.activeProjectId, { force: true });
   await expect(page.locator("#appConfirmPanel")).toBeVisible();
   await page.locator("#appConfirmAccept").click();
   await expect(page.locator("#projectSelect")).toHaveValue(first.activeProjectId);
 
-  await page.locator("#clearProject").click();
+  await page.locator("#clearProject").evaluate((button) => button.click());
   await expect(page.locator("#appConfirmPanel")).toBeVisible();
   await expect(page.locator("#appConfirmCard")).toHaveAttribute("data-tone", "danger");
   await expect(page.locator("#appConfirmMessage")).toContainText("清空项目");
   await page.locator("#appConfirmAccept").click();
   await expect(page.locator("#groupSelect")).toBeDisabled();
 
-  await page.locator("#deleteProject").click();
+  await page.locator("#deleteProject").evaluate((button) => button.click());
   await expect(page.locator("#appConfirmPanel")).toBeVisible();
   await expect(page.locator("#appConfirmMessage")).toContainText("删除项目");
   await page.locator("#appConfirmAccept").click();

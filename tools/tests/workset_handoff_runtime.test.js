@@ -101,6 +101,57 @@ test("browser adapter commits a mixed workset only after every operation succeed
   assert.equal(config.groups[0].frames[0].data, "data:image/png;base64,bmV3");
 });
 
+test("browser adapter waits for project persistence before reporting apply success", async () => {
+  let releaseCommit;
+  let commitFinished = false;
+  const config = {
+    groups: [],
+    profiles: [],
+    tuning: {},
+  };
+  const adapter = createBrowserAdapter({
+    browserRuntime: {
+      createSessionAnimationGroup: (metadata, items) => ({
+        ...group(metadata.animationId),
+        profileId: metadata.profileId,
+        frames: items,
+      }),
+      reorganizeSessionAnimation() {},
+    },
+    getProjectConfig: () => config,
+    commitProjectConfig: async () => {
+      await new Promise((resolve) => {
+        releaseCommit = resolve;
+      });
+      commitFinished = true;
+    },
+    createProject: () => ({}),
+  });
+  const operations = [
+    {
+      id: "create-slice",
+      type: "create",
+      profileLabel: "Hero",
+      animationName: "slice",
+      items: [{ data: "data:image/png;base64,c2xpY2U=" }],
+    },
+  ];
+  const plan = await adapter.plan({ projectId: "project-a", operations });
+  let applyResolved = false;
+  const applying = adapter
+    .apply({ projectId: "project-a", baseRevision: plan.baseRevision, operations })
+    .then(() => {
+      applyResolved = true;
+    });
+
+  await Promise.resolve();
+  assert.equal(applyResolved, false);
+  releaseCommit();
+  await applying;
+  assert.equal(commitFinished, true);
+  assert.equal(applyResolved, true);
+});
+
 test("browser adapter rolls back the whole clone when a later operation fails", async () => {
   const original = {
     groups: [group()],

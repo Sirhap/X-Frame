@@ -9,7 +9,7 @@
 
   /**
    * Creates breadcrumb and context-aware return-label coordination.
-   * @param {{documentRef?:Document,windowRef?:Window,getConfig?:()=>object|null,getCurrentGroup?:()=>object|null,getRoute?:()=>string,getContext?:()=>"project"|"standalone",projectLabel?:(project:object)=>string,groupLabel?:(group:object)=>string}} dependencies Context dependencies.
+   * @param {{documentRef?:Document,windowRef?:Window,getConfig?:()=>object|null,getCurrentGroup?:()=>object|null,getRoute?:()=>string,getContext?:()=>"project"|"standalone",projectLabel?:(project:object)=>string,groupLabel?:(group:object)=>string,translate?:(key:string,variables?:object)=>string}} dependencies Context dependencies.
    * @returns {{bind:()=>void,destroy:()=>void,render:()=>void}} Context operations.
    */
   function createController(dependencies = {}) {
@@ -19,8 +19,10 @@
     const getCurrentGroup = dependencies.getCurrentGroup || (() => null);
     const getRoute = dependencies.getRoute || (() => "");
     const getContext = dependencies.getContext || (() => "project");
-    const projectLabel = dependencies.projectLabel || ((project) => project?.label || project?.name || project?.id || "");
+    const projectLabel =
+      dependencies.projectLabel || ((project) => project?.label || project?.name || project?.id || "");
     const groupLabel = dependencies.groupLabel || ((group) => group?.name || group?.animationId || "");
+    const translate = dependencies.translate || ((key) => key);
     if (!documentRef?.querySelector || !documentRef?.createElement) {
       throw new TypeError("XSXB navigation context requires a document implementation.");
     }
@@ -53,9 +55,14 @@
     function projectItems() {
       const config = getConfig() || {};
       const group = getCurrentGroup();
+      const activeProjectId = config.activeProject?.id || config.activeProjectId || "";
+      const activeProjectLabel =
+        activeProjectId === "browser-session"
+          ? translate("browserSessionProject")
+          : projectLabel(config.activeProject) || activeProjectId || translate("currentProject");
       return [
-        { label: "动画项目", href: "/projects" },
-        { label: projectLabel(config.activeProject) || config.activeProjectId || "当前项目", href: "/workspace" },
+        { label: translate("projectHubTitle"), href: "/projects" },
+        { label: activeProjectLabel, href: "/workspace" },
         { label: group?.profileLabel || group?.profileId || "" },
         { label: group ? groupLabel(group) : "" },
       ];
@@ -68,26 +75,36 @@
       const body = documentRef.body;
       const organizerVisible = body?.classList?.contains("organizerOpen");
       const cutoutVisible = body?.classList?.contains("cutoutOpen");
-      const baseItems = context === "project" ? projectItems() : [{ label: "快速工具", href: "/tools" }];
+      const baseItems =
+        context === "project" ? projectItems() : [{ label: translate("quickToolsTitle"), href: "/tools" }];
       renderBreadcrumb(elements.workspace, projectItems());
       renderBreadcrumb(elements.organizer, [
         ...baseItems,
-        { label: route === "import" || context === "standalone" ? "序列处理" : "帧整理" },
+        {
+          label:
+            route === "import" || context === "standalone"
+              ? translate("sequenceTool")
+              : translate("frameOrganizer"),
+        },
       ]);
       renderBreadcrumb(elements.cutout, [
         ...baseItems,
-        ...(organizerVisible ? [{ label: route === "import" ? "序列处理" : "帧整理" }] : []),
-        { label: "批量抠图" },
+        ...(organizerVisible
+          ? [{ label: route === "import" ? translate("sequenceTool") : translate("frameOrganizer") }]
+          : []),
+        { label: translate("batchCutout") },
       ]);
       if (elements.organizerHome) {
-        elements.organizerHome.textContent = context === "standalone" ? "← 返回快速工具" : "← 返回动画调参";
+        elements.organizerHome.textContent =
+          context === "standalone" ? translate("returnQuickTools") : translate("returnTuning");
       }
       if (elements.cutoutHome) {
-        elements.cutoutHome.textContent = organizerVisible && cutoutVisible
-          ? "← 返回帧整理"
-          : context === "standalone"
-            ? "← 返回快速工具"
-            : "← 返回动画调参";
+        elements.cutoutHome.textContent =
+          organizerVisible && cutoutVisible
+            ? translate("returnOrganizer")
+            : context === "standalone"
+              ? translate("returnQuickTools")
+              : translate("returnTuning");
       }
     }
 

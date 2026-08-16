@@ -37,7 +37,6 @@
       state,
       windowRef = root,
       documentRef = root?.document,
-      navigatorRef = root?.navigator,
       requestAnimationFrame = (callback) => windowRef.requestAnimationFrame(callback),
       advancedPresetButtons = [],
       ...handlers
@@ -48,7 +47,6 @@
 
     const window = windowRef;
     const document = documentRef;
-    const navigator = navigatorRef || {};
     const {
       open,
       setStatus,
@@ -96,6 +94,7 @@
       updateLatestAreaRepair,
       updateLatestProtectionRepair,
       bindNumericRange,
+      syncAutomaticControlDependencies,
       renderBackgroundSamples,
       renderProtectedColors,
       backgroundController,
@@ -198,14 +197,6 @@
 
     function bind() {
       elements.cutoutOpen.addEventListener("click", open);
-      elements.cutoutCopyLink.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(window.location.href);
-          setStatus(text("linkCopied"), "success");
-        } catch (_error) {
-          setStatus(text("linkCopyFailed"), "error");
-        }
-      });
       elements.cutoutHome.addEventListener("click", () => {
         requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
       });
@@ -746,6 +737,7 @@
         bindNumericRange(input, output, {
           onInput: () => {
             renderAdvancedMode();
+            syncAutomaticControlDependencies();
             scheduleAutomaticPreview();
           },
         });

@@ -55,6 +55,48 @@ test("project view exposes current Godot handoff state", () => {
   assert.equal(response.godotSync.projectRoot, "/game");
 });
 
+test("project summaries expose animation group counts", () => {
+  const projects = [
+    { id: "ready", label: "Ready" },
+    { id: "empty", label: "Empty" },
+  ];
+  const view = createEmptyView({
+    projectStore: {
+      readRegistry: () => ({ activeProjectId: "ready", projects }),
+      projectForClient: (project) => ({ ...project }),
+    },
+    readManifest: (project) =>
+      project.id === "ready"
+        ? { profiles: [{ animations: [{ frames: [{ path: "frame.png" }] }] }] }
+        : { profiles: [] },
+  });
+
+  const response = view.projectsResponse();
+
+  assert.deepEqual(
+    response.projects.map((project) => [project.id, project.animationGroupCount]),
+    [
+      ["ready", 1],
+      ["empty", 0],
+    ],
+  );
+});
+
+test("project summaries leave runtime-synced Codex pet counts unknown", () => {
+  const petProject = { id: "codex_pets", kind: "codex_pets", label: "Codex Pets" };
+  const view = createEmptyView({
+    projectStore: {
+      readRegistry: () => ({ activeProjectId: petProject.id, projects: [petProject] }),
+      projectForClient: (project) => ({ ...project }),
+    },
+    readManifest: () => ({ profiles: [] }),
+  });
+
+  const [summary] = view.projectsResponse().projects;
+
+  assert.equal(Object.hasOwn(summary, "animationGroupCount"), false);
+});
+
 test("runtime project id sync updates only GDScript constants", () => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-project-view-"));
   try {

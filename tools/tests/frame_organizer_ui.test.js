@@ -58,10 +58,23 @@ test("organizer exposes a dedicated confirmed workset clear action", () => {
   assert.match(script, /offerDeleteUndo\(snapshot\)/);
 });
 
+test("loop finder stays in the visible primary toolbar actions", () => {
+  const html = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const primaryActionsStart = html.indexOf('class="organizerToolbarActions"');
+  const secondaryToolbarStart = html.indexOf('class="organizerToolbarRow organizerToolbarSecondary"');
+  const loopFinderPosition = html.indexOf('id="organizerFindLoop"');
+
+  assert.ok(primaryActionsStart >= 0);
+  assert.ok(secondaryToolbarStart > primaryActionsStart);
+  assert.ok(loopFinderPosition > primaryActionsStart);
+  assert.ok(loopFinderPosition < secondaryToolbarStart);
+});
+
 /** Creates the import fields needed to verify project-intent defaults. */
 function createImportContextFixture() {
   const location = new URL("http://localhost/tools/organizer?createProject=1&source=projects");
   const replaceCalls = [];
+  const workbenchClasses = new Set();
   const projectSelect = {
     _options: [],
     value: "",
@@ -83,11 +96,20 @@ function createImportContextFixture() {
   const elements = {
     organizerAnimationName: field(),
     organizerAnimationType: field(),
-    organizerImportFps: field(),
     organizerProfileName: field(),
     organizerProjectName: field(),
     organizerProjectNameField: { hidden: true },
     organizerProjectSelect: projectSelect,
+    organizerImportSetup: {
+      closest: () => ({
+        classList: {
+          toggle(name, enabled) {
+            if (enabled) workbenchClasses.add(name);
+            else workbenchClasses.delete(name);
+          },
+        },
+      }),
+    },
   };
   const document = {
     createElement: () => ({ textContent: "", value: "" }),
@@ -115,7 +137,7 @@ function createImportContextFixture() {
     text: (key) => key,
     window,
   });
-  return { controller, elements, location, replaceCalls };
+  return { controller, elements, location, replaceCalls, workbenchClasses };
 }
 
 test("organizer consumes the one-shot create-project navigation intent", () => {
@@ -127,9 +149,11 @@ test("organizer consumes the one-shot create-project navigation intent", () => {
   assert.equal(fixture.location.search, "?source=projects");
   assert.equal(fixture.replaceCalls.length, 1);
   assert.deepEqual(fixture.replaceCalls[0].state, { xsxbWorkbench: "import" });
+  assert.equal(fixture.workbenchClasses.has("createProjectMode"), true);
 
   fixture.controller.renderImportContext(true);
 
   assert.equal(fixture.elements.organizerProjectSelect.value, "project-1");
   assert.equal(fixture.replaceCalls.length, 1);
+  assert.equal(fixture.workbenchClasses.has("createProjectMode"), false);
 });

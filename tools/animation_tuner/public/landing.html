@@ -6,30 +6,37 @@
     <meta name="theme-color" content="#0b0d0c" />
     <meta
       name="description"
+      data-landing-meta="description"
       content="XSXB Frame Tuner 是为 Godot 帧动画打造的本地工作台，覆盖导入、帧整理、批量抠图、碰撞框与播放节奏调校。"
     />
-    <title>XSXB Frame Tuner — 把每一帧调到刚刚好</title>
+    <title data-landing-copy="documentTitle">XSXB Frame Tuner — 把每一帧调到刚刚好</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="stylesheet" href="/landing.css" />
     <link rel="stylesheet" href="/landing-admin.css" />
   </head>
   <body>
-    <a class="skip-link" href="#main">跳到主要内容</a>
+    <a class="skip-link" href="#main" data-landing-copy="skipMain">跳到主要内容</a>
     <header class="site-header">
-      <a class="wordmark" href="/" aria-label="XSXB Frame Tuner 首页">
+      <a class="wordmark" href="/" aria-label="XSXB Frame Tuner 首页" data-landing-aria="homeAria">
         <span class="wordmark-mark" aria-hidden="true"><i></i><i></i><i></i></span>
         <span><b>XSXB</b><small>FRAME TUNER</small></span>
       </a>
-      <nav aria-label="主导航">
-        <a href="#capabilities">功能</a>
-        <a href="#workflow">流程</a>
-        <a href="#privacy">本地优先</a>
+      <nav aria-label="主导航" data-landing-aria="navAria">
+        <a href="#capabilities" data-landing-copy="navCapabilities">功能</a>
+        <a href="#workflow" data-landing-copy="navWorkflow">流程</a>
+        <a href="#privacy" data-landing-copy="navPrivacy">本地优先</a>
       </nav>
       <div class="header-actions">
+        <div class="landingLanguageButtons" role="group" aria-label="语言 / Language">
+          <button type="button" data-landing-language="zh" aria-pressed="true">中</button>
+          <button type="button" data-landing-language="en" aria-pressed="false">EN</button>
+        </div>
         <a id="adminOpenButton" class="admin-trigger" href="/admin/licenses">
-          <span aria-hidden="true">⌁</span> 激活码管理
+          <span aria-hidden="true">⌁</span> <span data-landing-copy="adminCodes">激活码管理</span>
         </a>
-        <a class="button button-small" href="/tools/import">开始制作 <span aria-hidden="true">↗</span></a>
+        <a class="button button-small" href="/tools/import"
+          ><span data-landing-copy="startMaking">开始制作</span> <span aria-hidden="true">↗</span></a
+        >
       </div>
     </header>
 
@@ -37,34 +44,44 @@
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy">
           <p class="eyebrow"><span>LOCAL-FIRST</span> / BROWSER FRAME PIPELINE</p>
-          <h1 id="hero-title">把每一帧<br />调到<span>刚刚好。</span></h1>
-          <p class="hero-lede">
+          <h1 id="hero-title">
+            <span data-landing-copy="heroTitle1">把每一帧</span><br /><span data-landing-copy="heroTitle2"
+              >调到刚刚好。</span
+            >
+          </h1>
+          <p class="hero-lede" data-landing-copy="heroLede">
             导入图片序列或视频，在浏览器内完成排序、删帧、抠图与序列分析，最后下载可复用的动画包。
           </p>
           <div class="hero-actions">
             <a class="button button-primary" href="/tools/import"
-              >导入第一组动画 <span aria-hidden="true">→</span></a
+              ><span data-landing-copy="importFirst">导入第一组动画</span>
+              <span aria-hidden="true">→</span></a
             >
-            <a class="text-link" href="#workflow">查看处理流程 <span aria-hidden="true">↓</span></a>
+            <a class="text-link" href="#workflow"
+              ><span data-landing-copy="viewWorkflow">查看处理流程</span> <span aria-hidden="true">↓</span></a
+            >
           </div>
-          <p class="hero-assurance"><i aria-hidden="true"></i> 无需上传素材 · 处理结果保留在本机</p>
+          <p class="hero-assurance">
+            <i aria-hidden="true"></i>
+            <span data-landing-copy="heroAssurance">无需上传素材 · 处理结果保留在本机</span>
+          </p>
           <dl class="hero-facts">
             <div>
-              <dt>素材处理</dt>
-              <dd>本机完成</dd>
+              <dt data-landing-copy="factProcess">素材处理</dt>
+              <dd data-landing-copy="factProcessValue">本机完成</dd>
             </div>
             <div>
-              <dt>工作流</dt>
-              <dd>导入 → 处理 → 导出</dd>
+              <dt data-landing-copy="factWorkflow">工作流</dt>
+              <dd data-landing-copy="factWorkflowValue">导入 → 处理 → 导出</dd>
             </div>
             <div>
-              <dt>Godot 导入</dt>
-              <dd>即将开放</dd>
+              <dt data-landing-copy="factGodot">Godot 导入</dt>
+              <dd data-landing-copy="factGodotValue">即将开放</dd>
             </div>
           </dl>
         </div>
 
-        <div class="hero-console" aria-label="帧动画工作台示意图">
+        <div class="hero-console" aria-label="帧动画工作台示意图" data-landing-aria="consoleAria">
           <div class="console-topbar">
             <span><i></i><i></i><i></i></span>
             <code>hero / blade_slash / frame_09</code>
@@ -73,14 +90,18 @@
           <div class="console-body">
             <aside>
               <span>TRANSFORM</span>
-              <label>缩放 <b>0.876</b></label>
-              <label>旋转 <b>0°</b></label>
-              <label>偏移 X <b>364</b></label>
-              <label>偏移 Y <b>4</b></label>
+              <label><span data-landing-copy="scale">缩放</span> <b>0.876</b></label>
+              <label><span data-landing-copy="rotate">旋转</span> <b>0°</b></label>
+              <label><span data-landing-copy="offsetX">偏移 X</span> <b>364</b></label>
+              <label><span data-landing-copy="offsetY">偏移 Y</span> <b>4</b></label>
               <hr />
               <span>HITBOX LAYERS</span>
-              <label><i class="dot dot-mint"></i> 受击框 <b>ON</b></label>
-              <label><i class="dot dot-coral"></i> 攻击框 <b>ON</b></label>
+              <label
+                ><i class="dot dot-mint"></i> <span data-landing-copy="hurtbox">受击框</span> <b>ON</b></label
+              >
+              <label
+                ><i class="dot dot-coral"></i> <span data-landing-copy="hitbox">攻击框</span> <b>ON</b></label
+              >
             </aside>
             <div class="stage-demo">
               <span class="axis axis-x"></span><span class="axis axis-y"></span>
@@ -102,7 +123,7 @@
               <code class="coordinate">X 364 · Y 4</code>
             </div>
           </div>
-          <ol class="timeline" aria-label="动画帧序列">
+          <ol class="timeline" aria-label="动画帧序列" data-landing-aria="timelineAria">
             <li><span>01</span><i></i></li>
             <li><span>02</span><i></i></li>
             <li><span>03</span><i></i></li>
@@ -116,42 +137,54 @@
       <section id="capabilities" class="capabilities" aria-labelledby="capabilities-title">
         <header class="section-heading">
           <p class="eyebrow">01 / TOOLKIT</p>
-          <h2 id="capabilities-title">四个阶段，把角色起稿变成可用素材。</h2>
-          <p>从 2DCS 角色方向到透明动画导出，本地优先工作台只保留每一步真正需要的工具。</p>
+          <h2 id="capabilities-title" data-landing-copy="capabilitiesTitle">
+            四个阶段，把角色起稿变成可用素材。
+          </h2>
+          <p data-landing-copy="capabilitiesLede">
+            从 2DCS 角色方向到透明动画导出，本地优先工作台只保留每一步真正需要的工具。
+          </p>
         </header>
         <div class="capability-grid">
           <a class="capability-card card-starter" href="/workspace">
             <span class="card-index">01</span>
-            <span class="card-badge">建议从这里开始</span>
+            <span class="card-badge" data-landing-copy="startHere">建议从这里开始</span>
             <div class="card-icon" aria-hidden="true">2D</div>
             <p>CHARACTER SEED</p>
-            <h3>2DCS 角色起稿</h3>
-            <span>选择简化、转画风、姿势迁移或动作探索模式，复制规范指令到 Codex。</span>
-            <b>进入素材工作台 →</b>
+            <h3 data-landing-copy="cardStarterTitle">2DCS 角色起稿</h3>
+            <span data-landing-copy="cardStarterBody"
+              >选择简化、转画风、姿势迁移或动作探索模式，复制规范指令到 Codex。</span
+            >
+            <b data-landing-copy="cardStarterCta">进入素材工作台 →</b>
           </a>
           <a class="capability-card card-import" href="/tools/import">
             <span class="card-index">02</span>
             <div class="card-icon" aria-hidden="true">IN</div>
             <p>INGEST + PREP</p>
-            <h3>导入与整理</h3>
-            <span>导入图片序列或视频帧，保留源顺序，再完成排序、删帧与画布检查。</span>
-            <b>进入导入 →</b>
+            <h3 data-landing-copy="cardImportTitle">导入与整理</h3>
+            <span data-landing-copy="cardImportBody"
+              >导入图片序列或视频帧，保留源顺序，再完成排序、删帧与画布检查。</span
+            >
+            <b data-landing-copy="cardImportCta">进入导入 →</b>
           </a>
           <a class="capability-card card-alpha" href="/tools/cutout">
             <span class="card-index">03</span>
             <div class="card-icon" aria-hidden="true">α</div>
             <p>CHROMA + LUMA</p>
-            <h3>色键抠图</h3>
-            <span>按背景颜色生成 Alpha，继续使用局部修复、边缘处理和整组参数传播。</span>
-            <b>进入抠图 →</b>
+            <h3 data-landing-copy="cardAlphaTitle">色键抠图</h3>
+            <span data-landing-copy="cardAlphaBody"
+              >按背景颜色生成 Alpha，继续使用局部修复、边缘处理和整组参数传播。</span
+            >
+            <b data-landing-copy="cardAlphaCta">进入抠图 →</b>
           </a>
           <a class="capability-card card-export" href="/tools/organizer">
             <span class="card-index">04</span>
             <div class="card-icon" aria-hidden="true">EX</div>
             <p>MEDIA OUTPUT</p>
-            <h3>多格式导出</h3>
-            <span>浏览器生成 PNG 序列与 Sprite Sheet；本地版可用 FFmpeg 编码 GIF 和透明 MOV。</span>
-            <b>整理并导出 →</b>
+            <h3 data-landing-copy="cardExportTitle">多格式导出</h3>
+            <span data-landing-copy="cardExportBody"
+              >浏览器生成 PNG 序列与 Sprite Sheet；本地版可用 FFmpeg 编码 GIF 和透明 MOV。</span
+            >
+            <b data-landing-copy="cardExportCta">整理并导出 →</b>
           </a>
         </div>
       </section>
@@ -159,37 +192,48 @@
       <section id="workflow" class="workflow" aria-labelledby="workflow-title">
         <div class="workflow-intro">
           <p class="eyebrow">02 / WORKFLOW</p>
-          <h2 id="workflow-title">从角色方向，<br />到透明动画包。</h2>
-          <p>每一步都可以独立进入；已有素材时，直接从导入或抠图开始即可。</p>
-          <a class="text-link" href="/workspace">进入素材工作台 →</a>
+          <h2 id="workflow-title">
+            <span data-landing-copy="workflowTitle1">从角色方向，</span><br /><span
+              data-landing-copy="workflowTitle2"
+              >到透明动画包。</span
+            >
+          </h2>
+          <p data-landing-copy="workflowLede">每一步都可以独立进入；已有素材时，直接从导入或抠图开始即可。</p>
+          <a class="text-link" href="/workspace" data-landing-copy="enterAssets">进入素材工作台 →</a>
         </div>
         <ol class="workflow-steps">
           <li>
             <span>01</span>
             <div>
-              <h3>2DCS 角色起稿</h3>
-              <p>根据任务选择 s / ct / p / sq / cs 模式，复制指令并在 Codex 中附上参考图。</p>
+              <h3 data-landing-copy="step1Title">2DCS 角色起稿</h3>
+              <p data-landing-copy="step1Body">
+                根据任务选择 s / ct / p / sq / cs 模式，复制指令并在 Codex 中附上参考图。
+              </p>
             </div>
           </li>
           <li>
             <span>02</span>
             <div>
-              <h3>导入与整理</h3>
-              <p>导入图片序列或截取视频帧，确认名称、顺序、画布尺寸与统一 FPS。</p>
+              <h3 data-landing-copy="step2Title">导入与整理</h3>
+              <p data-landing-copy="step2Body">
+                导入图片序列或截取视频帧，确认名称、顺序、画布尺寸与统一 FPS。
+              </p>
             </div>
           </li>
           <li>
             <span>03</span>
             <div>
-              <h3>色键抠图</h3>
-              <p>按素材背景颜色完成抠图，再修复局部边缘并把参数同步到整组。</p>
+              <h3 data-landing-copy="step3Title">色键抠图</h3>
+              <p data-landing-copy="step3Body">按素材背景颜色完成抠图，再修复局部边缘并把参数同步到整组。</p>
             </div>
           </li>
           <li>
             <span>04</span>
             <div>
-              <h3>多格式导出</h3>
-              <p>导出 PNG 序列、分页 Sprite Sheet 与清单；本地 FFmpeg 额外提供 GIF 和透明 MOV。</p>
+              <h3 data-landing-copy="step4Title">多格式导出</h3>
+              <p data-landing-copy="step4Body">
+                导出 PNG 序列、分页 Sprite Sheet 与清单；本地 FFmpeg 额外提供 GIF 和透明 MOV。
+              </p>
             </div>
           </li>
         </ol>
@@ -202,29 +246,239 @@
         </div>
         <div class="privacy-copy">
           <p class="eyebrow">03 / YOUR ASSETS STAY YOURS</p>
-          <h2 id="privacy-title">素材留在本机，<br />创作不必绕远路。</h2>
-          <p>网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理完成后直接下载动画包。</p>
+          <h2 id="privacy-title">
+            <span data-landing-copy="privacyTitle1">素材留在本机，</span><br /><span
+              data-landing-copy="privacyTitle2"
+              >创作不必绕远路。</span
+            >
+          </h2>
+          <p data-landing-copy="privacyLede">
+            网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理完成后直接下载动画包。
+          </p>
           <ul>
-            <li><span>✓</span> 批量抠图在浏览器内处理</li>
-            <li><span>✓</span> 不读取电脑里的项目目录</li>
-            <li><span>○</span> Godot 导入暂时禁用</li>
+            <li><span>✓</span> <span data-landing-copy="privacy1">批量抠图在浏览器内处理</span></li>
+            <li><span>✓</span> <span data-landing-copy="privacy2">不读取电脑里的项目目录</span></li>
+            <li><span>○</span> <span data-landing-copy="privacy3">Godot 导入暂时禁用</span></li>
           </ul>
         </div>
       </section>
 
       <section class="final-cta" aria-labelledby="cta-title">
         <p class="eyebrow">READY / FRAME 01</p>
-        <h2 id="cta-title">下一帧，<br /><span>由你定义。</span></h2>
+        <h2 id="cta-title">
+          <span data-landing-copy="ctaTitle1">下一帧，</span><br /><span data-landing-copy="ctaTitle2"
+            >由你定义。</span
+          >
+        </h2>
         <a class="button button-primary" href="/tools/import"
-          >导入第一组动画 <span aria-hidden="true">→</span></a
+          ><span data-landing-copy="importFirst">导入第一组动画</span> <span aria-hidden="true">→</span></a
         >
       </section>
     </main>
 
     <footer class="site-footer">
       <a class="wordmark footer-wordmark" href="/"><b>XSXB</b><small>FRAME TUNER</small></a>
-      <p>为 Godot 帧动画制作而生。</p>
+      <p data-landing-copy="footerTagline">为 Godot 帧动画制作而生。</p>
       <p>LOCAL-FIRST · OPEN WORKFLOW</p>
     </footer>
+    <script>
+      (() => {
+        const languageKey = "xsxbFrameTuner.language";
+        const explicitKey = "xsxbFrameTuner.languageExplicit";
+        const buttons = Array.from(document.querySelectorAll("[data-landing-language]"));
+        const copy = {
+          zh: {
+            documentTitle: "XSXB Frame Tuner — 把每一帧调到刚刚好",
+            description:
+              "XSXB Frame Tuner 是为 Godot 帧动画打造的本地工作台，覆盖导入、帧整理、批量抠图、碰撞框与播放节奏调校。",
+            skipMain: "跳到主要内容",
+            homeAria: "XSXB Frame Tuner 首页",
+            navAria: "主导航",
+            navCapabilities: "功能",
+            navWorkflow: "流程",
+            navPrivacy: "本地优先",
+            adminCodes: "激活码管理",
+            startMaking: "开始制作",
+            heroTitle1: "把每一帧",
+            heroTitle2: "调到刚刚好。",
+            heroLede:
+              "导入图片序列或视频，在浏览器内完成排序、删帧、抠图与序列分析，最后下载可复用的动画包。",
+            importFirst: "导入第一组动画",
+            viewWorkflow: "查看处理流程",
+            heroAssurance: "无需上传素材 · 处理结果保留在本机",
+            factProcess: "素材处理",
+            factProcessValue: "本机完成",
+            factWorkflow: "工作流",
+            factWorkflowValue: "导入 → 处理 → 导出",
+            factGodot: "Godot 导入",
+            factGodotValue: "即将开放",
+            consoleAria: "帧动画工作台示意图",
+            scale: "缩放",
+            rotate: "旋转",
+            offsetX: "偏移 X",
+            offsetY: "偏移 Y",
+            hurtbox: "受击框",
+            hitbox: "攻击框",
+            timelineAria: "动画帧序列",
+            capabilitiesTitle: "四个阶段，把角色起稿变成可用素材。",
+            capabilitiesLede: "从 2DCS 角色方向到透明动画导出，本地优先工作台只保留每一步真正需要的工具。",
+            startHere: "建议从这里开始",
+            cardStarterTitle: "2DCS 角色起稿",
+            cardStarterBody: "选择简化、转画风、姿势迁移或动作探索模式，复制规范指令到 Codex。",
+            cardStarterCta: "进入素材工作台 →",
+            cardImportTitle: "导入与整理",
+            cardImportBody: "导入图片序列或视频帧，保留源顺序，再完成排序、删帧与画布检查。",
+            cardImportCta: "进入导入 →",
+            cardAlphaTitle: "色键抠图",
+            cardAlphaBody: "按背景颜色生成 Alpha，继续使用局部修复、边缘处理和整组参数传播。",
+            cardAlphaCta: "进入抠图 →",
+            cardExportTitle: "多格式导出",
+            cardExportBody: "浏览器生成 PNG 序列与 Sprite Sheet；本地版可用 FFmpeg 编码 GIF 和透明 MOV。",
+            cardExportCta: "整理并导出 →",
+            workflowTitle1: "从角色方向，",
+            workflowTitle2: "到透明动画包。",
+            workflowLede: "每一步都可以独立进入；已有素材时，直接从导入或抠图开始即可。",
+            enterAssets: "进入素材工作台 →",
+            step1Title: "2DCS 角色起稿",
+            step1Body: "根据任务选择 s / ct / p / sq / cs 模式，复制指令并在 Codex 中附上参考图。",
+            step2Title: "导入与整理",
+            step2Body: "导入图片序列或截取视频帧，确认名称、顺序、画布尺寸与统一 FPS。",
+            step3Title: "色键抠图",
+            step3Body: "按素材背景颜色完成抠图，再修复局部边缘并把参数同步到整组。",
+            step4Title: "多格式导出",
+            step4Body: "导出 PNG 序列、分页 Sprite Sheet 与清单；本地 FFmpeg 额外提供 GIF 和透明 MOV。",
+            privacyTitle1: "素材留在本机，",
+            privacyTitle2: "创作不必绕远路。",
+            privacyLede:
+              "网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理完成后直接下载动画包。",
+            privacy1: "批量抠图在浏览器内处理",
+            privacy2: "不读取电脑里的项目目录",
+            privacy3: "Godot 导入暂时禁用",
+            ctaTitle1: "下一帧，",
+            ctaTitle2: "由你定义。",
+            footerTagline: "为 Godot 帧动画制作而生。",
+          },
+          en: {
+            documentTitle: "XSXB Frame Tuner — Tune every frame until it feels right",
+            description:
+              "XSXB Frame Tuner is a local workbench for Godot frame animation: import, organize, cutout, collision boxes, and playback timing.",
+            skipMain: "Skip to main content",
+            homeAria: "XSXB Frame Tuner home",
+            navAria: "Primary navigation",
+            navCapabilities: "Features",
+            navWorkflow: "Workflow",
+            navPrivacy: "Local first",
+            adminCodes: "Activation codes",
+            startMaking: "Start making",
+            heroTitle1: "Tune every frame",
+            heroTitle2: "until it feels right.",
+            heroLede:
+              "Import an image sequence or video, then sort, drop frames, cut out, and analyze in the browser before downloading a reusable animation pack.",
+            importFirst: "Import the first animation",
+            viewWorkflow: "See the workflow",
+            heroAssurance: "No uploads · results stay on this device",
+            factProcess: "Processing",
+            factProcessValue: "On this device",
+            factWorkflow: "Workflow",
+            factWorkflowValue: "Import → process → export",
+            factGodot: "Godot import",
+            factGodotValue: "Coming soon",
+            consoleAria: "Frame animation workbench illustration",
+            scale: "Scale",
+            rotate: "Rotate",
+            offsetX: "Offset X",
+            offsetY: "Offset Y",
+            hurtbox: "Hurtbox",
+            hitbox: "Hitbox",
+            timelineAria: "Animation frame sequence",
+            capabilitiesTitle: "Four stages from character seed to usable assets.",
+            capabilitiesLede:
+              "From 2DCS character direction to transparent animation export, the local-first workbench keeps only the tools each step needs.",
+            startHere: "Start here",
+            cardStarterTitle: "2DCS character seed",
+            cardStarterBody:
+              "Pick simplify, restyle, pose transfer, or motion exploration, then copy the spec into Codex.",
+            cardStarterCta: "Open the asset workbench →",
+            cardImportTitle: "Import and organize",
+            cardImportBody:
+              "Import an image sequence or video frames, keep source order, then sort, drop, and check the canvas.",
+            cardImportCta: "Open import →",
+            cardAlphaTitle: "Chroma cutout",
+            cardAlphaBody:
+              "Build alpha from the background color, then repair edges and propagate parameters across the set.",
+            cardAlphaCta: "Open cutout →",
+            cardExportTitle: "Multi-format export",
+            cardExportBody:
+              "The browser writes PNG sequences and sprite sheets; the desktop app can encode GIF and transparent MOV with FFmpeg.",
+            cardExportCta: "Organize and export →",
+            workflowTitle1: "From character direction",
+            workflowTitle2: "to a transparent pack.",
+            workflowLede:
+              "Every step can be opened on its own. If you already have assets, start at import or cutout.",
+            enterAssets: "Open the asset workbench →",
+            step1Title: "2DCS character seed",
+            step1Body:
+              "Pick s / ct / p / sq / cs for the task, copy the prompt, and attach references in Codex.",
+            step2Title: "Import and organize",
+            step2Body:
+              "Import an image sequence or extract video frames, then confirm names, order, canvas size, and FPS.",
+            step3Title: "Chroma cutout",
+            step3Body:
+              "Cut out from the background color, repair local edges, and sync parameters across the set.",
+            step4Title: "Multi-format export",
+            step4Body:
+              "Export PNG sequences, paged sprite sheets, and a manifest. Local FFmpeg also provides GIF and transparent MOV.",
+            privacyTitle1: "Assets stay on this device.",
+            privacyTitle2: "Creation does not take a detour.",
+            privacyLede:
+              "The web app only processes images or video you choose. Source media stays in this browser session, then you download the animation pack.",
+            privacy1: "Batch cutout runs in the browser",
+            privacy2: "It does not read project folders on disk",
+            privacy3: "Godot import is temporarily disabled",
+            ctaTitle1: "The next frame",
+            ctaTitle2: "is yours to define.",
+            footerTagline: "Built for Godot frame animation.",
+          },
+        };
+        const readLanguage = () => {
+          try {
+            const explicit = localStorage.getItem(explicitKey) === "true";
+            return explicit && localStorage.getItem(languageKey) === "en" ? "en" : "zh";
+          } catch (_error) {
+            return "zh";
+          }
+        };
+        const sync = (language) => {
+          document.documentElement.lang = language === "en" ? "en" : "zh-CN";
+          const table = copy[language] || copy.zh;
+          for (const node of document.querySelectorAll("[data-landing-copy]")) {
+            const value = table[node.dataset.landingCopy];
+            if (value) node.textContent = value;
+          }
+          for (const node of document.querySelectorAll("[data-landing-aria]")) {
+            const value = table[node.dataset.landingAria];
+            if (value) node.setAttribute("aria-label", value);
+          }
+          const meta = document.querySelector('[data-landing-meta="description"]');
+          if (meta && table.description) meta.setAttribute("content", table.description);
+          for (const button of buttons) {
+            button.setAttribute("aria-pressed", String(button.dataset.landingLanguage === language));
+          }
+        };
+        sync(readLanguage());
+        for (const button of buttons) {
+          button.addEventListener("click", () => {
+            const language = button.dataset.landingLanguage === "en" ? "en" : "zh";
+            try {
+              localStorage.setItem(languageKey, language);
+              localStorage.setItem(explicitKey, "true");
+            } catch (_error) {
+              // The selection remains available for this page when storage is restricted.
+            }
+            sync(language);
+          });
+        }
+      })();
+    </script>
   </body>
 </html>

@@ -92,6 +92,37 @@ test("applyUiTheme keeps one supported class active and updates browser chrome",
   assert.equal(themeButtons[2]["aria-pressed"], "true");
 });
 
+test("applyLanguage localizes playback and ghost controls", () => {
+  /** Creates a minimal button used by the language renderer. */
+  const button = () => ({
+    textContent: "",
+    title: "",
+    setAttribute(name, value) {
+      this[name] = value;
+    },
+  });
+  const playPause = button();
+  const ghostToggle = button();
+  const controller = createController({
+    state: { language: "en", playing: false, config: null },
+    elements: { languageButtons: [], playPause, ghostToggle },
+    messages: { zh: { play: "播放", ghost: "残影" }, en: { play: "Play", ghost: "Ghost" } },
+    documentRef: {
+      documentElement: {},
+      querySelectorAll: () => [],
+      body: { classList: { toggle() {} } },
+    },
+    storage: null,
+  });
+
+  controller.applyLanguage();
+
+  assert.equal(playPause.textContent, "Play");
+  assert.equal(playPause["aria-label"], "Play");
+  assert.equal(ghostToggle.textContent, "Ghost");
+  assert.equal(ghostToggle["aria-label"], "Ghost");
+});
+
 test("markClean refreshes save controls without an injected UI callback", () => {
   const state = { dirty: true, saveInFlight: false, lastSavedAt: "" };
   const saveState = { textContent: "", classList: { toggle() {} } };

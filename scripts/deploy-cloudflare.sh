@@ -17,9 +17,22 @@ readonly SCRIPT_NAME="$(basename "$0")"
 readonly -a HEALTH_CHECK_URLS=(
   "https://xsxb.devops9527.dpdns.org/"
   "https://xsxb.devops9527.dpdns.org/workspace"
+  "https://xsxb.devops9527.dpdns.org/workspace/resources/import"
+  "https://xsxb.devops9527.dpdns.org/workspace/resources/cutout"
+  "https://xsxb.devops9527.dpdns.org/workspace/resources/scatter"
+  "https://xsxb.devops9527.dpdns.org/workspace/animation/transform"
+  "https://xsxb.devops9527.dpdns.org/workspace/animation/boxes"
+  "https://xsxb.devops9527.dpdns.org/workspace/animation/trails"
+  "https://xsxb.devops9527.dpdns.org/workspace/animation/audio"
+  "https://xsxb.devops9527.dpdns.org/workspace/animation/attachments"
+  "https://xsxb.devops9527.dpdns.org/workspace/delivery/export"
+  "https://xsxb.devops9527.dpdns.org/workspace/delivery/godot"
+  "https://xsxb.devops9527.dpdns.org/workspace/delivery/codex-pet"
+  "https://xsxb.devops9527.dpdns.org/tools/export"
   "https://xsxb.devops9527.dpdns.org/admin/licenses"
+  "https://xsxb.devops9527.dpdns.org/api/media-export/capabilities"
+  "https://xsxb.devops9527.dpdns.org/tools/watermark"
   "https://xsxb-fast.devops9527.dpdns.org/"
-  "https://xsxb-cname.devops9527.dpdns.org/"
 )
 
 export WRANGLER_LOG_PATH
@@ -113,7 +126,9 @@ run_health_checks() {
       --silent \
       --show-error \
       --location \
-      --retry 2 \
+      --retry 4 \
+      --retry-all-errors \
+      --retry-delay 2 \
       --max-time 20 \
       --output /dev/null \
       "${url}"

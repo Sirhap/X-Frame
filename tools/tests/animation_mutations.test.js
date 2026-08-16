@@ -6,8 +6,17 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { deleteAnimation } = require("../animation_mutations");
-const { remapBindings } = require("../frame_organizer");
+const { importAnimation, remapBindings } = require("../frame_organizer");
 const { createProjectStore } = require("../project_store");
+
+/** Creates a minimal 1×1 PNG buffer accepted by the frame organizer. */
+function tinyPng() {
+  const buffer = Buffer.alloc(24);
+  buffer.write("\x89PNG\r\n\x1a\n", 0, "ascii");
+  buffer.writeUInt32BE(1, 16);
+  buffer.writeUInt32BE(1, 20);
+  return `data:image/png;base64,${buffer.toString("base64")}`;
+}
 
 test("deleteAnimation removes only data owned by the requested animation", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-animation-delete-"));
@@ -212,4 +221,36 @@ test("remapBindings preserves unrelated legacy keyed bindings", () => {
     { key: "other/idle:0", path: "idle.wav" },
     { key: "hero/run:0", path: "second.wav" },
   ]);
+});
+
+test("importAnimation rejects duplicate animation names with a conflict code", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-animation-import-"));
+  try {
+    const store = createProjectStore(root);
+    const registry = store.addProject({ id: "imports", label: "Imports" });
+    const project = store.resolveProject(registry, "imports");
+    const options = {
+      root,
+      projectStore: store,
+      project,
+      profileId: "hero",
+      profileLabel: "Hero",
+      profileKind: "actor",
+      animationId: "run",
+      animationName: "Run",
+      animationType: "actor",
+      anchorMode: "canvas_bottom_center",
+      fps: 12,
+      items: [{ data: tinyPng() }],
+    };
+
+    const first = importAnimation(options);
+    assert.equal(first.animationId, "run");
+    assert.throws(
+      () => importAnimation(options),
+      (error) => error?.status === 409 && error?.code === "animation_exists",
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

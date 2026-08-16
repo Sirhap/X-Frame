@@ -143,7 +143,7 @@ test("media export rejects malformed jobs, frames, and traversal-like output req
   });
   assert.throws(
     () => service.createJob({ formats: ["png"], frameCount: 1, width: 2, height: 2 }),
-    /Only GIF and MOV/,
+    /Only GIF, MP4 and MOV/,
   );
   assert.throws(
     () => service.createJob({ formats: ["mov"], frameCount: 1.5, width: 2, height: 2 }),
@@ -202,7 +202,7 @@ test("media export reads the FFmpeg version from stdout and detects encoders", a
   const service = createMediaExportService({ root, spawnImpl: successfulSpawn });
   assert.deepEqual(await service.capabilities(), {
     ffmpeg: { available: true, version: "7.1.1-test" },
-    formats: { gif: true, mov: true },
+    formats: { gif: true, mp4: false, mov: true },
   });
   service.dispose();
   fs.rmSync(root, { recursive: true, force: true });
@@ -221,7 +221,7 @@ test("media export reports missing FFmpeg and isolates encoder failures", async 
   const missingService = createMediaExportService({ root: missingRoot, spawnImpl: missingSpawn });
   assert.deepEqual(await missingService.capabilities(), {
     ffmpeg: { available: false, version: "" },
-    formats: { gif: false, mov: false },
+    formats: { gif: false, mp4: false, mov: false },
   });
   missingService.dispose();
   fs.rmSync(missingRoot, { recursive: true, force: true });
@@ -517,9 +517,10 @@ test(
     };
     const gifProbe = probe(gif.filename);
     const movProbe = probe(mov.filename);
-    assert.equal(gifProbe.streams[0].nb_read_frames, "3");
+    // concat repeats the final PNG once so FFmpeg can retain its declared duration.
+    assert.equal(gifProbe.streams[0].nb_read_frames, "4");
     assert.equal(movProbe.streams[0].codec_name, "prores");
-    assert.equal(movProbe.streams[0].nb_read_frames, "3");
+    assert.equal(movProbe.streams[0].nb_read_frames, "4");
     // prores_ks accepts yuva444p10le input; FFmpeg 7 decodes the stored 4444 stream as 12-bit.
     assert.match(movProbe.streams[0].pix_fmt, /^yuva444p(?:10|12)le$/);
     assert.ok(Number(gifProbe.format.duration) > 0);

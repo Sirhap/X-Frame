@@ -5,7 +5,9 @@ const {
   applyPreviewBackground,
   createController,
   normalizePreviewBackground,
+  resolveAutomaticControlDependencies,
   resolveRepairPropagationState,
+  syncAutomaticControlDependencies,
 } = require("../animation_tuner/public/batch_cutout_settings.js");
 
 /**
@@ -48,6 +50,9 @@ function createFixture() {
     cutoutSettings: { classList: { toggle() {} } },
     cutoutActiveToolTitle: { textContent: "" },
     cutoutActiveToolHint: { textContent: "" },
+    cutoutTolerance: { value: "24" },
+    cutoutAlphaLow: { value: "8" },
+    cutoutAlphaHigh: { value: "240" },
   };
   const events = [];
   const controller = createController({
@@ -120,6 +125,53 @@ test("preview background switching is display-only and falls back to light", () 
   assert.equal(elements.cutoutModal.dataset.previewBackground, "light");
 });
 
+test("automatic parameter dependencies disable controls with no active effect", () => {
+  assert.deepEqual(
+    resolveAutomaticControlDependencies({
+      blendStrength: 0,
+      despillStrength: 0,
+      edgeDespillRadius: 0,
+      edgeRecoveryStrength: 0,
+    }),
+    {
+      blendModeDisabled: true,
+      despillModeDisabled: true,
+      backgroundRadiusDisabled: true,
+    },
+  );
+  assert.deepEqual(
+    resolveAutomaticControlDependencies({
+      blendStrength: 25,
+      despillStrength: 0,
+      edgeDespillRadius: 3,
+      edgeRecoveryStrength: 50,
+    }),
+    {
+      blendModeDisabled: false,
+      despillModeDisabled: false,
+      backgroundRadiusDisabled: false,
+    },
+  );
+
+  const backgroundRadiusNumber = { disabled: false };
+  const controls = {
+    cutoutBlendStrength: { value: "0" },
+    cutoutBlendMode: { disabled: false },
+    cutoutDespillStrength: { value: "0" },
+    cutoutEdgeDespillRadius: { value: "0" },
+    cutoutDespillMode: { disabled: false },
+    cutoutEdgeRecoveryStrength: { value: "0" },
+    cutoutBackgroundRadius: { disabled: false },
+  };
+  syncAutomaticControlDependencies(controls, false, (range) =>
+    range === controls.cutoutBackgroundRadius ? backgroundRadiusNumber : null,
+  );
+  assert.equal(controls.cutoutBlendMode.disabled, true);
+  assert.equal(controls.cutoutDespillMode.disabled, true);
+  assert.equal(controls.cutoutBackgroundRadius.disabled, true);
+  assert.equal(backgroundRadiusNumber.disabled, true);
+});
+
 test("batch settings follows the active tool and exposes canvas-only tool instructions", () => {
   const { controller, state, elements } = createFixture();
 
@@ -156,6 +208,30 @@ test("batch settings writes live protection parameters to the latest range repai
   assert.equal(item.repairs[0].padding, 3);
   assert.equal(state.protectionPreview, null);
   assert.deepEqual(events, ["record", "invalidate", "preview"]);
+});
+
+test("batch settings warns when automatic parameters cannot take effect", () => {
+  const { controller, state, item, elements } = createFixture();
+
+  controller.setSettingsMode("automatic");
+  assert.match(elements.cutoutActiveToolHint.textContent, /needsBackgroundSampleHint/);
+
+  item.backgroundSamples = [{ hex: "#00ff00" }];
+  controller.setSettingsMode("automatic");
+  assert.match(elements.cutoutActiveToolHint.textContent, /automaticToolSettingsHint/);
+
+  elements.cutoutTolerance.value = "100";
+  controller.setSettingsMode("automatic");
+  assert.match(elements.cutoutActiveToolHint.textContent, /toleranceAggressiveHint/);
+
+  elements.cutoutTolerance.value = "24";
+  elements.cutoutAlphaHigh.value = "4";
+  controller.setSettingsMode("automatic");
+  assert.match(elements.cutoutActiveToolHint.textContent, /alphaWindowHint/);
+
+  state.items = [];
+  controller.setSettingsMode("automatic");
+  assert.match(elements.cutoutActiveToolHint.textContent, /settingsEmptyHint/);
 });
 
 test("batch settings explains that automatic parameters are already shared", () => {

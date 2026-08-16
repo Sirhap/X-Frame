@@ -52,6 +52,13 @@
       throw new TypeError("BatchCutoutRepairController dependencies are required.");
     }
 
+    function engineMessage(error) {
+      const code = error?.code || error?.message || "ENGINE_EXECUTION_FAILED";
+      if (code === "ENGINE_MEMORY_EXHAUSTED") return text("engineMemoryExhausted");
+      if (code === "ENGINE_EXECUTION_FAILED") return text("engineExecutionFailed");
+      return code;
+    }
+
     /**
      * Applies either color sampling or an intelligent spatial protection repair.
      * Spatial protection records the coarse rectangle so batch propagation can
@@ -97,7 +104,7 @@
           );
         } catch (error) {
           setStatus(
-            text("failed", { message: error?.code || error?.message || "ENGINE_EXECUTION_FAILED" }),
+            text("failed", { message: engineMessage(error) }),
             "error",
           );
           return false;
@@ -214,10 +221,7 @@
           },
         );
       } catch (error) {
-        setStatus(
-          text("failed", { message: error?.code || error?.message || "ENGINE_EXECUTION_FAILED" }),
-          "error",
-        );
+        setStatus(text("failed", { message: engineMessage(error) }), "error");
         return false;
       }
       const colors = [];
@@ -391,7 +395,7 @@
             },
           );
         } catch (error) {
-          setStatus(error?.code || error?.message || "ENGINE_EXECUTION_FAILED", "error");
+          setStatus(engineMessage(error), "error");
           return;
         }
       }

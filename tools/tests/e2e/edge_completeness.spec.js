@@ -172,20 +172,22 @@ test("Edge uses the app dialog when unsaved tuning returns to the website", asyn
   expect(nativeDialogs).toEqual([]);
 });
 
-test("Edge organizer exports PNG frames and a sprite sheet in one readable ZIP", async ({ page }) => {
+test("Edge organizer exports frames and a sprite sheet through explicit formats", async ({ page }) => {
   await activateExports(page);
   await page.goto("/tools/import");
-  await page.locator("#organizerAnimationName").fill("edge-output");
   await page.locator("#organizerFileInput").setInputFiles([
-    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "edge-output.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
     { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
   ]);
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
 
+  await page.locator(".organizerDownstreamMenu").evaluate((element) => {
+    element.open = true;
+  });
   await page.locator("#organizerExport").click();
   await expect(page.locator("#mediaExportDialog")).toBeVisible();
   await expect(page.locator("#mediaExportFrameCount")).toHaveText("2");
-  await expect(page.locator("#mediaExportFrames")).toBeChecked();
+  await page.locator("#mediaExportFrames").check();
   await page.keyboard.press("Escape");
   await expect(page.locator("#mediaExportDialog")).toBeHidden();
   await expect(page.locator("#organizerModal")).toBeVisible();
@@ -202,9 +204,9 @@ test("Edge organizer exports PNG frames and a sprite sheet in one readable ZIP",
   try {
     await download.saveAs(downloadPath);
     const entries = readZipEntries(fs.readFileSync(downloadPath));
-    expect(entries.has("frames/frame_0001.png")).toBe(true);
-    expect(entries.has("frames/frame_0002.png")).toBe(true);
-    expect(entries.has("frames.json")).toBe(true);
+    expect(entries.has("frames/frame_0001.png")).toBe(false);
+    expect(entries.has("frames/frame_0002.png")).toBe(false);
+    expect(entries.has("frames.json")).toBe(false);
     expect(entries.has("spritesheets/atlas.json")).toBe(true);
 
     const sheetEntry = [...entries.entries()].find(([name]) => /^spritesheets\/.+\.png$/.test(name));
@@ -215,7 +217,7 @@ test("Edge organizer exports PNG frames and a sprite sheet in one readable ZIP",
     expect(manifest).toMatchObject({
       schemaVersion: 1,
       animation: { name: "edge-output", fps: 12 },
-      outputs: { pngSequence: true, spriteSheet: true },
+      outputs: { pngSequence: false, spriteSheet: true },
     });
     await expect(page.locator("#mediaExportStatus")).toHaveAttribute("data-tone", "success");
   } finally {

@@ -93,6 +93,17 @@ body.cutoutOpen .cutoutClose {
   white-space: nowrap;
 }
 
+.cutoutHeaderAction {
+  min-height: 38px;
+  padding: 7px 10px;
+  font: 700 11px/1 var(--ui-font);
+  white-space: nowrap;
+}
+
+.cutoutHeader .cutoutHeaderAction.cutoutPrimary {
+  min-height: 38px;
+}
+
 .organizerHeader .workbenchHome {
   border-color: var(--accent-3);
   background: color-mix(in srgb, var(--panel-2) 84%, var(--accent-3));
@@ -208,7 +219,10 @@ body.cutoutOpen .cutoutClose {
   overflow: hidden;
 }
 
-.cutoutSidebarParametersPanel,
+.cutoutSidebarParametersPanel {
+  height: 100%;
+}
+
 .cutoutSidebarParametersPanel > .cutoutSettings {
   height: 100%;
 }

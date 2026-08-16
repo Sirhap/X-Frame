@@ -1,7 +1,0 @@
-/**
- * Compatibility stylesheet for consumers that still load /controls.css.
- * Keep imports in the same order as the explicit links in index.html.
- */
-@import url("./controls_inputs.css");
-@import url("./controls_panels.css");
-@import url("./controls_workspace.css");

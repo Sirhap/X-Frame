@@ -11,7 +11,7 @@ if (browserOnlyMode) {
  * Exports processed organizer frames without calling the local project API.
  * @param {object} metadata Animation export metadata.
  * @param {Array<object>} items Processed PNG frame records.
- * @param {{formats?:{frames?:boolean,spritesheet?:boolean,gif?:boolean,mov?:boolean},premiumFeatures?:Iterable<string>,onProgress?:(current:number,total:number)=>void,signal?:AbortSignal}} [options] Selected outputs, progress callback, and cancellation signal.
+ * @param {{formats?:{frames?:boolean,spritesheet?:boolean,gif?:boolean,mp4?:boolean,mov?:boolean},recipe?:object,premiumFeatures?:Iterable<string>,onProgress?:(current:number,total:number)=>void,signal?:AbortSignal}} [options] Selected outputs, transient recipe, progress callback, and cancellation signal.
  * @returns {Promise<object>} Browser ZIP export result.
  */
 async function exportBrowserAnimation(metadata, items, options = {}) {
@@ -20,12 +20,12 @@ async function exportBrowserAnimation(metadata, items, options = {}) {
     frames: options.formats?.frames !== false,
     spritesheet: options.formats?.spritesheet === true,
     gif: options.formats?.gif === true,
+    mp4: options.formats?.mp4 === true,
     mov: options.formats?.mov === true,
   };
-  const requiredFeatures = premiumFeatures.normalizeFeatureIds([
-    "organizer.output",
-    ...Array.from(options.premiumFeatures || []),
-  ]);
+  const requiredFeatures = premiumFeatures.detectExportFeatures({
+    sourceFeatures: options.premiumFeatures || [],
+  });
   let authorization = null;
   if (browserOnlyMode) {
     const exportModule = globalThis.XSXBWorkbenchExport;
@@ -37,12 +37,22 @@ async function exportBrowserAnimation(metadata, items, options = {}) {
       requiredFeatures,
     );
     if (!authorization) return null;
-  } else if (!(await ensurePremiumActivated(requiredFeatures))) {
+  } else if (requiredFeatures.length && !(await ensurePremiumActivated(requiredFeatures))) {
     return null;
   }
+  const recipeCore = globalThis.ExportRecipeCore;
+  const recipe =
+    typeof recipeCore?.normalizeRecipe === "function" ? recipeCore.normalizeRecipe(options.recipe) : null;
+  const renderedItems =
+    recipe && typeof recipeCore?.renderRecipe === "function"
+      ? recipeCore.renderRecipe(items, recipe, { document: globalThis.document })
+      : items;
+  const renderedMetadata = recipe
+    ? { ...metadata, animationName: recipe.outputName || metadata.animationName, exportRecipe: recipe }
+    : metadata;
   const browserResult =
     formats.frames || formats.spritesheet
-      ? await browserRuntime.exportAnimationPackage(metadata, items, {
+      ? await browserRuntime.exportAnimationPackage(renderedMetadata, renderedItems, {
           authorization,
           fetchImpl: globalThis.fetch,
           formats,
@@ -51,11 +61,17 @@ async function exportBrowserAnimation(metadata, items, options = {}) {
           signal: options.signal,
         })
       : { filename: "", frameCount: items.length, downloads: [] };
-  if (!formats.gif && !formats.mov) return browserResult;
-  if (browserOnlyMode) throw new Error("GIF and transparent MOV require the local app with FFmpeg.");
+  if (!formats.gif && !formats.mp4 && !formats.mov) return browserResult;
+  if (browserOnlyMode) throw new Error("GIF, MP4 and transparent MOV require the local app with FFmpeg.");
   const localClient = globalThis.LocalMediaExportClient;
   if (typeof localClient?.exportMedia !== "function") throw new Error("Local media exporter is unavailable.");
-  const localResult = await localClient.exportMedia(metadata, items, formats, {
+  const selectedFps = formats.gif ? recipe?.gifFps : formats.mp4 ? recipe?.mp4Fps : renderedMetadata.fps;
+  const localMetadata = { ...renderedMetadata, fps: Number(selectedFps) || renderedMetadata.fps };
+  const localItems =
+    formats.gif || formats.mp4
+      ? renderedItems.map((item) => ({ ...item, durationMs: Math.round(1000 / localMetadata.fps) }))
+      : renderedItems;
+  const localResult = await localClient.exportMedia(localMetadata, localItems, formats, {
     fetchImpl: globalThis.fetch,
     document: globalThis.document,
     onProgress: options.onProgress,
@@ -98,7 +114,8 @@ async function createBrowserSessionAnimation(metadata, items, options = {}) {
     resizeCanvas();
     const projectId = activeProjectId();
     modeHubs?.renderProjects(config);
-    browserRuntime.commitSessionProjectConfig(projectId, browserProjectSnapshot(projectId));
+    await browserRuntime.commitSessionProjectConfig(projectId, browserProjectSnapshot(projectId));
+    syncWorkspaceProjectContext(config);
     return group;
   } catch (error) {
     config.groups.splice(config.groups.indexOf(group), 1);
@@ -111,6 +128,51 @@ async function createBrowserSessionAnimation(metadata, items, options = {}) {
     modeHubs?.renderProjects(config);
     throw error;
   }
+}
+
+/**
+ * Builds unique shared frame records, including deterministic IDs for legacy frames.
+ * @param {object[]} groups Project animation groups.
+ * @param {object[]} [previousFrames] Existing shared frames whose runtime revisions should survive reorder.
+ * @returns {object[]} Normalized workspace frame inputs.
+ */
+function workspaceFrameRecords(groups, previousFrames = []) {
+  const previousById = new Map(previousFrames.map((frame) => [frame.id, frame]));
+  return Array.from(groups || []).flatMap((group, groupIndex) => {
+    const groupId = String(group.uiId || group.name || groupIndex);
+    const legacyOccurrences = new Map();
+    return Array.from(group.frames || []).map((frame, frameIndex) => {
+      const persistedId = String(frame.id || "");
+      const legacyKey = String(frame.name || frame.path || `frame-${frameIndex + 1}`);
+      const occurrence = legacyOccurrences.get(legacyKey) || 0;
+      legacyOccurrences.set(legacyKey, occurrence + 1);
+      const localId =
+        persistedId ||
+        workspaceStoreModule.stableFrameId(
+          { sourcePath: `${legacyKey}#${occurrence + 1}` },
+          frameIndex,
+          groupId,
+        );
+      const id = `${groupId}:${localId}`;
+      const previous = previousById.get(id);
+      return {
+        ...frame,
+        persistedId,
+        id,
+        groupId,
+        assetRevision: Math.max(Number(frame.assetRevision) || 0, Number(previous?.assetRevision) || 0),
+        currentAssetRef: previous?.currentAssetRef || frame.path,
+      };
+    });
+  });
+}
+
+/** Publishes every animation frame into the shared workspace using persisted stable identities. */
+function syncWorkspaceProjectContext(nextConfig) {
+  if (!workspaceStore || !nextConfig) return;
+  const projectId = nextConfig.activeProjectId || selectedProjectId || "workspace";
+  const frames = workspaceFrameRecords(nextConfig.groups || []);
+  workspaceStore.setProjectContext({ projectId, frames });
 }
 
 const ctx = els.stage.getContext("2d");
@@ -266,6 +328,31 @@ let attackTrailEditor = null;
 let modeHubs = null;
 let navigationContext = null;
 let worksetHandoff = null;
+let workspaceStore = null;
+let temporaryWorksetStore = null;
+
+/** Opens retained quick-tool canvases in cutout without awaiting the embedded editor result. */
+function openTemporaryCutout(workset) {
+  if (!batchCutout?.openWorkset || !workset?.frames?.length) return false;
+  const enabledFrames = workset.frames.filter((frame) => frame.enabled !== false);
+  const enabledFrameIds = enabledFrames.map((frame) => frame.id);
+  const completion = batchCutout.openWorkset({
+    name: workset.name,
+    mode: enabledFrames.length === 1 ? "single" : "batch",
+    items: enabledFrames.map((frame) => ({
+      name: frame.name,
+      image: frame.image,
+      frame: { id: frame.id },
+    })),
+    onLiveApply: (outputs) => temporaryWorksetStore?.applyOutputs(outputs, enabledFrameIds),
+  });
+  completion
+    .then((outputs) => {
+      if (outputs?.length) temporaryWorksetStore?.applyOutputs(outputs, enabledFrameIds);
+    })
+    .catch((error) => status(t("loadFailed", { message: error.message })));
+  return true;
+}
 let cutoutNavigationContext = "project";
 let organizerNavigationContext = "project";
 let lastAttackTrailPlaybackSampleToken = "";
@@ -290,58 +377,15 @@ const appConfirmation = appConfirmModule.createController({
   windowRef: globalThis,
 });
 
-/** Returns the embedded slice session when its iframe has finished loading. */
-function scatterSliceSession() {
-  const frame = document.querySelector(".scatterSliceFrame");
-  try {
-    return frame?.contentWindow?.XSXBScatterSliceSession || null;
-  } catch (_error) {
-    return null;
-  }
-}
-
-/** Clears accepted transient slice state without persisting image drafts. */
-function discardScatterSliceSession() {
-  const frame = document.querySelector(".scatterSliceFrame");
-  const session = scatterSliceSession();
-  session?.allowDiscard?.();
-  if (frame?.src) frame.src = frame.src;
-}
-
 /** Confirms leaving a populated slice session through app-shell navigation. */
 async function requestScatterSliceLeave() {
-  if (globalThis.location.pathname !== "/tools/scatter-slice") return true;
-  if (!scatterSliceSession()?.hasUnsavedChanges?.()) return true;
-  const accepted = await requestAppConfirmation(
-    "当前零散切片结果只保留在本次会话。离开将丢弃源图、检测框和分组结果。",
-    {
-      title: "离开零散切片？",
-      confirmLabel: "放弃并离开",
-      tone: "danger",
-    },
-  );
-  if (accepted) discardScatterSliceSession();
-  return accepted;
+  return true;
 }
 
 /** Protects browser back/forward transitions that bypass app-shell click navigation. */
 function guardScatterSliceHistory(event) {
-  const previousUrl = new URL(lastKnownNavigationUrl);
-  const leavingScatter =
-    previousUrl.pathname === "/tools/scatter-slice" &&
-    globalThis.location.pathname !== "/tools/scatter-slice";
-  if (!leavingScatter || !scatterSliceSession()?.hasUnsavedChanges?.()) {
-    lastKnownNavigationUrl = globalThis.location.href;
-    return;
-  }
-  if (globalThis.confirm("当前零散切片结果尚未保存。确定放弃并离开吗？")) {
-    discardScatterSliceSession();
-    lastKnownNavigationUrl = globalThis.location.href;
-    return;
-  }
-  event.stopImmediatePropagation();
-  globalThis.history.pushState({ xsxbWorkbench: "scatter" }, "", previousUrl);
-  lastKnownNavigationUrl = previousUrl.href;
+  void event;
+  lastKnownNavigationUrl = globalThis.location.href;
 }
 globalThis.addEventListener("popstate", guardScatterSliceHistory);
 globalThis.addEventListener("xsxb:routechange", () => {
@@ -351,24 +395,20 @@ const premiumFeatures = globalThis.XSXBPremiumFeatures;
 if (!premiumFeatures) throw new Error("XSXBPremiumFeatures is required.");
 const activationModule = globalThis.XSXBActivation;
 if (!activationModule) throw new Error("XSXBActivation is required.");
-const deviceIdentityModule = globalThis.XSXBDeviceIdentity;
-if (browserOnlyMode && !deviceIdentityModule) throw new Error("XSXBDeviceIdentity is required.");
-const deviceIdentity = browserOnlyMode
-  ? deviceIdentityModule?.createController({
-      fetchImpl: globalThis.fetch,
-      cryptoApi: globalThis.crypto,
-      navigatorRef: globalThis.navigator,
-    })
-  : null;
 const activationController = activationModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
   fetchImpl: globalThis.fetch,
   getLanguage: () => language,
   premiumFeatures,
-  deviceIdentity,
 });
-void activationController.refreshStatus();
+void activationController.refreshStatus().then(() => {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("account") !== "login") return;
+  url.searchParams.delete("account");
+  window.history.replaceState(window.history.state, "", url);
+  activationController.openManager();
+});
 const ensurePremiumActivated = (featureIds) => activationController.ensureActivated(featureIds);
 
 /**
@@ -402,6 +442,10 @@ function appToolActionsCall(name, ...args) {
 
 function applyCutoutOutputsToCurrentAnimation(...args) {
   return appToolActionsCall("applyCutoutOutputsToCurrentAnimation", ...args);
+}
+
+function applyCutoutOutputToCurrentFrame(...args) {
+  return appToolActionsCall("applyCutoutOutputToCurrentFrame", ...args);
 }
 
 function applyFrameOrganizerPlan(...args) {
@@ -572,10 +616,17 @@ const referenceFrameController = globalThis.XSXBReferenceFrame.createController(
     referenceFrame = value;
   },
   frameTransform,
+  markDirty,
   renderFilmstrip,
   draw,
 });
-const { isReferenceFrame, referenceFrameIndex, setReferenceFrameEnabled } = referenceFrameController;
+const {
+  isReferenceFrame,
+  referenceFrameIndex,
+  restoreReferenceFrame,
+  serializeReferenceFrame,
+  setReferenceFrameEnabled,
+} = referenceFrameController;
 const frameAudio = globalThis.XSXBFrameAudio.createController({
   dbName: FRAME_AUDIO_DB_NAME,
   dbVersion: FRAME_AUDIO_DB_VERSION,
@@ -631,6 +682,28 @@ const routing = globalThis.XSXBAppRouting.createController({
   },
   translate: t,
   groupLabel,
+  activateWorkspaceRoute: (route) => {
+    const routeTool = ["import", "organizer", "cutout", "scatter"].includes(route) ? route : "animation";
+    const activeToolId = workspaceStore?.getSnapshot().activeToolId || "";
+    if (workspaceStore && activeToolId !== routeTool) {
+      if (activeToolId) workspaceStore.endToolSession(activeToolId);
+      workspaceStore.beginToolSession(routeTool);
+    }
+    const sidebarTab =
+      route === "boxes" ? "boxes" : ["trails", "attachments"].includes(route) ? "effects" : "transform";
+    appShell?.setSidebarTab(sidebarTab);
+    document.querySelectorAll("[data-delivery-panel]").forEach((panel) => {
+      panel.classList.toggle("active", panel.dataset.deliveryPanel === route);
+    });
+    if (route === "trails") {
+      const panel = document.querySelector("#attackTrailPanel");
+      if (panel && !panel.hidden) panel.open = true;
+    }
+    if (route === "attachments")
+      document.querySelector('[data-panel="attachment-assets"]')?.setAttribute("open", "");
+  },
+  getTemporaryWorkset: () => temporaryWorksetStore?.getSnapshot() || null,
+  openTemporaryCutout,
 });
 const {
   applyWorkbenchRoute,
@@ -1331,6 +1404,7 @@ const projectLifecycle = projectLifecycleModule.createController({
   draw,
   startPreloadImages,
   loadImagesBounded,
+  restoreReferenceFrame,
   loadImageCached,
   loadChainImagesImpl: loadChainImagesFromContext,
   loadCompositeContextImpl: loadCompositeContextFromContext,
@@ -1349,6 +1423,14 @@ const projectLifecycle = projectLifecycleModule.createController({
   renderFilmstrip,
   fitView: (...args) => fitView(...args),
   syncUrlState,
+  onGroupSelected: () => syncWorkspaceFrameSelection(),
+  onConfigLoaded: (nextConfig) => {
+    syncWorkspaceProjectContext(nextConfig);
+    const projectId = nextConfig.activeProjectId || selectedProjectId || "workspace";
+    const flowProject = document.querySelector("#workspaceFlowProject");
+    if (flowProject)
+      flowProject.textContent = projectLabel(nextConfig.activeProject) || projectId || "当前项目";
+  },
 });
 const tuningValuesModule = globalThis.XSXBAppTuningValues;
 if (!tuningValuesModule) throw new Error("XSXBAppTuningValues is required.");
@@ -1396,6 +1478,7 @@ const saveController = saveControllerModule.createController({
   collectSoulTuningValues: tuningValues.collectSoulTuningValues,
   collectYechengPropTuningValues: tuningValues.collectYechengPropTuningValues,
   collectSceneSettings,
+  collectReferenceFrameForSave: serializeReferenceFrame,
   collectFrameImageAttachmentsForSave: (...args) => attachmentCollectForSave(...args),
   getFrameOverrides: () => frameOverrides,
   getVfxFrameOverrides: () => vfxFrameOverrides,
@@ -1419,6 +1502,53 @@ const saveController = saveControllerModule.createController({
   status,
   translate: t,
   cloneValue: (value) => structuredClone(value),
+});
+const workspaceStoreModule = globalThis.XSXBWorkspaceStore;
+if (!workspaceStoreModule) throw new Error("XSXBWorkspaceStore is required.");
+const temporaryWorksetModule = globalThis.XSXBTemporaryWorksetStore;
+if (!temporaryWorksetModule) throw new Error("XSXBTemporaryWorksetStore is required.");
+workspaceStore = workspaceStoreModule.createStore({
+  debounceMs: 600,
+  save: async () => {
+    do {
+      await saveController.save();
+    } while (dirty);
+  },
+});
+temporaryWorksetStore = temporaryWorksetModule.createStore();
+globalThis.XSXBTemporaryWorkset = temporaryWorksetStore;
+temporaryWorksetStore.subscribe((snapshot) => {
+  const resumePanel = document.querySelector("#temporaryWorksetResume");
+  const resumeSummary = document.querySelector("#temporaryWorksetSummary");
+  const hasFrames = snapshot.frames.length > 0;
+  if (resumePanel) resumePanel.hidden = !hasFrames;
+  if (resumeSummary) {
+    const enabledCount = snapshot.frames.filter((frame) => frame.enabled !== false).length;
+    resumeSummary.textContent = `${snapshot.name} · ${enabledCount}/${snapshot.frames.length} 帧参与处理`;
+  }
+});
+globalThis.XSXBWorkspace = workspaceStore;
+{
+  const initialRoute = currentWorkbenchRoute();
+  const initialTool = ["import", "organizer", "cutout", "scatter"].includes(initialRoute)
+    ? initialRoute
+    : "animation";
+  workspaceStore.beginToolSession(initialTool);
+}
+workspaceStore.subscribe((snapshot) => {
+  const indicator = document.querySelector("#workspaceSaveIndicator");
+  if (!indicator) return;
+  const labels = {
+    idle: "已保存",
+    dirty: "等待保存",
+    saving: "保存中…",
+    saved: "已保存",
+    error: "保存失败",
+    conflict: "发生冲突",
+  };
+  indicator.dataset.status = snapshot.saveStatus;
+  indicator.textContent = labels[snapshot.saveStatus] || "已保存";
+  indicator.title = snapshot.saveError || "";
 });
 
 const adjustmentInputsModule = globalThis.XSXBAppAdjustmentInputs;
@@ -1513,6 +1643,7 @@ function applyLanguage(...args) {
   const result = projectStateCall("applyLanguage", ...args);
   activationController.renderStatus();
   modeHubs?.renderProjects(config);
+  navigationContext?.render();
   return result;
 }
 function normalizeTheme(...args) {
@@ -1540,7 +1671,9 @@ function markDirty(...args) {
   if (config?.projectKind === "codex_pets" && currentGroup?.profileId) {
     dirtyPetProfileIds.add(currentGroup.profileId);
   }
-  return projectStateCall("markDirty", ...args);
+  const result = projectStateCall("markDirty", ...args);
+  workspaceStore?.markDirty();
+  return result;
 }
 function markClean(...args) {
   dirtyPetProfileIds.clear();
@@ -1782,13 +1915,29 @@ function restoreHistoryState(state) {
 function updateWorkbenchHud(group = currentGroup) {
   const frameCount = group?.frames?.length || 0;
   const selectionCount = selectedFrameCount();
+  if (els.playPause) {
+    const singleFrame = frameCount <= 1;
+    els.playPause.disabled = singleFrame;
+    els.playPause.title = singleFrame ? "单帧动画，无需播放" : t(playing ? "pause" : "play");
+    els.playPause.setAttribute("aria-label", els.playPause.title);
+    els.playPause.textContent = singleFrame ? "单帧" : t(playing ? "pause" : "play");
+    document.body.classList.toggle("singleFrameAnimation", singleFrame);
+    if (singleFrame && playing) {
+      playing = false;
+      playbackPrimaryGroup = null;
+      playbackSecondaryGroup = null;
+    }
+  }
   if (els.selectionHud) {
     const playable = playableFrameCount(group);
     const fps = group ? round(groupPlaybackFps(group)) : "-";
     const duration = group ? `${round(groupPlaybackDurationSeconds(group))}s` : "-";
-    els.selectionHud.textContent = frameCount
-      ? `${t("frame")} ${selectedFrame + 1}/${frameCount} - ${t("selectedFrames", { count: selectionCount })} - ${t("playable", { count: playable })} - ${fps} fps - ${duration}`
-      : `${t("frame")} -`;
+    els.selectionHud.textContent =
+      frameCount === 1
+        ? `${t("frame")} 1/1 · 单帧动画，无需播放`
+        : frameCount
+          ? `${t("frame")} ${selectedFrame + 1}/${frameCount} - ${t("selectedFrames", { count: selectionCount })} - ${t("playable", { count: playable })} - ${fps} fps - ${duration}`
+          : `${t("frame")} -`;
   }
 }
 
@@ -1939,7 +2088,26 @@ function syncCharacterBaseInputs(...args) {
 }
 
 function syncFrameInputs(...args) {
-  return adjustmentInputsCall("syncFrameInputs", ...args);
+  const result = adjustmentInputsCall("syncFrameInputs", ...args);
+  syncPlaybackAvailability();
+  return result;
+}
+
+/** Keeps playback behavior, labels, and disabled state aligned with playable frames. */
+function syncPlaybackAvailability() {
+  const count = globalThis.XSXBAppPlayback.playableFrameCount(currentGroup, framePlayback);
+  const canPlay = count > 1;
+  if (els.playPause) {
+    els.playPause.disabled = !canPlay;
+    els.playPause.setAttribute("aria-disabled", String(!canPlay));
+    els.playPause.title = canPlay ? t(playing ? "pause" : "play") : t("singleFramePlaybackUnavailable");
+  }
+  if (els.playbackAvailability) {
+    els.playbackAvailability.textContent = canPlay
+      ? `${count} ${t("framesPlayable")}`
+      : t("singleFramePlaybackUnavailable");
+    els.playbackAvailability.dataset.state = canPlay ? "ready" : "single";
+  }
 }
 
 function syncGroupPlaybackInputs(...args) {
@@ -1979,7 +2147,51 @@ function selectFilmstripFrame(index, event = null) {
   syncFrameInputs();
   renderFilmstrip();
   draw();
+  syncWorkspaceFrameSelection();
   syncUrlState();
+}
+
+/** Publishes the active animation selection through stable shared frame identities. */
+function syncWorkspaceFrameSelection() {
+  if (!workspaceStore || !currentGroup?.frames?.length) return;
+  const snapshot = workspaceStore.getSnapshot();
+  const groupId = currentGroup.uiId || currentGroup.name || "";
+  const groupFrames = snapshot.frames.filter((frame) => frame.groupId === groupId);
+  const ids = selectedFrameIndexes()
+    .map((index) => groupFrames[index]?.id)
+    .filter(Boolean);
+  const primaryId = groupFrames[selectedFrame]?.id;
+  workspaceStore.selectFrames({ ids, primaryId });
+}
+
+/** Invalidates shared frame revisions after pixel replacement in any resource tool. */
+function publishWorkspaceFrameChanges(change) {
+  if (!workspaceStore || !currentGroup?.frames?.length) return;
+  const snapshot = workspaceStore.getSnapshot();
+  if (change?.type === "frames-reorganized") {
+    const frames = workspaceFrameRecords(config?.groups || [], snapshot.frames);
+    const currentIds = snapshot.frames.map((frame) => frame.id);
+    const nextIds = frames.map((frame) => frame.id);
+    if (currentIds.join("\n") !== nextIds.join("\n")) {
+      workspaceStore.commit({ type: "replace-frames", frames });
+    }
+    syncWorkspaceFrameSelection();
+    return;
+  }
+  if (change?.type !== "assets-replaced") return;
+  const groupId = currentGroup.uiId || currentGroup.name || "";
+  const groupFrames = snapshot.frames.filter((frame) => frame.groupId === groupId);
+  for (const index of change.frameIndexes || []) {
+    const path = currentGroup.frames[index]?.path;
+    const sharedFrame = groupFrames[index];
+    if (!sharedFrame) continue;
+    workspaceStore.commit({
+      type: "replace-asset",
+      frameId: sharedFrame.id,
+      currentAssetRef: path || sharedFrame.currentAssetRef,
+    });
+  }
+  syncWorkspaceFrameSelection();
 }
 
 function audioFileFromList(fileList) {
@@ -2211,6 +2423,7 @@ async function applyBrowserFrameOrganizerPlan(items, options = {}) {
     preserveView: true,
   });
   markDirty();
+  publishWorkspaceFrameChanges({ type: "frames-reorganized" });
 }
 
 /**
@@ -2329,6 +2542,32 @@ async function applyBrowserCutoutOutputs(outputs, options = {}) {
   imageElements.clear();
   await selectGroup(currentGroup, { frameIndex: selectedFrame, preserveView: true });
   markDirty();
+  publishWorkspaceFrameChanges({
+    type: "assets-replaced",
+    frameIndexes: currentGroup.frames.map((_frame, index) => index),
+  });
+}
+
+/**
+ * Replaces one selected frame in a transient browser animation.
+ * @param {object} output Processed PNG output.
+ * @param {{frameIndex?:number,premiumFeatures?:string[]}} [options] Target frame and feature metadata.
+ * @returns {Promise<void>}
+ */
+async function applyBrowserCutoutOutputToCurrentFrame(output, options = {}) {
+  if (!currentGroup?.frames?.length) throw new Error("No active browser animation.");
+  const frameIndex = Number.isInteger(options.frameIndex) ? options.frameIndex : selectedFrame;
+  browserRuntime.replaceSessionAnimationFrame(
+    currentGroup,
+    frameIndex,
+    output,
+    options.premiumFeatures || [],
+  );
+  imageCache.clear();
+  imageElements.clear();
+  await selectGroup(currentGroup, { frameIndex, preserveView: true });
+  markDirty();
+  publishWorkspaceFrameChanges({ type: "assets-replaced", frameIndexes: [frameIndex] });
 }
 
 const addImagesToCurrentGroupAssets = browserOnlyMode
@@ -2380,6 +2619,7 @@ appToolActionsController = appToolActionsModule.createController({
     opaqueRectCache = value;
   },
   premiumFeatures,
+  onFramesChanged: publishWorkspaceFrameChanges,
 });
 
 const attachmentManipulationModule = globalThis.XSXBAppAttachmentManipulation;
@@ -2568,6 +2808,7 @@ filmstripInteraction = filmstripInteractionModule.createController({
     getCurrentGroup: () => currentGroup,
     getSelectedFrame: () => selectedFrame,
     getSelectedFrames: () => selectedFrames,
+    getPlaying: () => playing,
     getSelectedAttachmentId: () => selectedAttachmentId,
     setSelectedAttachmentId: (value) => {
       selectedAttachmentId = value;
@@ -2908,6 +3149,53 @@ function updateAdjustmentFromInputs() {
   }
 }
 
+/**
+ * Returns the editable main-frame transform when the Transform sidebar is active.
+ * @returns {object|null} Transform snapshot for a direct drag, or null outside the Transform sidebar.
+ */
+function hitTestDirectManipulationFrame() {
+  if (
+    document.body.dataset.sidebarTab !== "transform" ||
+    !currentGroup ||
+    selectedFrameIndexes().length !== 1
+  ) {
+    return null;
+  }
+  return transformFromAdjustmentInputs();
+}
+
+/**
+ * Applies a main-frame drag in the active transform scope.
+ * @param {object} startTransform Transform captured at pointer-down.
+ * @param {number} clientDeltaX Horizontal client-pixel delta.
+ * @param {number} clientDeltaY Vertical client-pixel delta.
+ * @returns {void}
+ */
+function moveDirectManipulationFrameByClientDelta(startTransform, clientDeltaX, clientDeltaY) {
+  if (!startTransform || !currentGroup || selectedFrameIndexes().length !== 1) return;
+  const scale = Math.max(0.0001, coordinateScreenScale());
+  const transform = {
+    ...startTransform,
+    offset: {
+      x: Number(startTransform.offset?.x || 0) + (Number(clientDeltaX) * devicePixelRatio) / scale,
+      y: Number(startTransform.offset?.y || 0) + (Number(clientDeltaY) * devicePixelRatio) / scale,
+    },
+  };
+  if (adjustmentMode === "character") {
+    updateCharacterFromInputs(transform);
+  } else if (adjustmentMode === "group") {
+    updateBaseFromInputs(transform);
+  } else {
+    if (!canEditFrameTransform()) return;
+    for (const frameIndex of selectedFrameIndexes()) setFrameTransform(frameIndex, transform);
+    markDirty();
+    syncFrameInputs();
+    renderFilmstrip();
+    draw();
+  }
+  syncAdjustmentInputs();
+}
+
 /** Converts attack-trail group-local coordinates into canvas pixels. */
 function attackTrailLocalToScreen(point, group = currentGroup, groupImages = images) {
   const stableTransform = baseTransform(group);
@@ -3104,6 +3392,7 @@ const appEvents = appEventsModule.createController({
     canEditBox,
     canEditFramePlayback,
     canEditFrameTransform,
+    canPlayCurrentGroup: () => globalThis.XSXBAppPlayback.canPlayGroup(currentGroup, framePlayback),
     clampFrameIndex,
     centerStageContent,
     clearActiveProject,
@@ -3128,10 +3417,12 @@ const appEvents = appEventsModule.createController({
     groupOwnsFrameKey,
     hitTestBoxes,
     hitTestDirectManipulationAttachment,
+    hitTestDirectManipulationFrame,
     isCollisionBox,
     keyboardController,
     loadChainImages,
     markDirty,
+    moveDirectManipulationFrameByClientDelta,
     normalizeAdjustmentMode,
     normalizeAttachmentTransform,
     normalizeColor,
@@ -3168,6 +3459,7 @@ const appEvents = appEventsModule.createController({
     syncFrameAudioBindingsToGame,
     syncFrameAudioInputs,
     syncFrameInputs,
+    syncPlaybackAvailability,
     syncSceneInputs,
     tuningFrameKey,
     t,
@@ -3284,6 +3576,10 @@ window.addEventListener("popstate", () => {
 });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") schedulePlaybackAnimation();
+  else workspaceStore?.flushSave().catch((error) => status(t("saveFailed", { message: error.message })));
+});
+window.addEventListener("pagehide", () => {
+  workspaceStore?.flushSave().catch(() => {});
 });
 batchCutout =
   window.BatchCutout?.createController({
@@ -3310,18 +3606,34 @@ batchCutout =
     ensurePremiumActivated,
     addToProject: (request) => worksetHandoff.open(request),
     onOpen: () => {
+      workspaceStore?.beginToolSession("cutout");
       const currentRoute = currentWorkbenchRoute();
       cutoutNavigationContext = currentNavigationContext();
       cutoutReturnTool = currentRoute === "organizer" || currentRoute === "import" ? currentRoute : "";
       syncWorkbenchRoute("cutout", { push: true, context: cutoutNavigationContext });
     },
     onClose: () => {
+      workspaceStore?.endToolSession("cutout");
       const returnRoute = cutoutReturnTool || (cutoutNavigationContext === "standalone" ? "tools" : "");
       syncWorkbenchRoute(returnRoute, { context: cutoutNavigationContext });
       cutoutReturnTool = "";
     },
     onStatus: (message) => status(message),
   }) || null;
+const singleFrameCutoutModule = globalThis.XSXBSingleFrameCutout;
+if (!singleFrameCutoutModule) throw new Error("XSXBSingleFrameCutout is required.");
+const singleFrameCutout = singleFrameCutoutModule.createController({
+  button: document.querySelector("#cutoutCurrentFrame"),
+  getCurrentGroup: () => currentGroup,
+  getSelectedFrame: () => selectedFrame,
+  getFrameImage: async (frameIndex, frame) => images[frameIndex] || loadImageCached(frame),
+  getBatchCutout: () => batchCutout,
+  applyOutput: browserOnlyMode ? applyBrowserCutoutOutputToCurrentFrame : applyCutoutOutputToCurrentFrame,
+  onReturn: updateDocumentTitle,
+  translate: t,
+  status,
+});
+singleFrameCutout.bind();
 frameOrganizer =
   window.FrameOrganizer?.createController({
     browserExportOnly: browserOnlyMode,
@@ -3355,9 +3667,14 @@ frameOrganizer =
       if (!batchCutout?.openWorkset) throw new Error("Batch cutout is unavailable.");
       return batchCutout.openWorkset(workset);
     },
+    autoCutout: (workset) => {
+      if (!batchCutout?.autoApplyWorkset) throw new Error("Smart cutout is unavailable.");
+      return batchCutout.autoApplyWorkset(workset);
+    },
     premiumFeatures,
     ensurePremiumActivated,
     onOpen: (mode) => {
+      workspaceStore?.beginToolSession(mode === "import" ? "import" : "organizer");
       organizerNavigationContext = currentNavigationContext();
       syncWorkbenchRoute(mode === "import" ? "import" : "organizer", {
         push: true,
@@ -3365,12 +3682,29 @@ frameOrganizer =
       });
     },
     onClose: () => {
+      workspaceStore?.endToolSession(workspaceStore.getSnapshot().activeToolId);
       const completedImport = currentWorkbenchRoute() === "import" && frameOrganizer?.getMode?.() === "edit";
       syncWorkbenchRoute(completedImport ? "" : organizerNavigationContext === "standalone" ? "tools" : "", {
         context: completedImport ? "project" : organizerNavigationContext,
       });
     },
     onStatus: (message) => status(message),
+    onWorksetChanged: (workset) => {
+      if (currentNavigationContext() !== "standalone" || !temporaryWorksetStore) return;
+      temporaryWorksetStore.setWorkset({
+        name: workset.name,
+        sourceTool: "organizer",
+        frames: workset.frames.map((frame) => ({
+          id: frame.uid,
+          name: frame.name,
+          image: frame.editedCanvas,
+          enabled: frame.included,
+          assetRevision: Math.max(0, Number(frame.assetRevision) || (frame.hasEditedResult ? 1 : 0)),
+          groupId: frame.groupId || "",
+          groupName: frame.groupName || "",
+        })),
+      });
+    },
   }) || null;
 const characterStarterGuide = window.CharacterStarterGuide?.createController({
   onImport: () =>
@@ -3606,6 +3940,7 @@ navigationContext = navigationContextModule.createController({
   getContext: currentNavigationContext,
   projectLabel,
   groupLabel,
+  translate: t,
 });
 navigationContext.bind();
 const handoffRuntimeModule = globalThis.XSXBWorksetHandoffRuntime;
@@ -3621,6 +3956,7 @@ function browserProjectSnapshot(projectId) {
     ...structuredClone(config),
     tuning: {
       ...(config?.tuning || {}),
+      reference_frame: serializeReferenceFrame(),
       frame_visual_overrides: structuredClone(frameOverrides),
       frame_playback_overrides: structuredClone(framePlaybackOverrides),
       frame_box_overrides: structuredClone(frameBoxOverrides),
@@ -3661,6 +3997,11 @@ worksetHandoff = handoffDialogModule.createController({
 });
 worksetHandoff.bind();
 globalThis.XSXBOpenWorksetHandoff = (request) => worksetHandoff.open(request);
+/** Navigates an embedded tool without reloading retained browser resources. */
+globalThis.XSXBNavigateWorkbench = async (route, context = currentNavigationContext()) => {
+  syncWorkbenchRoute(route, { push: true, context });
+  return applyWorkbenchRoute();
+};
 const appShell = appShellModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
@@ -3671,8 +4012,163 @@ const appShell = appShellModule.createController({
     syncWorkbenchRoute(route, { push: true });
     return applyWorkbenchRoute();
   },
+  openContextTool: async (tool) => {
+    const route = tool === "organizer" ? "organizer" : "cutout";
+    if (!(await requestScatterSliceLeave())) return false;
+    if (dirty) await save();
+    syncWorkbenchRoute(route, { push: true, context: "project" });
+    const opened = await applyWorkbenchRoute();
+    return Boolean(opened) && tool === "current-frame-cutout";
+  },
 });
 appShell.bind();
+/** Refreshes delivery cards from the same in-memory project state used by editing and export. */
+function updateDeliverySummary() {
+  const summary = modeHubsModule.summarizeDeliveryScope(config, currentGroup);
+  const readiness = modeHubsModule.summarizeDeliveryReadiness(config, { browserOnly: browserOnlyMode });
+  const values = {
+    "#deliveryAnimationName": summary.currentAnimationName,
+    "#deliveryFrameCount": `${summary.currentFrameCount} 帧`,
+    "#deliveryAssetRevision": summary.currentAssetRevision ? `r${summary.currentAssetRevision}` : "原始资源",
+    "#deliveryGodotAnimationCount": `${summary.projectAnimationCount} 个`,
+    "#deliveryGodotFrameCount": `${summary.projectFrameCount} 帧`,
+    "#deliveryPetAnimationCount": `${summary.projectAnimationCount} 个`,
+    "#deliveryPetBoundCount": `${readiness.codexPet.boundAnimationCount} 个`,
+    "#deliveryPetCurrentAnimation": summary.currentAnimationName,
+  };
+  Object.entries(values).forEach(([selector, value]) => {
+    const element = document.querySelector(selector);
+    if (element) element.textContent = value;
+  });
+  const exportButton = document.querySelector("#deliveryOpenExport");
+  if (exportButton) {
+    exportButton.disabled = summary.currentFrameCount === 0;
+    exportButton.title = summary.currentFrameCount ? "" : "请先选择包含帧的动画";
+  }
+
+  const setDeliveryStatus = (selector, result) => {
+    const element = document.querySelector(selector);
+    if (!element) return;
+    element.textContent = result.label;
+    element.dataset.tone = result.tone;
+  };
+  const renderChecks = (selector, checks) => {
+    const list = document.querySelector(selector);
+    if (!list) return;
+    list.replaceChildren(
+      ...checks.map(({ label, tone }) => {
+        const item = document.createElement("li");
+        item.textContent = label;
+        item.dataset.tone = tone;
+        return item;
+      }),
+    );
+  };
+  setDeliveryStatus("#deliveryGodotStatus", readiness.godot);
+  setDeliveryStatus("#deliveryPetStatus", readiness.codexPet);
+  const godotChecks = readiness.godot.blockers.length
+    ? readiness.godot.blockers.map((label) => ({ label, tone: "danger" }))
+    : [
+        {
+          label:
+            readiness.godot.state === "synced" || readiness.godot.state === "gameplay_ready"
+              ? "项目资源已同步到绑定工程"
+              : readiness.godot.label,
+          tone: readiness.godot.tone,
+        },
+      ];
+  if (readiness.godot.warningCount) {
+    godotChecks.push({ label: `${readiness.godot.warningCount} 条交付提醒`, tone: "warning" });
+  }
+  renderChecks("#deliveryGodotChecks", godotChecks);
+  renderChecks("#deliveryPetChecks", [
+    readiness.codexPet.state === "unsupported"
+      ? { label: "当前项目不是 Codex Pet 项目", tone: "warning" }
+      : readiness.codexPet.missingAnimationCount
+        ? { label: `${readiness.codexPet.missingAnimationCount} 个动画缺少 Pet 身份`, tone: "warning" }
+        : { label: "所有动画均已绑定 Pet 身份", tone: "success" },
+  ]);
+}
+
+document.querySelector("#deliveryOpenExport")?.addEventListener("click", async () => {
+  const temporaryWorkset = temporaryWorksetStore?.getSnapshot();
+  if (currentNavigationContext() === "standalone" && temporaryWorkset?.frames?.length) {
+    syncWorkbenchRoute("organizer", { push: true, context: "standalone" });
+    await applyWorkbenchRoute();
+    document.querySelector("#organizerExport")?.click();
+    return;
+  }
+  if (!currentGroup?.frames?.length) {
+    syncWorkbenchRoute("organizer", { push: true, context: currentNavigationContext() });
+    applyWorkbenchRoute().catch((error) => status(error.message));
+    return;
+  }
+  try {
+    await frameOrganizer?.openCurrentExport();
+  } catch (error) {
+    status(`打开导出失败：${error.message}`);
+  }
+});
+
+/** Replaces any stale export controller with a deterministic empty state. */
+function renderDeliveryExportEmpty(mount, message) {
+  const empty = document.createElement("div");
+  empty.className = "deliveryExportLoading";
+  const step = document.createElement("span");
+  step.textContent = "01 / FILES";
+  const summary = document.createElement("strong");
+  summary.textContent = message;
+  empty.append(step, summary);
+  mount.replaceChildren(empty);
+}
+
+/** Mounts the existing export controller as the file-delivery page instead of another dialog. */
+async function mountDeliveryExportWorkbench() {
+  const mount = document.querySelector("#deliveryExportMount");
+  if (!mount || currentWorkbenchRoute() !== "export") return;
+  const temporaryWorkset = temporaryWorksetStore?.getSnapshot();
+  const projectFramesReady = Boolean(currentGroup?.frames?.length);
+  if (currentNavigationContext() === "standalone") {
+    if (temporaryWorkset?.frames?.length) {
+      frameOrganizer?.mountLoadedExport(mount, temporaryWorkset);
+      return;
+    }
+    renderDeliveryExportEmpty(mount, "请先导入需要导出的图片序列");
+    return;
+  }
+  if (!projectFramesReady) {
+    renderDeliveryExportEmpty(mount, "当前动画没有可导出的帧");
+    return;
+  }
+  try {
+    await frameOrganizer?.mountCurrentExport(mount);
+    mount.scrollIntoView({ block: "start" });
+  } catch (error) {
+    status(`打开导出失败：${error.message}`);
+  }
+}
+document.querySelector("#temporaryWorksetClear")?.addEventListener("click", () => {
+  temporaryWorksetStore?.clear();
+  status("临时工作集已清空");
+});
+document.querySelector("#deliveryOpenGodot")?.addEventListener("click", async () => {
+  syncWorkbenchRoute("animation", { push: true, context: "project" });
+  await applyWorkbenchRoute();
+  appShell.setSidebarTab("project");
+  const card = document.querySelector("#godotHandoffCard");
+  card?.scrollIntoView?.({ block: "center" });
+  card?.focus?.();
+});
+document.querySelector("#deliveryOpenCodexPet")?.addEventListener("click", async () => {
+  syncWorkbenchRoute("animation", { push: true, context: "project" });
+  await applyWorkbenchRoute();
+  appShell.setSidebarTab("project");
+  document.querySelector("#codexPetActions")?.scrollIntoView?.({ block: "center" });
+});
+window.addEventListener("xsxb:routechange", () => {
+  void mountDeliveryExportWorkbench();
+  updateDeliverySummary();
+});
 const attackTrailGuideModule = globalThis.AttackTrailGuide;
 if (!attackTrailGuideModule) throw new Error("AttackTrailGuide is required.");
 attackTrailGuideModule.createController({
@@ -3699,7 +4195,31 @@ attackTrailGuideModule.createController({
 loadConfig()
   .then(async () => {
     resizeCanvas();
+    updateDeliverySummary();
     await applyWorkbenchRoute();
+    await mountDeliveryExportWorkbench();
     openRequestedFactoryGuide();
   })
-  .catch((error) => status(t("loadFailed", { message: error.message })));
+  .catch((error) => {
+    status(t("loadFailed", { message: error.message }));
+    const path = globalThis.location?.pathname || "";
+    const surface =
+      path === "/projects" ? "projects" : path === "/tools" ? "tools" : document.body?.dataset.appSurface;
+    const hubId =
+      surface === "projects"
+        ? "projectHub"
+        : surface === "tools"
+          ? "quickToolsHub"
+          : surface === "scatter"
+            ? "scatterSliceSurface"
+            : "";
+    const hub = hubId ? document.getElementById(hubId) : null;
+    if (hub) {
+      hub.hidden = false;
+      hub.setAttribute("aria-hidden", "false");
+    }
+    const summary = document.getElementById("projectHubRecentSummary");
+    if (summary && surface === "projects") {
+      summary.textContent = t("loadFailed", { message: error.message });
+    }
+  });

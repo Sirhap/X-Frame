@@ -93,10 +93,12 @@
       groupOwnsFrameKey,
       hitTestBoxes,
       hitTestDirectManipulationAttachment,
+      hitTestDirectManipulationFrame,
       isCollisionBox,
       keyboardController,
       loadChainImages,
       markDirty,
+      moveDirectManipulationFrameByClientDelta,
       normalizeAdjustmentMode,
       normalizeAttachmentTransform,
       normalizeColor,
@@ -199,8 +201,10 @@
         frameBox,
         hitTestBoxes,
         hitTestDirectManipulationAttachment,
+        hitTestDirectManipulationFrame,
         isCollisionBox,
         markDirty,
+        moveDirectManipulationFrameByClientDelta,
         normalizeAttachmentTransform,
         pushUndo,
         renderFilmstrip,
@@ -264,6 +268,7 @@
           state.language = button.dataset.language === "en" ? "en" : "zh";
           applyLanguage();
           writePreference("xsxbFrameTuner.language", state.language);
+          writePreference("xsxbFrameTuner.languageExplicit", "true");
         });
       }
       for (const button of els.themeButtons) {
@@ -635,6 +640,11 @@
 
       if (els.playPause) {
         els.playPause.addEventListener("click", () => {
+          if (!handlers.canPlayCurrentGroup?.()) {
+            status(t("singleFramePlaybackUnavailable"));
+            handlers.syncPlaybackAvailability?.();
+            return;
+          }
           clearSelectedAttachment();
           state.playing = !state.playing;
           if (state.playing) {
@@ -659,6 +669,7 @@
           syncFrameInputs();
           renderFilmstrip();
           draw();
+          handlers.syncPlaybackAvailability?.();
         });
       }
 

@@ -231,11 +231,15 @@
       diffuseReferenceCandidateMask,
       diffuseReferenceGlobalCandidateMask,
     } = referenceReplacementKernels;
-    function applyDespillPixel(data, offset, backgroundColor, strength, mode) {
-      if (mode !== "blend") {
-        applyReferenceDespillPixel(data, offset, backgroundColor, strength);
-        return;
-      }
+    /**
+     * Neutralizes a background color by blending channels toward a balanced foreground.
+     * @param {Uint8ClampedArray} data Mutable RGBA pixels.
+     * @param {number} offset Pixel byte offset.
+     * @param {{r:number,g:number,b:number}} backgroundColor Sampled background color.
+     * @param {number} strength Normalized correction strength.
+     * @returns {void}
+     */
+    function applyBlendDespillPixel(data, offset, backgroundColor, strength) {
       const red = data[offset];
       const green = data[offset + 1];
       const blue = data[offset + 2];
@@ -253,6 +257,28 @@
       data[offset] = Math.round(clamp(channels[0], 0, 255));
       data[offset + 1] = Math.round(clamp(channels[1], 0, 255));
       data[offset + 2] = Math.round(clamp(channels[2], 0, 255));
+    }
+
+    /**
+     * Applies the selected despill strategy to one visible pixel.
+     * @param {Uint8ClampedArray} data Mutable RGBA pixels.
+     * @param {number} offset Pixel byte offset.
+     * @param {{r:number,g:number,b:number}} backgroundColor Sampled background color.
+     * @param {number} strength Normalized correction strength.
+     * @param {"general"|"blend"|"chroma"} mode Despill strategy.
+     * @returns {void}
+     */
+    function applyDespillPixel(data, offset, backgroundColor, strength, mode) {
+      if (mode === "chroma") {
+        applyReferenceDespillPixel(data, offset, backgroundColor, strength);
+        return;
+      }
+      if (mode === "blend") {
+        applyBlendDespillPixel(data, offset, backgroundColor, strength);
+        return;
+      }
+      applyReferenceDespillPixel(data, offset, backgroundColor, strength * 0.65);
+      applyBlendDespillPixel(data, offset, backgroundColor, strength * 0.35);
     }
 
     /**
@@ -836,12 +862,6 @@
           );
         }
       }
-      const alphaThreshold = clamp(options.alphaThreshold ?? 2, 0, 255);
-      for (let pixel = 0; pixel < selectedMask.length; pixel += 1) {
-        if (!selectedMask[pixel]) continue;
-        const alphaOffset = pixel * 4 + 3;
-        if (data[alphaOffset] <= alphaThreshold) data[alphaOffset] = 0;
-      }
       const featherRadius = clamp(
         Math.round(
           (clamp(options.feather ?? 0, 0, 40) + clamp(options.chromaFeather ?? 0, 0, PERCENT_SCALE) * 0.25) /
@@ -855,6 +875,12 @@
       if (blurRadius > 0) {
         blurPremultipliedEdges(data, width, height, blurRadius, edgeDistance);
         edgeDistance = chamferDistanceToTransparent(data, width, height);
+      }
+      const alphaThreshold = clamp(options.alphaThreshold ?? 2, 0, 255);
+      for (let pixel = 0; pixel < selectedMask.length; pixel += 1) {
+        if (!selectedMask[pixel]) continue;
+        const alphaOffset = pixel * 4 + 3;
+        if (data[alphaOffset] <= alphaThreshold) data[alphaOffset] = 0;
       }
       if (edgeRecoveryStrength > 0 && protectedColors.length) {
         restoreReferenceProtectedEdges(

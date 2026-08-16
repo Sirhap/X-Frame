@@ -13,9 +13,21 @@
     "/tools/cutout": "cutout",
     "/tools/import": "import",
     "/tools/organizer": "import",
+    "/tools/export": "export",
     "/tools/scatter-slice": "scatter",
     "/workspace/tools/cutout": "cutout",
     "/workspace/tools/organizer": "organizer",
+    "/workspace/resources/import": "organizer",
+    "/workspace/resources/cutout": "cutout",
+    "/workspace/resources/scatter": "scatter",
+    "/workspace/animation/transform": "animation",
+    "/workspace/animation/boxes": "boxes",
+    "/workspace/animation/trails": "trails",
+    "/workspace/animation/audio": "audio",
+    "/workspace/animation/attachments": "attachments",
+    "/workspace/delivery/export": "export",
+    "/workspace/delivery/godot": "godot",
+    "/workspace/delivery/codex-pet": "codex-pet",
   });
   const STANDALONE_PATH_BY_ROUTE = Object.freeze({
     cutout: "/tools/cutout",
@@ -24,16 +36,41 @@
     projects: "/projects",
     scatter: "/tools/scatter-slice",
     tools: "/tools",
+    export: "/tools/export",
   });
   const PROJECT_PATH_BY_ROUTE = Object.freeze({
-    cutout: "/workspace/tools/cutout",
-    import: "/workspace/tools/organizer",
-    organizer: "/workspace/tools/organizer",
+    cutout: "/workspace/resources/cutout",
+    import: "/workspace/resources/import",
+    organizer: "/workspace/resources/import",
     projects: "/projects",
     tools: "/tools",
+    animation: "/workspace/animation/transform",
+    boxes: "/workspace/animation/boxes",
+    trails: "/workspace/animation/trails",
+    audio: "/workspace/animation/audio",
+    attachments: "/workspace/animation/attachments",
+    scatter: "/workspace/resources/scatter",
+    export: "/workspace/delivery/export",
+    godot: "/workspace/delivery/godot",
+    "codex-pet": "/workspace/delivery/codex-pet",
   });
   const WORKSPACE_PATH = "/workspace";
-  const VALID_ROUTES = new Set(["cutout", "import", "organizer", "projects", "scatter", "tools"]);
+  const VALID_ROUTES = new Set([
+    "cutout",
+    "import",
+    "organizer",
+    "projects",
+    "scatter",
+    "tools",
+    "animation",
+    "boxes",
+    "trails",
+    "audio",
+    "attachments",
+    "export",
+    "godot",
+    "codex-pet",
+  ]);
 
   /**
    * Creates the route and workbench coordination controller.
@@ -75,6 +112,9 @@
       discardWorkspaceChanges = async () => {},
       translate = (key) => key,
       groupLabel = (group) => String(group?.name || ""),
+      activateWorkspaceRoute = () => {},
+      getTemporaryWorkset = () => null,
+      openTemporaryCutout = () => false,
       windowRef = root,
     } = dependencies;
     const documentRef = dependencies.documentRef ?? windowRef.document ?? root.document;
@@ -130,6 +170,14 @@
         projects: translate("projectHubTitle"),
         scatter: translate("scatterSliceTitle"),
         tools: translate("quickToolsTitle"),
+        animation: "动画编辑",
+        boxes: "碰撞框",
+        trails: "攻击拖尾",
+        audio: "帧音频",
+        attachments: "附加素材",
+        export: "文件导出",
+        godot: "Godot 交付",
+        "codex-pet": "Codex Pet",
       };
       const currentGroup = getCurrentGroup();
       const context = routeLabels[route] || (currentGroup ? groupLabel(currentGroup) : "");
@@ -245,6 +293,8 @@
       }
       try {
         const visibleRoute = visibleWorkbenchRoute(batchCutout, frameOrganizer);
+        const temporarySessionActive =
+          currentNavigationContext() === "standalone" && Boolean(getTemporaryWorkset()?.frames?.length);
         if (route && !visibleRoute && getWorkspaceDirty()) {
           const decision = await requestWorkspaceDecision();
           if (decision === "cancel") {
@@ -261,17 +311,30 @@
         if (route === "cutout") {
           if (frameOrganizer?.isOpen()) {
             const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
-            const closed = await closeWorkbench(frameOrganizer, { syncRoute: false });
+            const closed = await closeWorkbench(frameOrganizer, {
+              syncRoute: false,
+              force: temporarySessionActive,
+            });
             if (!closed) {
               syncWorkbenchRoute(organizerRoute);
               return false;
             }
           }
-          if (!batchCutout?.isOpen()) batchCutout?.open({ syncRoute: false });
+          if (!batchCutout?.isOpen()) {
+            const temporaryWorkset =
+              currentNavigationContext() === "standalone" ? getTemporaryWorkset() : null;
+            const openedTemporary = temporaryWorkset?.frames?.length
+              ? openTemporaryCutout(temporaryWorkset)
+              : false;
+            if (!openedTemporary) batchCutout?.open({ syncRoute: false });
+          }
           return true;
         }
         if (batchCutout?.isOpen()) {
-          const closed = await closeWorkbench(batchCutout, null, { syncRoute: false });
+          const closed = await closeWorkbench(batchCutout, null, {
+            syncRoute: false,
+            force: temporarySessionActive,
+          });
           if (!closed) {
             syncWorkbenchRoute("cutout");
             return false;
@@ -279,30 +342,51 @@
           await Promise.resolve();
         }
         if (route === "organizer" || route === "import") {
-          const targetMode = route === "import" ? "import" : "edit";
+          const hasCurrentFrames = Boolean(getCurrentGroup()?.frames?.length);
+          const targetMode = route === "import" || !hasCurrentFrames ? "import" : "edit";
           if (!frameOrganizer?.isOpen() || frameOrganizer.getMode?.() !== targetMode) {
             if (frameOrganizer?.isOpen()) {
               const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
-              const closed = await closeWorkbench(frameOrganizer, { syncRoute: false });
+              const closed = await closeWorkbench(frameOrganizer, {
+                syncRoute: false,
+                force: temporarySessionActive,
+              });
               if (!closed) {
                 syncWorkbenchRoute(organizerRoute);
                 return false;
               }
             }
-            const open = targetMode === "import" ? frameOrganizer?.openImport : frameOrganizer?.open;
-            await open?.({ syncRoute: false });
+            const temporaryWorkset =
+              currentNavigationContext() === "standalone" ? getTemporaryWorkset() : null;
+            if (temporaryWorkset?.frames?.length && frameOrganizer?.openWorkset) {
+              await frameOrganizer.openWorkset(temporaryWorkset, { syncRoute: false });
+            } else {
+              const open = targetMode === "import" ? frameOrganizer?.openImport : frameOrganizer?.open;
+              await open?.({ syncRoute: false });
+            }
           }
           return true;
         }
         if (frameOrganizer?.isOpen()) {
           const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
-          const closed = await closeWorkbench(frameOrganizer, { syncRoute: false });
+          const closed = await closeWorkbench(frameOrganizer, {
+            syncRoute: false,
+            force: temporarySessionActive,
+          });
           if (!closed) {
             syncWorkbenchRoute(organizerRoute);
             return false;
           }
         }
-        if (route === "projects" || route === "tools") return true;
+        if (["animation", "boxes", "trails", "audio", "attachments"].includes(route)) {
+          activateWorkspaceRoute(route);
+          return true;
+        }
+        if (["export", "godot", "codex-pet"].includes(route)) {
+          activateWorkspaceRoute(route);
+          return true;
+        }
+        if (route === "projects" || route === "tools" || route === "scatter") return true;
         return true;
       } catch (error) {
         const visibleRoute = visibleWorkbenchRoute(batchCutout, frameOrganizer);

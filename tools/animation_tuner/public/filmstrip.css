@@ -315,6 +315,15 @@
   border-color: var(--line);
   box-shadow: 5px 5px 0 var(--accent);
 }
+.thumb.playhead::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--accent-3);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent-3) 70%, transparent);
+  pointer-events: none;
+}
 .thumb.reference {
   box-shadow: 3px 3px 0 var(--accent-2);
 }

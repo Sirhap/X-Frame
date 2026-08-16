@@ -9,6 +9,7 @@ const EMPTY_TUNING = {
   schemaVersion: 1,
   values: {},
   scene_settings: {},
+  reference_frame: null,
   frame_visual_overrides: {},
   frame_playback_overrides: {},
   frame_box_overrides: {},

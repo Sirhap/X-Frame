@@ -84,7 +84,48 @@ test("routing reads canonical and legacy workbench routes", () => {
     createControllerFixture("http://localhost/tools/scatter-slice").controller.currentWorkbenchRoute(),
     "scatter",
   );
+  assert.equal(
+    createControllerFixture("http://localhost/tools/export").controller.currentWorkbenchRoute(),
+    "export",
+  );
   assert.equal(createControllerFixture("http://localhost/unknown").controller.currentWorkbenchRoute(), "");
+});
+
+test("standalone cutout consumes a retained temporary workset", async () => {
+  const windowRef = createWindow("http://localhost/tools/cutout");
+  const events = [];
+  const workset = { name: "run", frames: [{ id: "a", image: {} }] };
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getTemporaryWorkset: () => workset,
+    openTemporaryCutout: (value) => {
+      events.push(value);
+      return true;
+    },
+    getBatchCutout: () => ({ isOpen: () => false, open: () => events.push("empty") }),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.deepEqual(events, [workset]);
+});
+
+test("project resource route opens import mode when the project has no frames", async () => {
+  const windowRef = createWindow("http://localhost/workspace/resources/import");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getCurrentGroup: () => null,
+    getFrameOrganizer: () => ({
+      isOpen: () => false,
+      open: () => events.push("edit"),
+      openImport: () => events.push("import"),
+    }),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.deepEqual(events, ["import"]);
 });
 
 test("routing distinguishes project and standalone navigation domains", () => {
@@ -115,7 +156,7 @@ test("route and selection synchronization preserve URL state", () => {
   assert.equal(windowRef.historyCalls[0].method, "pushState");
 
   controller.syncWorkbenchRoute("cutout", { context: "project" });
-  assert.equal(windowRef.location.pathname, "/workspace/tools/cutout");
+  assert.equal(windowRef.location.pathname, "/workspace/resources/cutout");
 
   controller.syncUrlState({ push: true });
   assert.equal(windowRef.location.search, "?legacy=1&project=project-1&group=idle&frame=1");
@@ -280,6 +321,7 @@ test("workspace route guard discards or cancels dirty tuning explicitly", async 
   const discardController = createController({
     windowRef: discardWindow,
     documentRef: { title: "" },
+    getCurrentGroup: () => ({ frames: [{}] }),
     getWorkspaceDirty: () => true,
     requestWorkspaceDecision: async () => "discard",
     discardWorkspaceChanges: async () => discardEvents.push("discard"),

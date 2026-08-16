@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 import worker, { resolveAssetPath } from "../../cloudflare/site/src/index.mjs";
+import { signToken } from "../../cloudflare/site/src/activation_crypto.mjs";
 import {
   createActivationService,
   hashActivationCode,
@@ -344,9 +345,87 @@ function deviceFingerprint(overrides = {}) {
 test("resolveAssetPath maps public tool routes to the workbench", () => {
   assert.equal(resolveAssetPath("/"), "/index.html");
   assert.equal(resolveAssetPath("/admin/licenses"), "/admin.html");
-  assert.equal(resolveAssetPath("/tools/import"), "/workbench.html");
-  assert.equal(resolveAssetPath("/tools/scatter-slice"), "/workbench.html");
+  assert.equal(resolveAssetPath("/admin/login"), "/admin.html");
+  for (const route of [
+    "/tools/import",
+    "/tools/scatter-slice",
+    "/tools/export",
+    "/workspace/resources/import",
+    "/workspace/resources/cutout",
+    "/workspace/resources/scatter",
+    "/workspace/animation/transform",
+    "/workspace/animation/boxes",
+    "/workspace/animation/trails",
+    "/workspace/animation/audio",
+    "/workspace/animation/attachments",
+    "/workspace/delivery/export",
+    "/workspace/delivery/godot",
+    "/workspace/delivery/codex-pet",
+  ]) {
+    assert.equal(resolveAssetPath(route), "/workbench.html", route);
+  }
   assert.equal(resolveAssetPath("/assets/app.js"), "/assets/app.js");
+});
+
+test("administrator page is gated by the server-side workbench session", async () => {
+  let assetRequests = 0;
+  const env = {
+    LICENSE_DB: { prepare() {} },
+    XSXB_ACTIVATION_SECRET: activationSecret,
+    XSXB_ADMIN_USERNAME: "sirhao",
+    ASSETS: {
+      async fetch(request) {
+        assetRequests += 1;
+        assert.equal(new URL(request.url).pathname, "/admin.html");
+        return new Response("administrator console", { headers: { "Content-Type": "text/html" } });
+      },
+    },
+  };
+
+  const denied = await worker.fetch(new Request("https://example.com/admin/licenses"), env);
+  assert.equal(denied.status, 302);
+  assert.equal(denied.headers.get("location"), "https://example.com/admin/login");
+  assert.equal(denied.headers.get("cache-control"), "private, no-store");
+  assert.equal(denied.headers.get("vary"), "Cookie");
+  assert.equal(assetRequests, 0);
+
+  const login = await worker.fetch(new Request("https://example.com/admin/login"), env);
+  assert.equal(login.status, 200);
+  assert.equal(login.headers.get("cache-control"), "private, no-store");
+  assert.equal(login.headers.get("vary"), "Cookie");
+
+  const token = await signToken(
+    { type: "admin-session", username: "sirhao", exp: Date.now() + 60_000 },
+    activationSecret,
+    crypto.subtle,
+  );
+  const allowed = await worker.fetch(
+    new Request("https://example.com/admin/licenses", {
+      headers: { cookie: `xsxb_admin_workbench=${encodeURIComponent(token)}` },
+    }),
+    env,
+  );
+  assert.equal(allowed.status, 200);
+  assert.equal(await allowed.text(), "administrator console");
+
+  const directAsset = await worker.fetch(new Request("https://example.com/admin.html"), env);
+  assert.equal(directAsset.status, 404);
+});
+
+test("administrator page reports a bounded error when static assets are unavailable", async () => {
+  const response = await worker.fetch(new Request("https://example.com/admin/login"), {
+    LICENSE_DB: { prepare() {} },
+    XSXB_ACTIVATION_SECRET: activationSecret,
+    XSXB_ADMIN_USERNAME: "sirhao",
+    ASSETS: {
+      async fetch() {
+        throw new Error("asset binding unavailable");
+      },
+    },
+  });
+
+  assert.equal(response.status, 502);
+  assert.equal(await response.text(), "Static asset temporarily unavailable");
 });
 
 test("worker delegates mapped routes to Static Assets", async () => {
@@ -366,15 +445,33 @@ test("worker delegates mapped routes to Static Assets", async () => {
   assert.equal(response.headers.get("cache-control"), "public, max-age=0, must-revalidate");
 });
 
+test("worker reports unavailable cloud media encoders without a 404", async () => {
+  const response = await worker.fetch(new Request("https://example.com/api/media-export/capabilities"), {});
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    mode: "cloudflare-static",
+    ffmpeg: { available: false, version: "" },
+  });
+});
+
+test("worker redirects the retired local-only watermark deep link", async () => {
+  const response = await worker.fetch(new Request("https://example.com/tools/watermark"), {});
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "https://example.com/?notice=local-watermark#factoryTools");
+});
+
 test("worker rejects unrelated state-changing methods", async () => {
   const response = await worker.fetch(new Request("https://example.com/", { method: "POST" }), {});
   assert.equal(response.status, 405);
   assert.equal(response.headers.get("allow"), "GET, HEAD");
 });
 
-test("activation API and all challenge routes fail closed without D1 or a secret", async () => {
+test("retired device activation routes are not served by the worker", async () => {
   const statusResponse = await worker.fetch(new Request("https://example.com/api/activation"), {});
-  assert.deepEqual(await statusResponse.json(), { activated: false, configured: false, expiresAt: "" });
+  assert.notEqual(statusResponse.status, 200);
+  assert.doesNotMatch(await statusResponse.text(), /"configured"\s*:\s*false/u);
 
   const challengeResponse = await worker.fetch(
     new Request("https://example.com/api/activation/device-challenge", {
@@ -384,8 +481,8 @@ test("activation API and all challenge routes fail closed without D1 or a secret
     }),
     {},
   );
-  assert.equal(challengeResponse.status, 503);
-  assert.equal(challengeResponse.headers.get("cache-control"), "no-store");
+  assert.equal(challengeResponse.status, 405);
+  assert.equal(challengeResponse.headers.get("allow"), "GET, HEAD");
 });
 
 test("activation JSON never exposes the HttpOnly session token", () => {

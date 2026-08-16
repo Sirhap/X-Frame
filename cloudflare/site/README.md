@@ -1,185 +1,107 @@
 # Cloudflare site deployment
 
-The production workbench uses D1-backed automatic trials and configurable multi-device licenses. A
-browser creates a non-extractable ECDSA P-256 private key in IndexedDB, while D1 stores only the
-public key, normalized activation-code hash, expiry configuration, and secret-keyed risk hashes.
+The hosted workbench uses D1-backed email accounts, seven-day browser sessions, and account-bound
+Pro entitlements. Any valid email may register with a six-digit verification code delivered by
+Resend. Activation codes remain available and bind to the verified email on first redemption.
 
-## Create the D1 database
+## Database migration
 
-Create the database once, copy the returned `database_id` into the `LICENSE_DB` entry in
-`wrangler.jsonc`, then apply migrations:
+Create the D1 database once, configure its ID in `wrangler.jsonc`, and apply migrations only after
+reviewing the target account and taking a backup:
 
 ```bash
 wrangler d1 create xsxb-frame-tuner-licenses
 wrangler d1 migrations apply xsxb-frame-tuner-licenses --remote
 ```
 
-The first migration creates `licenses` and `license_devices`. Migration `0004` upgrades existing
-single-device records without changing their limit, then adds automatic-trial claims. Do not run
-remote migrations without reviewing the target Cloudflare account and taking an appropriate backup.
+Migration `0008_email_accounts.sql` adds accounts, hashed verification codes, hashed session tokens,
+authorization settings, audit records, and the activation-code-to-account binding. Older device and
+trial tables remain during the compatibility window but are not used by the current workbench.
 
-## Automatic three-day trial
+## Email authentication
 
-The workbench starts a three-day trial when a browser first opens the hosted application. No code is
-required. Authorization uses the browser's non-extractable P-256 key. A bounded combination of browser,
-hardware, locale, display, WebGL, and User-Agent Client Hints is sent only to the Worker, normalized,
-and immediately HMAC-hashed with `XSXB_ACTIVATION_SECRET`; raw fingerprint values and raw IP addresses
-are not persisted.
-
-The private key is the authorization credential. The full fingerprint is only a duplicate-trial risk
-signal after browser storage is cleared. A second browser is checked against a browser-independent
-signature made from the normalized operating-system family, CPU concurrency, touch capability,
-primary language, time zone, and screen dimensions. Both the hardware and display hashes must match.
-Migration `0006` enforces one physical-device trial atomically, while migration `0007` lets up to
-eight browser-specific signing keys inherit that trial's original expiry. These bindings do not add
-physical devices to the administrator count, and revoking or resetting the primary trial device
-invalidates every associated browser. Existing claims are upgraded lazily when their original
-browser returns. Browser fingerprints can change or be spoofed, so they cannot prove a person's
-identity and must not replace signature verification.
-
-## Configure trial licenses
-
-Activation codes are trimmed, uppercased, and SHA-256 hashed before lookup. Store only the hash in
-D1. On macOS, generate it with:
-
-```bash
-printf %s 'XSXB-TRIAL-example' | tr '[:lower:]' '[:upper:]' | shasum -a 256
-```
-
-Insert the generated hash and an opaque license ID. The default trial begins on first activation and
-lasts 3 days:
-
-```sql
-INSERT INTO licenses (id, code_hash)
-VALUES ('license-opaque-id', '64-character-sha256-hash');
-```
-
-Each code can be configured independently:
-
-- `duration_days`: any positive whole-number duration that produces an expiry before year 9999;
-  defaults to `3`. Permanent licenses keep a valid
-  fallback duration and store `expires_at` as year 9999, so no schema exception is required.
-- `redeem_by`: optional last time an unused code may be redeemed, as an ISO-8601 timestamp.
-- `expires_at`: optional fixed license expiry; when absent it is calculated from `duration_days`.
-- `revoked_at`: setting an ISO-8601 timestamp immediately revokes the license.
-- `max_devices`: a positive whole-number active-device limit, or `NULL` for unlimited devices.
-  Existing codes retain their configured limit after migration. All devices share the license's
-  first-activation and expiry timestamps.
-
-Activation codes are case-insensitive after trimming leading and trailing whitespace. Administrators
-may use Unicode text, internal spaces, and symbols in any format. A 512-character transport limit
-protects bounded Worker requests but does not impose a prefix or pattern.
-
-The same browser key reuses its existing slot. A new key occupies a slot atomically only while the
-active-device count is below `max_devices`. Revoked devices stop consuming active capacity; the
-administrator can restore them or delete the binding to reset the slot. When a finite-device code is
-full, the workbench returns the code's active device list and requires the user to explicitly select
-the one device to replace. The selected binding is revoked atomically with the new binding; every
-unselected device remains active. A stale or foreign selection is rejected without revoking any
-device. Users can also explicitly unbind only their current code-licensed device from the license
-manager. Automatic-trial devices cannot use this self-service code-transfer flow.
-
-## Required Worker secret
+Configure the persistent account hashing secret and Resend credentials:
 
 ```bash
 wrangler secret put XSXB_ACTIVATION_SECRET
+wrangler secret put RESEND_API_KEY
 ```
 
-Use a persistent random value of at least 32 characters. It signs challenges, 24-hour HttpOnly
-cookies, and IP hashes. Rotating it invalidates existing cookies and challenges, but the stored device
-keys remain usable after the browser performs a new challenge.
-
-## Administrator activation-code console
-
-The public landing page exposes an **Activation code management** link in its top-right corner. It
-opens the dedicated `/admin/licenses` page instead of a floating dialog. The workbench routes do not
-include this control. Administrator access uses a configurable username,
-a six-digit TOTP from Google Authenticator, and a four-hour HttpOnly session by default. Google Authenticator uses a fixed 30-second
-period, and the Worker accepts only the current window. An expired or successfully used counter cannot
-be replayed.
-
-Set the Base32 TOTP seed only as a Worker secret. Add the same setup key to Google Authenticator:
-
-```bash
-wrangler secret put XSXB_ADMIN_TOTP_SECRET
-```
-
-Set the non-secret administrator username as a Worker variable. It defaults to `admin` when omitted
-and accepts 1-64 ASCII letters, digits, dots, underscores, or hyphens:
-
-```toml
-[vars]
-XSXB_ADMIN_USERNAME = "sirhao"
-```
-
-Set `XSXB_ADMIN_SESSION_MINUTES` to a whole number from `15` through `1440` to adjust the administrator
-session without changing code. Missing or invalid values safely use the four-hour default:
+`XSXB_ACTIVATION_SECRET` must contain at least 32 characters. Configure the verified Resend sender as
+a non-secret Worker variable:
 
 ```jsonc
 {
   "vars": {
-    "XSXB_ADMIN_SESSION_MINUTES": 240,
+    "XSXB_EMAIL_FROM": "XSXB Frame Tuner <login@example.com>",
   },
 }
 ```
 
-For local Wrangler development, copy `.dev.vars.example` to `.dev.vars`. Both files containing real
-secrets are ignored by Git. The administrator console fails closed unless all four requirements are
-present: `LICENSE_DB`, a persistent `XSXB_ACTIVATION_SECRET` of at least 32 characters, and a valid
-Base32 `XSXB_ADMIN_TOTP_SECRET` containing at least 80 bits, plus a valid configured or default
-administrator username.
+Verification codes contain six digits, expire after ten minutes, allow five attempts, and cannot be
+resent to the same email within 60 seconds. The Worker limits sends per email and hashed client IP.
+Only code hashes and IP HMACs are stored. Successful verification creates an HttpOnly, Secure,
+SameSite=Strict session lasting seven days. A new browser, logout, cleared cookies, revoked session,
+or expired session requires another email code.
 
-Migration `0002_admin_activation_codes.sql` adds bounded login-attempt state and one-time TOTP replay
-records. Migration `0003_encrypt_activation_codes.sql` adds authenticated ciphertext storage so a
-verified administrator can view and copy codes. Migration `0004_multi_device_trials.sql` adds
-automatic trials, configurable device limits, and per-device administration. Review the target
-account and back up the database before applying migrations remotely:
+Email normalization trims surrounding whitespace and lowercases the address. Provider-specific
+aliases such as Gmail dots and `+tag` suffixes are intentionally preserved.
+
+## Pro entitlements and activation codes
+
+Effective Pro access is evaluated on every protected request in this order:
+
+1. A disabled or revoked account is denied.
+2. An unexpired administrator `enabled` override is accepted.
+3. Any active account-bound activation code is accepted.
+4. An `inherit` account uses the global `default_pro_enabled` setting.
+
+The migration initializes the global default to `true`, preserving the current all-features-open
+product policy. Administrators may change the global default or override an individual account.
+An authenticated administrator also receives a separate four-hour workbench cookie and always has
+Pro access. Administrator and email-account cookies remain independent, so signing out of one does
+not revoke the other.
+
+Activation codes remain case-insensitive after trimming and uppercasing. Existing permanent/finite
+duration, redemption deadline, revocation, restoration, encrypted display, and plaintext hashing
+rules remain unchanged. First redemption atomically binds an unused code to the authenticated
+account and starts its validity period. A code bound to another account cannot be redeemed. Multiple
+codes may bind to one account; any active code grants Pro. Device count columns are retained only for
+schema compatibility and are not checked by email-account authorization.
+
+## Administrator console
+
+The `/admin/licenses` console requires the configured username, an administrator password, and
+Google Authenticator TOTP. Set the password and Base32 seed only as Worker secrets:
 
 ```bash
-wrangler d1 migrations apply xsxb-frame-tuner-licenses --remote
+wrangler secret put XSXB_ADMIN_TOTP_SECRET
+wrangler secret put PASSWORD
 ```
 
-The console creates standard codes with a custom finite or permanent activation duration, a finite or
-unlimited device policy, and an unused-code redemption deadline that defaults to year 9999 (displayed
-as permanent). The workbench license manager lets users enter or replace a code and inspect the active
-expiry. The administrator console groups device IDs, names, locations, first-binding and last-seen
-times under the exact code they use, with per-device revocation, restoration, and slot reset. D1 stores the
-normalized SHA-256 hash for redemption lookup and an AES-GCM authenticated ciphertext for
-administrator display. The
-encryption key is domain-separated from the persistent `XSXB_ACTIVATION_SECRET`; rotating that secret
-makes previously encrypted display values unreadable. Codes created before migration `0003` continue
-to work but cannot have their plaintext recovered. Five failed login attempts within ten minutes
-block that client for fifteen minutes.
+The Worker serves the login surface at `/admin/login` and checks the signed administrator
+workbench cookie before serving `/admin/licenses`. Unauthenticated requests are redirected to the
+login route, direct `/admin.html` requests are rejected, and every `/api/admin/*` operation retains
+its own server-side session authorization.
+
+`XSXB_ADMIN_USERNAME` defaults to `admin`. `XSXB_ADMIN_SESSION_MINUTES` accepts 15 through 1440 and
+defaults to 240. The console can search email accounts, set account Pro overrides, force all account
+sessions to log out, change the global default, inspect activation-code email bindings, and manage
+activation-code duration/revocation. Authorization mutations are written to
+`authorization_audit_log`.
+
+For local Wrangler development, copy `.dev.vars.example` to `.dev.vars`. Files containing real
+secrets are ignored by Git.
 
 ## Validate and deploy
 
 ```bash
-# Validate the complete deployment pipeline without uploading.
+# Validate without uploading or applying remote migrations.
 npm run deploy:cloudflare:dry-run
 
-# With a local Worker running on port 8799, verify two isolated browsers inherit one trial.
-node tools/cloudflare/verify_local_trial_inheritance.mjs
-
-# Verify a multi-device code replaces only the selected device and supports self-unbind.
-XSXB_LOCAL_TEST_CODE='your-local-code' node tools/cloudflare/verify_local_device_transfer.mjs
-
-# Deploy a committed, clean working tree and verify production routes.
+# Deploy only from a reviewed, committed worktree.
 npm run deploy:cloudflare
 ```
 
-The deployment script uses the repository-local Wrangler version, preserves dashboard-managed
-variables, tags the Worker version with the current Git commit, and refuses a dirty working tree by
-default. Use `bash scripts/deploy-cloudflare.sh --help` to view optional staging, shortened validation,
-and health-check controls. `--skip-checks` still performs the protected production build and final
-artifact audit.
-
-Migration `0005_flexible_licenses.sql` removes the old 3650-day and 100-device schema ceilings and
-uses `NULL` as the explicit unlimited-device value. Back up D1 before applying it remotely.
-Migration `0006_unique_trial_device_signatures.sql` prevents concurrent browsers with the same stable
-hardware and display signature from creating multiple automatic trials.
-Migration `0007_automatic_trial_browser_bindings.sql` stores per-browser signing keys that share the
-original physical-device trial and expiry without increasing its administrator-visible device count.
-
-The validation command builds the protected workbench, audits generated artifacts, runs Worker and
-browser-identity tests, validates generated Worker types, and performs a deployment dry run. It does
-not publish the Worker, create a remote database, apply remote migrations, or change secrets.
+The deployment script builds protected assets, audits output, checks Worker types, and refuses a
+dirty tree by default. It does not automatically apply D1 migrations or create Resend configuration.

@@ -128,7 +128,7 @@ export function createAdminLicenseService(repository, cryptoApi, now, serializeL
   /** @param {object} row Stored license row. @returns {Promise<object>} Browser-safe row. */
   async function serializeStoredLicense(row) {
     const code =
-      row.source === "automatic_trial"
+      row.source === "email_trial"
         ? ""
         : await decryptActivationCode(row.code_ciphertext, row.code_hash, rootSecret, subtle);
     return serializeLicense(row, now(), code);

@@ -1,0 +1,773 @@
+/* Unified in-document scatter workspace. Every selector is surface-scoped. */
+.scatterSliceSurface {
+  --scatter-panel: #101721;
+  --scatter-panel-2: #151e29;
+  --scatter-stage: #080d13;
+  --scatter-line: #2b3948;
+  --scatter-line-strong: #526375;
+  --scatter-mint: #31d6b4;
+  --scatter-amber: #f7b84b;
+  --scatter-coral: #f05b62;
+  --scatter-ink: #edf6f7;
+  --scatter-muted: #91a1ae;
+}
+
+@media (min-width: 1121px) {
+  .scatterIntegratedWorkbench,
+  .scatterIntegratedBody {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .scatterControlStack,
+  .scatterResultsPanel {
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
+.scatterIntegratedWorkbench {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 38px minmax(0, 1fr) auto;
+  overflow: hidden;
+  background:
+    linear-gradient(color-mix(in srgb, var(--scatter-line) 26%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--scatter-line) 26%, transparent) 1px, transparent 1px),
+    var(--bg);
+  background-size: 32px 32px;
+}
+
+.scatterIntegratedHeader {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--scatter-line);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+}
+
+.scatterIntegratedHeader > div:first-child > span,
+.resultsHeader span {
+  color: var(--scatter-mint);
+  font: 760 9px/1 var(--data-font);
+  letter-spacing: 0.12em;
+}
+
+.scatterIntegratedHeader h1 {
+  display: inline;
+  margin-right: 10px;
+  color: var(--scatter-ink);
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.scatterIntegratedHeader p {
+  display: inline;
+  color: var(--scatter-muted);
+  font-size: 11px;
+}
+
+.scatterResultSummary {
+  min-width: 250px;
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.scatterResultSummary span {
+  color: var(--scatter-mint);
+  font: 760 9px/1 var(--data-font);
+}
+
+.scatterResultSummary strong {
+  color: var(--scatter-ink);
+  font-size: 11px;
+}
+
+.scatterProgress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--scatter-line);
+  background: var(--panel-3);
+}
+
+.scatterProgress span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-right: 1px solid var(--scatter-line);
+  color: var(--scatter-muted);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.scatterProgress span:last-child {
+  border-right: 0;
+}
+
+.scatterProgress span.active {
+  background: color-mix(in srgb, var(--scatter-mint) 9%, var(--panel-3));
+  color: var(--scatter-ink);
+  box-shadow: inset 0 -2px 0 var(--scatter-mint);
+}
+
+.scatterProgress b {
+  color: var(--scatter-mint);
+  font: 780 9px/1 var(--data-font);
+}
+
+.scatterIntegratedBody {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 286px minmax(320px, 1fr) minmax(300px, 350px);
+  gap: 10px;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.scatterControlStack,
+.scatterSliceSurface .previewDeck,
+.scatterSliceSurface .resultsDeck {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--scatter-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--scatter-panel) 95%, transparent);
+  box-shadow: var(--hard-shadow);
+}
+
+.scatterControlStack {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.scatterStepPanel {
+  border-bottom: 1px solid var(--scatter-line);
+}
+
+.scatterStepPanel:last-child {
+  border-bottom: 0;
+}
+
+.scatterStepPanel > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  color: var(--scatter-ink);
+  cursor: pointer;
+  list-style: none;
+}
+
+.scatterStepPanel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.scatterStepPanel > summary::after {
+  margin-left: auto;
+  color: var(--scatter-muted);
+  content: "+";
+}
+
+.scatterStepPanel[open] > summary::after {
+  content: "−";
+}
+
+.scatterStepPanel > summary span {
+  color: var(--scatter-mint);
+  font: 780 10px/1 var(--data-font);
+}
+
+.scatterStepPanel > summary strong {
+  font-size: 12px;
+}
+
+.scatterSliceSurface:not(.hasDetection) [data-requires-detection] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.scatterStepPanelBody {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 14px;
+}
+
+.scatterSliceSurface :is(button, input, select) {
+  font: inherit;
+}
+
+.scatterSliceSurface :is(select, input[type="text"]) {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 9px;
+  border: 1px solid var(--scatter-line);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--scatter-ink);
+}
+
+.scatterSliceSurface .fieldLabel {
+  margin-top: 3px;
+  color: var(--scatter-muted);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.scatterSliceSurface .sourceActions,
+.scatterSliceSurface .sliceToolModes,
+.scatterSliceSurface .sliceEditActions,
+.scatterSliceSurface .scatterSecondaryActions {
+  display: flex;
+  gap: 6px;
+}
+
+.scatterSliceSurface .sourceActions > * {
+  flex: 1;
+}
+
+.scatterSliceSurface .actionButton,
+.scatterSliceSurface .sliceToolModes button,
+.scatterSliceSurface .sliceEditActions button,
+.scatterSliceSurface .sliceNoiseActions button,
+.scatterSliceSurface .groupExportSelection button,
+.scatterSliceSurface .overallPlaybackPanel button,
+.scatterActionBar button {
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid var(--scatter-line);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--scatter-ink);
+  font-size: 10px;
+  font-weight: 730;
+}
+
+.scatterSliceSurface .actionButton.primary,
+.scatterSliceSurface .actionButton.detect,
+.scatterPrimaryAction,
+#scatterAddProject {
+  border-color: color-mix(in srgb, var(--scatter-mint) 60%, var(--scatter-line));
+  background: color-mix(in srgb, var(--scatter-mint) 13%, var(--control-bg));
+  color: var(--scatter-mint);
+}
+
+.scatterSliceSurface button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.scatterSliceSurface .sourceMeta,
+.scatterSliceSurface .automaticDetectionHint,
+.scatterSliceSurface .sliceEditorHint {
+  color: var(--scatter-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.scatterSliceSurface .colorField {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.scatterSliceSurface .colorField input {
+  width: 44px;
+  height: 34px;
+  padding: 2px;
+}
+
+.scatterSliceSurface .colorField output,
+.scatterSliceSurface #scatterActiveBox {
+  overflow: hidden;
+  color: var(--scatter-ink);
+  font: 690 9px/1.4 var(--data-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scatterSliceSurface .sliceToolModes button[aria-pressed="true"] {
+  border-color: var(--scatter-mint);
+  background: color-mix(in srgb, var(--scatter-mint) 14%, var(--control-bg));
+  color: var(--scatter-mint);
+}
+
+.scatterSliceSurface .sliceEditActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.scatterSliceSurface .sliceNoiseActions {
+  display: grid;
+  gap: 6px;
+}
+
+.scatterSliceSurface .sliceNoiseActions label {
+  color: var(--scatter-muted);
+  font-size: 10px;
+}
+
+.scatterSliceSurface .cutoutModeButton {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--scatter-line);
+  border-radius: 7px;
+  background: var(--control-bg);
+}
+
+.scatterSliceSurface .cutoutModeButton span {
+  display: grid;
+  gap: 2px;
+}
+
+.scatterSliceSurface .cutoutModeButton strong {
+  color: var(--scatter-ink);
+  font-size: 10px;
+}
+
+.scatterSliceSurface .cutoutModeButton small {
+  color: var(--scatter-muted);
+  font-size: 9px;
+}
+
+.scatterSliceSurface .cutoutModeButton > b {
+  color: var(--scatter-mint);
+  font: 760 9px/1 var(--data-font);
+}
+
+.scatterSliceSurface .previewDeck {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.scatterSliceSurface .previewToolbar {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--scatter-line);
+}
+
+.scatterSliceSurface .previewToolbar > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.scatterSliceSurface .previewToolbar span,
+.scatterSliceSurface .previewToolbar strong {
+  font: 760 9px/1 var(--data-font);
+  letter-spacing: 0.08em;
+}
+
+.scatterSliceSurface .previewToolbar span {
+  color: var(--scatter-muted);
+}
+
+.scatterSliceSurface .previewToolbar strong {
+  color: var(--scatter-mint);
+}
+
+.scatterSliceSurface .canvasStage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%) 0 0 / 18px 18px,
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%) 0 9px / 18px 18px,
+    var(--scatter-stage);
+}
+
+.scatterSliceSurface .canvasStage.isDragging {
+  box-shadow: inset 0 0 0 2px var(--scatter-mint);
+}
+
+.scatterSliceSurface .canvasStage canvas {
+  max-width: calc(100% - 20px);
+  max-height: calc(100% - 20px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.scatterSliceSurface .emptyStage {
+  width: min(360px, calc(100% - 32px));
+  min-height: 176px;
+  display: grid;
+  place-items: center;
+  gap: 7px;
+  padding: 22px;
+  border: 1px dashed var(--scatter-line-strong);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--scatter-panel-2) 80%, transparent);
+  color: var(--scatter-ink);
+}
+
+.scatterSliceSurface .emptyStage small {
+  color: var(--scatter-muted);
+}
+
+.scatterSliceSurface .dropGlyph {
+  width: 52px;
+  height: 42px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+}
+
+.scatterSliceSurface .dropGlyph i {
+  border: 1px solid var(--scatter-mint);
+  border-radius: 3px;
+}
+
+.scatterSliceSurface .statusBar {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 11px;
+  border-top: 1px solid var(--scatter-line);
+  background: var(--panel-3);
+}
+
+.scatterSliceSurface .statusBar span {
+  color: var(--scatter-mint);
+  font: 740 9px/1 var(--data-font);
+  white-space: nowrap;
+}
+
+.scatterSliceSurface .statusBar p {
+  overflow: hidden;
+  color: var(--scatter-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scatterSliceSurface .statusBar[data-tone="error"] span {
+  color: var(--scatter-coral);
+}
+
+.scatterSliceSurface .resultsDeck {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.scatterSliceSurface .resultsHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border-bottom: 1px solid var(--scatter-line);
+}
+
+.scatterSliceSurface .resultsHeader h2 {
+  margin-top: 4px;
+  color: var(--scatter-ink);
+  font-size: 12px;
+  text-transform: none;
+}
+
+.scatterSliceSurface .groupExportSelection {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.scatterSliceSurface .groupExportSelection output {
+  color: var(--scatter-mint);
+  font: 740 9px/1 var(--data-font);
+}
+
+.scatterSliceSurface .overallPlaybackPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--scatter-line);
+}
+
+.scatterSliceSurface .overallPlaybackPanel > div {
+  display: grid;
+  gap: 2px;
+}
+
+.scatterSliceSurface .overallPlaybackPanel strong {
+  color: var(--scatter-ink);
+  font-size: 10px;
+}
+
+.scatterSliceSurface .overallPlaybackPanel small {
+  color: var(--scatter-muted);
+  font-size: 9px;
+}
+
+.scatterSliceSurface #scatterPlaybackAll {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.scatterSliceSurface .sliceGroups {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.scatterSliceSurface .sliceGroup {
+  padding: 9px;
+  border-bottom: 1px solid var(--scatter-line);
+}
+
+.scatterSliceSurface .sliceGroup.included {
+  box-shadow: inset 3px 0 0 var(--scatter-mint);
+}
+
+.scatterSliceSurface .sliceGroupHeader {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.scatterSliceSurface .sliceGroupIdentity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.scatterSliceSurface .sliceGroupName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--scatter-ink);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scatterSliceSurface .sliceGroupMeta,
+.scatterSliceSurface .sliceGroupCode {
+  color: var(--scatter-muted);
+  font: 680 8px/1 var(--data-font);
+}
+
+.scatterSliceSurface .sliceGroupActions {
+  display: flex;
+  gap: 4px;
+}
+
+.scatterSliceSurface .sliceGroupAction,
+.scatterSliceSurface .sliceGroupPlay,
+.scatterSliceSurface .sliceCardDelete {
+  min-height: 26px;
+  padding: 4px 6px;
+  border: 1px solid var(--scatter-line);
+  background: var(--control-bg);
+  color: var(--scatter-muted);
+  font-size: 8px;
+}
+
+.scatterSliceSurface .sliceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.scatterSliceSurface .sliceCardShell {
+  position: relative;
+  min-width: 0;
+}
+
+.scatterSliceSurface .sliceCard {
+  width: 100%;
+  min-height: 76px;
+  display: grid;
+  grid-template-rows: minmax(44px, 1fr) auto auto;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--scatter-line);
+  background: var(--scatter-stage);
+  color: var(--scatter-muted);
+}
+
+.scatterSliceSurface .sliceCard.selected {
+  border-color: var(--scatter-amber);
+  box-shadow: inset 0 0 0 1px var(--scatter-amber);
+}
+
+.scatterSliceSurface .sliceThumbnail {
+  max-width: 100%;
+  max-height: 48px;
+  justify-self: center;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.scatterSliceSurface .sliceCard :is(strong, small) {
+  overflow: hidden;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scatterSliceSurface .emptyResults {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  padding: 20px;
+  color: var(--scatter-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.scatterActionBar {
+  min-width: 0;
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--scatter-line);
+  background: var(--panel);
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.18);
+}
+
+.scatterActionBar > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.scatterActionBar > div:first-child span {
+  color: var(--scatter-mint);
+  font: 740 8px/1 var(--data-font);
+  letter-spacing: 0.1em;
+}
+
+.scatterActionBar > div:first-child strong {
+  overflow: hidden;
+  color: var(--scatter-ink);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scatterPrimaryAction {
+  min-width: 126px;
+  min-height: 38px !important;
+  background: var(--scatter-mint) !important;
+  color: #06120f !important;
+  font-weight: 820 !important;
+}
+
+.scatterSliceSurface .mediaClearDialog {
+  width: min(430px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--scatter-line-strong);
+  border-radius: 9px;
+  background: var(--scatter-panel);
+  color: var(--scatter-ink);
+}
+
+.scatterSliceSurface .mediaClearDialog::backdrop {
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.scatterSliceSurface .mediaClearDialog form {
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+}
+
+.scatterSliceSurface .mediaClearDialog h2 {
+  color: var(--scatter-ink);
+  font-size: 20px;
+}
+
+.scatterSliceSurface .mediaClearDialog p {
+  color: var(--scatter-muted);
+  line-height: 1.6;
+}
+
+.scatterSliceSurface .mediaClearDialog form > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.scatterSliceSurface .visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+@media (max-width: 1100px) {
+  .scatterIntegratedBody {
+    grid-template-columns: 260px minmax(300px, 1fr) 290px;
+  }
+
+  .scatterSecondaryActions #scatterDownloadSlice,
+  .scatterSecondaryActions #scatterDelete {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .scatterIntegratedHeader p,
+  .scatterResultSummary,
+  .scatterControlStack {
+    display: none;
+  }
+
+  .scatterIntegratedBody {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 38vw);
+  }
+
+  .scatterActionBar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .scatterActionBar .scatterSecondaryActions,
+  .scatterActionBar #scatterAddProject {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scatterSliceSurface * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

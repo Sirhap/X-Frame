@@ -90,3 +90,37 @@ test("stage pointer controller starts a pan drag through injected handlers", () 
   });
   assert.equal(stage.classList.has("dragging"), true);
 });
+
+test("stage pointer controller drags the main frame after attachment hit testing", () => {
+  const stage = createStage();
+  const state = { view: { x: 0, y: 0, zoom: 1 } };
+  const calls = [];
+  const controller = createController({
+    stage,
+    state,
+    handlers: {
+      stagePoint: () => ({ x: 40, y: 60 }),
+      updateCoordHud: () => {},
+      hitTestBoxes: () => null,
+      hitTestDirectManipulationAttachment: () => null,
+      hitTestDirectManipulationFrame: () => ({ offset: { x: 8, y: 12 }, scale: 1 }),
+      pushUndo: (label) => calls.push(["undo", label]),
+      moveDirectManipulationFrameByClientDelta: (transform, x, y) => calls.push(["move", transform, x, y]),
+    },
+  });
+
+  controller.bind();
+  stage.dispatch("pointerdown", { pointerId: 7, clientX: 10, clientY: 12 });
+  stage.dispatch("pointermove", { clientX: 22, clientY: 18 });
+
+  assert.deepEqual(state.drag, {
+    mode: "frame-transform",
+    x: 10,
+    y: 12,
+    transform: { offset: { x: 8, y: 12 }, scale: 1 },
+  });
+  assert.deepEqual(calls, [
+    ["undo", "drag frame transform"],
+    ["move", { offset: { x: 8, y: 12 }, scale: 1 }, 12, 6],
+  ]);
+});

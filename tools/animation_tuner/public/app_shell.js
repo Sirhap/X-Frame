@@ -22,6 +22,18 @@
     "/tools/scatter-slice": "scatter",
     "/workspace/tools/cutout": "cutout",
     "/workspace/tools/organizer": "organizer",
+    "/workspace/resources/import": "organizer",
+    "/workspace/resources/cutout": "cutout",
+    "/workspace/resources/scatter": "scatter",
+    "/workspace/animation/transform": "animation",
+    "/workspace/animation/boxes": "boxes",
+    "/workspace/animation/trails": "trails",
+    "/workspace/animation/audio": "audio",
+    "/workspace/animation/attachments": "attachments",
+    "/workspace/delivery/export": "export",
+    "/workspace/delivery/godot": "godot",
+    "/workspace/delivery/codex-pet": "codex-pet",
+    "/tools/export": "export",
   });
 
   /**
@@ -64,6 +76,7 @@
    *   windowRef?:Window,
    *   storage?:Storage|null,
    *   navigate?:(route:string)=>Promise<boolean>|boolean,
+   *   openContextTool?:(tool:string)=>Promise<boolean>|boolean,
    *   translate?:(key:string)=>string,
    * }} [dependencies] Browser dependencies and route adapter.
    * @returns {{
@@ -80,6 +93,7 @@
     const windowRef = dependencies.windowRef || root?.window || root;
     const storage = dependencies.storage ?? resolveStorage(windowRef);
     const navigate = dependencies.navigate || defaultNavigate;
+    const openContextTool = dependencies.openContextTool || (() => true);
     const translate =
       dependencies.translate ||
       ((key) => ({ collapseSidebar: "折叠参数栏", expandSidebar: "展开参数栏" })[key] || key);
@@ -94,6 +108,7 @@
       projectHub: documentRef.querySelector("#projectHub"),
       quickToolsHub: documentRef.querySelector("#quickToolsHub"),
       scatterSliceSurface: documentRef.querySelector("#scatterSliceSurface"),
+      deliverySurface: documentRef.querySelector("#deliverySurface"),
       collapse: documentRef.querySelector("#sidebarCollapse"),
       sidebarTabs: Array.from(documentRef.querySelectorAll("[data-sidebar-tab]")),
       filmstripPanel: documentRef.querySelector(".filmstripPanel"),
@@ -104,12 +119,89 @@
       kunkunButtons: Array.from(documentRef.querySelectorAll(".kunkunThemeButton")),
       actionFeedback: documentRef.querySelector(".contextActionFeedback"),
       actionButtons: documentRef.querySelector(".contextActionBarActions"),
+      toolRailTools: documentRef.querySelector("#toolRailTools"),
+      toolRailContextMenu: documentRef.querySelector("#toolRailContextMenu"),
+      toolRailContextTitle: documentRef.querySelector("#toolRailContextTitle"),
+      toolRailContextHint: documentRef.querySelector("#toolRailContextHint"),
+      toolRailContextActions: Array.from(documentRef.querySelectorAll("[data-context-tool]")),
+      workflowStages: Array.from(documentRef.querySelectorAll("[data-workspace-stage]")),
+      workflowTools: Array.from(documentRef.querySelectorAll("[data-stage-tools]")),
+      workflowRouteItems: Array.from(documentRef.querySelectorAll(".workspaceSecondaryTabs a")),
+      workspaceAccount: documentRef.querySelector("#workspaceAccount"),
     };
     const disposers = [];
     let bound = false;
     let logoClickCount = 0;
     let logoClickTimer = 0;
     let routeObserver = null;
+    let contextToolMenuTimer = 0;
+
+    /** Clears a pending delayed tool-menu transition. @returns {void} */
+    function clearContextToolMenuTimer() {
+      windowRef.clearTimeout?.(contextToolMenuTimer);
+      contextToolMenuTimer = 0;
+    }
+
+    /** Updates the contextual tool menu from the active workbench selection. @returns {boolean} */
+    function updateContextToolMenu() {
+      const frameCount = documentRef.querySelectorAll(".thumb").length;
+      const isWorkspace = elements.body?.dataset.appSurface === "workspace";
+      const available = isWorkspace && frameCount > 0;
+      if (elements.toolRailContextTitle) {
+        elements.toolRailContextTitle.textContent = available
+          ? `当前动画 · ${frameCount} 帧`
+          : "没有可带入工具的动画帧";
+      }
+      if (elements.toolRailContextHint) {
+        elements.toolRailContextHint.textContent = available
+          ? "在项目内处理，结果会回写到当前动画。"
+          : "先选择一个动画，再使用当前帧或批量处理工具。";
+      }
+      for (const action of elements.toolRailContextActions) action.disabled = !available;
+      return available;
+    }
+
+    /** Shows the delayed contextual tools without leaving the current project. @returns {void} */
+    function showContextToolMenu() {
+      clearContextToolMenuTimer();
+      if (!elements.toolRailContextMenu || !updateContextToolMenu()) return;
+      elements.toolRailContextMenu.hidden = false;
+      elements.toolRailTools?.setAttribute("aria-expanded", "true");
+    }
+
+    /** Hides the contextual tools. @returns {void} */
+    function hideContextToolMenu() {
+      clearContextToolMenuTimer();
+      if (elements.toolRailContextMenu) elements.toolRailContextMenu.hidden = true;
+      elements.toolRailTools?.setAttribute("aria-expanded", "false");
+    }
+
+    /** Starts a delayed visibility change. @param {boolean} visible Whether to show the menu. @returns {void} */
+    function scheduleContextToolMenu(visible) {
+      clearContextToolMenuTimer();
+      contextToolMenuTimer = windowRef.setTimeout?.(
+        visible ? showContextToolMenu : hideContextToolMenu,
+        visible ? 450 : 160,
+      );
+    }
+
+    /** Runs one context-aware tool in the existing workbench document. @param {Event} event Trigger event. */
+    async function handleContextToolAction(event) {
+      const target = event.currentTarget;
+      const tool = target?.dataset?.contextTool;
+      const selector =
+        tool === "current-frame-cutout"
+          ? "#cutoutCurrentFrame"
+          : tool === "batch-cutout"
+            ? "#cutoutOpen"
+            : tool === "organizer"
+              ? "#organizerOpen"
+              : "";
+      const action = selector ? documentRef.querySelector(selector) : null;
+      if (!action || action.disabled) return;
+      hideContextToolMenu();
+      if (await openContextTool(tool)) action.click();
+    }
 
     /** @param {string} key @param {string|boolean} value */
     function writePreference(key, value) {
@@ -168,7 +260,9 @@
       const target = documentRef.querySelector(".projectProcessingActions");
       const organizer = documentRef.querySelector("#organizerOpen");
       const cutout = documentRef.querySelector("#cutoutOpen");
+      const currentFrameCutout = documentRef.querySelector("#cutoutCurrentFrame");
       if (!target) return;
+      if (currentFrameCutout) target.append(currentFrameCutout);
       if (organizer) target.append(organizer);
       if (cutout) target.append(cutout);
     }
@@ -217,12 +311,22 @@
         : "tools";
     }
 
+    /** Returns the project workflow stage represented by one route. */
+    function workspaceStageForRoute(route, path) {
+      if (["export", "godot", "codex-pet"].includes(route)) return "delivery";
+      if (["animation", "boxes", "trails", "audio", "attachments"].includes(route) || path === "/workspace") {
+        return "animation";
+      }
+      return "resources";
+    }
+
     /** Synchronizes tool-rail selection and visible surface with the canonical route. */
     function syncActiveRoute() {
       const path = String(windowRef.location?.pathname || "/").replace(/\/+$/, "") || "/";
       const route =
         TOOL_ROUTE_BY_PATH[path] ?? (path === "/projects" ? "projects" : path === "/tools" ? "tools" : "");
       const appMode = appModeForPath(path);
+      const workspaceStage = workspaceStageForRoute(route, path);
       for (const item of elements.routeItems) {
         const active = item.dataset.appMode === appMode;
         item.classList.toggle("active", active);
@@ -231,18 +335,40 @@
       }
       elements.body?.setAttribute("data-workbench", route || "workspace");
       elements.body?.setAttribute("data-app-mode", appMode);
+      elements.body?.setAttribute("data-workspace-stage", workspaceStage);
+      elements.body?.setAttribute("data-workspace-tool", route || "animation");
+      for (const item of elements.workflowStages) {
+        const active = item.dataset.workspaceStage === workspaceStage;
+        item.classList.toggle("active", active);
+        if (active) item.setAttribute("aria-current", "page");
+        else item.removeAttribute("aria-current");
+      }
+      for (const group of elements.workflowTools) {
+        group.classList.toggle("active", group.dataset.stageTools === workspaceStage);
+      }
+      for (const item of elements.workflowRouteItems) {
+        const active = item.dataset.workbenchRoute === (route || "animation");
+        item.classList.toggle("active", active);
+        if (active) item.setAttribute("aria-current", "page");
+        else item.removeAttribute("aria-current");
+      }
       elements.body?.setAttribute(
         "data-app-surface",
         path === "/projects"
           ? "projects"
           : path === "/tools"
             ? "tools"
-            : route === "scatter"
-              ? "scatter"
-              : route
-                ? "tool"
-                : "workspace",
+            : ["export", "godot", "codex-pet"].includes(route)
+              ? "delivery"
+              : route === "scatter"
+                ? "scatter"
+                : ["animation", "boxes", "trails", "audio", "attachments"].includes(route)
+                  ? "workspace"
+                  : route
+                    ? "tool"
+                    : "workspace",
       );
+      if (elements.body?.dataset.appSurface !== "workspace") hideContextToolMenu();
       syncHiddenWorkbenchAccessibility();
     }
 
@@ -264,6 +390,7 @@
       syncHubVisibility(elements.projectHub, surface === "projects");
       syncHubVisibility(elements.quickToolsHub, surface === "tools");
       syncHubVisibility(elements.scatterSliceSurface, surface === "scatter");
+      syncHubVisibility(elements.deliverySurface, surface === "delivery");
     }
 
     /** @param {HTMLElement|null} hub Hub surface. @param {boolean} visible Whether it is active. */
@@ -356,6 +483,23 @@
       }
       for (const item of elements.routeItems) listen(item, "click", handleRouteClick);
       for (const item of elements.workbenchRouteItems) listen(item, "click", handleRouteClick);
+      elements.toolRailTools?.setAttribute("aria-expanded", "false");
+      elements.toolRailTools?.setAttribute("aria-controls", "toolRailContextMenu");
+      listen(elements.toolRailTools, "pointerenter", () => scheduleContextToolMenu(true));
+      listen(elements.toolRailTools, "pointerleave", () => scheduleContextToolMenu(false));
+      listen(elements.toolRailTools, "focus", showContextToolMenu);
+      listen(elements.toolRailContextMenu, "pointerenter", clearContextToolMenuTimer);
+      listen(elements.toolRailContextMenu, "pointerleave", () => scheduleContextToolMenu(false));
+      listen(elements.toolRailContextMenu, "focusout", (event) => {
+        if (!elements.toolRailContextMenu?.contains(event.relatedTarget)) scheduleContextToolMenu(false);
+      });
+      for (const action of elements.toolRailContextActions) listen(action, "click", handleContextToolAction);
+      listen(elements.workspaceAccount, "click", () =>
+        documentRef.querySelector("#activationManage")?.click(),
+      );
+      listen(documentRef, "keydown", (event) => {
+        if (event.key === "Escape") hideContextToolMenu();
+      });
       listen(elements.collapse, "click", () =>
         setSidebarCollapsed(!elements.body?.classList.contains("sidebarCollapsed")),
       );

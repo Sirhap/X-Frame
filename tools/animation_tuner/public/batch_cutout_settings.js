@@ -47,6 +47,48 @@
   }
 
   /**
+   * Resolves which automatic controls have no effect under the current parameter combination.
+   * @param {{blendStrength?:number,despillStrength?:number,edgeDespillRadius?:number,edgeRecoveryStrength?:number}} parameters Current automatic parameters.
+   * @returns {{blendModeDisabled:boolean,despillModeDisabled:boolean,backgroundRadiusDisabled:boolean}} Dependency state.
+   */
+  function resolveAutomaticControlDependencies(parameters = {}) {
+    const positive = (value) => Number.isFinite(Number(value)) && Number(value) > 0;
+    return {
+      blendModeDisabled: !positive(parameters.blendStrength),
+      despillModeDisabled: !positive(parameters.despillStrength) && !positive(parameters.edgeDespillRadius),
+      backgroundRadiusDisabled: !positive(parameters.edgeRecoveryStrength),
+    };
+  }
+
+  /**
+   * Synchronizes automatic control availability without changing persisted values.
+   * @param {object} elements Batch-cutout DOM adapter.
+   * @param {boolean} unavailable Whether the whole automatic panel is unavailable.
+   * @param {(range:object)=>object|null} [numericInputForRange] Optional editable-number resolver.
+   * @returns {{blendModeDisabled:boolean,despillModeDisabled:boolean,backgroundRadiusDisabled:boolean}} Applied dependency state.
+   */
+  function syncAutomaticControlDependencies(elements, unavailable = false, numericInputForRange = null) {
+    const dependencies = resolveAutomaticControlDependencies({
+      blendStrength: elements.cutoutBlendStrength?.value,
+      despillStrength: elements.cutoutDespillStrength?.value,
+      edgeDespillRadius: elements.cutoutEdgeDespillRadius?.value,
+      edgeRecoveryStrength: elements.cutoutEdgeRecoveryStrength?.value,
+    });
+    if (elements.cutoutBlendMode) {
+      elements.cutoutBlendMode.disabled = unavailable || dependencies.blendModeDisabled;
+    }
+    if (elements.cutoutDespillMode) {
+      elements.cutoutDespillMode.disabled = unavailable || dependencies.despillModeDisabled;
+    }
+    if (elements.cutoutBackgroundRadius) {
+      elements.cutoutBackgroundRadius.disabled = unavailable || dependencies.backgroundRadiusDisabled;
+      const numericInput = numericInputForRange?.(elements.cutoutBackgroundRadius);
+      if (numericInput) numericInput.disabled = elements.cutoutBackgroundRadius.disabled;
+    }
+    return dependencies;
+  }
+
+  /**
    * Resolves whether the current edit can be propagated and explains unavailable states.
    * Automatic parameters in batch sessions are already shared, while local repairs
    * remain opt-in because their geometry must be tracked across frames.
@@ -210,6 +252,18 @@
     }
 
     /**
+     * Applies automatic-parameter dependencies to sliders, selects, and editable number mirrors.
+     * @returns {{blendModeDisabled:boolean,despillModeDisabled:boolean,backgroundRadiusDisabled:boolean}} Applied state.
+     */
+    function synchronizeAutomaticControlDependencies() {
+      return syncAutomaticControlDependencies(
+        elements,
+        !selectedItem() || state.busy,
+        (range) => numericRangeInputs.get(range) || null,
+      );
+    }
+
+    /**
      * Applies a named advanced Alpha preset through existing processing controls.
      * @param {"conservative"|"balanced"|"hard"} presetName Preset identifier.
      * @returns {void}
@@ -261,6 +315,7 @@
       const issueCount = state.items.filter(hasQualityIssue).length;
       const hasMultipleItems = total > 1;
       const hasBatchItems = state.sessionMode === "batch" && total > 0;
+      synchronizeAutomaticControlDependencies();
       elements.cutoutCounter.textContent = `/ ${total}`;
       elements.cutoutFrameNumber.value = total ? String(state.selectedIndex + 1) : "1";
       elements.cutoutFrameNumber.max = String(Math.max(1, total));
@@ -405,9 +460,18 @@
       elements.cutoutActiveToolTitle.textContent = itemAvailable
         ? text(repairModeTextKey(automatic ? "automatic" : state.repairMode))
         : text("settingsEmptyTitle");
-      elements.cutoutActiveToolHint.textContent = text(
-        itemAvailable ? (automatic ? "automaticToolSettingsHint" : "toolSettingsHint") : "settingsEmptyHint",
-      );
+      const hasBackgroundSample = Boolean(selectedItem()?.backgroundSamples?.length);
+      let hintKey = "settingsEmptyHint";
+      if (itemAvailable && automatic && !hasBackgroundSample) hintKey = "needsBackgroundSampleHint";
+      else if (itemAvailable) hintKey = automatic ? "automaticToolSettingsHint" : "toolSettingsHint";
+      const tolerance = Number(elements.cutoutTolerance?.value);
+      const alphaLow = Number(elements.cutoutAlphaLow?.value);
+      const alphaHigh = Number(elements.cutoutAlphaHigh?.value);
+      if (itemAvailable && automatic && tolerance >= 100) hintKey = "toleranceAggressiveHint";
+      else if (itemAvailable && automatic && Number.isFinite(alphaHigh) && alphaHigh <= alphaLow) {
+        hintKey = "alphaWindowHint";
+      }
+      elements.cutoutActiveToolHint.textContent = text(hintKey);
     }
 
     /**
@@ -572,6 +636,7 @@
       setAreaColorTransparent,
       updateLatestAreaRepair,
       updateLatestProtectionRepair,
+      syncAutomaticControlDependencies: synchronizeAutomaticControlDependencies,
     };
   }
 
@@ -580,6 +645,8 @@
     normalizePreviewBackground,
     applyPreviewBackground,
     createController,
+    resolveAutomaticControlDependencies,
     resolveRepairPropagationState,
+    syncAutomaticControlDependencies,
   };
 });

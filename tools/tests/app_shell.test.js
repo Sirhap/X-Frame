@@ -46,6 +46,9 @@ function createElement() {
         listener({ currentTarget: this, preventDefault() {}, ...event });
       }
     },
+    click() {
+      this.dispatch("click");
+    },
     focus() {},
     removeAttribute(name) {
       delete this.attributes[name];
@@ -63,7 +66,7 @@ function createElement() {
 
 /**
  * Creates a shell fixture with mapped selectors.
- * @param {{pathname?:string,navigate?:(route:string)=>Promise<boolean>|boolean}} [options] Initial browser location and navigation adapter.
+ * @param {{pathname?:string,navigate?:(route:string)=>Promise<boolean>|boolean,openContextTool?:(tool:string)=>Promise<boolean>|boolean}} [options] Initial browser location and navigation adapters.
  * @returns {{controller:object,elements:Record<string,object>,filmstripButtons:object[],routeItems:object[],sidebarTabs:object[],storage:object,workbenchRouteItems:object[]}}
  */
 function createFixture(options = {}) {
@@ -83,8 +86,21 @@ function createFixture(options = {}) {
     saveState: createElement(),
     status: createElement(),
     exportButton: createElement(),
+    projectProcessingActions: createElement(),
+    cutoutCurrentFrame: createElement(),
+    cutoutOpen: createElement(),
+    organizerOpen: createElement(),
     kunkun: createElement(),
+    toolRailTools: createElement(),
+    toolRailContextMenu: createElement(),
+    toolRailContextTitle: createElement(),
+    toolRailContextHint: createElement(),
   };
+  const contextToolActions = ["current-frame-cutout", "batch-cutout", "organizer"].map((tool) => {
+    const element = createElement();
+    element.dataset.contextTool = tool;
+    return element;
+  });
   const sidebarTabs = ["project", "transform", "boxes", "effects"].map((tab) => {
     const element = createElement();
     element.dataset.sidebarTab = tab;
@@ -121,6 +137,14 @@ function createFixture(options = {}) {
     ["#saveState", elements.saveState],
     ["#status", elements.status],
     ["#exportWorkbench", elements.exportButton],
+    [".projectProcessingActions", elements.projectProcessingActions],
+    ["#cutoutCurrentFrame", elements.cutoutCurrentFrame],
+    ["#cutoutOpen", elements.cutoutOpen],
+    ["#organizerOpen", elements.organizerOpen],
+    ["#toolRailTools", elements.toolRailTools],
+    ["#toolRailContextMenu", elements.toolRailContextMenu],
+    ["#toolRailContextTitle", elements.toolRailContextTitle],
+    ["#toolRailContextHint", elements.toolRailContextHint],
   ]);
   const documentRef = {
     body: elements.body,
@@ -135,6 +159,7 @@ function createFixture(options = {}) {
       if (selector === "[data-app-mode]") return routeItems;
       if (selector === "[data-workbench-route]") return workbenchRouteItems;
       if (selector === ".kunkunThemeButton") return [elements.kunkun];
+      if (selector === "[data-context-tool]") return contextToolActions;
       return [];
     },
   };
@@ -163,6 +188,7 @@ function createFixture(options = {}) {
     storage,
     windowRef,
     navigate: options.navigate || (async () => true),
+    openContextTool: options.openContextTool,
   });
   return {
     controller,
@@ -172,6 +198,7 @@ function createFixture(options = {}) {
     sidebarTabs,
     storage,
     workbenchRouteItems,
+    contextToolActions,
   };
 }
 
@@ -201,6 +228,11 @@ test("shell restores layout preferences and exposes accessible selected state", 
     fixture.elements.exportButton,
     fixture.elements.save,
   ]);
+  assert.deepEqual(fixture.elements.projectProcessingActions.children, [
+    fixture.elements.cutoutCurrentFrame,
+    fixture.elements.organizerOpen,
+    fixture.elements.cutoutOpen,
+  ]);
 });
 
 test("five logo activations persist and reveal the kunkun theme", () => {
@@ -224,6 +256,28 @@ test("quick tool cards use in-app workbench navigation", async () => {
   await Promise.resolve();
 
   assert.deepEqual(routes, ["cutout"]);
+});
+
+test("context tools keep the active animation in the workbench and delegate the selected tool", async () => {
+  const opened = [];
+  const fixture = createFixture({
+    openContextTool: async (tool) => {
+      opened.push(tool);
+      return tool === "current-frame-cutout";
+    },
+  });
+  fixture.controller.bind();
+  fixture.elements.toolRailTools.dispatch("focus");
+  assert.equal(fixture.elements.toolRailContextMenu.hidden, false);
+
+  let currentFrameCutoutTriggered = false;
+  fixture.elements.cutoutCurrentFrame.addEventListener("click", () => {
+    currentFrameCutoutTriggered = true;
+  });
+  fixture.contextToolActions[0].dispatch("click");
+  await Promise.resolve();
+  assert.deepEqual(opened, ["current-frame-cutout"]);
+  assert.equal(currentFrameCutoutTriggered, true);
 });
 
 test("scatter slice uses the shared tool shell surface", () => {

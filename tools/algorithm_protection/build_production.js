@@ -28,6 +28,9 @@ const STYLESHEET_EXPRESSION = /<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/
 const SCRIPT_EXPRESSION = /<script\s+src="([^"]+)"\s*><\/script>/g;
 const SCATTER_PRODUCTION_ADAPTER = "/scatter_slice_production_adapter.js";
 const SCATTER_SMART_CUTOUT = "/scatter_slice_smart_cutout.js";
+const ATTACK_TRAIL_TEXTURE_PATH = path.join(PUBLIC_ROOT, "presets/attack_trails/dynamic_trail_luma.png");
+const ATTACK_TRAIL_TEXTURE_SOURCE =
+  "tools/animation_tuner/public/presets/attack_trails/dynamic_trail_luma.png";
 const BUILD_FORMAT_VERSION = 2;
 const TEMPORARY_ROOT = path.join(PROJECT_ROOT, `.dist-build-${process.pid}`);
 const BACKUP_ROOT = path.join(PROJECT_ROOT, `.dist-backup-${process.pid}`);
@@ -76,8 +79,8 @@ function createProductionScatterHtml(sourceHtml, styles, ui, faviconUrl) {
   output = replaceRequired(output, 'href="/favicon.ico"', `href="${faviconUrl}"`, "scatter favicon");
   output = replaceRequired(
     output,
-    '<input id="scatterTransparent" type="checkbox" checked />',
-    '<input id="scatterTransparent" type="checkbox" disabled />',
+    '<input id="scatterTransparent" type="checkbox" aria-label="智能抠图" checked />',
+    '<input id="scatterTransparent" type="checkbox" aria-label="智能抠图" disabled />',
     "scatter transparent-output control",
   );
   output = replaceRequired(
@@ -202,8 +205,11 @@ async function buildProduction() {
   const sourceHtml = fs.readFileSync(path.join(PUBLIC_ROOT, "index.html"), "utf8");
   const scatterSourceHtml = fs.readFileSync(path.join(PUBLIC_ROOT, "scatter-slice.html"), "utf8");
   const favicon = fs.readFileSync(path.join(PUBLIC_ROOT, "favicon.ico"));
+  const attackTrailTexture = fs.readFileSync(ATTACK_TRAIL_TEXTURE_PATH);
   const scriptUrls = extractAssetUrls(sourceHtml, SCRIPT_EXPRESSION);
-  const productionScriptUrls = scriptUrls.filter((url) => !SENSITIVE_PUBLIC_SCRIPTS.includes(url));
+  const productionScriptUrls = scriptUrls
+    .filter((url) => !SENSITIVE_PUBLIC_SCRIPTS.includes(url))
+    .map((url) => (url === SCATTER_SMART_CUTOUT ? SCATTER_PRODUCTION_ADAPTER : url));
   const stylesheetUrls = extractAssetUrls(sourceHtml, STYLESHEET_EXPRESSION);
   const scatterScriptUrls = extractAssetUrls(scatterSourceHtml, SCRIPT_EXPRESSION);
   const scatterProductionScriptUrls = [
@@ -248,6 +254,7 @@ async function buildProduction() {
       cssSource,
       scatterCssSource,
       sha256(favicon),
+      sha256(attackTrailTexture),
       sha256(protectedCore),
     ].join("\n\0\n"),
   );
@@ -294,14 +301,17 @@ async function buildProduction() {
     .replaceAll("batch_cutout_worker.js", `/assets/${cutoutWorkerName}`)
     .replaceAll("frame_organizer_worker.js", `/assets/${frameWorkerName}`);
   uiSource = `globalThis.__XSXB_PRODUCTION__=true;globalThis.__XSXB_BUILD_ID__=${JSON.stringify(buildId)};\n${uiSource}`;
-  const ui = await minify(uiSource, "js");
-  const uiName = hashedFilename("ui", "js", ui);
 
   const styles = await minify(cssSource, "css");
   const scatterStyles = await minify(scatterCssSource, "css");
   const scatterUi = await minify(rawScatterUi, "js");
   const stylesName = hashedFilename("styles", "css", styles);
   const faviconName = hashedFilename("favicon", "ico", favicon);
+  const attackTrailTextureName = hashedFilename("attack-trail-texture", "png", attackTrailTexture);
+
+  uiSource = uiSource.replaceAll(ATTACK_TRAIL_TEXTURE_SOURCE, `/assets/${attackTrailTextureName}`);
+  const ui = await minify(uiSource, "js");
+  const uiName = hashedFilename("ui", "js", ui);
 
   writeArtifact(TEMPORARY_ROOT, `assets/${uiName}`, ui);
   writeArtifact(TEMPORARY_ROOT, `assets/${cutoutWorkerName}`, cutoutWorker);
@@ -309,6 +319,7 @@ async function buildProduction() {
   writeArtifact(TEMPORARY_ROOT, `assets/${protectedCoreName}`, protectedCore);
   writeArtifact(TEMPORARY_ROOT, `assets/${stylesName}`, styles);
   writeArtifact(TEMPORARY_ROOT, `assets/${faviconName}`, favicon);
+  writeArtifact(TEMPORARY_ROOT, `assets/${attackTrailTextureName}`, attackTrailTexture);
 
   const productionHtml = sourceHtml
     .replace(STYLESHEET_EXPRESSION, "")
@@ -332,6 +343,7 @@ async function buildProduction() {
     manifestAsset("protected-core", protectedCoreName, protectedCore, "application/wasm"),
     manifestAsset("styles", stylesName, styles, "text/css"),
     manifestAsset("favicon", faviconName, favicon, "image/x-icon"),
+    manifestAsset("attack-trail-texture", attackTrailTextureName, attackTrailTexture, "image/png"),
   ];
   const manifest = {
     schemaVersion: 1,

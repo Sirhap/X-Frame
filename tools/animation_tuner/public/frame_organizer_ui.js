@@ -34,7 +34,6 @@
    *   state:Record<string,any>,
    *   text:(key:string,variables?:Record<string,string|number>)=>string,
    *   hooks?:{getImportContext?:()=>object|null},
-   *   clamp:(value:number,minimum:number,maximum:number)=>number,
    *   setStatus:(message:string,tone?:string)=>void,
    *   renderCounts:()=>void,
    *   renderGrid:()=>void,
@@ -83,7 +82,6 @@
       state,
       text,
       hooks = {},
-      clamp,
       setStatus,
       renderCounts,
       renderGrid,
@@ -117,6 +115,7 @@
     const clipboardMedia = dependencies.clipboardMedia || root.ClipboardMedia;
     const sequenceOrder = dependencies.sequenceOrder || defaultSequenceOrder;
     let createProjectIntentConsumed = false;
+    let createProjectIntentActive = false;
     let clipboardPasteBusy = false;
     if (!sequenceOrder?.restoreImportOrder) throw new Error("FrameSequenceOrder is required.");
 
@@ -188,13 +187,16 @@
      * Opens an application-styled confirmation layer.
      * @param {string} message Confirmation message.
      * @param {Array<[string,string|number]>} details Operation details.
-     * @param {{title?:string,confirmLabel?:string,tone?:"warning"|"danger"}} [options] Dialog labels and tone.
+     * @param {{title?:string,confirmLabel?:string,cancelLabel?:string,tone?:"warning"|"danger"}} [options] Dialog labels and tone.
      * @returns {Promise<boolean>}
      */
     function requestConfirmation(message, details = [], options = {}) {
       if (state.confirmResolver) resolveConfirmation(false);
       elements.organizerConfirmTitle.textContent = options.title || text("confirmTitle");
       elements.organizerConfirmAccept.textContent = options.confirmLabel || text("confirm");
+      if (elements.organizerConfirmCancel) {
+        elements.organizerConfirmCancel.textContent = options.cancelLabel || text("cancel");
+      }
       elements.organizerConfirmMessage.textContent = message;
       elements.organizerConfirmDetails.replaceChildren();
       details.forEach(([label, value]) => {
@@ -312,6 +314,10 @@
       }
       const selectedValue = elements.organizerProjectSelect.value;
       const createProjectRequested = resetValues && consumeCreateProjectIntent();
+      if (resetValues) createProjectIntentActive = createProjectRequested;
+      elements.organizerImportSetup
+        ?.closest?.(".organizerWorkbench")
+        ?.classList?.toggle("createProjectMode", createProjectIntentActive);
       elements.organizerProjectSelect.innerHTML = "";
       if (activeProject?.id) {
         const currentOption = documentApi.createElement("option");
@@ -346,7 +352,7 @@
           defaultProfile?.label || defaultProfile?.id || "character",
         );
         elements.organizerAnimationName.value = "idle";
-        elements.organizerImportFps.value = "12";
+        state.animationNameAuto = true;
         elements.organizerAnimationType.value =
           String(defaultProfile?.kind || "actor") === "boss" ? "boss" : "actor";
       }
@@ -361,7 +367,8 @@
         projectLabel: elements.organizerProjectName.value.trim(),
         profileLabel: elements.organizerProfileName.value.trim(),
         animationName: elements.organizerAnimationName.value.trim(),
-        fps: clamp(Math.round(elements.organizerImportFps.value), 1, 120),
+        creationMode: elements.organizerCreationMode?.value || "merge",
+        fps: 12,
         animationType: elements.organizerAnimationType.value,
         profileKind: elements.organizerAnimationType.value === "boss" ? "boss" : "actor",
         anchorMode: "canvas_bottom_center",
@@ -419,14 +426,6 @@
           setStatus(text("failed", { message: error.message }), "error"),
         ),
       );
-      elements.organizerCopyLink.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(window.location.href);
-          setStatus(text("linkCopied"), "success");
-        } catch (_error) {
-          setStatus(text("linkCopyFailed"), "error");
-        }
-      });
       elements.organizerHome.addEventListener("click", () => {
         requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
       });
@@ -444,6 +443,13 @@
         });
         renderGrid();
         restartPreview();
+      });
+      elements.organizerInvertSelection.addEventListener("click", () => {
+        state.frames.forEach((frame) => {
+          frame.selected = !frame.selected;
+        });
+        state.anchorIndex = -1;
+        renderGrid();
       });
       elements.organizerReduce.addEventListener("click", () => {
         const step = Math.max(2, Math.min(20, Number.parseInt(elements.organizerReduceStep.value, 10) || 2));
@@ -478,6 +484,9 @@
         imageImporter.importFiles(files).catch((error) => {
           setStatus(text("failed", { message: error.message }), "error");
         });
+      });
+      elements.organizerAnimationName.addEventListener("input", () => {
+        state.animationNameAuto = !elements.organizerAnimationName.value.trim();
       });
       clipboardMedia?.bindPaste({
         target: documentApi,
@@ -554,6 +563,10 @@
         );
       });
       elements.organizerApply.addEventListener("click", applyPlan);
+      elements.organizerCreationMode?.addEventListener("change", () => {
+        renderLanguage();
+        renderCounts();
+      });
       elements.organizerGodotPlaceholder.addEventListener("click", importIntoSession);
       elements.organizerAddAssets.addEventListener("click", addIncludedFramesToAssets);
       elements.organizerAddProject?.addEventListener("click", addIncludedFramesToProject);
@@ -565,6 +578,28 @@
       elements.organizerBatchCutout.addEventListener("click", () => {
         editBatchCutout().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
       });
+      elements.organizerToggleImportSetup.addEventListener("click", () => {
+        state.showImportSetup = !state.showImportSetup;
+        state.lastExpandedPanel = state.showImportSetup
+          ? "import"
+          : state.lastExpandedPanel === "import"
+            ? ""
+            : state.lastExpandedPanel;
+        renderCounts();
+      });
+      elements.organizerMoreTools.addEventListener("click", () => {
+        state.showMoreTools = !state.showMoreTools;
+        state.lastExpandedPanel = state.showMoreTools
+          ? "more"
+          : state.lastExpandedPanel === "more"
+            ? ""
+            : state.lastExpandedPanel;
+        renderCounts();
+      });
+      elements.organizerStatusDismiss.addEventListener("click", () => {
+        setStatus(text("ready"), "idle");
+        elements.organizerBatchCutout.focus({ preventScroll: true });
+      });
       elements.organizerViewOriginal.addEventListener("click", () => {
         state.viewMode = "original";
         elements.organizerViewOriginal.classList.add("active");
@@ -573,6 +608,7 @@
         renderPreview();
       });
       elements.organizerViewEdited.addEventListener("click", () => {
+        if (elements.organizerViewEdited.disabled) return;
         state.viewMode = "edited";
         elements.organizerViewEdited.classList.add("active");
         elements.organizerViewOriginal.classList.remove("active");
@@ -630,7 +666,20 @@
         if (!elements.organizerConfirmPanel.hidden) resolveConfirmation(false);
         else if (loopFinder.isOpen()) loopFinder.close();
         else if (!elements.organizerVideoPanel.hidden) videoImporter.close();
-        else requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
+        else if (state.lastExpandedPanel === "more" && state.showMoreTools) {
+          event.preventDefault();
+          state.showMoreTools = false;
+          state.lastExpandedPanel = state.showImportSetup ? "import" : "";
+          renderCounts();
+          elements.organizerMoreTools.focus({ preventScroll: true });
+        } else if (state.lastExpandedPanel === "import" && state.showImportSetup && state.frames.length) {
+          event.preventDefault();
+          state.showImportSetup = false;
+          state.lastExpandedPanel = "";
+          renderCounts();
+          elements.organizerToggleImportSetup.focus({ preventScroll: true });
+        } else
+          requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
       });
       videoImporter.bindEvents();
       loopFinder.bindEvents();

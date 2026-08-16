@@ -5,6 +5,25 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
+test("scatter detection updates counters before preview and does not mask render failures", () => {
+  const script = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/scatter_slice.js"),
+    "utf8",
+  );
+
+  assert.match(script, /function syncDetectionChrome\(\)/);
+  assert.match(script, /Array\.isArray\(group\.boxes\) && group\.boxes\.length > 0/);
+  const renderAll = script.slice(script.indexOf("function renderAll()"));
+  assert.match(renderAll, /syncDetectionChrome\(\)/);
+  assert.ok(
+    renderAll.indexOf("syncDetectionChrome()") < renderAll.indexOf("renderPreview()"),
+    "counters must update before preview",
+  );
+  const successIndex = script.indexOf("识别到 ${state.boxes.length} 个区域");
+  const renderedGuard = script.indexOf("if (!rendered) return;");
+  assert.ok(renderedGuard > 0 && renderedGuard < successIndex, "success status requires renderAll to succeed");
+});
+
 test("scatter-slice routes recoverable failures through one error boundary", () => {
   const script = fs.readFileSync(
     path.resolve(__dirname, "../animation_tuner/public/scatter_slice.js"),
@@ -52,4 +71,7 @@ test("scatter-slice exposes history, grouping, multi-selection, and sizing contr
   assert.match(html, /src="\/app_history\.js"/);
   assert.match(html, /src="\/scatter_slice_workspace_core\.js"/);
   assert.match(html, /src="\/scatter_slice_group_controller\.js"/);
+  assert.match(html, /src="\/batch_cutout_background_estimator\.js"/);
+  assert.match(html, /id="scatterTransparent"[^>]+aria-label="智能抠图"/u);
+  assert.match(html, /id="scatterUniformOutput"[^>]+aria-label="统一输出画布"/u);
 });

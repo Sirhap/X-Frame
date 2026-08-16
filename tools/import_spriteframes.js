@@ -1,7 +1,13 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { EMPTY_MANIFEST, EMPTY_TUNING, createProjectStore, godotProjectName, slug } = require("./project_store");
+const {
+  EMPTY_MANIFEST,
+  EMPTY_TUNING,
+  createProjectStore,
+  godotProjectName,
+  slug,
+} = require("./project_store");
 const { syncGodotProject } = require("./godot_sync");
 const { upsertEstimatedFrameBoxes } = require("./box_estimator");
 const { ensureInitialCharacterScale } = require("./import_scale");
@@ -96,7 +102,8 @@ function parseSpriteFrames(filePath, projectRoot) {
   }
 
   const animations = [];
-  const animationRegex = /\{\s*"frames"\s*:\s*\[([\s\S]*?)\],\s*"loop"\s*:[\s\S]*?"name"\s*:\s*&"([^"]+)"[\s\S]*?"speed"\s*:\s*([-\d.]+)/g;
+  const animationRegex =
+    /\{\s*"frames"\s*:\s*\[([\s\S]*?)\],\s*"loop"\s*:[\s\S]*?"name"\s*:\s*&"([^"]+)"[\s\S]*?"speed"\s*:\s*([-\d.]+)/g;
   let animationMatch;
   while ((animationMatch = animationRegex.exec(text)) !== null) {
     const [, frameBody, name, speed] = animationMatch;
@@ -147,7 +154,9 @@ function projectForImport(args, projectRoot) {
     project = registry.projects.find((entry) => entry.id === registry.activeProjectId);
   } else if (project.projectRoot && !samePath(project.projectRoot, projectRoot)) {
     if (explicitProject) {
-      throw new Error(`Project id "${project.id}" is already bound to ${project.projectRoot}. Use a different --project id for ${projectRoot}.`);
+      throw new Error(
+        `Project id "${project.id}" is already bound to ${project.projectRoot}. Use a different --project id for ${projectRoot}.`,
+      );
     } else {
       registry = projectStore.addProject({ label, projectRoot });
     }
@@ -252,7 +261,8 @@ function commitImportTransaction(transaction, paths, manifest, tuning, originals
       if (entry.directoryInstalled && fs.existsSync(entry.targetDir)) {
         fs.rmSync(entry.targetDir, { recursive: true, force: true });
       }
-      if (entry.backupCreated && fs.existsSync(entry.backupDir)) fs.renameSync(entry.backupDir, entry.targetDir);
+      if (entry.backupCreated && fs.existsSync(entry.backupDir))
+        fs.renameSync(entry.backupDir, entry.targetDir);
     }
     for (const entry of transaction.installs) {
       if (fs.existsSync(entry.stagingDir)) fs.rmSync(entry.stagingDir, { recursive: true, force: true });
@@ -283,7 +293,9 @@ function main() {
   }
   const files = args.file
     ? [path.resolve(args.file)]
-    : walk(projectRoot).filter((filePath) => shouldInclude(filePath, projectRoot, args.all)).sort(naturalSort);
+    : walk(projectRoot)
+        .filter((filePath) => shouldInclude(filePath, projectRoot, args.all))
+        .sort(naturalSort);
   if (!files.length) throw new Error("No SpriteFrames files found.");
 
   const project = projectForImport(args, projectRoot);
@@ -301,14 +313,9 @@ function main() {
   };
   let results;
   try {
-    results = files.map((filePath) => importSpriteFrames(
-      filePath,
-      projectRoot,
-      project,
-      manifest,
-      tuning,
-      transaction,
-    ));
+    results = files.map((filePath) =>
+      importSpriteFrames(filePath, projectRoot, project, manifest, tuning, transaction),
+    );
     commitImportTransaction(transaction, paths, manifest, tuning, originals);
   } catch (error) {
     for (const entry of transaction.installs) {
@@ -328,8 +335,18 @@ function main() {
     }
   }
   if (godotSync.ok) {
-    console.log(`Godot assets: ${godotSync.copiedFrames}/${godotSync.frameCount} frames synced to ${godotSync.assetRoot}`);
+    console.log(
+      `Godot assets: ${godotSync.copiedFrames}/${godotSync.frameCount} frames synced to ${godotSync.assetRoot}`,
+    );
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  parseSpriteFrames,
+  importSpriteFrames,
+  commitImportTransaction,
+};

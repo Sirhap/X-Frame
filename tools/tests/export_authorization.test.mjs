@@ -15,12 +15,12 @@ function exportRequest(pathname, body, origin = "https://example.com") {
   });
 }
 
-test("device-bound export authorization issues and verifies a short-lived permit", async () => {
+test("account-bound export authorization issues and verifies a short-lived permit", async () => {
   const options = {
     now: () => fixedNow,
-    activationService: {
+    accountService: {
       async status() {
-        return { activated: true, configured: true, deviceId: "device-1" };
+        return { authenticated: true, configured: true, proEnabled: true, accountId: "account-1" };
       },
     },
   };
@@ -55,7 +55,7 @@ test("export authorization rejects inactive sessions and cross-origin requests",
     env,
     {
       now: () => fixedNow,
-      activationService: { status: async () => ({ activated: false, configured: true }) },
+      accountService: { status: async () => ({ authenticated: false, configured: true }) },
     },
   );
   assert.equal(inactive.status, 401);
@@ -69,7 +69,9 @@ test("export authorization rejects inactive sessions and cross-origin requests",
     env,
     {
       now: () => fixedNow,
-      activationService: { status: async () => ({ activated: true, deviceId: "device-1" }) },
+      accountService: {
+        status: async () => ({ authenticated: true, proEnabled: true, accountId: "account-1" }),
+      },
     },
   );
   assert.equal(crossOrigin.status, 403);

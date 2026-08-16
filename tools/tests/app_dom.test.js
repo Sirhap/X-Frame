@@ -51,7 +51,8 @@ test("the frame editor is visible before application initialization", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
 
   assert.doesNotMatch(html, /homeHub|data-home-tool/);
-  assert.match(html, /<canvas id="stage"/);
+  assert.match(html, /<canvas\s+id="stage"/);
+  assert.doesNotMatch(html, /class="languageButton"/);
 });
 
 test("the Codex Pets project exposes custom-pet recovery controls", () => {

@@ -526,17 +526,24 @@
   gap: 24px;
 }
 
-.factory-footer nav a {
+.factory-footer nav a,
+.factory-footer nav button {
   min-width: 44px;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--color-muted);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
   font-size: 10px;
 }
 
 .factory-footer nav a:hover,
-.factory-footer nav a:focus-visible {
+.factory-footer nav a:focus-visible,
+.factory-footer nav button:hover,
+.factory-footer nav button:focus-visible {
   color: var(--color-primary);
 }

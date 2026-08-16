@@ -25,6 +25,7 @@ function isInside(childPath, parentPath) {
 function validGodotProjectRoot(project) {
   const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
   if (!projectRoot || !fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) return "";
+  if (!fs.existsSync(path.join(projectRoot, "project.godot"))) return "";
   return projectRoot;
 }
 
@@ -166,11 +167,17 @@ function audioExtension(binding) {
 function decodeDataUrl(dataUrl) {
   const match = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/i.exec(String(dataUrl || ""));
   if (!match) return null;
+  let decodedText = "";
+  if (!match[2]) {
+    try {
+      decodedText = decodeURIComponent(match[3] || "");
+    } catch (error) {
+      throw Object.assign(new Error("Invalid data URL encoding."), { status: 400, cause: error });
+    }
+  }
   return {
     mime: match[1] || "",
-    buffer: match[2]
-      ? Buffer.from(match[3], "base64")
-      : Buffer.from(decodeURIComponent(match[3] || ""), "utf8"),
+    buffer: match[2] ? Buffer.from(match[3], "base64") : Buffer.from(decodedText, "utf8"),
   };
 }
 

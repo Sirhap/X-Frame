@@ -47,6 +47,7 @@
       clearImageElements = () => {},
       setOpaqueRectCache = () => {},
       premiumFeatures = root?.XSXBPremiumFeatures,
+      onFramesChanged = () => {},
     } = dependencies;
 
     /**
@@ -86,6 +87,34 @@
       clearImageCaches();
       const frameIndex = getSelectedFrame();
       await selectGroup(group, { frameIndex, preserveView: true });
+      onFramesChanged({ type: "assets-replaced", frameIndexes: group.frames.map((_frame, index) => index) });
+    }
+
+    /**
+     * Replaces only one frame while retaining the animation order and selection.
+     * @param {{data:string}} output Processed PNG output for the selected frame.
+     * @param {{frameIndex?:number,premiumFeatures?:string[]}} [options] Target frame and premium metadata.
+     * @returns {Promise<void>}
+     */
+    async function applyCutoutOutputToCurrentFrame(output, options = {}) {
+      const group = getCurrentGroup();
+      const requestedIndex = Number.isInteger(options.frameIndex) ? options.frameIndex : getSelectedFrame();
+      const frameIndex = Math.max(0, requestedIndex);
+      const frame = group?.frames?.[frameIndex];
+      if (!frame) throw new Error("No active animation frame.");
+      if (!outputCore?.createAnimationReplacementPayload) {
+        throw new Error("Batch cutout output core is unavailable.");
+      }
+      const payload = outputCore.createAnimationReplacementPayload(getActiveProjectId(), [frame], [output]);
+      const response = await requireFetch()("/api/replace-animation", {
+        method: "POST",
+        headers: mutationHeaders(options.premiumFeatures),
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      clearImageCaches();
+      await selectGroup(group, { frameIndex, preserveView: true });
+      onFramesChanged({ type: "assets-replaced", frameIndexes: [frameIndex] });
     }
 
     /**
@@ -115,6 +144,7 @@
       clearImageCaches();
       await loadConfig();
       resizeCanvas();
+      onFramesChanged({ type: "frames-reorganized" });
     }
 
     /**
@@ -246,6 +276,13 @@
         result = null;
       }
       if (!response.ok || !result?.ok) {
+        if (result?.code === "animation_exists") {
+          throw new Error(
+            getLanguage() === "zh"
+              ? "动画名称已存在。请换一个动画名称，或先删除同名动画后再导入。"
+              : "An animation with this name already exists. Choose another name or delete the existing animation first.",
+          );
+        }
         throw new Error(result?.error || responseText || `HTTP ${response.status}`);
       }
       setSelectedProjectId(result.activeProjectId);
@@ -291,6 +328,7 @@
     }
 
     return {
+      applyCutoutOutputToCurrentFrame,
       applyCutoutOutputsToCurrentAnimation,
       applyFrameOrganizerPlan,
       deleteSelectedAnimationFrames,

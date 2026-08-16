@@ -403,6 +403,36 @@ test("loop executor preserves object-signature dimensions", async () => {
   assert.deepEqual(candidates, [{ width: 2, height: 2 }]);
 });
 
+test("loop executor normalizes mismatched object-signature dimensions", async () => {
+  class MismatchedDimensionWorker {
+    postMessage(message) {
+      queueMicrotask(() =>
+        this.onmessage({
+          data: {
+            id: message.id,
+            type: "result",
+            ok: true,
+            candidates: message.signatureDimensions,
+          },
+        }),
+      );
+    }
+
+    terminate() {}
+  }
+
+  const executor = createLoopExecutor({ WorkerConstructor: MismatchedDimensionWorker });
+  const candidates = await executor.analyze([
+    {
+      data: Uint8ClampedArray.from(new Array(16).fill(0)),
+      width: 8,
+      height: 2,
+    },
+  ]);
+
+  assert.deepEqual(candidates, [{ width: 4, height: 1 }]);
+});
+
 test("frame executor routes jump analysis with protected protocol metadata", async () => {
   const requests = [];
   class FrameAnalysisWorker {

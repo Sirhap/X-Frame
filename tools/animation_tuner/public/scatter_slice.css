@@ -1425,6 +1425,91 @@ body.embedded .scatterApp {
   margin-left: 0;
 }
 
+/*
+ * The embedded tool shares a 720px-tall workbench with the application shell.
+ * Keep the source controls and canvas independently usable instead of allowing
+ * a tall sprite sheet to push export controls beyond the iframe viewport.
+ */
+@media (min-width: 761px) and (max-height: 780px) {
+  body.embedded .scatterApp {
+    padding: 14px 18px 32px;
+  }
+
+  body.embedded .scatterHeader {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+    align-items: center;
+    gap: 28px;
+    padding: 12px 0 14px;
+  }
+
+  body.embedded .scatterHeader h1 {
+    font-size: clamp(30px, 3.5vw, 46px);
+  }
+
+  body.embedded .scatterHeader h1 br {
+    display: none;
+  }
+
+  body.embedded .eyebrow {
+    margin-bottom: 7px;
+  }
+
+  body.embedded .headingMeta p {
+    margin-top: 7px;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  body.embedded .embeddedBack {
+    min-height: 30px;
+  }
+
+  body.embedded .workflowStrip span {
+    min-height: 36px;
+    padding-block: 7px;
+  }
+
+  body.embedded .scatterWorkbench {
+    height: calc(100dvh - 176px);
+    min-height: 480px;
+    overflow: hidden;
+  }
+
+  body.embedded .controlDeck {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  body.embedded .previewDeck {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.embedded .canvasStage {
+    min-height: 0;
+    padding: 16px;
+  }
+
+  body.embedded .canvasStage canvas {
+    max-height: 100%;
+  }
+
+  body.embedded .previewToolbar {
+    min-height: 44px;
+  }
+
+  body.embedded .statusBar {
+    min-height: 42px;
+    padding-block: 7px;
+  }
+
+  body.embedded .resultsDeck {
+    padding-top: 28px;
+  }
+}
+
 .embeddedBack {
   min-height: 44px;
   display: inline-flex;

@@ -72,10 +72,14 @@ try {
     animationId: "idle",
     animationName: "Idle",
     fps: 12,
-    items: [{ data: pixelPng, name: "idle.png" }],
+    items: [
+      { data: pixelPng, name: "idle.png", frameId: "scatter:idle:frame-a", assetRevision: 3 },
+    ],
   });
   assert.equal(imported.frameCount, 1);
   assert.equal(imported.manifest.profiles[0].animations[0].id, "idle");
+  assert.equal(imported.manifest.profiles[0].animations[0].frames[0].id, "scatter:idle:frame-a");
+  assert.equal(imported.manifest.profiles[0].animations[0].frames[0].assetRevision, 3);
   const importedFramePath = path.join(imported.targetDir, "frame_0001.png");
   assert.equal(fs.existsSync(importedFramePath), true);
   const boundsCache = createOpaqueBoundsCache();

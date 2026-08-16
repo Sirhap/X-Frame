@@ -59,6 +59,13 @@
         <a class="back-link" href="/tools">← 返回快速工具</a>
         <div class="local-badge" id="processingBadge"><span></span>检测本地引擎…</div>
       </div>
+      <ol class="workflow-steps" id="watermarkWorkflowSteps" aria-label="视频去水印流程">
+        <li data-step="source" aria-current="step">载入</li>
+        <li data-step="region">框选</li>
+        <li data-step="repair">修复</li>
+        <li data-step="preview">预览</li>
+        <li data-step="export">导出</li>
+      </ol>
     </header>
 
     <main class="workspace" id="watermarkWorkspace">
@@ -132,7 +139,7 @@
             </label>
             <label>
               <input type="radio" name="repairMode" value="smart" />
-              <span><b>智能白印</b><small>逐帧 · 保前景</small></span>
+              <span><b>智能修复</b><small>逐帧 · 保前景</small></span>
             </label>
           </fieldset>
 
@@ -208,6 +215,24 @@
 
         <section class="control-section export-section">
           <p class="section-number">EXPORT / 04</p>
+          <dl class="export-summary" id="exportSummary">
+            <div>
+              <dt>时长</dt>
+              <dd id="exportDuration">—</dd>
+            </div>
+            <div>
+              <dt>分辨率</dt>
+              <dd id="exportResolution">—</dd>
+            </div>
+            <div>
+              <dt>处理范围</dt>
+              <dd id="exportRegions">0 个区域</dd>
+            </div>
+            <div>
+              <dt>预计大小</dt>
+              <dd id="exportSize">—</dd>
+            </div>
+          </dl>
           <div class="quality-row">
             <span>输出质量</span><strong id="qualityOutput">高质量 · CRF 18</strong>
           </div>
@@ -215,6 +240,7 @@
             <span id="exportLabel">导出修复视频</span
             ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
           </button>
+          <p class="export-reason" id="exportReason">请先载入视频并框选水印区域</p>
           <div
             class="progress-wrap"
             id="progressWrap"

@@ -20,6 +20,7 @@ function createHarness(overrides = {}) {
         .toLowerCase()
         .replace(/\s+/g, "-"),
     readRegistry: () => ({ activeProjectId: project.id, projects: [project] }),
+    path: "/tmp/projects.json",
     addProject: () => ({ activeProjectId: project.id, projects: [project] }),
     setActiveProject: () => ({ activeProjectId: project.id, projects: [project] }),
     resolveProject: () => project,
@@ -55,7 +56,7 @@ function createHarness(overrides = {}) {
     fs: { promises: { rm: async () => {} } },
     path: require("node:path"),
     root: "/tmp/root",
-    decodeDataUrl: () => null,
+    decodeDataUrl: overrides.decodeDataUrl || (() => null),
     saveFrameAudioBindings: overrides.saveFrameAudioBindings || (() => []),
     saveFrameAttachmentImage: overrides.saveFrameAttachmentImage || (() => ({ path: "frame.png" })),
     saveAttachmentAssets: overrides.saveAttachmentAssets || (() => []),
@@ -77,6 +78,113 @@ function createHarness(overrides = {}) {
   });
   return { routes, responses, project };
 }
+
+test("animation import snapshots local state before Godot sync and rolls it back on failure", async () => {
+  const events = [];
+  const { routes, responses } = createHarness({
+    readJsonBody: async () => ({
+      projectId: "project-a",
+      profileId: "hero",
+      profileLabel: "Hero",
+      animationId: "idle",
+      animationName: "Idle",
+      items: [{ data: "data:image/png;base64,valid" }],
+    }),
+    decodeDataUrl: () => ({
+      mime: "image/png",
+      buffer: Buffer.from("\x89PNG\r\n\x1a\n" + "0".repeat(32), "binary"),
+    }),
+    createFilesystemSnapshot: async (paths) => {
+      events.push(["snapshot", paths]);
+      return {
+        dispose: async () => events.push("dispose"),
+        restore: async () => events.push("restore"),
+      };
+    },
+    rollbackFilesystemSnapshot: async (transaction, error) => {
+      events.push("rollback");
+      await transaction.restore();
+      throw error;
+    },
+    syncGodotProjectAsync: async () => {
+      throw new Error("simulated Godot sync failure");
+    },
+  });
+
+  await assert.rejects(
+    routes.handleMediaRoute({ method: "POST" }, {}, new URL("http://127.0.0.1/api/import-animation")),
+    /simulated Godot sync failure/u,
+  );
+  assert.equal(responses.length, 0);
+  assert.equal(events[0][0], "snapshot");
+  assert.equal(events[1][0], "snapshot");
+  assert.deepEqual(events.slice(2), ["restore", "restore", "dispose", "dispose"]);
+});
+
+test("animation import does not roll back disposed snapshots when response delivery fails", async () => {
+  const events = [];
+  const { routes } = createHarness({
+    readJsonBody: async () => ({
+      projectId: "project-a",
+      profileId: "hero",
+      profileLabel: "Hero",
+      animationId: "idle",
+      animationName: "Idle",
+      items: [{ data: "data:image/png;base64,valid" }],
+    }),
+    decodeDataUrl: () => ({
+      mime: "image/png",
+      buffer: Buffer.from("\x89PNG\r\n\x1a\n" + "0".repeat(32), "binary"),
+    }),
+    createFilesystemSnapshot: async () => ({
+      dispose: async () => events.push("dispose"),
+      restore: async () => events.push("restore"),
+    }),
+    send: () => {
+      events.push("send");
+      throw new Error("response socket closed");
+    },
+  });
+
+  await assert.rejects(
+    routes.handleMediaRoute({ method: "POST" }, {}, new URL("http://127.0.0.1/api/import-animation")),
+    /response socket closed/u,
+  );
+  assert.deepEqual(events, ["dispose", "dispose", "send"]);
+});
+
+test("animation import rolls back when snapshot disposal fails before response delivery", async () => {
+  const events = [];
+  const { routes } = createHarness({
+    readJsonBody: async () => ({
+      projectId: "project-a",
+      profileId: "hero",
+      profileLabel: "Hero",
+      animationId: "idle",
+      animationName: "Idle",
+      items: [{ data: "data:image/png;base64,valid" }],
+    }),
+    decodeDataUrl: () => ({
+      mime: "image/png",
+      buffer: Buffer.from("\x89PNG\r\n\x1a\n" + "0".repeat(32), "binary"),
+    }),
+    createFilesystemSnapshot: async () => ({
+      dispose: async () => {
+        events.push("dispose");
+        if (events.filter((event) => event === "dispose").length === 1) {
+          throw new Error("snapshot cleanup failed");
+        }
+      },
+      restore: async () => events.push("restore"),
+    }),
+  });
+
+  await assert.rejects(
+    routes.handleMediaRoute({ method: "POST" }, {}, new URL("http://127.0.0.1/api/import-animation")),
+    /snapshot cleanup failed/u,
+  );
+  assert.deepEqual(events, ["dispose", "restore", "restore", "dispose", "dispose"]);
+});
 
 test("media route dispatcher preserves frame-audio transaction response", async () => {
   let savedBindings = null;

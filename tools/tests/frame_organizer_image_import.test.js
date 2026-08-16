@@ -7,9 +7,11 @@ const { createController } = require("../animation_tuner/public/frame_organizer_
 /**
  * Creates an importer fixture with deterministic asynchronous image decoding.
  * @param {"filename"|"selection"} [strategy] Initial image ordering strategy.
+ * @param {{assertImagePixelBudget?:(source:object,currentPixels?:number)=>{totalPixels:number}}} [options]
+ * Fixture overrides.
  * @returns {{controller:ReturnType<typeof createController>,state:object,statuses:Array<object>,revoked:string[]}}
  */
-function createFixture(strategy = "filename") {
+function createFixture(strategy = "filename", options = {}) {
   const filesByUrl = new Map();
   const revoked = [];
   let nextUrl = 0;
@@ -17,14 +19,15 @@ function createFixture(strategy = "filename") {
     set src(value) {
       const file = filesByUrl.get(value);
       setTimeout(() => {
-        this.width = 2;
-        this.height = 2;
+        this.width = file.width || 2;
+        this.height = file.height || 2;
         this.onload?.();
       }, file.delay);
     }
   }
   const state = { busy: false, frames: [], importOrderStrategy: strategy, nextImportBatchIndex: 0 };
   const statuses = [];
+  const defaultAnimationNames = [];
   const controller = createController({
     elements: {
       organizerGrid: {
@@ -36,14 +39,17 @@ function createFixture(strategy = "filename") {
     imagePixelBudget: {
       totalPixels: (sources) => sources.reduce((total, source) => total + source.width * source.height, 0),
     },
-    assertImagePixelBudget: (source, currentPixels = 0) => ({
-      totalPixels: currentPixels + source.width * source.height,
-    }),
+    assertImagePixelBudget:
+      options.assertImagePixelBudget ||
+      ((source, currentPixels = 0) => ({
+        totalPixels: currentPixels + source.width * source.height,
+      })),
     createFrame: (image, options) => ({ originalCanvas: image, ...options }),
     renderCounts() {},
     renderGrid() {},
     restartPreview() {},
     setStatus: (message, tone) => statuses.push({ message, tone }),
+    setDefaultAnimationName: (filename) => defaultAnimationNames.push(filename),
     imageConstructor: FakeImage,
     urlApi: {
       createObjectURL(file) {
@@ -56,11 +62,11 @@ function createFixture(strategy = "filename") {
       },
     },
   });
-  return { controller, state, statuses, revoked };
+  return { controller, state, statuses, revoked, defaultAnimationNames };
 }
 
 test("image importer naturally sorts each batch across concurrent decoding", async () => {
-  const { controller, state, statuses, revoked } = createFixture();
+  const { controller, state, statuses, revoked, defaultAnimationNames } = createFixture();
   const files = [
     { name: "frame_10.png", type: "image/png", size: 10, delay: 8 },
     { name: "frame_2.png", type: "image/png", size: 10, delay: 0 },
@@ -85,6 +91,7 @@ test("image importer naturally sorts each batch across concurrent decoding", asy
   );
   assert.equal(state.busy, false);
   assert.equal(revoked.length, 2);
+  assert.deepEqual(defaultAnimationNames, ["frame_10.png"]);
   assert.deepEqual(statuses.at(-1), { message: "imported:2", tone: "success" });
 });
 
@@ -118,4 +125,26 @@ test("image importer rejects unsupported files without entering busy state", asy
   assert.equal(state.busy, false);
   assert.deepEqual(state.frames, []);
   assert.deepEqual(statuses.at(-1), { message: "importInvalid:", tone: "error" });
+});
+
+test("image importer validates each source without rejecting a large retained workset", async () => {
+  const seenCurrentPixels = [];
+  const { controller, state, statuses } = createFixture("selection", {
+    assertImagePixelBudget(source, currentPixels = 0) {
+      seenCurrentPixels.push(currentPixels);
+      const pixels = source.width * source.height;
+      if (currentPixels + pixels > 8) throw new Error("batch pixel limit");
+      return { totalPixels: currentPixels + pixels };
+    },
+  });
+
+  await controller.importFiles([
+    { name: "frame_1.png", type: "image/png", size: 10, delay: 0, width: 2, height: 2 },
+    { name: "frame_2.png", type: "image/png", size: 10, delay: 0, width: 2, height: 2 },
+    { name: "frame_3.png", type: "image/png", size: 10, delay: 0, width: 2, height: 2 },
+  ]);
+
+  assert.deepEqual(seenCurrentPixels, [0, 0, 0]);
+  assert.equal(state.frames.length, 3);
+  assert.deepEqual(statuses.at(-1), { message: "imported:3", tone: "success" });
 });

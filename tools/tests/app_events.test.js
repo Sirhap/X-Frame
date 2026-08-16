@@ -88,6 +88,9 @@ function createElements() {
 
 test("event controller binds the original listener groups once", () => {
   const elements = createElements();
+  const englishButton = createElement();
+  englishButton.dataset.language = "en";
+  elements.languageButtons = [englishButton];
   const state = {
     config: { groups: [] },
     currentGroup: null,
@@ -101,6 +104,7 @@ test("event controller binds the original listener groups once", () => {
     view: { x: 0, y: 0, zoom: 1 },
   };
   let keyboardBindCount = 0;
+  const languagePreferences = [];
   const handlers = new Proxy(
     {
       adjustmentNumberInputs: () => [],
@@ -114,7 +118,10 @@ test("event controller binds the original listener groups once", () => {
       },
     },
   );
-  const storage = new Map();
+  const storage = {
+    getItem: () => null,
+    setItem: (key, value) => languagePreferences.push([key, value]),
+  };
   const controller = createController({
     elements,
     state,
@@ -131,6 +138,12 @@ test("event controller binds the original listener groups once", () => {
   assert.equal(elements.projectSelect.listenerCount("change"), 1);
   assert.equal(elements.stage.listenerCount("pointerdown"), 1);
   assert.equal(keyboardBindCount, 1);
+  englishButton.dispatch("click");
+  assert.equal(state.language, "en");
+  assert.deepEqual(languagePreferences, [
+    ["xsxbFrameTuner.language", "en"],
+    ["xsxbFrameTuner.languageExplicit", "true"],
+  ]);
 });
 
 test("event controller restores group transforms and frame overrides without deleting unrelated groups", () => {

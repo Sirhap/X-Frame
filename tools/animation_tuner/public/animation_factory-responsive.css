@@ -255,6 +255,27 @@
     width: 100%;
   }
 
+  .factory-account-dialog {
+    padding: 10px;
+  }
+
+  .factory-account-card {
+    grid-template-columns: 1fr;
+  }
+
+  .factory-account-rail {
+    display: none;
+  }
+
+  .factory-account-body {
+    padding: 42px 22px 26px;
+  }
+
+  .factory-account-send-row,
+  .factory-account-actions {
+    grid-template-columns: 1fr;
+  }
+
   .product-console {
     border-radius: var(--radius-control);
     box-shadow: 7px 7px 0 #050806;

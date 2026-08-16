@@ -39,7 +39,8 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 - `tools/import_spriteframes.js`：Agent 用来从 Godot `.spriteframes.tres` 导入动画的内部工具。
 - `tools/validate_import.js`：验证独立 tuner 与 Godot 项目的完整接线结果。
 - `tools/godot_sync.js` 和 `tools/godot_runtime.js`：把调参数据、素材和 runtime 同步到 Godot 项目。
-- `skills/xsxb-frame-tuner/`：配套 Codex/Agent skill。
+- `skills/xsxb-animation-production/`：从动画需求、生成/已有素材到导入、同步、验证和启动工作台的上层 Codex/Agent skill。
+- `skills/xsxb-frame-tuner/`：具体 XSXB 导入、整理、调参、Godot runtime 同步和验证执行层 skill。
 - `data/`、`workspace/`、`audio/`：本地运行时目录。真实项目数据不提交。
 
 ## 安装方式
@@ -47,9 +48,9 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 只提供 Agent 安装方式。把下面这段话交给 Codex 或其他支持 skills 的 Agent：
 
 ```text
-请从本地项目目录安装并启用 `skills/xsxb-frame-tuner`。
+请从本地项目目录安装并启用 `skills/xsxb-animation-production`，并确保它可以调用 `skills/xsxb-frame-tuner`。
 安装后把仓库克隆到本机作为 XSXB Frame Tuner 工具根目录。
-以后处理 Godot 帧动画角色导入、动画追加、碰撞框调参、音效/挂件同步时，默认使用 `$xsxb-frame-tuner`。
+以后处理 Godot 帧动画制作、角色导入、动画追加、碰撞框调参、音效/挂件同步时，默认使用 `$xsxb-animation-production`；具体 XSXB 数据操作继续使用 `$xsxb-frame-tuner`。
 ```
 
 ## 使用方式
@@ -88,6 +89,18 @@ macOS 可双击 `start_xsxb_frame_tuner.command` 启动本地服务和页面。�
 ```text
 用 $xsxb-frame-tuner 检查当前 Godot 项目的 XSXB runtime 是否和 tuner 保存的数据一致。
 ```
+
+如果希望直接使用项目内的机器可读工作流，也可以在本地运行：
+
+```bash
+npm run animation:workflow -- plan --contract <animation-constraints.json> --json
+npm run animation:workflow -- import --contract <animation-constraints.json> --json
+npm run animation:workflow -- sync --contract <animation-constraints.json> --project <xsxb_project_id> --json
+npm run animation:workflow -- validate --contract <animation-constraints.json> --json
+npm run animation:workflow -- start --port 5179 --json
+```
+
+没有现成帧素材时，让 `$xsxb-animation-production` 先根据描述建立约束、canonical 角色参考和关键姿势，再使用可用的本地/已授权生成工具产出 PNG 序列；生成工具不可用时，Agent 会保留契约并报告阻塞，不会伪造已完成动画。视频和 SpriteFrames 等浏览器/专用导入流程仍由现有工作台和 `$xsxb-frame-tuner` 接管。
 
 Agent 会负责选择/创建 XSXB 项目、批量复制帧素材、生成 manifest、逐组检查初始框体、同步完整 runtime 到 Godot、连接实际 gameplay，并在验证通过后启动 Webapp。打开页面后，人可以继续做艺术性微调并点击保存。
 
@@ -131,7 +144,7 @@ Node 服务支持平台注入的 `PORT` 和 `HOST` 环境变量。例如容器�
 
 ### 高级功能激活
 
-导入、处理、调参和本地保存不要求激活。只有从工作台导出动画包时，系统才会根据当前动画实际使用的 Pro 功能决定是否校验激活状态；未使用 Pro 功能可直接导出。获取激活码入口为 <https://pay.ldxp.cn/shop/sirhao>。
+导入、处理、调参和本地保存不要求 Pro 授权。托管工作台使用邮箱验证码注册/登录，每个浏览器登录状态保持 7 天；设备数量不受限制。高级导出按邮箱账户的 Pro 权益校验，未使用 Pro 功能可直接导出。获取激活码入口为 <https://pay.ldxp.cn/shop/sirhao>。
 
 服务端不保存明文激活码。本地 Node 开发服务器可通过以下环境变量配置：
 
@@ -147,11 +160,11 @@ printf %s 'XSXB-PRO-示例激活码' | tr '[:lower:]' '[:upper:]' | shasum -a 25
 如果没有同时配置 `XSXB_ACTIVATION_CODE_HASHES` 和至少 32 字符的持久
 `XSXB_ACTIVATION_SECRET`，激活接口会安全地拒绝所有激活请求，不会生成临时签名密钥或使用开发环境万能码。
 
-Cloudflare 正式部署使用 D1 自动试用与多设备授权，不使用 `XSXB_ACTIVATION_CODE_HASHES` 环境变量：浏览器首次进入托管工作台时无需激活码即可领取独立的 3 天试用，并生成不可导出的 ECDSA P-256 私钥。服务端使用浏览器、硬件、地区和显示环境等信号的加盐哈希辅助识别重复试用，但授权始终依赖设备私钥签名，设备指纹不能证明真实人员身份。D1 不保存原始设备指纹或原始 IP。
+Cloudflare 正式部署使用 D1 邮箱账户授权，不使用 `XSXB_ACTIVATION_CODE_HASHES` 环境变量。任意有效邮箱可通过 Resend 发送的 6 位验证码注册；验证码有效 10 分钟，浏览器会话有效 7 天。D1 仅保存验证码哈希、会话令牌哈希和客户端 IP 的密钥哈希，不保存验证码、会话令牌或原始 IP。
 
-付费激活码可在管理后台设置任意正整数设备槽位，也可选择“不限设备”；同一设备重复激活不会占用新槽位，有限授权达到上限后拒绝新设备。激活码支持自定义 Unicode 文本、空格和符号，有效天数可填写任意能在公元 9999 年前产生到期时间的正整数，也可直接设为永久。用户可从工作台的“授权管理”主动填写或更换激活码，并查看当前到期时间。所有设备共享该激活码从首次激活开始计算的有效期。管理员可以在对应激活码下查看设备 ID、名称、地区、首次绑定、最后使用和撤销状态，并可删除绑定以重置槽位。完整配置见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
+付费激活码首次兑换时绑定当前邮箱，不可被其他邮箱重复使用；一个邮箱可以绑定多个激活码，任一有效授权即可开启 Pro。激活码继续支持自定义 Unicode、有效天数、永久、兑换期限、撤销和恢复。后台还可配置新账户默认 Pro，并对单个邮箱设置继承、开启或关闭。完整配置见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
 
-Cloudflare 首页右上角链接到独立的 `/admin/licenses` 激活码管理页面，不使用悬浮弹窗，工具工作台也不会显示该入口。管理员使用用户名和 Google Authenticator 兼容的 6 位 TOTP 登录，不使用密码；用户名由 `XSXB_ADMIN_USERNAME` 配置（省略时为 `admin`）。验证后可以查看、单个复制或批量复制新建激活码；迁移前仅保存哈希的旧码无法恢复原文。`XSXB_ADMIN_TOTP_SECRET` 必须以 Base32 形式通过 Worker 环境密钥设置，不得写入源码、Wrangler 配置或 D1。Google Authenticator 固定每 30 秒更新验证码，服务端只接受当前时间窗口，并阻止同一计数器重复使用。管理会话、D1 迁移与远程配置步骤见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
+Cloudflare 首页右上角提供普通用户“登录 / 注册”入口，进入工作台后自动打开邮箱验证码登录。独立的 `/admin/licenses` 后台不在普通账户入口中暴露，并由 Worker 服务端检查管理员工作台 Cookie；未认证访问会跳转 `/admin/login`，直接访问 `/admin.html` 返回 404。管理员必须同时提供 `XSXB_ADMIN_USERNAME`（生产环境为 `sirhao`）、环境密钥 `PASSWORD` 和 Google Authenticator 兼容的 6 位 TOTP。登录后管理员可直接进入工作台并拥有 Pro 权限；管理员工作台会话与邮箱账户会话使用独立 Cookie，退出任一身份不会撤销另一身份。验证后可以查看、单个复制或批量复制新建激活码；迁移前仅保存哈希的旧码无法恢复原文。`PASSWORD` 与 `XSXB_ADMIN_TOTP_SECRET` 必须通过 Worker Secret 设置，不得写入源码、Wrangler 配置或 D1。Google Authenticator 固定每 30 秒更新验证码，服务端只接受当前时间窗口，并阻止同一计数器重复使用。管理会话、D1 迁移与远程配置步骤见 [`cloudflare/site/README.md`](cloudflare/site/README.md)。
 
 本地开发使用独立环境文件，避免开发码进入正式启动流程：
 

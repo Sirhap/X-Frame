@@ -51,6 +51,7 @@
       setPlaybackPrimaryGroup = (value) => (state.playbackPrimaryGroup = value),
       setPlaybackSecondaryGroup = (value) => (state.playbackSecondaryGroup = value),
       setPlaybackSwitching = (value) => (state.playbackSwitching = value),
+      getImages = () => state.images || [],
       setImages = (value) => (state.images = value),
       setChainImages = (value) => (state.chainImages = value),
       setPreviewOwnerGroup = (value) => (state.previewOwnerGroup = value),
@@ -117,6 +118,10 @@
       loadImagesBounded = async () => {
         throw new TypeError("An image loader is required.");
       },
+      restoreReferenceFrame = async () => {
+        setReferenceFrame(null);
+        return false;
+      },
       loadImageCached = async () => {
         throw new TypeError("An image loader is required.");
       },
@@ -137,6 +142,8 @@
       renderFilmstrip = () => {},
       fitView = () => {},
       syncUrlState = () => {},
+      onConfigLoaded = () => {},
+      onGroupSelected = () => {},
     } = dependencies;
 
     /**
@@ -234,6 +241,7 @@
       nextConfig.groups.forEach((group, index) => {
         group.uiId = `${group.tuningTarget || "player"}:${group.type}:${group.name}:${index}`;
       });
+      onConfigLoaded(nextConfig);
 
       const tuning = nextConfig.tuning && typeof nextConfig.tuning === "object" ? nextConfig.tuning : {};
       setValues({ ...tuning });
@@ -260,7 +268,6 @@
       setSoulPlaybackOverrides(clone(nextConfig.soulTuning?.frame_playback_overrides || {}));
       setSoulFrameBoxOverrides(clone(nextConfig.soulTuning?.frame_box_overrides || {}));
       setYechengPropFrameOverrides(clone(nextConfig.yechengPropTuning?.frame_visual_overrides || {}));
-
       loadFrameImageAttachmentsFromProject();
       loadAttachmentAssetsFromProject();
       resetFrameAudioBindings();
@@ -294,6 +301,14 @@
           frameIndex: Math.max(0, Number.parseInt(currentUrlState.get("frame") || "0", 10) || 0),
           history: false,
         });
+        await restoreReferenceFrame(tuning.reference_frame || null, nextConfig.groups, (frames) =>
+          frames === getCurrentGroup()?.frames && getImages().length
+            ? getImages()
+            : loadImagesBounded(frames),
+        );
+        syncFrameInputs();
+        renderFilmstrip();
+        draw();
         startPreloadImages(initialGroup);
       } else {
         resetProjectSession();
@@ -362,6 +377,7 @@
         options.preserveView === true || (options.preserveView !== false && hadCurrentGroup);
       if (options.fitView === true || !preserveView) fitView();
       draw();
+      onGroupSelected(group);
       syncUrlState({ push: options.history !== false && hadCurrentGroup });
     }
 

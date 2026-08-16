@@ -112,7 +112,43 @@ function createServerIoOperations(dependencies = {}) {
   }
 
   /**
-   * Computes an optimistic concurrency token from all persisted project JSON.
+   * Collects managed animation PNG paths listed in the project manifest.
+   * @param {object} project Project record.
+   * @param {{manifest:string,workspaceDir:string}} paths Project paths.
+   * @returns {string[]} Existing frame files inside the project workspace.
+   */
+  function managedFrameFiles(project, paths) {
+    if (!paths?.manifest || !paths?.workspaceDir) return [];
+    let manifest;
+    try {
+      manifest = JSON.parse(fs.readFileSync(paths.manifest, "utf8"));
+    } catch (_error) {
+      return [];
+    }
+    const workspaceRoot = path.resolve(paths.workspaceDir);
+    const files = [];
+    const seen = new Set();
+    for (const profile of Array.isArray(manifest?.profiles) ? manifest.profiles : []) {
+      for (const animation of Array.isArray(profile?.animations) ? profile.animations : []) {
+        for (const frame of Array.isArray(animation?.frames) ? animation.frames : []) {
+          const relPath = String(frame?.path || "").trim();
+          if (!relPath) continue;
+          const fullPath = path.isAbsolute(relPath) ? path.resolve(relPath) : path.resolve(root, relPath);
+          if (fullPath !== workspaceRoot && !fullPath.startsWith(`${workspaceRoot}${path.sep}`)) continue;
+          if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) continue;
+          const key =
+            process.platform === "darwin" || process.platform === "win32" ? fullPath.toLowerCase() : fullPath;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          files.push(fullPath);
+        }
+      }
+    }
+    return files.sort();
+  }
+
+  /**
+   * Computes an optimistic concurrency token from persisted project JSON and frame assets.
    * @param {object} project Project record.
    * @returns {string} SHA-256 revision token.
    */
@@ -130,6 +166,10 @@ function createServerIoOperations(dependencies = {}) {
     const hash = crypto.createHash("sha256");
     for (const filePath of files) {
       hash.update(path.basename(filePath));
+      hash.update(fs.readFileSync(filePath));
+    }
+    for (const filePath of managedFrameFiles(project, paths)) {
+      hash.update(path.relative(paths.workspaceDir, filePath).split(path.sep).join("/"));
       hash.update(fs.readFileSync(filePath));
     }
     return hash.digest("hex");

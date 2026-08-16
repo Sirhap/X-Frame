@@ -11,20 +11,24 @@
    * Confirms activation and obtains a short-lived server permit for final output.
    * @param {{ensureActivated:(featureIds:string[])=>Promise<boolean>,fetchImpl?:typeof fetch}} dependencies Authorization collaborators.
    * @param {string[]} featureIds Export capabilities represented by the output.
-   * @returns {Promise<object|null>} Signed permit payload, or null when activation is cancelled.
+   * @returns {Promise<object|null>} Signed permit payload, a free-export marker, or null when activation is cancelled.
    */
   async function authorizeExport(dependencies, featureIds) {
+    const requiredFeatures = Array.from(featureIds || []);
+    if (!requiredFeatures.length) {
+      return Object.freeze({ authorized: true, permit: "", premium: false });
+    }
     if (typeof dependencies?.ensureActivated !== "function") {
       throw new TypeError("Export activation dependency is required.");
     }
-    if (!(await dependencies.ensureActivated(featureIds))) return null;
+    if (!(await dependencies.ensureActivated(requiredFeatures))) return null;
     const fetchImpl = dependencies.fetchImpl || root?.fetch;
     if (typeof fetchImpl !== "function") throw new Error("Export authorization is unavailable.");
     const response = await fetchImpl("/api/export/authorize", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ features: featureIds }),
+      body: JSON.stringify({ features: requiredFeatures }),
     });
     let payload = {};
     try {
@@ -74,13 +78,10 @@
       const group = getCurrentGroup();
       if (!group?.frames?.length) throw new Error(translate("exportNoAnimation"));
       const tuning = getTuningSnapshot(group);
-      const featureIds = premiumFeatures.normalizeFeatureIds([
-        "organizer.output",
-        ...premiumFeatures.detectExportFeatures({
-          sourceFeatures: group.premiumFeatures,
-          tuner: tuning,
-        }),
-      ]);
+      const featureIds = premiumFeatures.detectExportFeatures({
+        sourceFeatures: group.premiumFeatures,
+        tuner: tuning,
+      });
       const authorization = await authorizeExport({ ensureActivated, fetchImpl }, featureIds);
       if (!authorization) return null;
       const groupKey = `${group.profileId || "profile"}/${group.animationId || group.name}`;

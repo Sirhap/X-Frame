@@ -13,11 +13,9 @@ function createElement() {
     style: {},
     hidden: true,
     disabled: false,
-    inert: false,
     value: "",
     textContent: "",
     children: [],
-    offsetParent: {},
     addEventListener(type, listener) {
       listeners.set(type, listener);
     },
@@ -27,12 +25,6 @@ function createElement() {
     replaceChildren(...children) {
       this.children = children;
     },
-    querySelectorAll() {
-      return [];
-    },
-    setAttribute(name, value) {
-      this[name] = value;
-    },
     focus() {},
     listener(type) {
       return listeners.get(type);
@@ -40,11 +32,10 @@ function createElement() {
   };
 }
 
-/** @returns {{documentRef:object,elements:Record<string,object>}} Activation DOM fixture. */
-function createDocumentFixture() {
+/** @param {(path:string,options:object)=>Promise<Response>} fetchImpl Fetch stub. @returns {object} Fixture. */
+function createFixture(fetchImpl) {
   const selectors = [
     "#activationPanel",
-    "#activationCard",
     "#activationTitle",
     "#activationMessage",
     "#activationOverview",
@@ -53,281 +44,128 @@ function createDocumentFixture() {
     "#activationProgress",
     "#activationCurrent",
     "#activationFeatures",
+    "#accountLoginForm",
+    "#accountEmail",
+    "#accountPassword",
+    "#accountCredentialStep",
+    "#accountChallengeStep",
+    "#accountVerificationCode",
+    "#accountLogin",
+    "#accountVerify",
+    "#accountChallengeBack",
     "#activationForm",
     "#activationCode",
+    "#activationSubmit",
+    "#accountLogout",
     "#activationStatus",
     "#activationCancel",
-    "#activationSubmit",
-    "#activationTransfer",
-    "#activationTransferSummary",
-    "#activationTransferList",
-    "#activationTransferPrevious",
-    "#activationTransferNext",
-    "#activationTransferBack",
-    "#activationDeviceActions",
-    "#activationDeviceActionsMessage",
-    "#activationUnbind",
-    "#activationUnbindConfirm",
-    "#activationUnbindTitle",
-    "#activationUnbindMessage",
-    "#activationUnbindCancel",
-    "#activationUnbindAccept",
     "#activationManage",
     "#activationManageLabel",
     "#activationManageStatus",
+    "#administratorConsoleLink",
     "#organizerActivationManage",
     "#organizerActivationManageLabel",
     "#organizerActivationManageStatus",
-    ".app",
   ];
   const elements = Object.fromEntries(selectors.map((selector) => [selector, createElement()]));
-  return {
-    elements,
-    documentRef: {
-      activeElement: null,
-      createElement,
-      querySelector(selector) {
-        return elements[selector] || null;
-      },
-      addEventListener() {},
+  const documentRef = {
+    activeElement: null,
+    createElement,
+    querySelector(selector) {
+      return elements[selector] || null;
     },
   };
-}
-
-/** @param {object} options Controller overrides. @returns {object} Controller fixture. */
-function createControllerFixture(options = {}) {
-  const fixture = createDocumentFixture();
   const controller = activationModule.createController({
-    documentRef: fixture.documentRef,
-    windowRef: { setTimeout: (callback) => callback() },
-    fetchImpl: options.fetchImpl,
-    deviceIdentity: options.deviceIdentity,
-    now: options.now,
+    documentRef,
+    windowRef: { location: { assign() {} }, setTimeout: (callback) => callback() },
+    fetchImpl,
     premiumFeatures: {
-      describeFeatures: () => [],
-      normalizeFeatureIds: (featureIds) => featureIds,
+      describeFeatures: () => [{ label: "Pro export" }],
     },
   });
-  return { ...fixture, controller };
+  return { controller, elements };
 }
 
-test("activation controller silently renews an expired Cookie with the device key", async () => {
-  let renewCalls = 0;
-  const fixture = createControllerFixture({
-    fetchImpl: async () => Response.json({ activated: false, configured: true }),
-    deviceIdentity: {
-      async renew() {
-        renewCalls += 1;
-        return { activated: true, expiresAt: "2026-07-25T00:00:00.000Z" };
-      },
-    },
-  });
-
+test("account controller renders authenticated Pro status", async () => {
+  const fixture = createFixture(async () =>
+    Response.json({
+      authenticated: true,
+      configured: true,
+      email: "person@example.com",
+      proEnabled: true,
+    }),
+  );
   const status = await fixture.controller.refreshStatus();
-  assert.equal(status.activated, true);
+  assert.equal(status.proEnabled, true);
   assert.equal(fixture.controller.isActivated(), true);
-  assert.equal(renewCalls, 1);
+  assert.match(fixture.elements["#activationCurrent"].textContent, /person@example\.com/u);
+  assert.equal(fixture.elements["#activationPlanBadge"].textContent, "PRO 已开启");
 });
 
-test("activation controller automatically starts a three-day trial after renewal misses", async () => {
-  let trialCalls = 0;
-  const fixture = createControllerFixture({
-    now: () => Date.parse("2026-07-23T00:00:00.000Z"),
-    fetchImpl: async () => Response.json({ activated: false, configured: true }),
-    deviceIdentity: {
-      async renew() {
-        return null;
-      },
-      async startTrial() {
-        trialCalls += 1;
-        return { activated: true, expiresAt: "2026-07-25T00:00:00.000Z" };
-      },
-    },
+test("account controller allows output when no premium features are required", async () => {
+  let sessionRequests = 0;
+  const fixture = createFixture(async () => {
+    sessionRequests += 1;
+    return Response.json({ authenticated: false, configured: true, proEnabled: false });
   });
 
-  const status = await fixture.controller.refreshStatus();
-  assert.equal(status.activated, true);
-  assert.equal(status.plan, "trial");
-  assert.equal(trialCalls, 1);
-  assert.equal(fixture.elements["#activationManageLabel"].textContent, "3 天试用");
-  assert.match(fixture.elements["#activationManageStatus"].textContent, /已开启 · 剩余 2天/u);
-  assert.equal(fixture.elements["#organizerActivationManageLabel"].textContent, "3 天试用");
-  assert.match(fixture.elements["#organizerActivationManageStatus"].textContent, /剩余 2天/u);
-  assert.equal(fixture.elements["#activationPlanBadge"].textContent, "3 天免费试用");
-  assert.match(fixture.elements["#activationProgress"].style.width, /^66\./u);
+  const result = await Promise.race([
+    fixture.controller.ensureActivated([]),
+    new Promise((resolve) => setTimeout(() => resolve("timed-out"), 50)),
+  ]);
+
+  assert.equal(result, true);
+  assert.equal(sessionRequests, 0);
+  assert.equal(fixture.elements["#activationPanel"].hidden, true);
 });
 
-test("activation controller warns when a trial has less than six hours remaining", async () => {
-  const fixture = createControllerFixture({
-    now: () => Date.parse("2026-07-23T00:00:00.000Z"),
-    fetchImpl: async () =>
-      Response.json({
-        activated: true,
-        configured: true,
-        source: "automatic_trial",
-        plan: "trial",
-        expiresAt: "2026-07-23T04:00:00.000Z",
-      }),
-  });
+test("account controller shows administration only for an administrator session", async () => {
+  const fixture = createFixture(async () =>
+    Response.json({
+      authenticated: true,
+      configured: true,
+      administrator: true,
+      identityLabel: "管理员 sirhao",
+      proEnabled: true,
+    }),
+  );
 
   await fixture.controller.refreshStatus();
-
-  assert.equal(fixture.elements["#activationManage"].dataset.urgency, "critical");
-  assert.equal(fixture.elements["#activationOverview"].dataset.urgency, "critical");
-  assert.equal(fixture.elements["#activationRemaining"].textContent, "剩余 4小时");
+  assert.equal(fixture.elements["#administratorConsoleLink"].hidden, false);
+  assert.equal(fixture.elements["#activationForm"].hidden, true);
 });
 
-test("activation form delegates code redemption to the browser device protocol", async () => {
-  let activationCode = "";
-  const fixture = createControllerFixture({
-    fetchImpl: async () => Response.json({ activated: false, configured: true }),
-    deviceIdentity: {
-      async activate(code) {
-        activationCode = code;
-        return { activated: true, expiresAt: "2026-07-25T00:00:00.000Z" };
-      },
-    },
-  });
-  fixture.elements["#activationCode"].value = " XSXB-TRIAL-TEST ";
-  await fixture.elements["#activationForm"].listener("submit")({ preventDefault() {} });
-
-  assert.equal(activationCode, "XSXB-TRIAL-TEST");
-  assert.equal(fixture.controller.isActivated(), true);
-  assert.equal(fixture.elements["#activationStatus"].dataset.tone, "success");
-});
-
-test("license manager stays available for replacement and shows the expiry", async () => {
-  let activationCode = "";
-  const fixture = createControllerFixture({
-    fetchImpl: async () =>
-      Response.json({
-        activated: true,
-        configured: true,
-        source: "automatic_trial",
-        plan: "trial",
-        expiresAt: "2026-07-25T00:00:00.000Z",
-      }),
-    deviceIdentity: {
-      async activate(code) {
-        activationCode = code;
-        return {
-          activated: true,
-          source: "code",
-          plan: "trial",
-          expiresAt: "2027-07-25T00:00:00.000Z",
-        };
-      },
-    },
-  });
-
-  await fixture.controller.openManager();
-  assert.equal(fixture.elements["#activationPanel"].hidden, false);
-  assert.match(fixture.elements["#activationMessage"].textContent, /3 天试用期间可正常导出/u);
-  assert.match(fixture.elements["#activationCurrent"].textContent, /试用将在/u);
-  fixture.elements["#activationCode"].value = " 自定义 激活码 / 夏季✨ ";
-  await fixture.elements["#activationForm"].listener("submit")({ preventDefault() {} });
-
-  assert.equal(activationCode, "自定义 激活码 / 夏季✨");
-  assert.equal(fixture.elements["#activationPanel"].hidden, false);
-  assert.match(fixture.elements["#activationCurrent"].textContent, /当前授权有效期至/u);
-  assert.match(fixture.elements["#activationMessage"].textContent, /可随时输入新的激活码/u);
-  assert.equal(fixture.elements["#activationManageLabel"].textContent, "授权管理");
-  assert.equal(fixture.elements["#activationPlanBadge"].textContent, "已激活");
-  assert.equal(fixture.elements["#activationStatus"].dataset.tone, "success");
-});
-
-test("activation form requires the user to select the exact device to replace", async () => {
+test("account controller reveals email verification only after password acceptance", async () => {
   const calls = [];
-  const fixture = createControllerFixture({
-    fetchImpl: async () => Response.json({ activated: false, configured: true }),
-    deviceIdentity: {
-      async activate(code, options) {
-        calls.push({ code, options });
-        if (!options?.replaceDeviceId) {
-          throw Object.assign(new Error("设备名额已满"), {
-            code: "DEVICE_LIMIT_REACHED",
-            details: {
-              devices: [
-                {
-                  id: "device-studio",
-                  name: "Studio Mac",
-                  createdAt: "2026-07-20T08:00:00.000Z",
-                  lastSeenAt: "2026-07-23T09:00:00.000Z",
-                },
-                {
-                  id: "device-render",
-                  name: "Render PC",
-                  createdAt: "2026-07-21T08:00:00.000Z",
-                  lastSeenAt: "2026-07-23T10:00:00.000Z",
-                },
-              ],
-              total: 2,
-              offset: 0,
-              pageSize: 20,
-              hasPrevious: false,
-              hasMore: false,
-            },
-          });
-        }
-        return {
-          activated: true,
-          deviceId: "device-current-5678ABCD",
-          source: "code",
-          plan: "standard",
-          expiresAt: "2027-07-25T00:00:00.000Z",
-        };
-      },
-    },
+  const fixture = createFixture(async (path) => {
+    calls.push(path);
+    if (path === "/api/auth/session") return Response.json({ authenticated: false, configured: true });
+    if (path === "/api/auth/password/start")
+      return Response.json({ challengeType: "email_code", challengeToken: "opaque-token" });
+    return Response.json({ authenticated: true, email: "person@example.com", proEnabled: true });
   });
-  await fixture.controller.openManager();
-  fixture.elements["#activationCode"].value = "XSXB-MULTI";
-  await fixture.elements["#activationForm"].listener("submit")({ preventDefault() {} });
-
-  assert.equal(fixture.elements["#activationTransfer"].hidden, false);
-  assert.equal(fixture.elements["#activationTransferList"].children.length, 2);
-  assert.match(fixture.elements["#activationTransferSummary"].textContent, /2 台设备/u);
-
-  const renderPcChoice = fixture.elements["#activationTransferList"].children[1];
-  assert.match(renderPcChoice.children[1].textContent, /设备 E-RENDER/u);
-  renderPcChoice.listener("click")();
-  await fixture.elements["#activationForm"].listener("submit")({ preventDefault() {} });
-
-  assert.deepEqual(calls[1], {
-    code: "XSXB-MULTI",
-    options: { replaceDeviceId: "device-render" },
-  });
+  fixture.elements["#accountEmail"].value = "person@example.com";
+  fixture.elements["#accountPassword"].value = "correct-password";
+  await fixture.elements["#accountLoginForm"].listener("submit")({ preventDefault() {} });
+  assert.equal(fixture.elements["#accountChallengeStep"].hidden, false);
+  fixture.elements["#accountVerificationCode"].value = "123456";
+  await fixture.elements["#accountLoginForm"].listener("submit")({ preventDefault() {} });
+  assert.deepEqual(calls, ["/api/auth/password/start", "/api/auth/challenge/verify"]);
   assert.equal(fixture.controller.isActivated(), true);
-  assert.match(fixture.elements["#activationStatus"].textContent, /所选设备已解绑/u);
 });
 
-test("license manager unbinds only the current code device after explicit confirmation", async () => {
-  let unbindCalls = 0;
-  const fixture = createControllerFixture({
-    fetchImpl: async () =>
-      Response.json({
-        activated: true,
-        configured: true,
-        deviceId: "device-current-1234ABCD",
-        source: "code",
-        plan: "standard",
-        expiresAt: "2027-07-25T00:00:00.000Z",
-      }),
-    deviceIdentity: {
-      async unbind() {
-        unbindCalls += 1;
-        return { activated: false, configured: true, unbound: true };
-      },
-    },
+test("account controller redeems activation code for signed-in email", async () => {
+  const calls = [];
+  const fixture = createFixture(async (path) => {
+    calls.push(path);
+    return Response.json({
+      authenticated: true,
+      email: "person@example.com",
+      proEnabled: true,
+    });
   });
-
-  await fixture.controller.openManager();
-  assert.equal(fixture.elements["#activationDeviceActions"].hidden, false);
-  assert.match(fixture.elements["#activationDeviceActionsMessage"].textContent, /1234ABCD/u);
-  fixture.elements["#activationUnbind"].listener("click")();
-  assert.equal(fixture.elements["#activationUnbindConfirm"].hidden, false);
-  await fixture.elements["#activationUnbindAccept"].listener("click")();
-
-  assert.equal(unbindCalls, 1);
-  assert.equal(fixture.controller.isActivated(), false);
-  assert.match(fixture.elements["#activationStatus"].textContent, /其他设备不受影响/u);
+  fixture.elements["#activationCode"].value = "XSXB-CODE";
+  await fixture.elements["#activationForm"].listener("submit")({ preventDefault() {} });
+  assert.deepEqual(calls, ["/api/entitlements/redeem"]);
+  assert.match(fixture.elements["#activationStatus"].textContent, /绑定当前邮箱/u);
 });

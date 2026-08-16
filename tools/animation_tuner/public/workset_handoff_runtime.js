@@ -247,7 +247,7 @@
             frameCount: group.frames.length,
           });
         }
-        dependencies.commitProjectConfig(payload.projectId, working);
+        await dependencies.commitProjectConfig(payload.projectId, working);
         const dataRevision = revision(payload.projectId);
         return { ok: true, projectId: payload.projectId, results, dataRevision };
       },

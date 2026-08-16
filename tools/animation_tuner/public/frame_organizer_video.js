@@ -12,8 +12,6 @@
 
   if (!sequenceOrder?.nextImportBatchIndex) throw new Error("FrameSequenceOrder is required.");
 
-  const DEFAULT_MAX_FRAMES = 300;
-  const DEFAULT_MAX_PIXELS = 120_000_000;
   const DEFAULT_MAX_DIMENSION = 2048;
   const EXTRACTION_YIELD_INTERVAL = 2;
 
@@ -72,11 +70,10 @@
    *   renderGrid:()=>void,
    *   restartPreview:()=>void,
    *   setStatus:(message:string,tone?:string)=>void,
+   *   setDefaultAnimationName?:(filename:string)=>void,
    *   document?:Document,
    *   window?:Window,
-   *   urlApi?:typeof URL,
-   *   maxFrames?:number,
-   *   maxPixels?:number
+   *   urlApi?:typeof URL
    * }} dependencies Organizer integration dependencies.
    * @returns {{close:(force?:boolean)=>void,loadFile:(file?:File)=>Promise<void>,extract:()=>Promise<void>,syncControls:(changedControl?:string)=>void,bindEvents:()=>void}}
    */
@@ -90,8 +87,6 @@
     const documentApi = dependencies.document || root.document;
     const windowApi = dependencies.window || root.window;
     const urlApi = dependencies.urlApi || root.URL;
-    const maxFrames = dependencies.maxFrames || DEFAULT_MAX_FRAMES;
-    const maxPixels = dependencies.maxPixels || DEFAULT_MAX_PIXELS;
     let eventsBound = false;
 
     /** @param {string} message @param {string} [tone] @returns {void} */
@@ -135,18 +130,10 @@
       const current = selection();
       elements.organizerVideoDuration.textContent = `${(dependencies.formatVideoTime || formatVideoTime)(current.start)} → ${(dependencies.formatVideoTime || formatVideoTime)(current.end)}`;
       elements.organizerVideoEstimate.textContent = String(current.count);
-      elements.organizerVideoEstimate.parentElement.classList.toggle(
-        "overLimit",
-        current.count > maxFrames || current.pixelCount > maxPixels,
-      );
       const invalidRange = current.end <= current.start;
-      const tooMany = current.count > maxFrames;
-      const tooLarge = current.pixelCount > maxPixels;
-      elements.organizerVideoExtract.disabled = invalidRange || tooMany || tooLarge || state.videoExtracting;
+      elements.organizerVideoExtract.disabled = invalidRange || state.videoExtracting;
       if (state.videoExtracting) return;
       if (invalidRange) setVideoStatus(text("videoInvalidRange"), "error");
-      else if (tooMany) setVideoStatus(text("videoTooMany", { count: current.count }), "error");
-      else if (tooLarge) setVideoStatus(text("videoMemoryLimit"), "error");
       else setVideoStatus(text("videoLoaded"), "success");
     }
 
@@ -181,6 +168,7 @@
       if (state.videoUrl) urlApi.revokeObjectURL(state.videoUrl);
       state.videoUrl = urlApi.createObjectURL(file);
       state.videoFileName = file.name;
+      dependencies.setDefaultAnimationName?.(file.name);
       elements.organizerVideoPanel.hidden = false;
       elements.organizerVideoName.textContent = file.name;
       elements.organizerVideoMeta.textContent = "…";
@@ -271,14 +259,6 @@
       const current = selection();
       if (!current.count || current.end <= current.start) {
         setVideoStatus(text("videoInvalidRange"), "error");
-        return;
-      }
-      if (current.count > maxFrames) {
-        setVideoStatus(text("videoTooMany", { count: current.count }), "error");
-        return;
-      }
-      if (current.pixelCount > maxPixels) {
-        setVideoStatus(text("videoMemoryLimit"), "error");
         return;
       }
       state.busy = true;

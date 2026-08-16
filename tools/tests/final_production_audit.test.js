@@ -35,6 +35,11 @@ function createFinalManifest(overrides) {
       },
       { role: "styles", path: "assets/styles.5555555555555555.css", mediaType: "text/css" },
       { role: "favicon", path: "assets/favicon.6666666666666666.ico", mediaType: "image/x-icon" },
+      {
+        role: "attack-trail-texture",
+        path: "assets/attack-trail-texture.7777777777777777.png",
+        mediaType: "image/png",
+      },
     ],
   };
 }
@@ -80,7 +85,7 @@ test("final audit rejects an additional JavaScript fallback", () => {
   });
 
   const failures = runFinalAudit(manifest);
-  assert.ok(failures.some((failure) => failure.includes("contain only the approved")));
+  assert.ok(failures.some((failure) => failure.includes("contain only approved")));
   assert.ok(failures.some((failure) => failure.includes("unapproved final asset role")));
   assert.ok(failures.some((failure) => failure.includes("core or fallback asset is forbidden")));
 });
@@ -102,10 +107,23 @@ test("production HTML permits canonical app routes but rejects arbitrary unhashe
     "/workspace",
     "/workspace/tools/organizer",
     "/workspace/tools/cutout",
+    "/workspace/resources/import",
+    "/workspace/resources/cutout",
+    "/workspace/resources/scatter",
+    "/workspace/animation/transform",
+    "/workspace/animation/boxes",
+    "/workspace/animation/trails",
+    "/workspace/animation/audio",
+    "/workspace/animation/attachments",
+    "/workspace/delivery/export",
+    "/workspace/delivery/godot",
+    "/workspace/delivery/codex-pet",
     "/tools/import",
     "/tools/organizer",
     "/tools/cutout",
     "/tools/scatter-slice",
+    "/tools/watermark",
+    "/tools/export",
   ]) {
     assert.equal(isAllowedProductionHtmlReference(route), true);
   }

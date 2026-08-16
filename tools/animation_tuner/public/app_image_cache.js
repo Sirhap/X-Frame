@@ -144,7 +144,7 @@
           }
           loaded += 1;
           if (loaded === total) {
-            status(translate("preloadedFrames", { count: total, root: config?.root }));
+            status(translate("preloadedFrames", { count: total }));
           }
         }
       };

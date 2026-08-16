@@ -16,9 +16,6 @@ test("runtime setup creates the batch controller state without shared mutable fi
   assert.equal(english.sessionMode, "batch");
   assert.equal(english.previewBackground, "light");
   assert.equal(english.batchTrayCollapsed, true);
-  assert.equal(english.comparison.status, "idle");
-  assert.equal(english.comparison.splitRatio, 0.5);
-  assert.notStrictEqual(english.comparison, chinese.comparison);
 });
 
 test("runtime setup keeps bounded concurrency result ordering and element names", async () => {
@@ -29,7 +26,7 @@ test("runtime setup keeps bounded concurrency result ordering and element names"
   });
   assert.equal(elements.cutoutOpen, "open");
   assert.equal(elements.cutoutModal, null);
-  assert.equal(elements.cutoutCandidateGenerate, null);
+  assert.equal(Object.hasOwn(elements, "cutoutCandidateGenerate"), false);
 
   const results = await runtimeSetup.mapSettledWithConcurrency(
     [20, 5, 10],

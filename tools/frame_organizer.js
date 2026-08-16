@@ -315,7 +315,10 @@ function importAnimation(options) {
     String(options.profileKind || "actor"),
   );
   if (profile.animations.some((entry) => String(entry.id || entry.name) === animationId)) {
-    throw new Error(`Animation already exists: ${profileId}/${animationId}`);
+    throw Object.assign(new Error(`Animation already exists: ${profileId}/${animationId}`), {
+      status: 409,
+      code: "animation_exists",
+    });
   }
 
   const workspaceDir = projectStore.projectWorkspaceDir(project);
@@ -335,15 +338,28 @@ function importAnimation(options) {
   let animation = null;
   try {
     const frameFiles = [];
+    const usedFrameIds = new Set();
     frames = buffers.map((buffer, index) => {
       const frameName = `frame_${String(index + 1).padStart(4, "0")}.png`;
       const stagingPath = path.join(stagingDir, frameName);
       fs.writeFileSync(stagingPath, buffer);
       frameFiles.push(stagingPath);
+      const requestedFrameId = String(items[index]?.frameId || items[index]?.id || "")
+        .replace(/[\u0000-\u001f]/g, "")
+        .slice(0, 160);
+      const fallbackFrameId = `frame_${String(index + 1).padStart(4, "0")}`;
+      let frameId = requestedFrameId || fallbackFrameId;
+      let suffix = 2;
+      while (usedFrameIds.has(frameId)) {
+        frameId = `${requestedFrameId || fallbackFrameId}-${suffix}`;
+        suffix += 1;
+      }
+      usedFrameIds.add(frameId);
       return {
-        id: `frame_${String(index + 1).padStart(4, "0")}`,
+        id: frameId,
         name: frameName,
         path: reslash(path.relative(root, path.join(targetDir, frameName))),
+        assetRevision: Math.max(0, Number(items[index]?.assetRevision) || 0),
         duration: 1,
         ...pngSize(buffer),
       };
@@ -472,9 +488,25 @@ function reorganizeAnimation(options) {
     const frameName = `frame_${String(index + 1).padStart(4, "0")}.png`;
     fs.writeFileSync(path.join(stagingDir, frameName), buffer);
     return {
-      id: `frame_${String(index + 1).padStart(4, "0")}`,
+      id: String(
+        items[index].frameId ||
+          items[index].id ||
+          (Number.isInteger(items[index].sourceIndex)
+            ? animation.frames?.[items[index].sourceIndex]?.id
+            : "") ||
+          `frame_${String(index + 1).padStart(4, "0")}`,
+      ),
       name: frameName,
       path: reslash(path.relative(root, path.join(targetDir, frameName))),
+      assetRevision: Math.max(
+        0,
+        Number(
+          items[index].assetRevision ??
+            (Number.isInteger(items[index].sourceIndex)
+              ? animation.frames?.[items[index].sourceIndex]?.assetRevision
+              : 0),
+        ) || 0,
+      ),
       duration: Number(
         Number.isInteger(items[index].sourceIndex)
           ? animation.frames?.[items[index].sourceIndex]?.duration || 1

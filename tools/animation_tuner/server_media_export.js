@@ -164,6 +164,8 @@ function createMediaExportService(options) {
       fps: job.fps,
       width: job.width,
       height: job.height,
+      frameDurationsMs: job.frameDurationsMs,
+      recipe: job.recipe,
       bytes: job.bytes,
       uploaded: [...job.uploaded].sort((left, right) => left - right),
       progress: job.progress,
@@ -199,6 +201,19 @@ function createMediaExportService(options) {
   function removeTemporaryInputs(job) {
     fsApi.rmSync(job.frameDirectory, { recursive: true, force: true });
     fsApi.rmSync(pathApi.join(job.directory, "palette.png"), { force: true });
+  }
+
+  /** Writes FFmpeg's concat demuxer list so exported video retains individual frame timing. */
+  function writeConcatManifest(job) {
+    const filename = pathApi.join(job.frameDirectory, "frames.ffconcat");
+    const lines = ["ffconcat version 1.0"];
+    for (let index = 0; index < job.frameCount; index += 1) {
+      const frame = `frame_${String(index + 1).padStart(4, "0")}.png`;
+      lines.push(`file '${frame}'`, `duration ${(job.frameDurationsMs[index] / 1000).toFixed(6)}`);
+    }
+    lines.push(`file 'frame_${String(job.frameCount).padStart(4, "0")}.png'`);
+    fsApi.writeFileSync(filename, `${lines.join("\n")}\n`, "utf8");
+    return filename;
   }
 
   /** Normalizes a display name while ensuring persisted metadata cannot contain an absolute path. */
@@ -314,12 +329,12 @@ function createMediaExportService(options) {
               available: true,
               version: (versionOutput.match(/ffmpeg version\s+([^\s]+)/i) || [])[1] || "available",
             },
-            formats: { gif: hasEncoder("gif"), mov: hasEncoder("prores_ks") },
+            formats: { gif: hasEncoder("gif"), mp4: hasEncoder("libx264"), mov: hasEncoder("prores_ks") },
           };
         })
         .catch(() => ({
           ffmpeg: { available: false, version: "" },
-          formats: { gif: false, mov: false },
+          formats: { gif: false, mp4: false, mov: false },
         }));
     }
     return capabilityPromise;
@@ -351,16 +366,16 @@ function createMediaExportService(options) {
     }
     if (
       !Array.isArray(payload.formats) ||
-      payload.formats.some((format) => !["gif", "mov"].includes(format))
+      payload.formats.some((format) => !["gif", "mp4", "mov"].includes(format))
     ) {
-      throw mediaExportError(400, "Only GIF and MOV formats are supported locally.");
+      throw mediaExportError(400, "Only GIF, MP4 and MOV formats are supported locally.");
     }
     const formats = Array.from(new Set(payload.formats));
     const frameCount = Number(payload.frameCount);
     const fps = payload.fps == null ? 12 : Number(payload.fps);
     const width = Number(payload.width);
     const height = Number(payload.height);
-    if (!formats.length) throw mediaExportError(400, "GIF or MOV format is required.");
+    if (!formats.length) throw mediaExportError(400, "GIF, MP4 or MOV format is required.");
     if (!Number.isInteger(frameCount) || frameCount < 1 || frameCount > MAX_FRAMES) {
       throw mediaExportError(400, `Frame count must be between 1 and ${MAX_FRAMES}.`);
     }
@@ -371,6 +386,18 @@ function createMediaExportService(options) {
       ![width, height].every((value) => Number.isInteger(value) && value > 0 && value <= MAX_CANVAS_DIMENSION)
     ) {
       throw mediaExportError(400, `Export canvas must be between 1 and ${MAX_CANVAS_DIMENSION} pixels.`);
+    }
+    const frameDurationsMs = Array.isArray(payload.frameDurationsMs)
+      ? payload.frameDurationsMs.map(Number)
+      : Array.from({ length: frameCount }, () => Math.round(1000 / fps));
+    if (
+      frameDurationsMs.length !== frameCount ||
+      frameDurationsMs.some((value) => !Number.isFinite(value) || value < 1 || value > 60_000)
+    ) {
+      throw mediaExportError(400, "Frame durations must match the frame count and be between 1 and 60000ms.");
+    }
+    if (formats.includes("mp4") && payload.recipe?.background !== "color") {
+      throw mediaExportError(400, "MP4 export requires a solid background recipe.");
     }
     const id = createJobId();
     const directory = pathApi.join(exportRoot, id);
@@ -386,6 +413,8 @@ function createMediaExportService(options) {
       fps,
       width,
       height,
+      frameDurationsMs,
+      recipe: payload.recipe && typeof payload.recipe === "object" ? payload.recipe : null,
       stem: safeStem(payload.animationName),
       animationName: safeAnimationName(payload.animationName),
       bytes: 0,
@@ -504,22 +533,38 @@ function createMediaExportService(options) {
       throw mediaExportError(503, `FFmpeg does not provide the required ${unsupported.join("/")} encoder.`);
     }
     if (job.status === "cancelled") throw mediaExportError(409, "Media export was cancelled.");
-    const inputPattern = pathApi.join(job.frameDirectory, "frame_%04d.png");
+    const concatInput = ["-f", "concat", "-safe", "0", "-i", writeConcatManifest(job)];
     if (job.formats.includes("gif")) {
+      const recipe = job.recipe || {};
+      const preprocessing = [];
+      const denoise = {
+        light: "hqdn3d=1:1:2:2",
+        standard: "hqdn3d=2:2:3:3",
+        strong: "hqdn3d=3:3:5:5",
+        extreme: "hqdn3d=5:5:8:8",
+      }[recipe.gifDenoise];
+      if (denoise) preprocessing.push(denoise);
+      if (recipe.gifSoften === "auto") preprocessing.push("gblur=sigma=0.35");
+      if (recipe.gifSoften === "force") preprocessing.push("gblur=sigma=0.7");
+      const paletteMode = recipe.gifPalette === "scene" ? "full" : "diff";
+      const dither =
+        {
+          off: "none",
+          light: "bayer:bayer_scale=5",
+          standard: "sierra2_4a",
+          strong: "floyd_steinberg",
+          extreme: "sierra2",
+        }[recipe.gifCompression] || "bayer:bayer_scale=5";
+      const alphaThreshold = Math.max(1, Math.min(255, Number(recipe.gifAlphaThreshold) || 128));
       const palette = pathApi.join(job.directory, "palette.png");
       const output = pathApi.join(job.directory, `${job.stem}.gif`);
       await runProcess(
         ffmpegBinary,
         [
           "-y",
-          "-framerate",
-          String(job.fps),
-          "-start_number",
-          "1",
-          "-i",
-          inputPattern,
+          ...concatInput,
           "-vf",
-          "palettegen=reserve_transparent=1:stats_mode=diff",
+          [...preprocessing, `palettegen=reserve_transparent=1:stats_mode=${paletteMode}`].join(","),
           palette,
         ],
         job,
@@ -529,18 +574,17 @@ function createMediaExportService(options) {
         ffmpegBinary,
         [
           "-y",
-          "-framerate",
-          String(job.fps),
-          "-start_number",
-          "1",
-          "-i",
-          inputPattern,
+          ...concatInput,
           "-i",
           palette,
-          "-lavfi",
-          "paletteuse=dither=sierra2_4a:alpha_threshold=128",
+          ...(preprocessing.length
+            ? [
+                "-filter_complex",
+                `[0:v]${preprocessing.join(",")}[processed];[processed][1:v]paletteuse=dither=${dither}:alpha_threshold=${alphaThreshold}`,
+              ]
+            : ["-lavfi", `paletteuse=dither=${dither}:alpha_threshold=${alphaThreshold}`]),
           "-loop",
-          "0",
+          recipe.gifLoop === false ? "-1" : "0",
           output,
         ],
         job,
@@ -553,22 +597,7 @@ function createMediaExportService(options) {
       const output = pathApi.join(job.directory, `${job.stem}.mov`);
       await runProcess(
         ffmpegBinary,
-        [
-          "-y",
-          "-framerate",
-          String(job.fps),
-          "-start_number",
-          "1",
-          "-i",
-          inputPattern,
-          "-c:v",
-          "prores_ks",
-          "-profile:v",
-          "4",
-          "-pix_fmt",
-          "yuva444p10le",
-          output,
-        ],
+        ["-y", ...concatInput, "-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuva444p10le", output],
         job,
       );
       if (job.status === "cancelled") throw mediaExportError(409, "Media export was cancelled.");
@@ -577,6 +606,29 @@ function createMediaExportService(options) {
         label: "透明 MOV",
         contentType: "video/quicktime",
       });
+    }
+    if (job.formats.includes("mp4")) {
+      if (job.status === "cancelled") throw mediaExportError(409, "Media export was cancelled.");
+      const output = pathApi.join(job.directory, `${job.stem}.mp4`);
+      const crf = { low: "28", medium: "23", high: "18" }[job.recipe?.mp4Quality] || "23";
+      await runProcess(
+        ffmpegBinary,
+        [
+          "-y",
+          ...concatInput,
+          "-c:v",
+          "libx264",
+          "-crf",
+          crf,
+          "-pix_fmt",
+          "yuv420p",
+          "-movflags",
+          "+faststart",
+          output,
+        ],
+        job,
+      );
+      job.outputs.push({ filename: pathApi.basename(output), label: "MP4", contentType: "video/mp4" });
     }
   }
 
@@ -701,7 +753,7 @@ function createMediaExportService(options) {
       metadata.id !== id ||
       !JOB_STATUSES.has(metadata.status) ||
       !formats.length ||
-      formats.some((format) => !["gif", "mov"].includes(format)) ||
+      formats.some((format) => !["gif", "mp4", "mov"].includes(format)) ||
       new Set(formats).size !== formats.length ||
       !numericFields.every(Number.isFinite) ||
       !Number.isInteger(metadata.frameCount) ||
@@ -723,6 +775,15 @@ function createMediaExportService(options) {
     ) {
       throw new Error("Invalid media export job metadata.");
     }
+    const frameDurationsMs = Array.isArray(metadata.frameDurationsMs)
+      ? metadata.frameDurationsMs.map(Number)
+      : [];
+    if (
+      frameDurationsMs.length !== metadata.frameCount ||
+      frameDurationsMs.some((value) => !Number.isFinite(value) || value < 1 || value > 60_000)
+    ) {
+      throw new Error("Invalid media export frame durations.");
+    }
     if (
       outputs.length > formats.length ||
       new Set(outputs.map((output) => output?.filename)).size !== outputs.length
@@ -735,7 +796,9 @@ function createMediaExportService(options) {
         output?.contentType === "image/gif" && formats.includes("gif") && filename.endsWith(".gif");
       const isMov =
         output?.contentType === "video/quicktime" && formats.includes("mov") && filename.endsWith(".mov");
-      if (!filename || filename !== pathApi.basename(filename) || (!isGif && !isMov)) {
+      const isMp4 =
+        output?.contentType === "video/mp4" && formats.includes("mp4") && filename.endsWith(".mp4");
+      if (!filename || filename !== pathApi.basename(filename) || (!isGif && !isMov && !isMp4)) {
         throw new Error("Invalid media export output metadata.");
       }
       return {
@@ -747,7 +810,11 @@ function createMediaExportService(options) {
     if (metadata.status === "completed") {
       const completeFormats = formats.every((format) =>
         hydratedOutputs.some((output) =>
-          format === "gif" ? output.contentType === "image/gif" : output.contentType === "video/quicktime",
+          format === "gif"
+            ? output.contentType === "image/gif"
+            : format === "mp4"
+              ? output.contentType === "video/mp4"
+              : output.contentType === "video/quicktime",
         ),
       );
       if (!completeFormats) throw new Error("Completed media export has incomplete outputs.");
@@ -766,6 +833,8 @@ function createMediaExportService(options) {
       fps: metadata.fps,
       width: metadata.width,
       height: metadata.height,
+      frameDurationsMs,
+      recipe: metadata.recipe && typeof metadata.recipe === "object" ? metadata.recipe : null,
       stem: safeStem(metadata.animationName),
       animationName: safeAnimationName(metadata.animationName),
       bytes: metadata.bytes,

@@ -8,6 +8,88 @@
   "use strict";
 
   /**
+   * Summarizes current-animation and whole-project delivery scopes without mutating project state.
+   * @param {object|null} config Active project configuration.
+   * @param {string|object|null} activeGroup Active group identifier or group object.
+   * @returns {{currentAnimationName:string,currentFrameCount:number,currentAssetRevision:number,projectAnimationCount:number,projectFrameCount:number}}
+   */
+  function summarizeDeliveryScope(config, activeGroup) {
+    const groups = Array.isArray(config?.groups) ? config.groups : [];
+    const current =
+      activeGroup && typeof activeGroup === "object"
+        ? activeGroup
+        : groups.find((group) =>
+            [group?.id, group?.uiId, group?.animationId].filter(Boolean).includes(activeGroup),
+          ) || null;
+    const currentFrames = Array.isArray(current?.frames) ? current.frames : [];
+    return {
+      currentAnimationName: String(current?.name || current?.label || current?.animationId || "—"),
+      currentFrameCount: currentFrames.length,
+      currentAssetRevision: Math.max(0, ...currentFrames.map((frame) => Number(frame?.assetRevision) || 0)),
+      projectAnimationCount: groups.filter((group) => Array.isArray(group?.frames) && group.frames.length)
+        .length,
+      projectFrameCount: groups.reduce(
+        (count, group) => count + (Array.isArray(group?.frames) ? group.frames.length : 0),
+        0,
+      ),
+    };
+  }
+
+  /**
+   * Converts project delivery capabilities into concise UI-ready readiness states.
+   * @param {object|null} config Active project configuration.
+   * @param {{browserOnly?:boolean}} [options] Runtime capability flags.
+   */
+  function summarizeDeliveryReadiness(config, options = {}) {
+    const handoff =
+      config?.godotHandoff && typeof config.godotHandoff === "object"
+        ? config.godotHandoff
+        : { state: "local_only" };
+    const godotState = options.browserOnly ? "local_only" : String(handoff.state || "local_only");
+    const godotLabels = {
+      local_only: options.browserOnly ? "需要本地版" : "尚未绑定",
+      invalid_root: "根目录无效",
+      sync_required: "需要同步",
+      sync_failed: "同步失败",
+      synced: "已同步",
+      gameplay_ready: "Gameplay 就绪",
+    };
+    const godotTones = {
+      synced: "success",
+      gameplay_ready: "success",
+      sync_required: "warning",
+      local_only: "neutral",
+      invalid_root: "danger",
+      sync_failed: "danger",
+    };
+    const animationGroups = Array.isArray(config?.groups)
+      ? config.groups.filter((group) => Array.isArray(group?.frames) && group.frames.length)
+      : [];
+    const petProject = config?.projectKind === "codex_pets";
+    const boundAnimationCount = petProject
+      ? animationGroups.filter((group) => Boolean(group?.profileId)).length
+      : 0;
+    const missingAnimationCount = petProject ? animationGroups.length - boundAnimationCount : 0;
+    const petState = !petProject ? "unsupported" : missingAnimationCount ? "incomplete" : "ready";
+    return {
+      godot: {
+        state: godotState,
+        tone: godotTones[godotState] || "neutral",
+        label: godotLabels[godotState] || "尚未绑定",
+        blockers: Array.isArray(handoff.blockers) ? handoff.blockers.filter(Boolean).map(String) : [],
+        warningCount: Array.isArray(handoff.warnings) ? handoff.warnings.filter(Boolean).length : 0,
+      },
+      codexPet: {
+        state: petState,
+        tone: petState === "ready" ? "success" : petState === "incomplete" ? "warning" : "neutral",
+        label: petState === "ready" ? "身份完整" : petState === "incomplete" ? "需补充身份" : "非 Pet 项目",
+        boundAnimationCount,
+        missingAnimationCount,
+      },
+    };
+  }
+
+  /**
    * Creates the project and quick-tool hub renderer.
    * @param {{documentRef?:Document,windowRef?:Window,projectLabel?:(project:object)=>string,translate?:(key:string,vars?:object)=>string}} dependencies Hub dependencies.
    * @returns {{bind:()=>void,renderProjects:(config:object|null)=>void}} Hub operations.
@@ -26,8 +108,12 @@
           unnamedProject: "未命名项目",
           localAnimationProject: "本地动画项目",
           openProject: "打开项目 →",
+          continueProject: "继续项目",
           localWorkspace: "本地工作区",
           projectGroupSummary: `${vars.count ?? 0} 个动画组 · ${vars.workspace || "本地工作区"}`,
+          browserSessionProject: "浏览器临时工作区",
+          importProject: "导入视频 / 图片序列 →",
+          projectNeedsImportSummary: "还没有动画帧 · 可从视频抽帧或导入 PNG",
         };
         return defaults[key] || key;
       });
@@ -46,30 +132,77 @@
     };
     let bound = false;
 
-    /** Builds a workspace deep link for one project. */
-    function projectHref(project) {
-      const url = new URL("/workspace", windowRef.location?.origin || "http://localhost");
+    /**
+     * Returns a known animation-group count for one project.
+     * @param {object} project Project registry entry.
+     * @param {object|null} config Active workbench config.
+     * @param {string} activeProjectId Active project identifier.
+     * @returns {number|null} Group count, or null when the project state is unknown.
+     */
+    function projectAnimationGroupCount(project, config, activeProjectId) {
+      if (project?.id === activeProjectId && Array.isArray(config?.groups)) {
+        return config.groups.length;
+      }
+      if (!project || !Object.prototype.hasOwnProperty.call(project, "animationGroupCount")) return null;
+      const count = Number(project.animationGroupCount);
+      return Number.isFinite(count) && count >= 0 ? Math.floor(count) : null;
+    }
+
+    /** Builds a project deep link that opens import before tuning for empty projects. */
+    function projectHref(project, config, activeProjectId) {
+      const groupCount = projectAnimationGroupCount(project, config, activeProjectId);
+      const targetPath = groupCount === 0 ? "/workspace/resources/import" : "/workspace/animation/transform";
+      const url = new URL(targetPath, windowRef.location?.origin || "http://localhost");
       if (project?.id) url.searchParams.set("project", project.id);
       return `${url.pathname}${url.search}`;
     }
 
+    /** Reduces machine-specific absolute paths to a readable location hint. */
+    function compactProjectLocation(project) {
+      const location = String(project?.workspacePath || project?.projectRoot || "").replace(/\\/g, "/");
+      const segments = location.split("/").filter(Boolean);
+      return segments.length ? `…/${segments.slice(-2).join("/")}` : translate("localAnimationProject");
+    }
+
+    /** Updates a recent-project action without replacing the accessible anchor. */
+    function setProjectActionLabel(element, translationKey) {
+      if (!element) return;
+      const label = element.querySelector?.("[data-i18n]");
+      if (label) {
+        label.setAttribute("data-i18n", translationKey);
+        label.textContent = translate(translationKey);
+      } else {
+        element.textContent = translate(translationKey);
+      }
+    }
+
+    /** Returns the localized label for built-in projects and preserves user-supplied labels. */
+    function displayProjectLabel(project) {
+      if (project?.id === "browser-session") return translate("browserSessionProject");
+      return projectLabel(project) || project?.id || translate("unnamedProject");
+    }
+
     /** Creates one accessible project card without HTML string interpolation. */
-    function createProjectCard(project, activeProjectId) {
+    function createProjectCard(project, activeProjectId, config) {
       const card = documentRef.createElement("a");
       card.className = "projectHubCard";
-      card.href = projectHref(project);
+      const groupCount = projectAnimationGroupCount(project, config, activeProjectId);
+      const needsImport = groupCount === 0;
+      card.href = projectHref(project, config, activeProjectId);
+      if (groupCount !== null) card.dataset.projectState = needsImport ? "needs-import" : "ready";
       card.setAttribute("data-document-navigation", "");
       const eyebrow = documentRef.createElement("span");
       eyebrow.textContent = translate(
         project.id === activeProjectId ? "currentProjectEyebrow" : "projectEyebrow",
       );
       const title = documentRef.createElement("h2");
-      title.textContent = projectLabel(project) || project.id || translate("unnamedProject");
+      title.textContent = displayProjectLabel(project);
       const summary = documentRef.createElement("p");
-      summary.textContent =
-        project.workspacePath || project.projectRoot || translate("localAnimationProject");
+      summary.textContent = needsImport
+        ? translate("projectNeedsImportSummary")
+        : compactProjectLocation(project);
       const action = documentRef.createElement("strong");
-      action.textContent = translate("openProject");
+      action.textContent = translate(needsImport ? "importProject" : "openProject");
       card.append(eyebrow, title, summary, action);
       return card;
     }
@@ -81,21 +214,30 @@
       const recent = projects.find((project) => project.id === activeProjectId) || projects[0] || null;
       if (elements.list) {
         elements.list.replaceChildren(
-          ...projects.map((project) => createProjectCard(project, activeProjectId)),
+          ...projects.map((project) => createProjectCard(project, activeProjectId, config)),
         );
       }
       if (elements.empty) elements.empty.hidden = projects.length > 0;
       if (elements.recent) elements.recent.hidden = !recent;
       if (!recent) return;
-      if (elements.recentTitle) elements.recentTitle.textContent = projectLabel(recent) || recent.id;
+      const recentGroupCount = projectAnimationGroupCount(recent, config, activeProjectId);
+      const recentNeedsImport = recentGroupCount === 0;
+      if (elements.recentTitle) elements.recentTitle.textContent = displayProjectLabel(recent);
       if (elements.recentSummary) {
-        const groupCount = Number(config?.groups?.length || 0);
-        elements.recentSummary.textContent = translate("projectGroupSummary", {
-          count: groupCount,
-          workspace: recent.workspacePath || recent.projectRoot || translate("localWorkspace"),
-        });
+        elements.recentSummary.textContent = recentNeedsImport
+          ? translate("projectNeedsImportSummary")
+          : translate("projectGroupSummary", {
+              count: recentGroupCount ?? Number(config?.groups?.length || 0),
+              workspace: compactProjectLocation(recent),
+            });
       }
-      if (elements.continueLink) elements.continueLink.href = projectHref(recent);
+      if (elements.continueLink) {
+        elements.continueLink.href = projectHref(recent, config, activeProjectId);
+        if (recentGroupCount !== null) {
+          elements.continueLink.dataset.projectState = recentNeedsImport ? "needs-import" : "ready";
+        }
+        setProjectActionLabel(elements.continueLink, recentNeedsImport ? "importProject" : "continueProject");
+      }
     }
 
     /** Binds the hub-level creation entry once. */
@@ -110,5 +252,5 @@
     return { bind, renderProjects };
   }
 
-  return Object.freeze({ createController });
+  return Object.freeze({ createController, summarizeDeliveryReadiness, summarizeDeliveryScope });
 });

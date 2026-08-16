@@ -33,6 +33,7 @@
     <link rel="stylesheet" href="/theme-home.css" />
     <link rel="stylesheet" href="/theme-kunkun.css" />
     <link rel="stylesheet" href="/app_shell.css" />
+    <link rel="stylesheet" href="/scatter_workspace.css" />
   </head>
   <body class="theme-dark" data-sidebar-tab="transform">
     <a class="skipLink" href="#mainWorkbench" data-i18n="skipToMain">跳到主要内容</a>
@@ -65,6 +66,7 @@
           class="toolRailItem"
           href="/tools"
           data-app-mode="tools"
+          id="toolRailTools"
           data-i18n-title="quickToolsTitle"
           aria-label="快速工具"
           title="快速工具"
@@ -74,6 +76,23 @@
           </svg>
           <span data-i18n="toolsRail">工具</span>
         </a>
+        <section
+          id="toolRailContextMenu"
+          class="toolRailContextMenu"
+          aria-label="当前动画工具"
+          aria-live="polite"
+          hidden
+        >
+          <p class="toolRailContextEyebrow">当前动画</p>
+          <strong id="toolRailContextTitle">将当前帧带入工具</strong>
+          <p id="toolRailContextHint" class="toolRailContextHint">在项目内处理，结果会回写到当前动画。</p>
+          <div class="toolRailContextActions" role="group" aria-label="处理工具">
+            <button type="button" data-context-tool="current-frame-cutout">抠当前帧</button>
+            <button type="button" data-context-tool="batch-cutout">批量抠图</button>
+            <button type="button" data-context-tool="organizer">整理 / 反选 / 翻转</button>
+          </div>
+          <p class="toolRailContextFootnote">切片仅适合单图；多帧动画不会在这里提供切片入口。</p>
+        </section>
       </div>
       <button
         id="sidebarCollapse"
@@ -88,6 +107,52 @@
         <span data-i18n="sidebarRail">侧栏</span>
       </button>
     </nav>
+    <header id="workspaceFlowHeader" class="workspaceFlowHeader" aria-label="项目制作流程">
+      <div class="workspaceFlowContext">
+        <span>PROJECT WORKSPACE</span>
+        <strong id="workspaceFlowProject">当前项目</strong>
+        <output id="workspaceSaveIndicator" role="status" aria-live="polite">已保存</output>
+      </div>
+      <nav class="workspacePrimaryTabs" aria-label="工作阶段">
+        <a
+          href="/workspace/resources/import"
+          data-workbench-route="organizer"
+          data-workspace-stage="resources"
+        >
+          资源处理
+        </a>
+        <a
+          href="/workspace/animation/transform"
+          data-workbench-route="animation"
+          data-workspace-stage="animation"
+        >
+          动画编辑
+        </a>
+        <a href="/workspace/delivery/export" data-workbench-route="export" data-workspace-stage="delivery">
+          交付与导出
+        </a>
+      </nav>
+      <nav class="workspaceSecondaryTabs" aria-label="当前阶段工具">
+        <span data-stage-tools="resources">
+          <a href="/workspace/resources/import" data-workbench-route="organizer">导入与整理</a>
+          <a href="/workspace/resources/cutout" data-workbench-route="cutout">智能抠图</a>
+          <a href="/workspace/resources/scatter" data-workbench-route="scatter">零散切片</a>
+        </span>
+        <span data-stage-tools="animation">
+          <a href="/workspace/animation/transform" data-workbench-route="animation">变换</a>
+          <a href="/workspace/animation/boxes" data-workbench-route="boxes">框体</a>
+          <a href="/workspace/animation/trails" data-workbench-route="trails">拖尾</a>
+          <a href="/workspace/animation/audio" data-workbench-route="audio">音频</a>
+          <a href="/workspace/animation/attachments" data-workbench-route="attachments">挂件</a>
+        </span>
+        <span data-stage-tools="delivery">
+          <a href="/workspace/delivery/export" data-workbench-route="export">文件导出</a>
+          <a href="/workspace/delivery/godot" data-workbench-route="godot">Godot</a>
+          <a href="/workspace/delivery/codex-pet" data-workbench-route="codex-pet">Codex Pet</a>
+        </span>
+      </nav>
+      <button id="workspaceAccount" class="workspaceAccount" type="button">账户</button>
+    </header>
     <main id="mainWorkbench" class="app" tabindex="-1">
       <aside id="workbenchSidebar" class="sidebar">
         <div class="brand">
@@ -96,15 +161,12 @@
             class="mark"
             type="button"
             aria-label="XSXB 标志"
+            data-i18n-aria-label="brandLogo"
             title="XSXB Frame Tuner"
           ></button>
           <div class="brandMain">
             <div class="brandTop">
               <h1>XSXB Frame Tuner</h1>
-              <div class="languageButtons" aria-label="Language">
-                <button type="button" class="languageButton" data-language="zh" title="中文">中</button>
-                <button type="button" class="languageButton" data-language="en" title="English">EN</button>
-              </div>
             </div>
             <p data-i18n="brandSubtitle">帧动画调参工作台</p>
           </div>
@@ -118,7 +180,7 @@
             tabindex="-1"
             data-i18n="sidebarProject"
           >
-            项目
+            动画
           </button>
           <button
             type="button"
@@ -157,7 +219,7 @@
             导入后可在当前会话继续调参或下载动画包；直接写入 Godot 暂未开放。
           </p>
         </section>
-        <details id="projectContext" class="projectContext">
+        <details id="projectContext" class="projectContext" hidden>
           <summary>
             <span data-i18n="currentProject">当前项目</span>
             <strong id="currentProjectLabel">—</strong>
@@ -801,7 +863,12 @@
           <span>全民制作人 / STAGE 025</span>
         </div>
         <div class="toolbar">
-          <nav id="workspaceBreadcrumb" class="contextBreadcrumb" aria-label="当前位置"></nav>
+          <nav
+            id="workspaceBreadcrumb"
+            class="contextBreadcrumb"
+            aria-label="当前位置"
+            data-i18n-aria-label="currentLocation"
+          ></nav>
           <div class="toolbarMain">
             <strong id="canvasTitle" data-i18n="canvas">画布</strong>
             <span id="hint" data-i18n="hint"
@@ -819,13 +886,21 @@
           </div>
           <div class="toolbarActions">
             <div class="appearanceControls" aria-label="UI appearance">
-              <div class="themeSwitch" role="group" aria-label="界面主题">
+              <div
+                class="themeSwitch"
+                role="group"
+                aria-label="界面主题"
+                data-i18n-aria-label="interfaceTheme"
+              >
                 <button
                   type="button"
-                  class="themeButton"
+                  class="themeButton active"
                   data-theme="dark"
+                  data-i18n="themeDark"
+                  data-i18n-title="darkTheme"
                   title="深色主题"
                   aria-label="深色主题"
+                  aria-pressed="true"
                 >
                   深色
                 </button>
@@ -833,8 +908,11 @@
                   type="button"
                   class="themeButton"
                   data-theme="light"
+                  data-i18n="themeLight"
+                  data-i18n-title="lightTheme"
                   title="浅色主题"
                   aria-label="浅色主题"
+                  aria-pressed="false"
                 >
                   浅色
                 </button>
@@ -844,6 +922,7 @@
                   data-theme="kunkun"
                   title="坤坤彩蛋主题"
                   aria-label="坤坤彩蛋主题"
+                  aria-pressed="false"
                   hidden
                 >
                   彩蛋
@@ -859,14 +938,22 @@
                 class="secondary iconButton playButton"
                 data-i18n-title="play"
                 title="播放"
+                aria-label="播放"
               >
                 播放
               </button>
+              <span
+                id="playbackAvailability"
+                class="playbackAvailability"
+                role="status"
+                aria-live="polite"
+              ></span>
               <button
                 id="ghostToggle"
                 class="secondary iconButton active"
                 data-i18n-title="ghost"
                 title="残影"
+                aria-label="残影"
               >
                 影
               </button>
@@ -892,13 +979,33 @@
                 &rarr;
               </button>
             </div>
-            <div class="stageZoomControls" aria-label="预览缩放">
-              <button id="stageZoomOut" type="button" class="secondary" aria-label="缩小">−</button>
-              <label class="stageZoomSlider" aria-label="预览缩放百分比">
+            <div class="stageZoomControls" aria-label="预览缩放" data-i18n-aria-label="previewZoom">
+              <button
+                id="stageZoomOut"
+                type="button"
+                class="secondary"
+                aria-label="缩小"
+                data-i18n-aria-label="zoomOut"
+              >
+                −
+              </button>
+              <label
+                class="stageZoomSlider"
+                aria-label="预览缩放百分比"
+                data-i18n-aria-label="previewZoomPercent"
+              >
                 <input id="stageZoom" type="range" min="12" max="800" step="1" value="100" />
                 <output id="stageZoomValue">100%</output>
               </label>
-              <button id="stageZoomIn" type="button" class="secondary" aria-label="放大">+</button>
+              <button
+                id="stageZoomIn"
+                type="button"
+                class="secondary"
+                aria-label="放大"
+                data-i18n-aria-label="zoomIn"
+              >
+                +
+              </button>
               <button id="stageZoomFit" type="button" class="secondary" data-i18n="zoomFit">适应</button>
               <button id="stageZoomActual" type="button" class="secondary" data-i18n="zoomActual">
                 100%
@@ -909,6 +1016,14 @@
             </a>
             <button id="cutoutOpen" class="cutoutLaunch" type="button" data-cutout-i18n="open">
               批量抠图
+            </button>
+            <button
+              id="cutoutCurrentFrame"
+              class="cutoutCurrentFrameLaunch"
+              type="button"
+              data-i18n="cutoutCurrentFrame"
+            >
+              抠当前帧
             </button>
             <button id="organizerOpen" class="organizerLaunch" type="button" data-organizer-i18n="open">
               帧整理
@@ -922,8 +1037,16 @@
               处理新动画
             </button>
             <button id="activationManage" class="secondary activationManageLaunch" type="button">
-              <span id="activationManageLabel">授权管理</span>
+              <span id="activationManageLabel">登录 / 注册</span>
               <small id="activationManageStatus">正在检查授权…</small>
+            </button>
+            <button
+              id="administratorConsoleLink"
+              class="secondary administratorConsoleLink"
+              type="button"
+              hidden
+            >
+              后台管理
             </button>
             <button
               id="exportWorkbench"
@@ -949,7 +1072,14 @@
             </details>
           </div>
         </div>
-        <canvas id="stage" width="1280" height="760" tabindex="0" aria-label="动画预览画布"></canvas>
+        <canvas
+          id="stage"
+          width="1280"
+          height="760"
+          tabindex="0"
+          aria-label="动画预览画布"
+          data-i18n-aria-label="animationPreviewCanvas"
+        ></canvas>
         <section class="filmstripPanel" aria-labelledby="filmstripTitle">
           <header class="filmstripHeader">
             <div>
@@ -957,11 +1087,28 @@
               <strong id="filmstripTitle" data-i18n="frameTimeline">帧时间轴</strong>
             </div>
             <div class="filmstripHeaderActions">
-              <div class="filmstripLayoutSwitch" role="group" aria-label="帧时间轴布局">
-                <button type="button" data-filmstrip-layout="single" aria-pressed="true" title="单行时间轴">
+              <div
+                class="filmstripLayoutSwitch"
+                role="group"
+                aria-label="帧时间轴布局"
+                data-i18n-aria-label="filmstripLayout"
+              >
+                <button
+                  type="button"
+                  data-filmstrip-layout="single"
+                  aria-pressed="true"
+                  title="单行时间轴"
+                  data-i18n="filmstripSingle"
+                >
                   单行
                 </button>
-                <button type="button" data-filmstrip-layout="grid" aria-pressed="false" title="多行总览">
+                <button
+                  type="button"
+                  data-filmstrip-layout="grid"
+                  aria-pressed="false"
+                  title="多行总览"
+                  data-i18n="filmstripGrid"
+                >
                   总览
                 </button>
               </div>
@@ -1043,6 +1190,17 @@
           </div>
           <a class="modeHubSecondary" href="/projects">转到动画项目</a>
         </header>
+        <aside id="temporaryWorksetResume" class="temporaryWorksetResume" aria-live="polite" hidden>
+          <div>
+            <span>RECENT TEMP SESSION</span>
+            <strong>继续临时工作集</strong>
+            <p id="temporaryWorksetSummary">临时工作集</p>
+          </div>
+          <div class="temporaryWorksetActions">
+            <a class="modeHubPrimary" href="/tools/organizer" data-workbench-route="import">继续处理</a>
+            <button id="temporaryWorksetClear" class="modeHubSecondary" type="button">清空</button>
+          </div>
+        </aside>
         <div class="quickToolGrid">
           <a class="quickToolCard" href="/tools/cutout" data-workbench-route="cutout">
             <span>01 / ALPHA</span>
@@ -1069,6 +1227,100 @@
             <p>识别散落元素，按动画组筛选、整理并导出规则帧序列。</p>
             <strong>进入工具 →</strong>
           </a>
+          <!-- cloudflare-local-only:start -->
+          <a class="quickToolCard" href="/tools/watermark" data-document-navigation>
+            <span>04 / VIDEO</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5h16v14H4zM8 9h8M8 13h5M17 15l3 3M20 15l-3 3" />
+            </svg>
+            <h2>视频去水印</h2>
+            <p>框选水印区域，预览本地修复结果并导出处理后视频。</p>
+            <strong>进入工具 →</strong>
+          </a>
+          <!-- cloudflare-local-only:end -->
+          <a class="quickToolCard" href="/tools/export" data-workbench-route="export">
+            <span>05 / DELIVERY</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 18v2h14v-2" />
+            </svg>
+            <h2>导出与转换</h2>
+            <p>复用当前临时工作集，导出 ZIP、图集、GIF 或 MP4。</p>
+            <strong>进入工具 →</strong>
+          </a>
+        </div>
+      </section>
+      <section id="deliverySurface" class="modeHub deliverySurface" aria-labelledby="deliveryTitle" hidden>
+        <header class="modeHubHeader">
+          <div>
+            <span>DELIVERY DESK / PROJECT</span>
+            <h1 id="deliveryTitle">交付与导出</h1>
+            <p>先确认交付目标，再进入对应设置；通用调整和格式参数仍复用现有导出引擎。</p>
+          </div>
+          <a class="modeHubSecondary" href="/workspace/animation/transform" data-workbench-route="animation"
+            >返回动画编辑</a
+          >
+        </header>
+        <div id="deliveryExportMount" class="deliveryExportMount" data-delivery-panel="export">
+          <div class="deliveryExportLoading">
+            <span>01 / FILES</span>
+            <strong>正在载入当前动画的导出工作区…</strong>
+          </div>
+        </div>
+        <div class="deliveryGrid deliveryIntegrationGrid">
+          <article class="deliveryCard" data-delivery-panel="godot">
+            <div class="deliveryCardKicker">
+              <span>02 / ENGINE</span>
+              <strong id="deliveryGodotStatus" class="deliveryStatus" data-tone="neutral">检查中</strong>
+            </div>
+            <h2>Godot 交付</h2>
+            <p>按整个项目检查绑定路径、资源变更和同步阻塞项，再交付到 Godot。</p>
+            <dl>
+              <div>
+                <dt>交付范围</dt>
+                <dd>整个项目</dd>
+              </div>
+              <div>
+                <dt>动画数量</dt>
+                <dd id="deliveryGodotAnimationCount">0 个</dd>
+              </div>
+              <div>
+                <dt>合计帧数</dt>
+                <dd id="deliveryGodotFrameCount">0 帧</dd>
+              </div>
+            </dl>
+            <ul id="deliveryGodotChecks" class="deliveryChecks" aria-label="Godot 交付检查"></ul>
+            <button id="deliveryOpenGodot" class="modeHubSecondary" type="button">配置项目 Godot 交付</button>
+          </article>
+          <article class="deliveryCard" data-delivery-panel="codex-pet">
+            <div class="deliveryCardKicker">
+              <span>03 / PET</span>
+              <strong id="deliveryPetStatus" class="deliveryStatus" data-tone="neutral">检查中</strong>
+            </div>
+            <h2>Codex Pet</h2>
+            <p>按整个项目检查标准动作覆盖与 Pet 兼容状态，当前动画仅作为预览上下文。</p>
+            <dl>
+              <div>
+                <dt>检查范围</dt>
+                <dd>整个项目</dd>
+              </div>
+              <div>
+                <dt>动画数量</dt>
+                <dd id="deliveryPetAnimationCount">0 个</dd>
+              </div>
+              <div>
+                <dt>已绑定身份</dt>
+                <dd id="deliveryPetBoundCount">0 个</dd>
+              </div>
+              <div>
+                <dt>当前预览</dt>
+                <dd id="deliveryPetCurrentAnimation">—</dd>
+              </div>
+            </dl>
+            <ul id="deliveryPetChecks" class="deliveryChecks" aria-label="Codex Pet 兼容检查"></ul>
+            <button id="deliveryOpenCodexPet" class="modeHubSecondary" type="button">
+              检查项目 Pet 兼容性
+            </button>
+          </article>
         </div>
       </section>
       <section
@@ -1077,12 +1329,165 @@
         aria-label="零散切片工作台"
         hidden
       >
-        <iframe
-          class="scatterSliceFrame"
-          src="/scatter-slice.html?embedded=1"
-          title="零散切片"
-          loading="eager"
-        ></iframe>
+        <div class="scatterIntegratedWorkbench">
+          <header class="scatterIntegratedHeader">
+            <div>
+              <span>SCATTER WORKSPACE / LOCAL</span>
+              <h1>零散切片</h1>
+              <p>识别散落元素、整理动画分组，再加入工作集或导出。</p>
+            </div>
+            <div id="scatterResultSummary" class="scatterResultSummary" role="status" aria-live="polite">
+              <span>等待素材</span><strong>先选择一张包含散落元素的图片</strong>
+            </div>
+          </header>
+          <nav class="scatterProgress" aria-label="切片流程">
+            <span class="active" data-scatter-step="source"><b>01</b>载入素材</span>
+            <span data-scatter-step="detect"><b>02</b>识别区域</span>
+            <span data-scatter-step="organize"><b>03</b>整理分组</span>
+            <span data-scatter-step="deliver"><b>04</b>拼接导出</span>
+          </nav>
+          <div class="scatterIntegratedBody">
+            <aside class="scatterControlStack" aria-label="切片参数">
+              <details class="scatterStepPanel" open>
+                <summary><span>01</span><strong>导入与智能识别</strong></summary>
+                <div class="scatterStepPanelBody">
+                  <input id="scatterFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+                  <div class="sourceActions">
+                    <button id="scatterUpload" class="actionButton primary" type="button">
+                      选择或粘贴图片
+                    </button>
+                    <button id="scatterClearSource" class="actionButton danger" type="button" disabled>
+                      清空
+                    </button>
+                  </div>
+                  <p id="scatterSourceMeta" class="sourceMeta">未加载图片</p>
+                  <label class="fieldLabel" for="scatterMode">检测模式</label>
+                  <select id="scatterMode">
+                    <option value="auto">智能主体识别</option>
+                    <option value="alpha">Alpha 透明度</option>
+                    <option value="colorkey">背景色键</option>
+                  </select>
+                  <label class="fieldLabel" for="scatterColor">背景色 · 也可在画布取色</label>
+                  <div class="colorField">
+                    <input id="scatterColor" type="color" value="#98d79b" />
+                    <output id="scatterColorValue" for="scatterColor">#98D79B</output>
+                  </div>
+                  <button id="scatterDetect" class="actionButton detect" type="button" disabled>
+                    智能识别主体
+                  </button>
+                  <p class="automaticDetectionHint">自动过滤背景、网格线与微小噪点。</p>
+                </div>
+              </details>
+              <details class="scatterStepPanel" data-requires-detection>
+                <summary><span>02</span><strong>区域整理与分组</strong></summary>
+                <div class="scatterStepPanelBody sliceEditorControls">
+                  <div class="sliceToolModes" role="group" aria-label="画布工具">
+                    <button id="scatterEditMode" type="button" aria-pressed="false" disabled>编辑</button>
+                    <button id="scatterAddMode" type="button" aria-pressed="false" disabled>添加</button>
+                    <button id="scatterSampleMode" type="button" aria-pressed="true" disabled>取色</button>
+                  </div>
+                  <code id="scatterActiveBox">NO SELECTION</code>
+                  <div class="sliceEditActions" role="group" aria-label="编辑历史">
+                    <button id="scatterUndo" type="button" disabled>撤销</button>
+                    <button id="scatterRedo" type="button" disabled>重做</button>
+                    <button id="scatterRegroup" type="button" disabled>按位置分组</button>
+                    <button id="scatterNormalizeBoxes" type="button" disabled>统一裁剪框</button>
+                  </div>
+                  <div class="sliceNoiseActions">
+                    <label for="scatterSmallSliceRatio">小切片阈值</label>
+                    <select id="scatterSmallSliceRatio">
+                      <option value="0.15">≤ 最大面积 15%</option>
+                      <option value="0.3" selected>≤ 最大面积 30%</option>
+                      <option value="0.5">≤ 最大面积 50%</option>
+                    </select>
+                    <button id="scatterSelectSmallSlices" type="button" disabled>选择小切片</button>
+                  </div>
+                </div>
+              </details>
+              <details class="scatterStepPanel" data-requires-detection>
+                <summary><span>03</span><strong>拼接设置</strong></summary>
+                <div class="scatterStepPanelBody">
+                  <label class="cutoutModeButton">
+                    <input id="scatterTransparent" type="checkbox" checked />
+                    <span><strong>智能抠图</strong><small>自动清除背景</small></span
+                    ><b>ON</b>
+                  </label>
+                  <label class="cutoutModeButton">
+                    <input id="scatterUniformOutput" type="checkbox" checked />
+                    <span><strong>统一输出画布</strong><small>组内最大画布 · 底部居中</small></span
+                    ><b>ON</b>
+                  </label>
+                  <label class="fieldLabel" for="scatterProjectMode">加入项目方式</label>
+                  <select id="scatterProjectMode">
+                    <option value="separate">每组作为一个动画</option>
+                    <option value="merge">全部合并为一个动画</option>
+                  </select>
+                  <label class="fieldLabel" for="scatterAnimationName">动画名称</label>
+                  <input id="scatterAnimationName" type="text" maxlength="80" placeholder="sprites" />
+                </div>
+              </details>
+            </aside>
+            <section class="previewDeck" aria-label="源图与检测框">
+              <div class="previewToolbar">
+                <div><span>SOURCE / DETECTION</span><strong id="scatterBoxCount">0 BOXES</strong></div>
+              </div>
+              <div id="scatterDropZone" class="canvasStage">
+                <button id="scatterEmptyStage" class="emptyStage" type="button">
+                  <span class="dropGlyph" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                  <strong>拖入或按 Ctrl/⌘V 粘贴素材图</strong>
+                  <small>PNG / JPG / WebP · 最大 20 MB</small>
+                </button>
+                <canvas id="scatterPreview" aria-label="源图片与检测框预览" tabindex="0" hidden></canvas>
+              </div>
+              <div id="scatterStatus" class="statusBar" role="status" aria-live="polite">
+                <span><i aria-hidden="true"></i> READY</span>
+                <p>等待图片。</p>
+              </div>
+            </section>
+            <aside class="resultsDeck" aria-labelledby="scatterResultsTitle">
+              <header class="resultsHeader">
+                <div>
+                  <span>DETECTED OUTPUT</span>
+                  <h2 id="scatterResultsTitle">动画分组与切片</h2>
+                </div>
+                <div class="groupExportSelection">
+                  <output id="scatterGroupSelection">0 / 0 组</output>
+                  <button id="scatterToggleGroups" type="button" disabled>全部选择</button>
+                </div>
+              </header>
+              <div class="overallPlaybackPanel">
+                <div><strong>连续预览</strong><small>按分组和帧顺序循环</small></div>
+                <button id="scatterPlayAll" type="button" disabled>播放全部</button>
+                <canvas id="scatterPlaybackAll" aria-label="全部切片循环预览" hidden></canvas>
+              </div>
+              <div id="scatterSliceList" class="sliceGroups">
+                <p class="emptyResults">识别结果会显示在这里。</p>
+              </div>
+              <p id="scatterInteractionStatus" class="visuallyHidden" aria-live="polite"></p>
+            </aside>
+          </div>
+          <footer class="scatterActionBar">
+            <div><span>当前输出</span><strong id="scatterActionSummary">尚未识别切片</strong></div>
+            <div class="scatterSecondaryActions">
+              <button id="scatterDelete" type="button" disabled>删除选中</button>
+              <button id="scatterDownloadSlice" type="button" disabled>下载切片</button>
+              <button id="scatterDownloadSheet" type="button" disabled>导出所选组</button>
+            </div>
+            <button id="scatterAddProject" type="button" disabled>加入动画项目</button>
+            <button id="scatterStageAction" class="scatterPrimaryAction" type="button">选择素材</button>
+          </footer>
+        </div>
+        <dialog id="scatterClearDialog" class="mediaClearDialog" aria-labelledby="scatterClearDialogTitle">
+          <form method="dialog">
+            <span class="dialogEyebrow">CLEAR SOURCE / LOCAL</span>
+            <h2 id="scatterClearDialogTitle">清空当前素材？</h2>
+            <p>源图片、识别框、切片分组和未导出的预览都会被移除。</p>
+            <div>
+              <button type="submit" value="cancel">取消</button
+              ><button class="danger" type="submit" value="clear">确认清空</button>
+            </div>
+          </form>
+        </dialog>
       </section>
     </main>
     <section
@@ -1095,27 +1500,68 @@
       <div class="cutoutWorkbench">
         <header class="cutoutHeader">
           <div>
-            <nav id="cutoutBreadcrumb" class="contextBreadcrumb" aria-label="当前位置"></nav>
+            <nav
+              id="cutoutBreadcrumb"
+              class="contextBreadcrumb"
+              aria-label="当前位置"
+              data-i18n-aria-label="currentLocation"
+            ></nav>
             <span class="cutoutEyebrow">ALPHA LAB / LOCAL</span>
             <h2 id="cutoutTitle" data-cutout-i18n="title">批量抠图</h2>
             <p data-cutout-i18n="subtitle">本地像素处理 · 图片不会上传</p>
           </div>
           <div class="workbenchHeaderActions">
             <div class="themeSwitch workbenchThemeSwitch" role="group" aria-label="界面主题">
-              <button type="button" class="themeButton" data-theme="dark" title="深色主题">深色</button>
-              <button type="button" class="themeButton" data-theme="light" title="浅色主题">浅色</button>
+              <button
+                type="button"
+                class="themeButton active"
+                data-theme="dark"
+                data-i18n="themeDark"
+                data-i18n-title="darkTheme"
+                title="深色主题"
+                aria-pressed="true"
+              >
+                深色
+              </button>
+              <button
+                type="button"
+                class="themeButton"
+                data-theme="light"
+                data-i18n="themeLight"
+                data-i18n-title="lightTheme"
+                title="浅色主题"
+                aria-pressed="false"
+              >
+                浅色
+              </button>
               <button
                 type="button"
                 class="themeButton kunkunThemeButton"
                 data-theme="kunkun"
                 title="坤坤彩蛋主题"
+                aria-pressed="false"
                 hidden
               >
                 彩蛋
               </button>
             </div>
-            <button id="cutoutCopyLink" class="workbenchLink" type="button" data-cutout-i18n="copyLink">
-              复制链接
+            <button
+              id="cutoutApplyGroup"
+              type="button"
+              class="secondary cutoutHeaderAction"
+              data-cutout-i18n="applyGroup"
+              title="将结果写回当前动画或单帧编辑会话"
+            >
+              替换当前动画
+            </button>
+            <button
+              id="cutoutAddProject"
+              type="button"
+              class="cutoutPrimary cutoutHeaderAction"
+              data-cutout-i18n="addToProject"
+              title="将当前处理结果加入动画项目"
+            >
+              加入动画项目
             </button>
             <button id="cutoutHome" class="workbenchHome" type="button" data-cutout-i18n="home">
               ← 首页
@@ -1185,100 +1631,6 @@
               role="tabpanel"
               aria-labelledby="cutoutSidebarParametersTab"
             >
-              <section
-                id="cutoutCandidatePanel"
-                class="cutoutCandidatePanel"
-                aria-labelledby="cutoutCandidateTitle"
-              >
-                <header class="cutoutCandidateHeader">
-                  <div>
-                    <span>A/B LOCAL ADVISOR</span>
-                    <strong id="cutoutCandidateTitle" data-cutout-i18n="candidateTitle">智能对比</strong>
-                  </div>
-                  <div>
-                    <button id="cutoutCandidateGenerate" type="button" data-cutout-i18n="candidateGenerate">
-                      生成 A/B
-                    </button>
-                    <button
-                      id="cutoutCandidateExit"
-                      type="button"
-                      class="secondary"
-                      data-cutout-i18n="candidateExit"
-                      hidden
-                    >
-                      退出对比
-                    </button>
-                  </div>
-                </header>
-                <small
-                  id="cutoutCandidateStatus"
-                  class="cutoutCandidateStatus"
-                  aria-live="polite"
-                  data-cutout-i18n="candidateHint"
-                  >基于当前帧生成本地参数建议，不上传图片。</small
-                >
-                <div id="cutoutCandidateReview" class="cutoutCandidateReview" hidden>
-                  <div class="cutoutCandidateViews" role="group" aria-label="A/B preview mode">
-                    <button id="cutoutCandidateViewA" type="button" class="secondary">A</button>
-                    <button id="cutoutCandidateViewSplit" type="button" class="secondary active">A/B</button>
-                    <button id="cutoutCandidateViewB" type="button" class="secondary">B</button>
-                    <label class="cutoutCandidateSplitControl">
-                      <span data-cutout-i18n="candidateDivider">分割线</span>
-                      <input id="cutoutCandidateSplitRange" type="range" min="5" max="95" value="50" />
-                    </label>
-                  </div>
-                  <div id="cutoutCandidateReasons" class="cutoutCandidateReasons"></div>
-                  <div id="cutoutCandidateDifferences" class="cutoutCandidateDifferences"></div>
-                  <div class="cutoutCandidateApplyRow">
-                    <label>
-                      <span data-cutout-i18n="candidateScope">应用范围</span>
-                      <select id="cutoutCandidateScope">
-                        <option value="current" data-cutout-i18n="candidateCurrent">当前帧</option>
-                        <option value="selected" data-cutout-i18n="candidateSelected">已选帧</option>
-                        <option value="all" data-cutout-i18n="candidateAll">全部帧</option>
-                      </select>
-                    </label>
-                    <button id="cutoutCandidateApply" type="button" data-cutout-i18n="candidateApply">
-                      应用 B
-                    </button>
-                  </div>
-                </div>
-                <div class="cutoutCandidatePresets">
-                  <input
-                    id="cutoutCandidatePresetName"
-                    type="text"
-                    maxlength="40"
-                    data-cutout-i18n-aria-label="candidatePresetName"
-                    aria-label="预设名称"
-                    placeholder="预设名称"
-                  />
-                  <button
-                    id="cutoutCandidatePresetSave"
-                    type="button"
-                    class="secondary"
-                    data-cutout-i18n="candidatePresetSave"
-                  >
-                    保存
-                  </button>
-                  <select id="cutoutCandidatePresetSelect" aria-label="A/B presets"></select>
-                  <button
-                    id="cutoutCandidatePresetLoad"
-                    type="button"
-                    class="secondary"
-                    data-cutout-i18n="candidatePresetLoad"
-                  >
-                    载入为 B
-                  </button>
-                  <button
-                    id="cutoutCandidatePresetDelete"
-                    type="button"
-                    class="secondary"
-                    data-cutout-i18n="candidatePresetDelete"
-                  >
-                    删除
-                  </button>
-                </div>
-              </section>
               <div id="cutoutSettings" class="cutoutSettings">
                 <div class="cutoutSettingsHeading">
                   <div>
@@ -1522,7 +1874,7 @@
                         /><output id="cutoutBlurRadiusValue">0</output></label
                       >
                       <small class="cutoutPanelHint" data-cutout-i18n="postHint"
-                        >用于清理主体边缘残留的背景色，不改变透明区域。</small
+                        >边缘颜色恢复用于修正主体残色；背景搜索半径仅在恢复强度大于 0 时生效。</small
                       >
                     </section>
                   </div>
@@ -2195,18 +2547,6 @@
                   aria-busy="false"
                   aria-label="抠图编辑画布。方向键移动键盘修正光标，Enter 应用当前工具，减号和加号缩放。"
                 ></canvas>
-                <button
-                  id="cutoutCandidateDivider"
-                  type="button"
-                  class="cutoutCandidateDivider"
-                  role="slider"
-                  aria-valuemin="5"
-                  aria-valuemax="95"
-                  aria-valuenow="50"
-                  data-cutout-i18n-aria-label="candidateDivider"
-                  aria-label="分割线"
-                  hidden
-                ></button>
               </figure>
               <div class="cutoutZoomControls" aria-label="Preview zoom">
                 <button id="cutoutZoomOut" type="button" class="secondary" aria-label="Zoom out">−</button>
@@ -2421,16 +2761,6 @@
                   停止处理
                 </button>
                 <button
-                  id="cutoutApplyGroup"
-                  type="button"
-                  class="secondary cutoutFooterApply"
-                  data-icon="↩"
-                  data-cutout-i18n="applyGroup"
-                  title="将结果写回当前动画或单帧编辑会话"
-                >
-                  替换当前动画
-                </button>
-                <button
                   id="cutoutDownload"
                   type="button"
                   class="cutoutPrimary"
@@ -2439,15 +2769,6 @@
                   title="把包含的结果导出为 ZIP"
                 >
                   导出 ZIP
-                </button>
-                <button
-                  id="cutoutAddProject"
-                  type="button"
-                  class="cutoutPrimary"
-                  data-cutout-i18n="addToProject"
-                  title="将当前处理结果加入动画项目"
-                >
-                  加入动画项目
                 </button>
               </footer>
             </section>
@@ -2491,20 +2812,46 @@
       <div class="organizerWorkbench">
         <header class="organizerHeader">
           <div>
-            <nav id="organizerBreadcrumb" class="contextBreadcrumb" aria-label="当前位置"></nav>
+            <nav
+              id="organizerBreadcrumb"
+              class="contextBreadcrumb"
+              aria-label="当前位置"
+              data-i18n-aria-label="currentLocation"
+            ></nav>
             <span class="organizerEyebrow">SEQUENCE DESK / LOCAL</span>
             <h2 id="organizerTitle" data-organizer-i18n="title">动画处理</h2>
             <p id="organizerSubtitle" data-organizer-i18n="subtitle">排序、删帧、单帧抠图与序列分析</p>
           </div>
           <div class="workbenchHeaderActions">
             <div class="themeSwitch workbenchThemeSwitch" role="group" aria-label="界面主题">
-              <button type="button" class="themeButton" data-theme="dark" title="深色主题">深色</button>
-              <button type="button" class="themeButton" data-theme="light" title="浅色主题">浅色</button>
+              <button
+                type="button"
+                class="themeButton active"
+                data-theme="dark"
+                data-i18n="themeDark"
+                data-i18n-title="darkTheme"
+                title="深色主题"
+                aria-pressed="true"
+              >
+                深色
+              </button>
+              <button
+                type="button"
+                class="themeButton"
+                data-theme="light"
+                data-i18n="themeLight"
+                data-i18n-title="lightTheme"
+                title="浅色主题"
+                aria-pressed="false"
+              >
+                浅色
+              </button>
               <button
                 type="button"
                 class="themeButton kunkunThemeButton"
                 data-theme="kunkun"
                 title="坤坤彩蛋主题"
+                aria-pressed="false"
                 hidden
               >
                 彩蛋
@@ -2515,11 +2862,8 @@
               class="secondary activationManageLaunch organizerActivationLaunch"
               type="button"
             >
-              <span id="organizerActivationManageLabel">授权管理</span>
+              <span id="organizerActivationManageLabel">登录 / 注册</span>
               <small id="organizerActivationManageStatus">正在检查授权…</small>
-            </button>
-            <button id="organizerCopyLink" class="workbenchLink" type="button" data-organizer-i18n="copyLink">
-              复制链接
             </button>
             <button id="organizerHome" class="workbenchHome" type="button" data-organizer-i18n="home">
               ← 首页
@@ -2527,20 +2871,7 @@
             <button id="organizerClose" class="organizerClose" type="button" aria-label="关闭">×</button>
           </div>
         </header>
-        <section
-          id="organizerImportSetup"
-          class="organizerImportSetup"
-          aria-labelledby="organizerImportSetupTitle"
-          hidden
-        >
-          <div class="organizerImportIntro">
-            <span>NEW ANIMATION / LOCAL</span>
-            <strong id="organizerImportSetupTitle" data-organizer-i18n="importSetupTitle">动画信息</strong>
-            <small data-organizer-i18n="importSetupHint"
-              >动画名称用于 ZIP 文件名；处理和导出均在浏览器本地完成。</small
-            >
-            <span id="organizerGodotHandoffBadge" class="organizerGodotHandoffBadge">local_only</span>
-          </div>
+        <section id="organizerImportSetup" class="organizerImportSetup" hidden>
           <label class="organizerProjectMetadata">
             <span data-organizer-i18n="importProject">保存到</span>
             <select id="organizerProjectSelect" name="project" autocomplete="off"></select>
@@ -2568,7 +2899,7 @@
               spellcheck="false"
             />
           </label>
-          <label>
+          <label id="organizerAnimationNameField" hidden>
             <span data-organizer-i18n="importAnimationName">动画名称</span>
             <input
               id="organizerAnimationName"
@@ -2580,19 +2911,12 @@
               spellcheck="false"
             />
           </label>
-          <label>
-            <span data-organizer-i18n="importFps">播放 FPS</span>
-            <input
-              id="organizerImportFps"
-              name="fps"
-              type="number"
-              min="1"
-              max="120"
-              step="1"
-              value="12"
-              inputmode="numeric"
-              autocomplete="off"
-            />
+          <label id="organizerCreationModeField" class="organizerCreationModeField" hidden>
+            <span>切片分组</span>
+            <select id="organizerCreationMode" name="creation-mode" autocomplete="off">
+              <option value="groups">按组创建多个动画</option>
+              <option value="merge">合并为一个动画</option>
+            </select>
           </label>
           <label class="organizerProjectMetadata">
             <span data-organizer-i18n="importType">类型</span>
@@ -2645,6 +2969,9 @@
             <div class="organizerToolGroup organizerEditTools" role="group" aria-label="帧编辑">
               <span data-organizer-i18n="editTools">编辑</span>
               <button id="organizerInvert" type="button" data-organizer-i18n="invert">反选工作集</button>
+              <button id="organizerInvertSelection" type="button" data-organizer-i18n="invertSelection">
+                反选选择
+              </button>
               <label class="organizerReduceControl">
                 <span data-organizer-i18n="reduceEvery">每</span>
                 <input
@@ -2683,6 +3010,36 @@
               </button>
               <button id="organizerFlip" type="button" data-organizer-i18n="flip">水平翻转</button>
             </div>
+            <div class="organizerToolbarActions">
+              <button
+                id="organizerToggleImportSetup"
+                type="button"
+                class="secondary"
+                aria-expanded="false"
+                data-organizer-i18n="importSettings"
+                hidden
+              >
+                导入设置
+              </button>
+              <button
+                id="organizerMoreTools"
+                type="button"
+                class="secondary"
+                aria-expanded="false"
+                data-organizer-i18n="moreTools"
+                hidden
+              >
+                更多工具
+              </button>
+              <button
+                id="organizerFindLoop"
+                type="button"
+                class="secondary premiumOption"
+                data-organizer-i18n="findLoop"
+              >
+                寻找循环段
+              </button>
+            </div>
           </div>
           <div class="organizerToolbarRow organizerToolbarSecondary">
             <div class="organizerToolGroup organizerAnalysisTools" role="group" aria-label="序列分析">
@@ -2707,14 +3064,6 @@
                 data-organizer-i18n="findDuplicate"
               >
                 寻找重复帧
-              </button>
-              <button
-                id="organizerFindLoop"
-                type="button"
-                class="secondary premiumOption"
-                data-organizer-i18n="findLoop"
-              >
-                寻找循环段
               </button>
               <output
                 id="organizerAnalysisFeedback"
@@ -3041,9 +3390,7 @@
                   <strong id="organizerVideoEstimate">0</strong>
                   <small data-organizer-i18n="videoFramesUnit">帧</small>
                 </div>
-                <p class="organizerVideoHint" data-organizer-i18n="videoHint">
-                  最多一次提取 300 帧；长视频请缩短片段或降低帧率。
-                </p>
+                <p class="organizerVideoHint" data-organizer-i18n="videoHint">按所选片段与帧率提取视频帧。</p>
               </div>
             </div>
             <footer class="organizerVideoFooter">
@@ -3086,15 +3433,23 @@
                 <span id="organizerSelection">选中 0 帧</span>
               </div>
               <div class="organizerTagTools">
-                <button
-                  id="organizerBatchCutout"
-                  type="button"
-                  class="organizerBatchCutout"
-                  data-organizer-i18n="batchCutout"
-                >
-                  智能抠图
-                </button>
+                <div class="organizerScopedAction">
+                  <button
+                    id="organizerBatchCutout"
+                    type="button"
+                    class="organizerBatchCutout"
+                    data-organizer-i18n="batchCutout"
+                  >
+                    智能抠图
+                  </button>
+                  <small id="organizerBatchCutoutScope">作用于参与工作集</small>
+                </div>
               </div>
+            </div>
+            <div id="organizerBatchScope" class="organizerBatchScope" role="status" aria-live="polite" hidden>
+              <span>批量选择</span>
+              <strong id="organizerBatchScopeText">将操作应用到 0 帧</strong>
+              <small>橙色边框表示当前选择；右上角勾选表示参与工作集。</small>
             </div>
             <div class="organizerEmptyState" role="status">
               <strong data-organizer-i18n="emptyWorksetTitle">先导入动画素材</strong>
@@ -3126,20 +3481,17 @@
                 </button>
               </div>
             </div>
-            <div class="organizerPreviewStage">
-              <canvas id="organizerPreview" width="520" height="520"></canvas>
-              <output id="organizerPreviewFrame" class="organizerPreviewFrame" aria-live="off"
-                >第 - / 0 帧</output
-              >
-              <label class="organizerSpeed">
-                <span data-organizer-i18n="speed">预览速度</span>
-                <b aria-hidden="true">−</b>
-                <input id="organizerSpeed" type="range" min="40" max="600" step="10" value="480" />
-                <b aria-hidden="true">+</b>
-              </label>
-            </div>
             <div class="organizerStatusRow">
               <div id="organizerStatus" class="organizerStatus" aria-live="polite">等待操作</div>
+              <button
+                id="organizerStatusDismiss"
+                type="button"
+                class="secondary"
+                data-organizer-i18n="dismissStatus"
+                hidden
+              >
+                关闭
+              </button>
               <button
                 id="organizerUndoDelete"
                 type="button"
@@ -3159,18 +3511,51 @@
                 查看任务
               </button>
             </div>
-            <div class="organizerFooterActions">
-              <button id="organizerReset" type="button" class="secondary" data-organizer-i18n="reset">
-                还原
-              </button>
-              <button
-                id="organizerAddAssets"
-                type="button"
-                class="secondary"
-                data-organizer-i18n="addToAssets"
+            <div class="organizerPreviewStage">
+              <canvas id="organizerPreview" width="520" height="520"></canvas>
+              <output id="organizerPreviewFrame" class="organizerPreviewFrame" aria-live="off"
+                >第 - / 0 帧</output
               >
-                添加到附加素材
-              </button>
+              <label class="organizerSpeed">
+                <span data-organizer-i18n="speed">预览速度</span>
+                <b aria-hidden="true">−</b>
+                <input id="organizerSpeed" type="range" min="40" max="600" step="10" value="480" />
+                <b aria-hidden="true">+</b>
+              </label>
+            </div>
+            <div class="organizerFooterActions">
+              <details class="organizerDownstreamMenu">
+                <summary>其他操作</summary>
+                <div>
+                  <button id="organizerReset" type="button" class="secondary" data-organizer-i18n="reset">
+                    还原
+                  </button>
+                  <button
+                    id="organizerAddAssets"
+                    type="button"
+                    class="secondary"
+                    data-organizer-i18n="addToAssets"
+                  >
+                    添加到附加素材
+                  </button>
+                  <button
+                    id="organizerExport"
+                    type="button"
+                    class="secondary"
+                    data-organizer-i18n="exportZip"
+                  >
+                    导出
+                  </button>
+                  <button
+                    id="organizerAddProject"
+                    type="button"
+                    class="secondary"
+                    data-organizer-i18n="addToProject"
+                  >
+                    加入动画项目
+                  </button>
+                </div>
+              </details>
               <button
                 id="organizerGodotPlaceholder"
                 type="button"
@@ -3180,17 +3565,6 @@
                 hidden
               >
                 导入动画组并进入调参
-              </button>
-              <button id="organizerExport" type="button" class="secondary" data-organizer-i18n="exportZip">
-                导出
-              </button>
-              <button
-                id="organizerAddProject"
-                type="button"
-                class="secondary"
-                data-organizer-i18n="addToProject"
-              >
-                加入动画项目
               </button>
               <button id="organizerApply" type="button" class="organizerPrimary" data-organizer-i18n="apply">
                 应用到动画
@@ -3206,14 +3580,13 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby="mediaExportTitle"
+      data-presentation="dialog"
       hidden
     >
       <div class="mediaExportCard">
         <header class="mediaExportHeader">
-          <div>
-            <span>PACKAGE / MEDIA OUTPUT</span>
-            <h2 id="mediaExportTitle" data-i18n="mediaExportTitle">选择导出格式。</h2>
-          </div>
+          <div class="mediaExportStep">3</div>
+          <h2 id="mediaExportTitle">导出</h2>
           <button
             id="mediaExportClose"
             class="secondary mediaExportClose"
@@ -3225,51 +3598,550 @@
             ×
           </button>
         </header>
-        <dl class="mediaExportSummary">
-          <div>
-            <dt data-i18n="mediaExportFrameCount">帧数</dt>
-            <dd id="mediaExportFrameCount">0</dd>
-          </div>
-          <div>
-            <dt data-i18n="mediaExportFps">FPS</dt>
-            <dd id="mediaExportFps">12</dd>
-          </div>
-          <div>
-            <dt data-i18n="mediaExportCanvas">最大画布</dt>
-            <dd id="mediaExportCanvas">—</dd>
-          </div>
-        </dl>
-        <div class="mediaExportFormats">
-          <label class="mediaExportFormat">
-            <input id="mediaExportFrames" type="checkbox" checked />
-            <b data-i18n="mediaExportFramesTitle">PNG + frames.json</b>
-            <span data-i18n="mediaExportFramesHint">保留透明 PNG 序列、源顺序和统一帧时长。</span>
-          </label>
-          <label class="mediaExportFormat">
-            <input id="mediaExportSheet" type="checkbox" />
-            <b data-i18n="mediaExportSheetTitle">Sprite Sheet + atlas</b>
-            <span data-i18n="mediaExportSheetHint">自动分页到安全纹理尺寸，帧保持左上锚点。</span>
-          </label>
-          <label class="mediaExportFormat">
-            <input id="mediaExportGif" type="checkbox" disabled />
-            <b>GIF</b>
-            <span data-i18n="mediaExportGifHint">本地 FFmpeg 调色板编码，适合快速预览。</span>
-          </label>
-          <label class="mediaExportFormat">
-            <input id="mediaExportMov" type="checkbox" disabled />
-            <b data-i18n="mediaExportMovTitle">透明 MOV</b>
-            <span data-i18n="mediaExportMovHint">ProRes 4444 / yuva444p10le，保留 Alpha。</span>
-          </label>
+        <div class="mediaExportNameRow">
+          <label>文件名：<input id="mediaExportFilename" type="text" maxlength="96" /></label>
+          <label class="mediaExportUseSourceName"
+            ><input id="mediaExportUseSourceName" type="checkbox" />使用视频名</label
+          >
+          <span id="mediaExportFrameCount" hidden>0</span><span id="mediaExportCanvas" hidden>—</span>
         </div>
-        <p id="mediaExportLocalHint" class="mediaExportLocalHint" data-i18n="mediaExportChecking">
-          正在检查本地 FFmpeg…
-        </p>
-        <p id="mediaExportStatus" class="mediaExportStatus" aria-live="polite" data-i18n="mediaExportChoose">
-          选择至少一种输出格式。
-        </p>
+        <div class="mediaExportWorkspace">
+          <div class="mediaExportControls">
+            <section class="mediaExportFormatSection">
+              <h3>导出格式</h3>
+              <div class="mediaExportFormats" role="radiogroup" aria-label="导出格式">
+                <label class="mediaExportFormat">
+                  <input id="mediaExportFrames" name="mediaExportFormat" type="radio" value="frames" />
+                  <b>ZIP</b>
+                </label>
+                <label class="mediaExportFormat">
+                  <input
+                    id="mediaExportSheet"
+                    name="mediaExportFormat"
+                    type="radio"
+                    value="spritesheet"
+                    checked
+                  />
+                  <b>Sprite Sheet</b>
+                </label>
+                <label class="mediaExportFormat">
+                  <input id="mediaExportGif" name="mediaExportFormat" type="radio" value="gif" disabled />
+                  <b>GIF</b>
+                </label>
+                <label class="mediaExportFormat">
+                  <input id="mediaExportMp4" name="mediaExportFormat" type="radio" value="mp4" disabled />
+                  <b>MP4</b>
+                </label>
+                <input id="mediaExportMov" type="checkbox" hidden disabled />
+              </div>
+            </section>
+            <section class="mediaExportRecipe" aria-label="导出配方">
+              <fieldset class="mediaExportReferenceSection mediaExportResolutionSection">
+                <legend>导出分辨率</legend>
+                <div class="mediaExportPills" role="radiogroup" aria-label="导出分辨率">
+                  <label
+                    ><input name="mediaExportResolution" type="radio" value="original" /><span
+                      id="mediaExportOriginalResolution"
+                      >原始</span
+                    ></label
+                  >
+                  <label
+                    ><input name="mediaExportResolution" type="radio" value="64" /><span>64×64</span></label
+                  >
+                  <label
+                    ><input name="mediaExportResolution" type="radio" value="128" /><span
+                      >128×128</span
+                    ></label
+                  >
+                  <label
+                    ><input name="mediaExportResolution" type="radio" value="256" /><span
+                      >256×256</span
+                    ></label
+                  >
+                  <label
+                    ><input name="mediaExportResolution" type="radio" value="512" checked /><span
+                      >512×512</span
+                    ></label
+                  >
+                  <label
+                    ><input name="mediaExportResolution" type="radio" value="custom" /><span
+                      >自定义</span
+                    ></label
+                  >
+                </div>
+                <div id="mediaExportCustomSize" class="mediaExportCustomSize" hidden>
+                  <input id="mediaExportWidth" type="number" min="1" max="8192" value="512" /><span>×</span>
+                  <input id="mediaExportHeight" type="number" min="1" max="8192" value="512" />
+                </div>
+              </fieldset>
+              <fieldset class="mediaExportReferenceSection">
+                <legend>缩放算法</legend>
+                <div class="mediaExportSegments" role="radiogroup" aria-label="缩放算法">
+                  <label
+                    ><input
+                      id="mediaExportInterpolation"
+                      name="mediaExportInterpolation"
+                      type="radio"
+                      value="smooth"
+                      checked
+                    /><span>平滑缩放</span></label
+                  >
+                  <label
+                    ><input name="mediaExportInterpolation" type="radio" value="nearest" /><span
+                      >像素风格</span
+                    ></label
+                  >
+                </div>
+              </fieldset>
+              <fieldset class="mediaExportReferenceSection">
+                <legend>画面适配</legend>
+                <div class="mediaExportSegments" role="radiogroup" aria-label="画面适配">
+                  <label
+                    ><input
+                      id="mediaExportFit"
+                      name="mediaExportFit"
+                      type="radio"
+                      value="contain"
+                      checked
+                    /><span>等比缩放</span></label
+                  >
+                  <label><input name="mediaExportFit" type="radio" value="stretch" /><span>拉伸</span></label>
+                </div>
+              </fieldset>
+              <fieldset class="mediaExportReferenceSection mediaExportTransformFields">
+                <legend>缩放</legend>
+                <div class="mediaExportQuickActions">
+                  快捷：<button id="mediaExportFitComplete" type="button">完整显示</button
+                  ><button id="mediaExportFillCanvas" type="button">铺满画面</button>
+                </div>
+                <label
+                  ><span>水平</span><small>1%</small
+                  ><input id="mediaExportScaleXRange" type="range" min="1" max="300" value="100" /><small
+                    >300%</small
+                  ><input id="mediaExportScaleX" type="number" min="1" max="300" value="100" /><span
+                    >%</span
+                  ></label
+                >
+                <label
+                  ><span>垂直</span><small>1%</small
+                  ><input id="mediaExportScaleYRange" type="range" min="1" max="300" value="100" /><small
+                    >300%</small
+                  ><input id="mediaExportScaleY" type="number" min="1" max="300" value="100" /><span
+                    >%</span
+                  ></label
+                >
+                <label class="mediaExportScaleLock"
+                  ><input id="mediaExportScaleLinked" type="checkbox" checked /> 同步缩放</label
+                >
+              </fieldset>
+              <fieldset class="mediaExportReferenceSection mediaExportTransformFields">
+                <legend>画面偏移</legend>
+                <label
+                  ><span>水平</span><small id="mediaExportOffsetXMin">−512</small
+                  ><input id="mediaExportOffsetXRange" type="range" min="-8192" max="8192" value="0" /><small
+                    id="mediaExportOffsetXMax"
+                    >512</small
+                  ><input id="mediaExportOffsetX" type="number" min="-8192" max="8192" value="0" /><span
+                    >px</span
+                  ></label
+                >
+                <label
+                  ><span>垂直</span><small id="mediaExportOffsetYMin">−512</small
+                  ><input id="mediaExportOffsetYRange" type="range" min="-8192" max="8192" value="0" /><small
+                    id="mediaExportOffsetYMax"
+                    >512</small
+                  ><input id="mediaExportOffsetY" type="number" min="-8192" max="8192" value="0" /><span
+                    >px</span
+                  ></label
+                >
+              </fieldset>
+              <fieldset class="mediaExportReferenceSection mediaExportFillSection">
+                <legend>填充方式 <abbr title="用于补齐缩放后画布的空白区域">?</abbr></legend>
+                <div class="mediaExportPills" role="radiogroup" aria-label="填充方式">
+                  <label
+                    ><input
+                      id="mediaExportBackground"
+                      name="mediaExportBackground"
+                      type="radio"
+                      value="color"
+                    /><span>纯色</span></label
+                  >
+                  <label
+                    ><input name="mediaExportBackground" type="radio" value="transparent" /><span
+                      >透明</span
+                    ></label
+                  >
+                  <label
+                    ><input name="mediaExportBackground" type="radio" value="edge" checked /><span
+                      >边缘延伸</span
+                    ></label
+                  >
+                  <input
+                    id="mediaExportBackgroundColor"
+                    type="color"
+                    value="#000000"
+                    aria-label="纯色背景颜色"
+                  />
+                </div>
+                <label id="mediaExportFillColorRow" class="mediaExportFillColorRow" hidden
+                  ><b>填充颜色</b><input id="mediaExportFillColor" type="color" value="#f0f0f0" /><output
+                    id="mediaExportFillColorValue"
+                    >#F0F0F0</output
+                  ><button id="mediaExportFillColorReset" type="button" aria-label="恢复默认填充颜色">
+                    ↻
+                  </button></label
+                >
+              </fieldset>
+              <fieldset id="mediaExportSheetSettings" class="mediaExportSheetSettings">
+                <legend>Sprite Sheet 导出设置</legend>
+                <div class="mediaExportSettingRow mediaExportTextureSizes">
+                  <b>图集尺寸</b>
+                  <div class="mediaExportPills" role="radiogroup" aria-label="图集尺寸">
+                    <label
+                      ><input name="mediaExportTextureSize" type="radio" value="512" /><span>512</span></label
+                    >
+                    <label
+                      ><input name="mediaExportTextureSize" type="radio" value="1024" /><span
+                        >1024</span
+                      ></label
+                    >
+                    <label
+                      ><input
+                        id="mediaExportMaxTexture"
+                        name="mediaExportTextureSize"
+                        type="radio"
+                        value="2048"
+                        checked
+                      /><span>2048</span></label
+                    >
+                    <label
+                      ><input name="mediaExportTextureSize" type="radio" value="4096" /><span
+                        >4096</span
+                      ></label
+                    >
+                    <label
+                      ><input name="mediaExportTextureSize" type="radio" value="8192" /><span
+                        >8192</span
+                      ></label
+                    >
+                    <label
+                      ><input name="mediaExportTextureSize" type="radio" value="max" /><span
+                        >最大</span
+                      ></label
+                    >
+                  </div>
+                </div>
+                <label class="mediaExportSettingRow"
+                  ><b>2ⁿ 对齐 <abbr title="将图集尺寸补齐到 2 的幂">?</abbr></b
+                  ><input id="mediaExportPowerOfTwo" type="checkbox"
+                /></label>
+                <label class="mediaExportSettingRow"
+                  ><b>间距</b
+                  ><span
+                    ><input id="mediaExportGap" type="number" min="0" max="256" value="0" /> px</span
+                  ></label
+                >
+                <label class="mediaExportSettingRow"
+                  ><b>去除透明边距 <abbr title="按整段动画统一透明范围裁切，避免抖动">?</abbr></b
+                  ><input id="mediaExportTrimTransparent" type="checkbox"
+                /></label>
+                <div class="mediaExportSettingRow">
+                  <b>列数 <abbr title="自动计算每页可容纳的列数">?</abbr></b
+                  ><span class="mediaExportColumns"
+                    ><label><input id="mediaExportColumnsAuto" type="checkbox" checked />自动</label
+                    ><input id="mediaExportColumns" type="number" min="1" max="256" value="4" disabled /><i
+                      id="mediaExportColumnsTotal"
+                      >/ 4</i
+                    ></span
+                  >
+                </div>
+                <label class="mediaExportSettingRow mediaExportImageName"
+                  ><b>图片命名 <abbr title="导出的图集及帧文件名称">?</abbr></b
+                  ><span
+                    ><input id="mediaExportImageName" type="text" maxlength="96" /><small
+                      id="mediaExportImageNameHint"
+                      >animation1.png，animation2.png，…</small
+                    ></span
+                  ></label
+                >
+                <div class="mediaExportSettingRow mediaExportMetadata">
+                  <b>描述文件 <abbr title="选择随图集一起导出的描述文件">?</abbr></b
+                  ><span>
+                    <label><input id="mediaExportMetadataJson" type="checkbox" checked />JSON</label>
+                    <label><input id="mediaExportMetadataGodot" type="checkbox" />tpsheet (Godot)</label>
+                    <label><input id="mediaExportMetadataUnity" type="checkbox" />tpsheet (Unity)</label>
+                    <label><input id="mediaExportMetadataPlist" type="checkbox" />plist</label>
+                  </span>
+                </div>
+                <div class="mediaExportSettingRow">
+                  <b>图片质量</b>
+                  <div class="mediaExportSegments" role="radiogroup" aria-label="图片质量">
+                    <label
+                      ><input
+                        id="mediaExportQuality"
+                        name="mediaExportQuality"
+                        type="radio"
+                        value="png32"
+                        checked
+                      /><span>PNG-32</span></label
+                    >
+                    <label
+                      ><input name="mediaExportQuality" type="radio" value="png8" /><span>PNG-8</span></label
+                    >
+                  </div>
+                </div>
+                <p id="mediaExportEstimate" class="mediaExportEstimate">
+                  ◩ 预估：2048 × 2048 px · 1 张 · 0 帧
+                </p>
+              </fieldset>
+              <fieldset id="mediaExportZipSettings" class="mediaExportFormatSettings" hidden>
+                <legend>ZIP 导出设置</legend>
+                <label class="mediaExportSettingRow mediaExportImageName"
+                  ><b>图片命名 <abbr title="ZIP 中连续帧的文件名称">?</abbr></b
+                  ><span
+                    ><input id="mediaExportZipImageName" type="text" maxlength="96" /><small
+                      id="mediaExportZipImageNameHint"
+                      >animation1.png，animation2.png，…</small
+                    ></span
+                  ></label
+                >
+                <div class="mediaExportSettingRow">
+                  <b>图片质量</b>
+                  <div class="mediaExportSegments" role="radiogroup" aria-label="ZIP 图片质量">
+                    <label
+                      ><input
+                        id="mediaExportZipQuality"
+                        name="mediaExportZipQuality"
+                        type="radio"
+                        value="png32"
+                        checked
+                      /><span>PNG-32</span></label
+                    >
+                    <label
+                      ><input name="mediaExportZipQuality" type="radio" value="png8" /><span
+                        >PNG-8</span
+                      ></label
+                    >
+                  </div>
+                </div>
+              </fieldset>
+              <fieldset id="mediaExportGifSettings" class="mediaExportFormatSettings" hidden>
+                <legend>GIF 导出设置</legend>
+                <label class="mediaExportSettingRow"
+                  ><b>循环播放</b><input id="mediaExportGifLoop" type="checkbox" checked
+                /></label>
+                <label class="mediaExportSettingRow mediaExportFormatRange"
+                  ><b>帧率 <abbr title="GIF 每秒播放帧数">?</abbr></b
+                  ><small>1</small
+                  ><input id="mediaExportGifFpsRange" type="range" min="1" max="50" value="12" /><small
+                    >50</small
+                  ><input id="mediaExportGifFps" type="number" min="1" max="50" value="12" /><span
+                    >fps</span
+                  ></label
+                >
+                <label class="mediaExportSettingRow mediaExportFormatRange"
+                  ><b>透明阈值 <abbr title="低于阈值的像素会变为全透明">?</abbr></b
+                  ><small>1</small
+                  ><input id="mediaExportGifAlphaRange" type="range" min="1" max="255" value="128" /><small
+                    >255</small
+                  ><input id="mediaExportGifAlpha" type="number" min="1" max="255" value="128"
+                /></label>
+                <details class="mediaExportAdvanced" open>
+                  <summary>⚙ 画质选项</summary>
+                  <div class="mediaExportAdvancedBody">
+                    <div>
+                      <b>色彩模式</b>
+                      <div class="mediaExportSegments" role="radiogroup">
+                        <label
+                          ><input
+                            id="mediaExportGifPalette"
+                            name="mediaExportGifPalette"
+                            type="radio"
+                            value="default"
+                          /><span>默认</span></label
+                        ><label
+                          ><input name="mediaExportGifPalette" type="radio" value="stable" checked /><span
+                            >稳定</span
+                          ></label
+                        ><label
+                          ><input name="mediaExportGifPalette" type="radio" value="scene" /><span
+                            >多场景</span
+                          ></label
+                        >
+                      </div>
+                    </div>
+                    <div>
+                      <b>降噪强度</b>
+                      <div class="mediaExportSegments" role="radiogroup">
+                        <label
+                          ><input
+                            id="mediaExportGifDenoise"
+                            name="mediaExportGifDenoise"
+                            type="radio"
+                            value="none"
+                          /><span>无</span></label
+                        ><label
+                          ><input name="mediaExportGifDenoise" type="radio" value="light" /><span
+                            >轻度</span
+                          ></label
+                        ><label
+                          ><input name="mediaExportGifDenoise" type="radio" value="standard" checked /><span
+                            >标准</span
+                          ></label
+                        ><label
+                          ><input name="mediaExportGifDenoise" type="radio" value="strong" /><span
+                            >强力</span
+                          ></label
+                        ><label
+                          ><input name="mediaExportGifDenoise" type="radio" value="extreme" /><span
+                            >极强</span
+                          ></label
+                        >
+                      </div>
+                    </div>
+                    <div>
+                      <b>压缩质量</b>
+                      <div class="mediaExportSegments" role="radiogroup">
+                        <label
+                          ><input
+                            id="mediaExportGifCompression"
+                            name="mediaExportGifCompression"
+                            type="radio"
+                            value="off"
+                          /><span>关闭</span></label
+                        ><label
+                          ><input name="mediaExportGifCompression" type="radio" value="light" checked /><span
+                            >轻度</span
+                          ></label
+                        ><label
+                          ><input name="mediaExportGifCompression" type="radio" value="standard" /><span
+                            >标准</span
+                          ></label
+                        ><label
+                          ><input name="mediaExportGifCompression" type="radio" value="strong" /><span
+                            >强力</span
+                          ></label
+                        ><label
+                          ><input name="mediaExportGifCompression" type="radio" value="extreme" /><span
+                            >极限</span
+                          ></label
+                        >
+                      </div>
+                    </div>
+                    <div>
+                      <b>柔化边缘</b>
+                      <div class="mediaExportSegments" role="radiogroup">
+                        <label
+                          ><input
+                            id="mediaExportGifSoften"
+                            name="mediaExportGifSoften"
+                            type="radio"
+                            value="off"
+                            checked
+                          /><span>关闭</span></label
+                        ><label
+                          ><input name="mediaExportGifSoften" type="radio" value="auto" /><span
+                            >自动</span
+                          ></label
+                        ><label
+                          ><input name="mediaExportGifSoften" type="radio" value="force" /><span
+                            >强制开启</span
+                          ></label
+                        >
+                      </div>
+                    </div>
+                  </div>
+                </details>
+                <p class="mediaExportFormatHint">
+                  💡 GIF 每帧最多 256 色且不支持半透明；颜色渐变或半透明像素可能出现色块。
+                </p>
+              </fieldset>
+              <fieldset id="mediaExportMp4Settings" class="mediaExportFormatSettings" hidden>
+                <legend>MP4 导出设置</legend>
+                <label class="mediaExportSettingRow mediaExportFormatRange"
+                  ><b>帧率 <abbr title="MP4 每秒播放帧数">?</abbr></b
+                  ><small>1</small
+                  ><input id="mediaExportMp4FpsRange" type="range" min="1" max="60" value="30" /><small
+                    >60</small
+                  ><input id="mediaExportMp4Fps" type="number" min="1" max="60" value="30" /><span
+                    >fps</span
+                  ></label
+                >
+                <div class="mediaExportSettingRow">
+                  <b>画质 <abbr title="H.264 编码质量">?</abbr></b>
+                  <div class="mediaExportSegments" role="radiogroup">
+                    <label
+                      ><input
+                        id="mediaExportMp4Quality"
+                        name="mediaExportMp4Quality"
+                        type="radio"
+                        value="low"
+                      /><span>低</span></label
+                    ><label
+                      ><input name="mediaExportMp4Quality" type="radio" value="medium" checked /><span
+                        >中</span
+                      ></label
+                    ><label
+                      ><input name="mediaExportMp4Quality" type="radio" value="high" /><span>高</span></label
+                    >
+                  </div>
+                </div>
+                <p class="mediaExportFormatHint">💡 MP4 为纯视频无音频，使用 H.264 编码，兼容性广泛。</p>
+              </fieldset>
+              <input id="mediaExportPreset" type="hidden" value="atlas" />
+              <input id="mediaExportCanvasMode" type="hidden" value="custom" />
+              <input id="mediaExportAnchor" type="hidden" value="bottom-center" />
+              <input id="mediaExportPadding" type="hidden" value="0" />
+              <input id="mediaExportExtrude" type="hidden" value="1" />
+              <input id="mediaExportSpeed" type="hidden" value="1" />
+              <kbd class="mediaExportShortcut">Ctrl/⌘+Z 撤销 · Ctrl/⌘+Shift+Z 重做</kbd>
+            </section>
+          </div>
+          <section class="mediaExportPreview" aria-label="导出预览">
+            <header class="mediaExportPreviewHeader">
+              <div>
+                <b id="mediaExportPreviewTitle">单帧预览</b><span id="mediaExportPreviewSize">—</span>
+              </div>
+              <button id="mediaExportPreviewRefresh" type="button" class="secondary" aria-label="刷新预览">
+                ↻
+              </button>
+            </header>
+            <div class="mediaExportPreviewStage">
+              <canvas id="mediaExportPreviewCanvas" width="512" height="512"></canvas>
+            </div>
+            <div class="mediaExportPreviewPager">
+              <button id="mediaExportPreviewPrevious" type="button" class="secondary" aria-label="上一个预览">
+                ←
+              </button>
+              <span id="mediaExportPreviewPage">1 / 1</span>
+              <button id="mediaExportPreviewNext" type="button" class="secondary" aria-label="下一个预览">
+                →
+              </button>
+            </div>
+            <div class="mediaExportPreviewModes" role="group" aria-label="预览模式">
+              <button id="mediaExportPreviewFrame" type="button" aria-pressed="false">单帧</button>
+              <button id="mediaExportPreviewAnimation" type="button" aria-pressed="false">动画</button>
+              <button id="mediaExportPreviewSheet" type="button" aria-pressed="true">图集</button>
+            </div>
+            <p id="mediaExportPreviewMeta">预览与最终导出复用同一渲染配方。</p>
+          </section>
+        </div>
+        <div class="mediaExportNotices">
+          <p id="mediaExportLocalHint" class="mediaExportLocalHint" data-i18n="mediaExportChecking">
+            正在检查本地 FFmpeg…
+          </p>
+          <p
+            id="mediaExportStatus"
+            class="mediaExportStatus"
+            aria-live="polite"
+            data-i18n="mediaExportChoose"
+          >
+            选择至少一种输出格式。
+          </p>
+        </div>
         <div id="mediaExportDownloads" class="mediaExportDownloads" hidden></div>
         <footer class="mediaExportFooter">
-          <span data-i18n="mediaExportFooter">PNG 与 Sprite Sheet 在浏览器生成；GIF/MOV 只在本地编码。</span>
+          <span>ZIP 与 Sprite Sheet 在浏览器生成；GIF/MP4 在本地按逐帧时长编码。</span>
           <div>
             <button id="mediaExportCancel" type="button" class="secondary" data-i18n="cancel">取消</button>
             <button
@@ -3477,9 +4349,9 @@
       <div id="activationCard" class="activationCard">
         <aside class="activationRail" aria-hidden="true"><b>PRO</b><span>OUTPUT LICENSE / XSXB</span></aside>
         <div class="activationBody">
-          <span class="activationKicker">PREMIUM OUTPUT / ACTIVATION REQUIRED</span>
-          <h2 id="activationTitle">激活后完成导出</h2>
-          <p id="activationMessage">当前编辑不会丢失。输入激活码后即可继续。</p>
+          <span class="activationKicker">EMAIL ACCOUNT / PRO ACCESS</span>
+          <h2 id="activationTitle">登录 / 注册</h2>
+          <p id="activationMessage">邮箱验证后，当前浏览器将保持登录 7 天。</p>
           <section id="activationOverview" class="activationOverview" aria-live="polite">
             <div class="activationOverviewHeader">
               <span id="activationPlanBadge" class="activationPlanBadge">授权状态</span>
@@ -3489,28 +4361,44 @@
             <p id="activationCurrent" class="activationCurrent">正在读取当前授权状态…</p>
           </section>
           <ul id="activationFeatures" class="activationFeatures"></ul>
-          <section
-            id="activationTransfer"
-            class="activationTransfer"
-            aria-labelledby="activationTransferSummary"
-            hidden
-          >
-            <header>
-              <span>DEVICE LIMIT / SELECT TO REPLACE</span>
-              <strong id="activationTransferSummary"></strong>
-            </header>
-            <div
-              id="activationTransferList"
-              class="activationTransferList"
-              role="radiogroup"
-              aria-label="选择要解绑的设备"
-            ></div>
-            <nav class="activationTransferNavigation" aria-label="设备列表翻页">
-              <button id="activationTransferPrevious" class="secondary" type="button">上一页</button>
-              <button id="activationTransferNext" class="secondary" type="button">下一页</button>
-              <button id="activationTransferBack" class="secondary" type="button">返回输入激活码</button>
-            </nav>
-          </section>
+          <form id="accountLoginForm" class="activationForm">
+            <div id="accountCredentialStep">
+              <label class="srOnly" for="accountEmail">邮箱/用户名</label>
+              <input
+                id="accountEmail"
+                type="text"
+                autocomplete="username"
+                maxlength="254"
+                placeholder="邮箱/用户名"
+                required
+              />
+              <label class="srOnly" for="accountPassword">密码</label>
+              <input
+                id="accountPassword"
+                type="password"
+                autocomplete="current-password"
+                minlength="8"
+                maxlength="256"
+                placeholder="密码"
+                required
+              />
+              <button id="accountLogin" class="activationSubmit" type="submit">继续</button>
+            </div>
+            <div id="accountChallengeStep" hidden>
+              <label class="srOnly" for="accountVerificationCode">验证码</label>
+              <input
+                id="accountVerificationCode"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="6"
+                pattern="[0-9]{6}"
+                placeholder="6 位验证码"
+              />
+              <button id="accountVerify" class="activationSubmit" type="submit">验证并登录</button>
+              <button id="accountChallengeBack" class="secondary" type="button">返回</button>
+            </div>
+          </form>
           <form id="activationForm" class="activationForm">
             <label class="srOnly" for="activationCode">激活码</label>
             <input
@@ -3522,26 +4410,12 @@
               maxlength="512"
               placeholder="输入激活码"
             />
-            <button id="activationSubmit" class="activationSubmit" type="submit">激活并继续</button>
+            <button id="activationSubmit" class="activationSubmit" type="submit">绑定激活码</button>
           </form>
+          <button id="activationTrial" class="secondary activationTrial" type="button">
+            领取 3 天邮箱试用
+          </button>
           <p id="activationStatus" class="activationStatus" aria-live="polite"></p>
-          <section id="activationDeviceActions" class="activationDeviceActions" hidden>
-            <div>
-              <span>CURRENT DEVICE / SELF SERVICE</span>
-              <p id="activationDeviceActionsMessage">仅解绑当前设备，其他已绑定设备不会受到影响。</p>
-            </div>
-            <button id="activationUnbind" class="activationUnbind" type="button">解绑此设备</button>
-            <div id="activationUnbindConfirm" class="activationUnbindConfirm" role="alert" hidden>
-              <strong id="activationUnbindTitle">确认解绑当前设备？</strong>
-              <p id="activationUnbindMessage">解绑后本机授权立即失效；之后可重新输入激活码并选择设备名额。</p>
-              <div>
-                <button id="activationUnbindCancel" class="secondary" type="button">取消</button>
-                <button id="activationUnbindAccept" class="activationUnbindAccept" type="button">
-                  确认解绑
-                </button>
-              </div>
-            </div>
-          </section>
           <div class="activationLinks">
             <a
               class="activationBuyLink"
@@ -3550,6 +4424,7 @@
               rel="noopener noreferrer"
               >获取激活码 <span aria-hidden="true">↗</span></a
             >
+            <button id="accountLogout" class="secondary" type="button" hidden>退出邮箱账户</button>
             <button id="activationCancel" class="secondary activationCancel" type="button">暂不激活</button>
           </div>
         </div>
@@ -3557,8 +4432,6 @@
     </section>
     <script src="/premium_features.js"></script>
     <script src="/clipboard_media.js"></script>
-    <script src="/device_fingerprint.js"></script>
-    <script src="/device_identity.js"></script>
     <script src="/activation_controller.js"></script>
     <script src="/image_pixel_budget.js"></script>
     <script src="/batch_cutout_public_color.js"></script>
@@ -3574,8 +4447,6 @@
     <script src="/batch_zip.js"></script>
     <script src="/batch_cutout_output_core.js"></script>
     <script src="/batch_cutout_session_core.js"></script>
-    <script src="/batch_cutout_candidate_core.js"></script>
-    <script src="/batch_cutout_preset_store.js"></script>
     <script src="/batch_cutout_result_cache_core.js"></script>
     <script src="/batch_cutout_repair_replay_core.js"></script>
     <script src="/batch_cutout_worker_client.js"></script>
@@ -3600,7 +4471,6 @@
     <script src="/batch_cutout_repair_controller.js"></script>
     <script src="/batch_cutout_process_controller.js"></script>
     <script src="/batch_cutout_session_controller.js"></script>
-    <script src="/batch_cutout_candidate_controller.js"></script>
     <script src="/batch_cutout_events.js"></script>
     <script src="/batch_cutout_runtime_setup.js"></script>
     <script src="/batch_cutout.js"></script>
@@ -3618,16 +4488,20 @@
     <script src="/frame_organizer_ui.js"></script>
     <script src="/smart_cutout_defaults.js"></script>
     <script src="/frame_organizer_actions.js"></script>
+    <script src="/export_recipe_core.js"></script>
     <script src="/media_export_dialog.js"></script>
     <script src="/frame_organizer.js"></script>
     <script src="/media_export_core.js"></script>
     <script src="/local_media_export_client.js"></script>
+    <script src="/browser_project_storage.js"></script>
     <script src="/browser_runtime.js"></script>
     <script src="/workbench_export.js"></script>
     <script src="/character_starter_guide.js"></script>
     <script src="/attack_trail_guide.js"></script>
     <script src="/app_dom.js"></script>
     <script src="/app_state.js"></script>
+    <script src="/workspace_store.js"></script>
+    <script src="/temporary_workset_store.js"></script>
     <script src="/app_frame_selection.js"></script>
     <script src="/app_reference_frame.js"></script>
     <script src="/app_i18n.js"></script>
@@ -3661,6 +4535,14 @@
     <script src="/app_tuning_values.js"></script>
     <script src="/app_save_controller.js"></script>
     <script src="/app_history.js"></script>
+    <script src="/scatter_slice_core.js"></script>
+    <script src="/scatter_slice_groups.js"></script>
+    <script src="/scatter_slice_smart_cutout.js"></script>
+    <script src="/scatter_slice_editor_core.js"></script>
+    <script src="/scatter_slice_workspace_core.js"></script>
+    <script src="/scatter_slice_group_controller.js"></script>
+    <script src="/scatter_temporary_workset.js"></script>
+    <script src="/scatter_slice.js"></script>
     <script src="/app_filmstrip.js"></script>
     <script src="/app_filmstrip_interaction.js"></script>
     <script src="/app_attachment_sequence.js"></script>
@@ -3672,6 +4554,7 @@
     <script src="/app_adjustment_inputs.js"></script>
     <script src="/app_frame_edit_state.js"></script>
     <script src="/app_tool_actions.js"></script>
+    <script src="/app_single_frame_cutout.js"></script>
     <script src="/app_attachment_manipulation.js"></script>
     <script src="/app_playback_inputs.js"></script>
     <script src="/app_project_selects.js"></script>
@@ -3685,5 +4568,167 @@
     <script src="/workset_handoff_dialog.js"></script>
     <script src="/app_shell.js"></script>
     <script src="/app.js"></script>
+    <div
+      id="organizerSmartCutoutProgress"
+      class="organizerSmartCutoutProgress"
+      role="status"
+      aria-live="polite"
+      hidden
+    >
+      <span class="organizerSmartCutoutSpinner" aria-hidden="true"></span>
+      <span id="organizerSmartCutoutProgressText">智能抠图处理中</span>
+    </div>
+    <style>
+      .organizerSmartCutoutProgress {
+        position: fixed;
+        z-index: 1000;
+        right: 24px;
+        bottom: 24px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 48px;
+        padding: 0 16px;
+        border: 1px solid var(--accent-2, #32d2b6);
+        border-radius: 10px;
+        background: rgb(10 24 31 / 94%);
+        box-shadow: 0 14px 36px rgb(0 0 0 / 35%);
+        color: var(--text, #edf7f5);
+        font-weight: 700;
+      }
+
+      .organizerSmartCutoutSpinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgb(50 210 182 / 28%);
+        border-top-color: var(--accent-2, #32d2b6);
+        border-radius: 50%;
+        animation: organizer-smart-cutout-spin 0.8s linear infinite;
+      }
+
+      @keyframes organizer-smart-cutout-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+    <script>
+      (() => {
+        const isTextEditingTarget = (target) =>
+          Boolean(
+            target?.isContentEditable ||
+              ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) ||
+              target?.closest?.('[contenteditable="true"], input, textarea, select'),
+          );
+        const clickShortcutAction = (selectors) => {
+          const action = selectors
+            .map((selector) => document.querySelector(selector))
+            .find((element) => element && !element.disabled);
+          if (!action) return false;
+          action.click();
+          return true;
+        };
+        document.addEventListener("keydown", (event) => {
+          if (isTextEditingTarget(event.target) || !(event.ctrlKey || event.metaKey) || event.altKey) return;
+          if (String(event.key || "").toLowerCase() !== "z") return;
+          const undo = !event.shiftKey;
+          const handled = undo
+            ? clickShortcutAction([
+                "#cutoutModal:not([hidden]) #cutoutRepairUndo",
+                "#organizerModal:not([hidden]) #organizerUndo",
+              ])
+            : clickShortcutAction([
+                "#cutoutModal:not([hidden]) #cutoutRepairRedo",
+                "#organizerModal:not([hidden]) #organizerRedo",
+              ]);
+          if (handled) event.preventDefault();
+        });
+
+        const button = document.querySelector("#organizerBatchCutout");
+        const progress = document.querySelector("#organizerSmartCutoutProgress");
+        const text = document.querySelector("#organizerSmartCutoutProgressText");
+        const organizer = document.querySelector("#organizerModal");
+        if (!button || !progress || !text || !organizer) return;
+        let startedAt = 0;
+        let sawBusyState = false;
+        let completionObserver = null;
+        const hide = () => {
+          progress.hidden = true;
+          completionObserver?.disconnect();
+          completionObserver = null;
+        };
+        const syncProgressText = () => {
+          const statusText = document.querySelector("#organizerStatus")?.textContent || "";
+          const progressMatch = `${button.textContent || ""} ${statusText}`.match(/(\d+)\s*\/\s*(\d+)/);
+          if (progressMatch) {
+            text.textContent = `智能抠图处理中 · ${progressMatch[1]} / ${progressMatch[2]} 帧`;
+          }
+          return statusText;
+        };
+        const observeCompletion = () => {
+          completionObserver?.disconnect();
+          completionObserver = new MutationObserver(() => {
+            const statusText = syncProgressText();
+            const finished = /完成|成功|complete|finished/i.test(statusText);
+            if (organizer.hidden || finished || (sawBusyState && !button.disabled)) hide();
+          });
+          completionObserver.observe(document.body, {
+            attributes: true,
+            attributeFilter: ["disabled", "hidden", "open", "class"],
+            childList: true,
+            subtree: true,
+            characterData: true,
+          });
+        };
+        button.addEventListener(
+          "click",
+          () => {
+            const frameCount = document.querySelectorAll(".organizerFrame").length;
+            text.textContent = frameCount ? `智能抠图处理中 · 共 ${frameCount} 帧` : "智能抠图处理中";
+            progress.hidden = false;
+            startedAt = Date.now();
+            sawBusyState = false;
+            observeCompletion();
+            const poll = () => {
+              if (progress.hidden) return;
+              sawBusyState ||= button.disabled;
+              if (sawBusyState && !button.disabled) return hide();
+              if (Date.now() - startedAt > 60000) return hide();
+              requestAnimationFrame(poll);
+            };
+            requestAnimationFrame(poll);
+          },
+          { capture: true },
+        );
+      })();
+    </script>
+    <script>
+      (function revealXsxbSurface() {
+        var path = location.pathname.replace(/\/$/, "") || "/";
+        var surface =
+          path === "/projects"
+            ? "projects"
+            : path === "/tools"
+              ? "tools"
+              : path === "/tools/scatter-slice" || path === "/workspace/resources/scatter"
+                ? "scatter"
+                : path.indexOf("/workspace/delivery") === 0 || path === "/tools/export"
+                  ? "delivery"
+                  : path.indexOf("/tools/") === 0
+                    ? "tool"
+                    : "workspace";
+        document.body.setAttribute("data-app-surface", surface);
+        var hubs = {
+          projects: "projectHub",
+          tools: "quickToolsHub",
+          scatter: "scatterSliceSurface",
+          delivery: "deliverySurface",
+        };
+        var hub = hubs[surface] && document.getElementById(hubs[surface]);
+        if (hub) hub.hidden = false;
+        var workspace = document.querySelector("#mainWorkbench > .workspace");
+        if (workspace && surface !== "workspace") workspace.hidden = true;
+      })();
+    </script>
   </body>
 </html>

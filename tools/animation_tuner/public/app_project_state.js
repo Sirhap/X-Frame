@@ -136,6 +136,18 @@
           t(node.dataset.i18nAriaLabel, valueKey ? { value: t(valueKey) } : undefined),
         );
       });
+      if (elements.playPause) {
+        const playbackLabel = t(readState("playing", false) ? "pause" : "play");
+        elements.playPause.textContent = playbackLabel;
+        elements.playPause.title = playbackLabel;
+        elements.playPause.setAttribute("aria-label", playbackLabel);
+      }
+      if (elements.ghostToggle) {
+        const ghostLabel = t("ghost");
+        elements.ghostToggle.textContent = ghostLabel;
+        elements.ghostToggle.title = ghostLabel;
+        elements.ghostToggle.setAttribute("aria-label", ghostLabel);
+      }
       if (elements.refreshProject)
         elements.refreshProject.setAttribute("aria-label", t("refreshAnimationList"));
       readState("batchCutout", null)?.setLanguage?.(language);
@@ -222,7 +234,6 @@
       const config = state.config;
       if (!config) return t("ready");
       const projectName = projectLabel(config.activeProject);
-      const projectPath = config.projectRoot || config.workspaceRoot || config.root;
       const warningText =
         Array.isArray(config.warnings) && config.warnings.length
           ? t("warnings", { warnings: config.warnings.join("\n") })
@@ -230,7 +241,6 @@
       return t("loadedStatus", {
         project: projectName,
         count: config.groups?.length || 0,
-        path: projectPath,
         warnings: warningText,
       });
     }

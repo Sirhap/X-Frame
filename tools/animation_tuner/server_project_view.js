@@ -48,6 +48,41 @@ function createProjectView(dependencies = {}) {
     relativeProjectPathApi ||
     ((filePath, projectRoot) => path.relative(projectRoot, filePath).split(path.sep).join("/"));
 
+  /**
+   * Counts animations that contain at least one frame usable by the workbench.
+   * @param {object} project Project registry entry.
+   * @returns {number|null} Animation-group count, or null when the manifest cannot be inspected.
+   */
+  function animationGroupCountForProject(project) {
+    try {
+      const manifest = readManifest(project);
+      return (Array.isArray(manifest?.profiles) ? manifest.profiles : []).reduce(
+        (count, profile) =>
+          count +
+          (Array.isArray(profile?.animations)
+            ? profile.animations.filter(
+                (animation) =>
+                  Array.isArray(animation?.frames) &&
+                  animation.frames.some((frame) => String(frame?.path || "")),
+              ).length
+            : 0),
+        0,
+      );
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  /** Adds derived animation metadata without changing the project-store schema. */
+  function projectForClientWithStats(project) {
+    const clientProject = projectStore.projectForClient(project);
+    // Codex pet manifests are materialized by syncCodexPetProject during config loads.
+    // Avoid reporting a stale zero count from the registry-only project list.
+    if (project?.kind === "codex_pets") return clientProject;
+    const animationGroupCount = animationGroupCountForProject(project);
+    return animationGroupCount === null ? clientProject : { ...clientProject, animationGroupCount };
+  }
+
   function syncGodotRuntimeProjectId(project) {
     const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
     const projectId = String(project?.id || "");
@@ -148,7 +183,7 @@ function createProjectView(dependencies = {}) {
     if (!groups.length) {
       warnings.unshift("当前项目没有动画组。点击“导入动画”可导入 PNG 序列或本地视频。");
     }
-    const projectClient = projectStore.projectForClient(project);
+    const projectClient = projectForClientWithStats(project);
     const godotHandoff = godotHandoffForProject(project);
     const godotSyncReady = ["synced", "gameplay_ready"].includes(godotHandoff.state);
     return {
@@ -158,7 +193,7 @@ function createProjectView(dependencies = {}) {
       projectRoot: project.projectRoot,
       activeProjectId: project.id,
       activeProject: projectClient,
-      projects: registry.projects.map(projectStore.projectForClient),
+      projects: registry.projects.map(projectForClientWithStats),
       scenes: project.kind === "codex_pets" ? [] : listSceneFiles(project.projectRoot, manifest.profiles),
       profiles: manifest.profiles.map(profileForClient),
       frameAudioBindings: readFrameAudioBindings(project),
@@ -202,7 +237,7 @@ function createProjectView(dependencies = {}) {
     const registry = projectStore.readRegistry();
     return {
       activeProjectId: registry.activeProjectId,
-      projects: registry.projects.map(projectStore.projectForClient),
+      projects: registry.projects.map(projectForClientWithStats),
     };
   }
 

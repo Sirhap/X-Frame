@@ -68,14 +68,16 @@ export function createAdminRepository(database) {
     /** @param {number} limit Maximum rows. @returns {Promise<object[]>} Recent licenses and trials. */
     async listLicenses(limit) {
       const results = await database.batch(
-        ["code", "automatic_trial"].map((source) =>
+        ["code", "email_trial", "admin_grant"].map((source) =>
           database
             .prepare(
-              `SELECT rowid AS source_rowid, id, code_hash, code_ciphertext, source, plan,
-                      duration_days, max_devices, redeem_by, first_activated_at, expires_at, revoked_at
-                 FROM licenses
-                WHERE source = ?1
-                ORDER BY rowid DESC
+              `SELECT l.rowid AS source_rowid, l.id, l.code_hash, l.code_ciphertext, l.source, l.plan,
+                      l.duration_days, l.redeem_by, l.first_activated_at, l.expires_at,
+                      l.revoked_at, l.account_id, l.admin_note, a.email AS account_email
+                 FROM licenses l
+                 LEFT JOIN accounts a ON a.id = l.account_id
+                WHERE l.source = ?1
+                ORDER BY l.rowid DESC
                 LIMIT ?2`,
             )
             .bind(source, limit),
@@ -84,29 +86,6 @@ export function createAdminRepository(database) {
       return results
         .flatMap((result) => result.results || [])
         .sort((left, right) => Number(right.source_rowid) - Number(left.source_rowid));
-    },
-
-    /** @param {string[]} licenseIds License IDs. @returns {Promise<object[]>} Devices grouped by license. */
-    async listLicenseDevices(licenseIds) {
-      if (!licenseIds.length) return [];
-      const statements = [];
-      for (let offset = 0; offset < licenseIds.length; offset += MAX_D1_BIND_PARAMETERS) {
-        const batchIds = licenseIds.slice(offset, offset + MAX_D1_BIND_PARAMETERS);
-        const placeholders = batchIds.map((_licenseId, index) => `?${index + 1}`).join(", ");
-        statements.push(
-          database
-            .prepare(
-              `SELECT id, license_id, device_name, first_country, last_country,
-                      created_at, last_seen_at, revoked_at
-                 FROM license_devices
-                WHERE license_id IN (${placeholders})
-                ORDER BY created_at ASC`,
-            )
-            .bind(...batchIds),
-        );
-      }
-      const results = await database.batch(statements);
-      return results.flatMap((result) => result.results || []);
     },
 
     /** @param {object[]} licenses New license records. @returns {Promise<object[]>} Batch results. */
@@ -180,40 +159,6 @@ export function createAdminRepository(database) {
     deleteLicenses(ids) {
       return database.batch(
         ids.map((id) => database.prepare("DELETE FROM licenses WHERE id = ?1 AND source = 'code'").bind(id)),
-      );
-    },
-
-    /** @param {string[]} ids Device IDs. @returns {Promise<object[]>} Matching managed devices. */
-    async findDevicesByIds(ids) {
-      const results = await database.batch(
-        ids.map((id) =>
-          database
-            .prepare(
-              `SELECT d.id, d.license_id, d.revoked_at, l.source AS license_source
-                 FROM license_devices d
-                 JOIN licenses l ON l.id = d.license_id
-                WHERE d.id = ?1
-                LIMIT 1`,
-            )
-            .bind(id),
-        ),
-      );
-      return results.flatMap((result) => result.results || []);
-    },
-
-    /** @param {string[]} ids Device IDs. @param {string|null} revokedAt Revocation time. @returns {Promise<object[]>} Batch results. */
-    setDevicesRevoked(ids, revokedAt) {
-      return database.batch(
-        ids.map((id) =>
-          database.prepare("UPDATE license_devices SET revoked_at = ?2 WHERE id = ?1").bind(id, revokedAt),
-        ),
-      );
-    },
-
-    /** @param {string[]} ids Device IDs. @returns {Promise<object[]>} Batch results. */
-    deleteDevices(ids) {
-      return database.batch(
-        ids.map((id) => database.prepare("DELETE FROM license_devices WHERE id = ?1").bind(id)),
       );
     },
   };

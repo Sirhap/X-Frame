@@ -22,6 +22,27 @@ test("browser runtime discards an abandoned transient project", () => {
   assert.equal(browserRuntime.getSessionProjectConfig(created.projectId), null);
 });
 
+test("browser runtime exposes animation group counts in project summaries", () => {
+  const summaries = browserRuntime.projectSummaries(
+    [
+      { id: "ready", label: "Ready" },
+      { id: "empty", label: "Empty" },
+    ],
+    new Map([
+      ["ready", { groups: [{ name: "idle" }] }],
+      ["empty", { groups: [] }],
+    ]),
+  );
+
+  assert.deepEqual(
+    summaries.map((project) => [project.id, project.animationGroupCount]),
+    [
+      ["ready", 1],
+      ["empty", 0],
+    ],
+  );
+});
+
 test("browser runtime builds a portable animation package", async () => {
   let capturedEntries = [];
   const result = await browserRuntime.exportAnimationPackage(
@@ -47,11 +68,11 @@ test("browser runtime builds a portable animation package", async () => {
 
   assert.equal(result.filename, "Walk-East-xsxb.zip");
   assert.equal(result.frameCount, 1);
-  assert.equal(capturedEntries[0].name, "frames/frame_0001.png");
+  assert.equal(capturedEntries[0].name, "frames/Walk-East1.png");
   assert.ok(capturedEntries.some((entry) => entry.name === "frames.json"));
   const manifest = JSON.parse(capturedEntries.find((entry) => entry.name === "xsxb-animation.json").data);
   assert.equal(manifest.godotImport.enabled, false);
-  assert.equal(manifest.animation.frames[0].file, "frames/frame_0001.png");
+  assert.equal(manifest.animation.frames[0].file, "frames/Walk-East1.png");
 });
 
 test("browser runtime rejects frames without processed PNG data", async () => {
@@ -209,6 +230,38 @@ test("browser runtime builds uniquely named transient tuning groups", () => {
     () => browserRuntime.createSessionAnimationGroup({ animationName: "Bad" }, [{ data: "" }], []),
     /PNG/,
   );
+});
+
+test("browser session frames preserve stable ids and asset revisions across reorder and replacement", () => {
+  const group = browserRuntime.createSessionAnimationGroup(
+    { animationName: "Run", profileLabel: "Hero" },
+    [
+      { frameId: "scatter:run:a", name: "a.png", data: "data:image/png;base64,AQ==", assetRevision: 2 },
+      { frameId: "scatter:run:b", name: "b.png", data: "data:image/png;base64,Ag==", assetRevision: 0 },
+    ],
+    [],
+  );
+  assert.deepEqual(
+    group.frames.map(({ id, assetRevision }) => [id, assetRevision]),
+    [
+      ["scatter:run:a", 2],
+      ["scatter:run:b", 0],
+    ],
+  );
+
+  browserRuntime.reorganizeSessionAnimation(group, [
+    { sourceIndex: 1, name: "b.png" },
+    { sourceIndex: 0, name: "a.png" },
+  ]);
+  assert.deepEqual(
+    group.frames.map((frame) => frame.id),
+    ["scatter:run:b", "scatter:run:a"],
+  );
+
+  browserRuntime.replaceSessionAnimationFrame(group, 0, { data: "data:image/png;base64,Aw==" });
+  assert.equal(group.frames[0].id, "scatter:run:b");
+  assert.equal(group.frames[0].assetRevision, 1);
+  assert.equal(group.frames[1].assetRevision, 2);
 });
 
 test("browser runtime scopes animation names to one profile", () => {
@@ -455,6 +508,30 @@ test("browser runtime replaces current pixels and scopes export state to one gro
   assert.deepEqual(idle.premiumFeatures, ["cutout.edge-refinement"]);
   assert.deepEqual(snapshot.values, { [idle.scale]: 1.2 });
   assert.deepEqual(snapshot.frameVisualOverrides, { [`${idle.runtimeAnimation}:0`]: { x: 1 } });
+});
+
+test("browser runtime replaces only one selected animation frame", () => {
+  const group = browserRuntime.createSessionAnimationGroup(
+    { animationName: "Run", profileLabel: "Hero" },
+    [
+      { name: "run-1.png", data: "data:image/png;base64,AQ==" },
+      { name: "run-2.png", data: "data:image/png;base64,Ag==" },
+    ],
+    [],
+  );
+  const firstFrame = group.frames[0];
+
+  const updated = browserRuntime.replaceSessionAnimationFrame(
+    group,
+    1,
+    { data: "data:image/png;base64,Aw==" },
+    ["cutout.edge-refinement"],
+  );
+
+  assert.equal(group.frames[0], firstFrame);
+  assert.equal(group.frames[1], updated);
+  assert.equal(group.frames[1].path, "data:image/png;base64,Aw==");
+  assert.deepEqual(group.premiumFeatures, ["cutout.edge-refinement"]);
 });
 
 test("browser runtime exports tuned animation metadata and attachment assets", async () => {

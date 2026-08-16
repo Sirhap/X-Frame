@@ -10,10 +10,10 @@ import {
   TOTP_PERIOD_SECONDS,
   verifyTotp,
 } from "../../cloudflare/site/src/admin.mjs";
-import { createAdminRepository } from "../../cloudflare/site/src/admin_repository.mjs";
 
 const adminTotpSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 const adminUsername = "frame-admin";
+const adminPassword = "correct-horse-battery-staple";
 const activationSecret = "test-secret-with-at-least-thirty-two-characters";
 const fixedNow = Date.parse("2026-07-22T08:00:00.000Z");
 
@@ -126,42 +126,6 @@ function createAdminRepositoryFixture() {
   };
 }
 
-test("administrator repository batches device lookups within the D1 parameter limit", async () => {
-  const preparedStatements = [];
-  const database = {
-    prepare(query) {
-      return {
-        bind(...values) {
-          return { query, values };
-        },
-      };
-    },
-    async batch(statements) {
-      preparedStatements.push(...statements);
-      return statements.map((statement) => ({
-        results: statement.values.map((licenseId) => ({
-          id: `device-${licenseId}`,
-          license_id: licenseId,
-        })),
-      }));
-    },
-  };
-  const licenseIds = Array.from({ length: 101 }, (_value, index) => `license-${index + 1}`);
-
-  const devices = await createAdminRepository(database).listLicenseDevices(licenseIds);
-
-  assert.deepEqual(
-    preparedStatements.map((statement) => statement.values.length),
-    [100, 1],
-  );
-  assert.match(preparedStatements[0].query, /\?100/u);
-  assert.doesNotMatch(preparedStatements[0].query, /\?101/u);
-  assert.deepEqual(
-    devices.map((device) => device.license_id),
-    licenseIds,
-  );
-});
-
 /** @param {string} pathname API path. @param {object} [options] Request overrides. @returns {Request} Same-origin request. */
 function adminRequest(pathname, options = {}) {
   return new Request(`https://example.com${pathname}`, {
@@ -178,6 +142,7 @@ function configuredService(repository, now = fixedNow) {
       XSXB_ACTIVATION_SECRET: activationSecret,
       XSXB_ADMIN_TOTP_SECRET: adminTotpSecret,
       XSXB_ADMIN_USERNAME: adminUsername,
+      PASSWORD: adminPassword,
     },
     { repository, now: () => now },
   );
@@ -205,13 +170,17 @@ test("administrator username defaults to admin when the optional variable is omi
     {
       XSXB_ACTIVATION_SECRET: activationSecret,
       XSXB_ADMIN_TOTP_SECRET: adminTotpSecret,
+      PASSWORD: adminPassword,
     },
     { repository, now: () => fixedNow },
   );
   const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
   const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
 
-  const login = await service.login({ username: "admin", code }, adminRequest("/api/admin/login"));
+  const login = await service.login(
+    { username: "admin", password: adminPassword, code },
+    adminRequest("/api/admin/login"),
+  );
 
   assert.equal(login.username, "admin");
 });
@@ -222,14 +191,20 @@ test("administrator login creates a four-hour HttpOnly session and rejects code 
   const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
   const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
   const request = adminRequest("/api/admin/login");
-  const login = await service.login({ username: adminUsername, code }, request);
+  const login = await service.login({ username: adminUsername, password: adminPassword, code }, request);
   const cookie = service.cookieHeader(login.token, request);
+  const workbenchCookie = service.workbenchCookieHeader(login.token, request);
 
   assert.match(cookie, /^xsxb_admin=/u);
   assert.match(cookie, /HttpOnly/u);
   assert.match(cookie, /SameSite=Strict/u);
   assert.match(cookie, /Path=\/api\/admin/u);
   assert.match(cookie, /Max-Age=14400/u);
+  assert.match(workbenchCookie, /^xsxb_admin_workbench=/u);
+  assert.match(workbenchCookie, /Path=\/(?:;|$)/u);
+  assert.doesNotMatch(workbenchCookie, /Path=\/api\/admin/u);
+  assert.match(workbenchCookie, /HttpOnly/u);
+  assert.match(workbenchCookie, /SameSite=Strict/u);
   assert.equal(Date.parse(login.expiresAt), fixedNow + 4 * 60 * 60 * 1000);
   assert.equal(
     (await service.status(adminRequest("/api/admin/session", { headers: { cookie } }))).authenticated,
@@ -239,9 +214,25 @@ test("administrator login creates a four-hour HttpOnly session and rejects code 
   const session = await service.status(adminRequest("/api/admin/session", { headers: { cookie } }));
   assert.equal(session.username, adminUsername);
   await assert.rejects(
-    service.login({ username: adminUsername, code }, request),
+    service.login({ username: adminUsername, password: adminPassword, code }, request),
     (error) => error.status === 409,
   );
+});
+
+test("administrator TOTP challenge is issued only after username and password verification", async () => {
+  const { repository } = createAdminRepositoryFixture();
+  const service = configuredService(repository);
+  const request = adminRequest("/api/admin/login/start");
+  await assert.rejects(
+    service.startLogin({ username: adminUsername, password: "incorrect-password" }, request),
+    (error) => error.status === 401,
+  );
+  const challenge = await service.startLogin({ username: adminUsername, password: adminPassword }, request);
+  assert.equal(challenge.challengeType, "admin_totp");
+  const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
+  const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
+  const login = await service.login({ challengeToken: challenge.challengeToken, code }, request);
+  assert.equal(login.authenticated, true);
 });
 
 test("administrator session duration accepts bounded configuration and rejects unsafe values", async () => {
@@ -259,13 +250,14 @@ test("administrator session duration accepts bounded configuration and rejects u
         XSXB_ADMIN_SESSION_MINUTES: configuredMinutes,
         XSXB_ADMIN_TOTP_SECRET: adminTotpSecret,
         XSXB_ADMIN_USERNAME: adminUsername,
+        PASSWORD: adminPassword,
       },
       { repository, now: () => fixedNow },
     );
     const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
     const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
     const request = adminRequest("/api/admin/login");
-    const login = await service.login({ username: adminUsername, code }, request);
+    const login = await service.login({ username: adminUsername, password: adminPassword, code }, request);
 
     assert.equal(Date.parse(login.expiresAt), fixedNow + expectedMinutes * 60 * 1000);
     assert.match(
@@ -283,8 +275,26 @@ test("administrator login requires the configured username without revealing whi
   const request = adminRequest("/api/admin/login");
 
   await assert.rejects(
-    service.login({ username: "different-admin", code }, request),
-    (error) => error.status === 401 && error.message === "The username or verification code is invalid.",
+    service.login({ username: "different-admin", password: adminPassword, code }, request),
+    (error) =>
+      error.status === 401 && error.message === "The username, password, or verification code is invalid.",
+  );
+  assert.equal(state.consumedCounters.size, 0);
+});
+
+test("administrator login requires the environment password before consuming TOTP", async () => {
+  const { repository, state } = createAdminRepositoryFixture();
+  const service = configuredService(repository);
+  const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
+  const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
+
+  await assert.rejects(
+    service.login(
+      { username: adminUsername, password: "incorrect-password", code },
+      adminRequest("/api/admin/login"),
+    ),
+    (error) =>
+      error.status === 401 && error.message === "The username, password, or verification code is invalid.",
   );
   assert.equal(state.consumedCounters.size, 0);
 });
@@ -299,12 +309,12 @@ test("administrator login blocks a client after repeated invalid codes", async (
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await assert.rejects(
-      service.login({ username: adminUsername, code: invalidCode }, request),
+      service.login({ username: adminUsername, password: adminPassword, code: invalidCode }, request),
       (error) => error.status === 401,
     );
   }
   await assert.rejects(
-    service.login({ username: adminUsername, code: validCode }, request),
+    service.login({ username: adminUsername, password: adminPassword, code: validCode }, request),
     (error) => error.status === 429,
   );
 });
@@ -315,21 +325,19 @@ test("authenticated administrator batch creates standard licenses without storin
   const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
   const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
   const loginRequest = adminRequest("/api/admin/login");
-  const login = await service.login({ username: adminUsername, code }, loginRequest);
+  const login = await service.login({ username: adminUsername, password: adminPassword, code }, loginRequest);
   const cookie = service.cookieHeader(login.token, loginRequest);
   const authenticatedRequest = adminRequest("/api/admin/licenses", { headers: { cookie } });
   const result = await service.createLicenses(
     {
       codes: [" xsxb-admin-test-01 ", "xsxb-admin-test-02"],
       durationDays: 90,
-      maxDevices: 5,
     },
     authenticatedRequest,
   );
 
   assert.deepEqual(result.codes, ["XSXB-ADMIN-TEST-01", "XSXB-ADMIN-TEST-02"]);
   assert.equal(result.license.durationDays, 90);
-  assert.equal(result.license.maxDevices, 5);
   assert.equal(result.license.status, "unused");
   assert.equal(result.license.plan, undefined);
   assert.equal(state.licenses.length, 2);
@@ -338,7 +346,6 @@ test("authenticated administrator batch creates standard licenses without storin
   assert.match(state.licenses[0].code_ciphertext, /^v1\./u);
   assert.equal(Object.values(state.licenses[0]).includes(result.code), false);
   assert.equal(state.licenses[0].plan, "standard");
-  assert.equal(state.licenses[0].max_devices, 5);
   assert.equal(state.licenses[0].redeem_by, "9999-12-31T23:59:59.999Z");
   const listedLicenses = await service.listLicenses(authenticatedRequest);
   assert.equal(listedLicenses[0].plan, undefined);
@@ -370,7 +377,7 @@ test("administrator batch updates active expiry, revokes, restores, and deletes 
   const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
   const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
   const loginRequest = adminRequest("/api/admin/login");
-  const login = await service.login({ username: adminUsername, code }, loginRequest);
+  const login = await service.login({ username: adminUsername, password: adminPassword, code }, loginRequest);
   const cookie = service.cookieHeader(login.token, loginRequest);
   const request = adminRequest("/api/admin/licenses", { headers: { cookie } });
   const created = await service.createLicenses(
@@ -430,13 +437,13 @@ test("administrator batch updates active expiry, revokes, restores, and deletes 
   assert.equal(state.licenses.length, 1);
 });
 
-test("administrator creates custom-format long-duration licenses without a device limit", async () => {
+test("administrator creates custom-format long-duration activation codes", async () => {
   const { repository, state } = createAdminRepositoryFixture();
   const service = configuredService(repository);
   const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
   const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
   const loginRequest = adminRequest("/api/admin/login");
-  const login = await service.login({ username: adminUsername, code }, loginRequest);
+  const login = await service.login({ username: adminUsername, password: adminPassword, code }, loginRequest);
   const cookie = service.cookieHeader(login.token, loginRequest);
   const request = adminRequest("/api/admin/licenses", { headers: { cookie } });
 
@@ -444,97 +451,12 @@ test("administrator creates custom-format long-duration licenses without a devic
     {
       code: " 自定义 激活码 / summer✨ ",
       durationDays: 12_000,
-      maxDevices: null,
     },
     request,
   );
 
   assert.equal(created.code, "自定义 激活码 / SUMMER✨");
   assert.equal(created.license.durationDays, 12_000);
-  assert.equal(created.license.maxDevices, null);
-  assert.equal(created.license.unlimitedDevices, true);
-  assert.equal(state.licenses[0].max_devices, null);
-
-  const finite = await service.updateLicenses({ ids: [created.license.id], maxDevices: 10_000 }, request);
-  assert.equal(finite.licenses[0].maxDevices, 10_000);
-  const unlimited = await service.updateLicenses({ ids: [created.license.id], maxDevices: null }, request);
-  assert.equal(unlimited.licenses[0].unlimitedDevices, true);
-});
-
-test("administrator lists, revokes, restores, and resets individual devices", async () => {
-  const { repository, state } = createAdminRepositoryFixture();
-  const service = configuredService(repository);
-  const counter = Math.floor(fixedNow / (TOTP_PERIOD_SECONDS * 1000));
-  const code = await generateTotp(decodeBase32Secret(adminTotpSecret), counter, crypto.subtle);
-  const loginRequest = adminRequest("/api/admin/login");
-  const login = await service.login({ username: adminUsername, code }, loginRequest);
-  const cookie = service.cookieHeader(login.token, loginRequest);
-  const request = adminRequest("/api/admin/licenses", { headers: { cookie } });
-  const created = await service.createLicenses(
-    { code: "XSXB-DEVICE-ADMIN", durationDays: 30, maxDevices: 3 },
-    request,
-  );
-  state.devices.push({
-    id: "device-admin-list-01",
-    license_id: created.license.id,
-    device_name: "MacBook Pro",
-    first_country: "CN",
-    last_country: "CN",
-    created_at: "2026-07-21T08:00:00.000Z",
-    last_seen_at: "2026-07-22T08:00:00.000Z",
-    revoked_at: null,
-  });
-
-  const listed = await service.listLicenses(request);
-  assert.equal(listed[0].activeDeviceCount, 1);
-  assert.equal(listed[0].devices[0].name, "MacBook Pro");
-  assert.equal(listed[0].source, "code");
-
-  state.licenses.push({
-    id: "trial-license-list-01",
-    code_hash: "trial-code-hash-list-01",
-    code_ciphertext: null,
-    source: "automatic_trial",
-    plan: "trial",
-    duration_days: 3,
-    max_devices: 1,
-    redeem_by: "2026-07-22T08:00:00.000Z",
-    first_activated_at: "2026-07-22T08:00:00.000Z",
-    expires_at: "2026-07-25T08:00:00.000Z",
-    revoked_at: null,
-  });
-  state.devices.push({
-    id: "device-trial-list-01",
-    license_id: "trial-license-list-01",
-    device_name: "Trial Mac",
-    first_country: "CN",
-    last_country: "CN",
-    created_at: "2026-07-22T08:00:00.000Z",
-    last_seen_at: "2026-07-22T08:00:00.000Z",
-    revoked_at: null,
-  });
-
-  const listedWithTrial = await service.listLicenses(request);
-  assert.equal(listedWithTrial[0].source, "automatic_trial");
-  assert.equal(listedWithTrial[0].codeAvailable, false);
-  assert.equal(listedWithTrial[0].devices[0].name, "Trial Mac");
-
-  await service.setDevicesRevoked({ ids: ["device-admin-list-01"], revoked: true }, request);
-  assert.notEqual(state.devices[0].revoked_at, null);
-  await service.setDevicesRevoked({ ids: ["device-admin-list-01"], revoked: false }, request);
-  assert.equal(state.devices[0].revoked_at, null);
-  await service.deleteDevices({ ids: ["device-admin-list-01"] }, request);
-  assert.equal(state.devices.length, 1);
-  await service.setDevicesRevoked({ ids: ["device-trial-list-01"], revoked: true }, request);
-  assert.notEqual(state.devices[0].revoked_at, null);
-  await assert.rejects(
-    service.deleteDevices({ ids: ["device-trial-list-01"] }, request),
-    (error) =>
-      error.status === 409 &&
-      error.message ===
-        "Automatic trial devices cannot be reset because trial claim history must be retained.",
-  );
-  assert.equal(state.devices.length, 1);
 });
 
 test("administrator API fails closed and rejects cross-origin login", async () => {
@@ -552,19 +474,20 @@ test("administrator API fails closed and rejects cross-origin login", async () =
     adminRequest("/api/admin/login", {
       method: "POST",
       headers: { origin: "https://attacker.example", "content-type": "application/json" },
-      body: JSON.stringify({ username: adminUsername, code: "000000" }),
+      body: JSON.stringify({ username: adminUsername, password: adminPassword, code: "000000" }),
     }),
     {
       LICENSE_DB: { prepare() {} },
       XSXB_ACTIVATION_SECRET: activationSecret,
       XSXB_ADMIN_TOTP_SECRET: adminTotpSecret,
       XSXB_ADMIN_USERNAME: adminUsername,
+      PASSWORD: adminPassword,
     },
   );
   assert.equal(response.status, 403);
 });
 
-test("administrator control links to a dedicated non-modal management page", () => {
+test("administrator control manages email accounts and account-bound licenses", () => {
   const landing = fs.readFileSync(new URL("../animation_tuner/public/landing.html", import.meta.url), "utf8");
   const admin = fs.readFileSync(new URL("../animation_tuner/public/admin.html", import.meta.url), "utf8");
   const adminScript = fs.readFileSync(
@@ -578,15 +501,21 @@ test("administrator control links to a dedicated non-modal management page", () 
   assert.doesNotMatch(landing, /<dialog/u);
   assert.doesNotMatch(landing, /landing-admin\.js/u);
   assert.match(admin, /id="adminBatchCount"/u);
-  assert.match(admin, /id="adminMaxDevices"/u);
-  assert.match(admin, /id="adminUnlimitedDevices"/u);
-  assert.match(admin, /id="adminBulkMaxDevices"/u);
-  assert.match(admin, /id="adminBulkUnlimitedDevices"/u);
-  assert.match(admin, /data-source-filter="automatic_trial"/u);
+  assert.doesNotMatch(admin, /[设限]备/u);
+  assert.doesNotMatch(adminScript, /maxDevices|unlimitedDevices/u);
+  assert.match(admin, /data-source-filter="email_trial"/u);
+  assert.match(admin, /data-source-filter="admin_grant"/u);
   assert.match(admin, /id="adminLicenseSearch"/u);
-  assert.match(adminScript, /设备 ID.*首次绑定.*最后使用/u);
-  assert.match(adminScript, /license\.source === "automatic_trial"/u);
+  assert.match(admin, /id="adminAccountItems"/u);
+  assert.match(admin, /id="adminDefaultProEnabled"/u);
+  assert.match(admin, /id="adminPassword"/u);
+  assert.match(adminScript, /\/api\/admin\/login\/start/u);
+  assert.match(adminScript, /JSON\.stringify\(\{ challengeToken: adminChallengeToken, code \}\)/u);
+  assert.match(adminScript, /绑定邮箱/u);
+  assert.match(adminScript, /强制退出/u);
+  assert.match(adminScript, /\/api\/admin\/licenses\/account/u);
   assert.match(workbench, /id="activationManage"/u);
+  assert.match(workbench, /id="administratorConsoleLink"[^>]+hidden/u);
   assert.match(workbench, /id="activationCurrent"/u);
   assert.match(admin, /value="9999-12-31T23:59"/u);
   assert.match(admin, /id="adminCopySelectedButton"/u);

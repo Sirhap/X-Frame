@@ -68,5 +68,9 @@ test("asset URL preserves browser-session image sources", () => {
 
   assert.equal(assetUrl({ path: dataUrl }), dataUrl);
   assert.equal(assetUrl({ path: blobUrl }), blobUrl);
+  assert.equal(
+    assetUrl({ path: "/assets/texture.1234567890abcdef.png" }),
+    "/assets/texture.1234567890abcdef.png",
+  );
   assert.match(assetUrl({ path: "frames/idle.png" }), /^\/asset\?path=frames%2Fidle\.png&v=\d+$/);
 });

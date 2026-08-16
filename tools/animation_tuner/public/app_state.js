@@ -89,10 +89,12 @@
     const adjustmentMode = constants.ADJUSTMENT_MODES.includes(storedAdjustmentMode)
       ? storedAdjustmentMode
       : "group";
+    const storedLanguage = readStorage(storage, "xsxbFrameTuner.language");
+    const hasExplicitLanguage = readStorage(storage, "xsxbFrameTuner.languageExplicit") === "true";
 
     return {
       config: null,
-      language: readStorage(storage, "xsxbFrameTuner.language", "zh") || "zh",
+      language: hasExplicitLanguage && storedLanguage === "en" ? "en" : "zh",
       uiTheme:
         readStorage(storage, "xsxbFrameTuner.theme", constants.UI_THEME_DEFAULT) ||
         constants.UI_THEME_DEFAULT,

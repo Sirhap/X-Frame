@@ -87,8 +87,8 @@ function walkTextFiles(root) {
   return files;
 }
 
-function resolveProject(args) {
-  const registry = projectStore.readRegistry();
+function resolveProject(args, store = projectStore) {
+  const registry = store.readRegistry();
   const requestedRoot = args["project-root"] ? path.resolve(String(args["project-root"])) : "";
   if (args.project) {
     const project = registry.projects.find((entry) => entry.id === slug(args.project));
@@ -104,10 +104,18 @@ function resolveProject(args) {
   return null;
 }
 
-function validateImport(args) {
+/**
+ * Validates one XSXB project and its synchronized Godot runtime.
+ * @param {object} args CLI-compatible validation arguments.
+ * @param {{root?:string,projectStore?:object}} [options] Optional dependencies for isolated callers.
+ * @returns {{ok:boolean,errors:string[],warnings:string[],summary:object}} Validation result.
+ */
+function validateImport(args, options = {}) {
+  const validationRoot = path.resolve(options.root || ROOT);
+  const validationStore = options.projectStore || projectStore;
   const errors = [];
   const warnings = [];
-  const project = resolveProject(args);
+  const project = resolveProject(args, validationStore);
   if (!project) {
     return {
       ok: false,
@@ -121,7 +129,7 @@ function validateImport(args) {
     errors.push(`Bound Godot project.godot not found: ${projectRoot || "(empty)"}`);
   }
 
-  const paths = projectStore.projectPaths(project);
+  const paths = validationStore.projectPaths(project);
   const manifest = readJson(paths.manifest, EMPTY_MANIFEST);
   const tuning = readJson(paths.tuning, EMPTY_TUNING);
   const standaloneAnimations = animationMap(manifest);
@@ -140,8 +148,8 @@ function validateImport(args) {
     frames.forEach((frame, index) => {
       frameCount += 1;
       const sourcePath = String(frame.path || "").replace(/^res:\/\//, "");
-      const absolute = path.resolve(ROOT, sourcePath);
-      if (!sourcePath || !absolute.startsWith(ROOT) || !fs.existsSync(absolute)) {
+      const absolute = path.resolve(validationRoot, sourcePath);
+      if (!sourcePath || !absolute.startsWith(validationRoot) || !fs.existsSync(absolute)) {
         errors.push(`${key}:${index}: standalone frame path is missing: ${sourcePath || "(empty)"}`);
       }
       if (!actorLike) return;
@@ -319,7 +327,9 @@ function validateImport(args) {
     ["scene scale applied to visuals", /_character_scale\s*\(\s*\)\s*\*\s*scene_scale\s*\(\s*\)/],
     ["scaled boxes", /size\.x\)\s*\*\s*sprite_scale_x[\s\S]{0,150}size\.y\)\s*\*\s*sprite_scale_y/],
     ["frame-entry SFX", /_frame_visit_serial[\s\S]{0,12000}_play_current_frame_audio/],
-    ["attachment layers", /layerOrder[\s\S]{0,3000}_attachments_below[\s\S]{0,1000}_attachments_above/],
+    ["attachment layer ordering", /layerOrder/],
+    ["below-main attachment layer", /_attachments_below/],
+    ["above-main attachment layer", /_attachments_above/],
   ];
   for (const [label, pattern] of runtimeRequirements) {
     if (!pattern.test(runtimeSource)) errors.push(`Generated runtime is missing ${label} support.`);

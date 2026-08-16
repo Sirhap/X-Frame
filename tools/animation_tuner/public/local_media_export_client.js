@@ -168,7 +168,7 @@
    * Uploads frames and waits for the local FFmpeg job.
    * @param {object} metadata Animation metadata.
    * @param {Array<{image:CanvasImageSource,width:number,height:number}>} items Ordered frames.
-   * @param {{gif?:boolean,mov?:boolean}} formats Requested local formats.
+   * @param {{gif?:boolean,mp4?:boolean,mov?:boolean}} formats Requested local formats.
    * @param {{fetchImpl?:typeof fetch,document?:Document,storage?:Storage|null,onProgress?:(current:number,total:number)=>void,onJobCreated?:(job:object)=>void,onStatus?:(status:object)=>void,signal?:AbortSignal,pollMs?:number}} [dependencies] Browser adapters.
    */
   async function exportMedia(metadata, items, formats, dependencies = {}) {
@@ -177,13 +177,19 @@
     if (typeof fetchImpl !== "function" || !documentRef?.createElement) {
       throw new Error("Local media export is unavailable.");
     }
-    const requestedFormats = [...(formats?.gif ? ["gif"] : []), ...(formats?.mov ? ["mov"] : [])];
+    const requestedFormats = [
+      ...(formats?.gif ? ["gif"] : []),
+      ...(formats?.mp4 ? ["mp4"] : []),
+      ...(formats?.mov ? ["mov"] : []),
+    ];
     if (!requestedFormats.length) return { downloads: [] };
     if (!Array.isArray(items) || !items.length || !items.every((item) => item.image)) {
       throw new Error("Local media export requires decoded frame canvases.");
     }
-    const width = Math.max(...items.map((item) => Number(item.width) || Number(item.image.width) || 0));
-    const height = Math.max(...items.map((item) => Number(item.height) || Number(item.image.height) || 0));
+    const rawWidth = Math.max(...items.map((item) => Number(item.width) || Number(item.image.width) || 0));
+    const rawHeight = Math.max(...items.map((item) => Number(item.height) || Number(item.image.height) || 0));
+    const width = formats?.mp4 && rawWidth % 2 ? rawWidth + 1 : rawWidth;
+    const height = formats?.mp4 && rawHeight % 2 ? rawHeight + 1 : rawHeight;
     const request = async (pathname, payload, requestSignal = dependencies.signal) => {
       return requestJson(fetchImpl, pathname, {
         method: "POST",
@@ -199,6 +205,10 @@
       fps: Number(metadata?.fps || 12),
       width,
       height,
+      frameDurationsMs: items.map((item) =>
+        Math.max(1, Number(item.durationMs) || Math.round(1000 / Number(metadata?.fps || 12))),
+      ),
+      recipe: metadata?.exportRecipe || null,
     });
     rememberJob(job.id, dependencies.storage);
     dependencies.onJobCreated?.(job);

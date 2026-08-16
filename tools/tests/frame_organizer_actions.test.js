@@ -2,32 +2,46 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createController } = require("../animation_tuner/public/frame_organizer_actions");
+const {
+  createController,
+  partitionFramesByPixelBudget,
+} = require("../animation_tuner/public/frame_organizer_actions");
 
 /** Creates the small host fixture needed to exercise organizer actions. */
 function createFixture() {
   const frame = {
     uid: "frame-1",
     name: "frame.png",
-    editedCanvas: { toDataURL: () => "data:image/png;base64,frame" },
+    editedCanvas: { width: 16, height: 16, toDataURL: () => "data:image/png;base64,frame" },
     sourceIndex: 0,
     sourcePath: "frame.png",
     imported: true,
+    assetRevision: 1,
     flipped: false,
     thumbnails: { edited: "" },
   };
-  const state = { frames: [frame], mode: "edit", animationName: "demo", busy: false, previewTimer: 0 };
+  const state = {
+    frames: [frame],
+    mode: "edit",
+    animationName: "demo",
+    busy: false,
+    previewTimer: 0,
+    viewMode: "edited",
+  };
   const calls = {
     assets: null,
     exported: null,
     animation: null,
+    animations: [],
     sessionAnimation: null,
+    sessionAnimations: [],
     status: [],
     counts: 0,
     reloads: 0,
     languages: 0,
     closes: 0,
     cutoutWorksets: [],
+    autoCutoutWorksets: [],
     projectRequest: null,
   };
   const controller = createController({
@@ -48,7 +62,11 @@ function createFixture() {
       },
       editCutout: async (workset) => {
         calls.cutoutWorksets.push(workset);
-        return state.cutoutOutputs || null;
+        return state.cutoutOutputsByCall?.shift?.() || state.cutoutOutputs || null;
+      },
+      autoCutout: async (workset) => {
+        calls.autoCutoutWorksets.push(workset);
+        return state.cutoutOutputsByCall?.shift?.() || state.cutoutOutputs || null;
       },
       getCurrentAnimation: () => ({
         name: "demo",
@@ -66,10 +84,12 @@ function createFixture() {
       createAnimation: async (metadata, items) => {
         if (state.createError) throw state.createError;
         calls.animation = { metadata, items };
+        calls.animations.push({ metadata, items });
       },
       createSessionAnimation: async (metadata, items) => {
         if (state.createError) throw state.createError;
         calls.sessionAnimation = { metadata, items };
+        calls.sessionAnimations.push({ metadata, items });
       },
     },
     text: (key) => key,
@@ -124,13 +144,32 @@ test("organizer actions export the edited workset as PNG frames", async () => {
   await fixture.controller.exportIncludedFrames();
 
   assert.equal(fixture.calls.exported.metadata.animationName, "demo");
-  assert.deepEqual(fixture.calls.exported.items, [
-    {
-      name: "frame.png",
-      flipped: false,
-      data: "data:image/png;base64,frame",
-    },
-  ]);
+  assert.deepEqual(
+    fixture.calls.exported.items.map(
+      ({ name, flipped, data, width, height, durationMs, frameId, assetRevision }) => ({
+        name,
+        flipped,
+        data,
+        width,
+        height,
+        durationMs,
+        frameId,
+        assetRevision,
+      }),
+    ),
+    [
+      {
+        name: "frame.png",
+        flipped: false,
+        data: "data:image/png;base64,frame",
+        width: 16,
+        height: 16,
+        durationMs: 83,
+        frameId: "frame-1",
+        assetRevision: 1,
+      },
+    ],
+  );
   assert.deepEqual(fixture.calls.status, ["exportingZip", "exportedZip"]);
   assert.equal(fixture.state.busy, false);
 });
@@ -196,15 +235,20 @@ test("organizer actions reject an unknown cutout target without side effects", a
   assert.equal(fixture.calls.reloads, 0);
 });
 
-test("organizer batch cutout opens included frames with the automatic removal profile", async () => {
+test("organizer smart cutout directly processes included frames with the automatic removal profile", async () => {
   const fixture = createFixture();
+  fixture.state.viewMode = "original";
+  fixture.state.cutoutOutputs = [{ frame: { uid: fixture.frame.uid }, canvas: fixture.frame.editedCanvas }];
 
   await fixture.controller.editBatchCutout();
 
-  const [workset] = fixture.calls.cutoutWorksets;
+  assert.equal(fixture.calls.cutoutWorksets.length, 0);
+  const [workset] = fixture.calls.autoCutoutWorksets;
   assert.equal(workset.mode, "batch");
   assert.equal(workset.autoDetectBackground, true);
   assert.equal(workset.items.length, 1);
+  assert.equal(fixture.frame.hasEditedResult, true);
+  assert.equal(fixture.state.viewMode, "edited");
   assert.deepEqual(workset.processingParameters, {
     backgroundColor: "#ffffff",
     connected: false,
@@ -228,8 +272,53 @@ test("organizer batch cutout opens included frames with the automatic removal pr
   });
 });
 
+test("organizer cutout partitions decoded pixels without reordering frames", () => {
+  const frames = [
+    { uid: "a", editedCanvas: { width: 4_000, height: 4_000 } },
+    { uid: "b", editedCanvas: { width: 4_000, height: 4_000 } },
+    { uid: "c", editedCanvas: { width: 4_000, height: 4_000 } },
+    { uid: "d", editedCanvas: { width: 4_000, height: 4_000 } },
+    { uid: "e", editedCanvas: { width: 4_000, height: 4_000 } },
+  ];
+
+  const batches = partitionFramesByPixelBudget(frames, 64_000_000);
+
+  assert.deepEqual(
+    batches.map((batch) => batch.map((frame) => frame.uid)),
+    [["a", "b", "c", "d"], ["e"]],
+  );
+});
+
+test("organizer smart cutout processes large worksets as sequential pixel-safe batches", async () => {
+  const fixture = createFixture();
+  fixture.state.frames = Array.from({ length: 5 }, (_, index) => ({
+    ...fixture.frame,
+    uid: `frame-${index + 1}`,
+    name: `frame-${index + 1}.png`,
+    editedCanvas: { width: 4_000, height: 4_000 },
+    thumbnails: { edited: "" },
+  }));
+  fixture.state.cutoutOutputsByCall = [
+    fixture.state.frames
+      .slice(0, 4)
+      .map((frame) => ({ frame: { uid: frame.uid }, canvas: frame.editedCanvas })),
+    fixture.state.frames.slice(4).map((frame) => ({ frame: { uid: frame.uid }, canvas: frame.editedCanvas })),
+  ];
+
+  await fixture.controller.editBatchCutout();
+
+  assert.equal(fixture.calls.autoCutoutWorksets.length, 2);
+  assert.deepEqual(
+    fixture.calls.autoCutoutWorksets.map((workset) => workset.items.map((item) => item.frame.uid)),
+    [["frame-1", "frame-2", "frame-3", "frame-4"], ["frame-5"]],
+  );
+  assert.ok(fixture.state.frames.every((frame) => frame.hasEditedResult));
+});
+
 test("organizer single-frame cutout forwards the last applied parameter state", async () => {
   const fixture = createFixture();
+  fixture.state.viewMode = "original";
+  fixture.state.cutoutOutputs = [{ frame: { uid: fixture.frame.uid }, canvas: fixture.frame.editedCanvas }];
   fixture.frame.cutoutState = {
     processingParameters: { tolerance: -1, blendStrength: 100, despillStrength: 100 },
     backgroundSamples: [{ r: 2, g: 4, b: 6, a: 255 }],
@@ -238,7 +327,9 @@ test("organizer single-frame cutout forwards the last applied parameter state", 
   await fixture.controller.editImportCutout(fixture.frame);
 
   assert.equal(fixture.calls.cutoutWorksets[0].mode, "single");
+  assert.equal(fixture.calls.cutoutWorksets[0].items.length, 1);
   assert.equal(fixture.calls.cutoutWorksets[0].items[0].cutoutState, fixture.frame.cutoutState);
+  assert.equal(fixture.state.viewMode, "edited");
 });
 
 test("import mode creates an animation and enters the tuning workbench", async () => {
@@ -256,6 +347,8 @@ test("import mode creates an animation and enters the tuning workbench", async (
     metadata: fixture.state.importMetadata,
     items: [
       {
+        frameId: "frame-1",
+        assetRevision: 1,
         sourceIndex: 0,
         sourcePath: "frame.png",
         name: "frame.png",
@@ -334,4 +427,59 @@ test("browser import creates a transient animation group instead of downloading 
   assert.equal(fixture.calls.sessionAnimation.items[0].data, "data:image/png;base64,frame");
   assert.deepEqual(fixture.calls.sessionAnimation.options.premiumFeatures, ["organizer.sequence-analysis"]);
   assert.deepEqual(fixture.calls.status, ["created"]);
+});
+
+test("scatter imports create one transient animation per source group by default", async () => {
+  const fixture = createFixture();
+  fixture.state.mode = "import";
+  fixture.state.confirmApply = true;
+  fixture.state.frames = [
+    { ...fixture.frame, uid: "idle-1", groupId: "idle", groupName: "Idle" },
+    {
+      ...fixture.frame,
+      uid: "run-1",
+      name: "run.png",
+      groupId: "run",
+      groupName: "Run",
+    },
+  ];
+  fixture.state.importMetadata = {
+    projectId: "browser-session",
+    profileLabel: "Hero",
+    animationName: "hero",
+    creationMode: "groups",
+  };
+
+  await fixture.controller.applyPlan();
+
+  assert.deepEqual(
+    fixture.calls.animations.map(({ metadata, items }) => [metadata.animationName, items.length]),
+    [
+      ["Idle", 1],
+      ["Run", 1],
+    ],
+  );
+  assert.equal(fixture.calls.closes, 1);
+});
+
+test("scatter imports can explicitly merge source groups into one animation", async () => {
+  const fixture = createFixture();
+  fixture.state.mode = "import";
+  fixture.state.confirmApply = true;
+  fixture.state.frames = [
+    { ...fixture.frame, uid: "idle-1", groupId: "idle", groupName: "Idle" },
+    { ...fixture.frame, uid: "run-1", groupId: "run", groupName: "Run" },
+  ];
+  fixture.state.importMetadata = {
+    projectId: "browser-session",
+    profileLabel: "Hero",
+    animationName: "hero-combined",
+    creationMode: "merge",
+  };
+
+  await fixture.controller.applyPlan();
+
+  assert.equal(fixture.calls.animations.length, 1);
+  assert.equal(fixture.calls.animations[0].metadata.animationName, "hero-combined");
+  assert.equal(fixture.calls.animations[0].items.length, 2);
 });

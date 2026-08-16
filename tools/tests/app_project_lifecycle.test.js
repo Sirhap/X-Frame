@@ -13,7 +13,13 @@ function configResponse(config) {
 }
 
 test("project lifecycle loads config, selects the first group, and resets session state", async () => {
-  const group = { name: "stand_attack", type: "animation", frames: [{ path: "frame-0.png" }] };
+  const group = {
+    name: "stand_attack",
+    type: "animation",
+    profileId: "hero",
+    animationId: "idle",
+    frames: [{ path: "frame-0.png" }],
+  };
   const state = {
     config: null,
     selectedProjectId: "project-a",
@@ -46,7 +52,14 @@ test("project lifecycle loads config, selects the first group, and resets sessio
         activeProjectId: "project-a",
         groups: [group],
         scenes: [],
-        tuning: {},
+        tuning: {
+          reference_frame: {
+            profile_id: "hero",
+            animation_id: "idle",
+            frame_index: 0,
+            transform: { scale: 1.5, offset: { x: 2, y: 3 }, rotation: 4 },
+          },
+        },
       }),
     storage: {
       getItem: (key) => storage.get(key) || "",
@@ -55,12 +68,27 @@ test("project lifecycle loads config, selects the first group, and resets sessio
     windowRef: { location: { search: "" } },
     structuredCloneImpl: (value) => JSON.parse(JSON.stringify(value)),
     loadImagesBounded: async (frames) => frames.map((frame) => ({ path: frame.path })),
+    restoreReferenceFrame: async (descriptor, groups, loadImages) => {
+      const referenceGroup = groups.find(
+        (entry) => entry.profileId === descriptor.profile_id && entry.animationId === descriptor.animation_id,
+      );
+      const referenceImages = await loadImages(referenceGroup.frames);
+      state.referenceFrame = {
+        group: referenceGroup,
+        index: descriptor.frame_index,
+        image: referenceImages[descriptor.frame_index],
+        images: referenceImages,
+        transform: descriptor.transform,
+      };
+      return true;
+    },
     loadCompositeContextImpl: async () => events.push("composite"),
     loadFrameImageAttachmentsForGroupImpl: async () => events.push("attachments"),
     loadChainImagesImpl: async () => events.push("chain"),
     setSingleFrameSelection: (...args) => events.push(["single", ...args]),
     updateCanvasTitle: () => events.push("title"),
     renderFilmstrip: () => events.push("filmstrip"),
+    onGroupSelected: (selectedGroup) => events.push(["workspace", selectedGroup.uiId]),
     status: () => {},
   });
 
@@ -68,7 +96,23 @@ test("project lifecycle loads config, selects the first group, and resets sessio
   assert.equal(state.config.groups[0].uiId, "player:animation:stand_attack:0");
   assert.equal(state.currentGroup, group);
   assert.deepEqual(state.images, [{ path: "frame-0.png" }]);
-  assert.deepEqual(events, ["composite", "attachments", ["single", 0, group], "chain", "title", "filmstrip"]);
+  assert.equal(state.referenceFrame.group, group);
+  assert.equal(state.referenceFrame.index, 0);
+  assert.deepEqual(state.referenceFrame.transform, {
+    scale: 1.5,
+    offset: { x: 2, y: 3 },
+    rotation: 4,
+  });
+  assert.deepEqual(events, [
+    "composite",
+    "attachments",
+    ["single", 0, group],
+    "chain",
+    "title",
+    "filmstrip",
+    ["workspace", "player:animation:stand_attack:0"],
+    "filmstrip",
+  ]);
   assert.equal(storage.get("animationTuner.groupUiId"), group.uiId);
 
   controller.resetProjectSession();

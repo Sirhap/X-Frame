@@ -8,7 +8,7 @@ body.mediaExportOpen {
 
 .mediaExportDialog {
   position: fixed;
-  z-index: 1100;
+  z-index: 6200;
   inset: 0;
   display: grid;
   place-items: center;
@@ -17,12 +17,67 @@ body.mediaExportOpen {
   backdrop-filter: blur(8px);
 }
 
+.mediaExportDialog[data-presentation="embedded"] {
+  position: static;
+  inset: auto;
+  width: 100%;
+  min-height: 0;
+  display: block;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.mediaExportDialog[data-presentation="embedded"] .mediaExportCard {
+  width: 100%;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  border-width: 1px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.mediaExportDialog[data-presentation="embedded"] .mediaExportHeader {
+  position: sticky;
+  z-index: 35;
+  top: var(--shell-flow-height);
+  border-width: 1px;
+}
+
+.mediaExportDialog[data-presentation="embedded"] :is(.mediaExportStep, .mediaExportClose) {
+  display: none;
+}
+
+.mediaExportDialog[data-presentation="embedded"] .mediaExportHeader h2 {
+  font-size: 24px;
+}
+
+.mediaExportDialog[data-presentation="embedded"] .mediaExportWorkspace {
+  grid-template-columns: minmax(420px, 0.82fr) minmax(500px, 1.18fr);
+  overflow: visible;
+}
+
+.mediaExportDialog[data-presentation="embedded"] .mediaExportControls {
+  overflow: visible;
+}
+
+.mediaExportDialog[data-presentation="embedded"] .mediaExportFooter {
+  position: sticky;
+  z-index: 35;
+  bottom: 0;
+  border-width: 1px;
+  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.2);
+}
+
 .mediaExportCard {
-  width: min(860px, 100%);
+  width: min(1480px, 100%);
+  height: min(920px, calc(100dvh - 32px));
   max-height: calc(100dvh - 32px);
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
   gap: 0;
-  overflow: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
   border: 4px solid var(--line);
   border-radius: 14px;
@@ -66,11 +121,24 @@ body.mediaExportOpen {
 
 .mediaExportSummary {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, minmax(120px, 220px));
   gap: 8px;
   margin: 0;
   padding: 14px 18px;
   border-bottom: 3px solid var(--line);
+}
+
+.mediaExportWorkspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(500px, 0.9fr) minmax(520px, 1.1fr);
+  overflow: hidden;
+}
+
+.mediaExportControls {
+  min-height: 0;
+  overflow: auto;
+  border-right: 3px solid var(--line);
 }
 
 .mediaExportSummary div {
@@ -93,28 +161,167 @@ body.mediaExportOpen {
 }
 
 .mediaExportFormats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 18px;
 }
 
+.mediaExportRecipe {
+  padding: 0 18px 18px;
+}
+
+.mediaExportRecipe header,
+.mediaExportRecipe p {
+  margin: 0;
+}
+.mediaExportRecipe header span {
+  display: block;
+  color: var(--accent-2);
+  font: 900 9px/1 var(--data-font);
+  letter-spacing: 0.14em;
+}
+.mediaExportRecipe header b {
+  display: block;
+  margin-top: 5px;
+}
+.mediaExportRecipe header kbd {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: 800 9px/1 var(--data-font);
+}
+.mediaExportRecipe header {
+  margin-bottom: 14px;
+}
+.mediaExportRecipe label {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.mediaExportRecipe select,
+.mediaExportRecipe input {
+  min-width: 0;
+  flex: 1;
+  padding: 8px;
+  border: 2px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+}
+.mediaExportRecipe input[type="color"] {
+  flex: 0 0 40px;
+  padding: 2px;
+}
+.mediaExportRecipe p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.mediaExportRecipeSection {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 14px 0 0 12px;
+  border: 0;
+  border-left: 3px solid var(--accent-2);
+}
+
+.mediaExportRecipeSection legend {
+  float: left;
+  width: 100%;
+  margin: -2px 0 12px -12px;
+  padding: 0 0 0 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.mediaExportRecipeSection legend + * {
+  clear: both;
+}
+.mediaExportCanvasSection label:last-child {
+  grid-column: 1 / -1;
+}
+.mediaExportNumberPair {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 7px;
+}
+.mediaExportNumberPair i {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.mediaExportTransformFields {
+  grid-template-columns: 1fr;
+}
+.mediaExportTransformFields label {
+  grid-template-columns: 42px minmax(90px, 1fr) 72px 24px;
+}
+.mediaExportTransformFields input[type="range"] {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  accent-color: var(--accent-2);
+  background: transparent;
+}
+.mediaExportTransformFields input[type="number"] {
+  text-align: center;
+}
+.mediaExportTransformFields label > span {
+  color: var(--muted);
+}
+.mediaExportTransformFields .mediaExportScaleLock {
+  grid-template-columns: auto 1fr;
+  justify-self: end;
+}
+.mediaExportTransformFields .mediaExportScaleLock input {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  accent-color: var(--accent-2);
+}
+
+.mediaExportFillSection {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.mediaExportFillSection label:first-of-type {
+  grid-column: 1 / -1;
+  grid-template-columns: 54px minmax(0, 1fr) 42px;
+}
+.mediaExportOutputSection {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .mediaExportFormat {
   position: relative;
-  min-height: 112px;
-  display: grid;
-  align-content: end;
-  gap: 7px;
-  padding: 15px;
-  border: 3px solid var(--line);
-  border-radius: 9px;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 13px;
+  border: 2px solid var(--line);
+  border-radius: 999px;
   background: var(--panel);
   cursor: pointer;
 }
 
 .mediaExportFormat:has(input:checked) {
   border-color: var(--accent-2);
-  box-shadow: 4px 4px 0 var(--accent-2);
+  background: var(--accent-2);
+  color: #06120f;
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--accent-2) 55%, var(--line));
 }
 
 .mediaExportFormat:has(input:disabled) {
@@ -124,31 +331,192 @@ body.mediaExportOpen {
 
 .mediaExportFormat input {
   position: absolute;
-  top: 13px;
-  right: 13px;
-  width: 22px;
-  height: 22px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
 }
 
 .mediaExportFormat b {
-  font-size: 18px;
+  font-size: 12px;
 }
 
 .mediaExportFormat span {
+  display: none;
+}
+
+.mediaExportPreview {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  gap: 12px;
+  padding: 18px;
+  background: var(--panel-2);
+}
+
+.mediaExportPreviewHeader,
+.mediaExportPreviewHeader > div,
+.mediaExportPreviewPager,
+.mediaExportPreviewModes {
+  display: flex;
+  align-items: center;
+}
+
+.mediaExportPreviewHeader {
+  justify-content: space-between;
+  gap: 12px;
+}
+.mediaExportPreviewHeader > div {
+  gap: 10px;
+}
+.mediaExportPreviewHeader b {
+  font-size: 16px;
+}
+.mediaExportPreviewHeader span {
+  color: var(--muted);
+  font: 850 11px/1 var(--data-font);
+}
+.mediaExportPreviewHeader button {
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+}
+
+.mediaExportPreviewStage {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 3px solid #050708;
+  background-color: #0a0e11;
+  background-image:
+    linear-gradient(45deg, #151d22 25%, transparent 25%),
+    linear-gradient(-45deg, #151d22 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #151d22 75%),
+    linear-gradient(-45deg, transparent 75%, #151d22 75%);
+  background-size: 24px 24px;
+  background-position:
+    0 0,
+    0 12px,
+    12px -12px,
+    -12px 0;
+}
+
+@media (min-width: 1041px) and (max-height: 780px) {
+  .mediaExportHeader {
+    padding-block: 12px;
+  }
+  .mediaExportHeader h2 {
+    font-size: 30px;
+  }
+  .mediaExportSummary {
+    padding-block: 10px;
+  }
+  .mediaExportSummary div {
+    padding-block: 7px;
+  }
+  .mediaExportPreview {
+    gap: 7px;
+    padding: 12px 18px;
+  }
+  .mediaExportPreviewHeader button,
+  .mediaExportPreviewPager button,
+  .mediaExportPreviewModes button {
+    min-height: 32px;
+  }
+  .mediaExportNotices {
+    padding-block: 7px;
+  }
+  .mediaExportLocalHint,
+  .mediaExportStatus {
+    padding-block: 7px;
+  }
+  .mediaExportFooter {
+    padding-block: 10px;
+  }
+}
+
+.mediaExportPreviewStage canvas {
+  display: block;
+  max-width: calc(100% - 36px);
+  max-height: min(56dvh, 620px);
+  object-fit: contain;
+  background: transparent;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ink) 25%, transparent),
+    0 16px 50px rgba(0, 0, 0, 0.34);
+}
+
+.mediaExportPreviewPager {
+  justify-content: space-between;
+}
+.mediaExportPreviewPager button {
+  min-width: 44px;
+  min-height: 38px;
+}
+.mediaExportPreviewPager span {
+  color: var(--muted);
+  font: 900 11px/1 var(--data-font);
+}
+.mediaExportPreviewModes {
+  justify-content: center;
+  gap: 0;
+}
+.mediaExportPreviewModes button {
+  min-height: 38px;
+  border-radius: 0;
+}
+.mediaExportPreviewModes button:first-child {
+  border-radius: 7px 0 0 7px;
+}
+.mediaExportPreviewModes button:last-child {
+  border-radius: 0 7px 7px 0;
+}
+.mediaExportPreviewModes button[aria-pressed="true"] {
+  background: var(--accent-2);
+  color: #06120f;
+}
+.mediaExportPreview > p {
+  margin: 0;
+  text-align: center;
   color: var(--muted);
   font-size: 11px;
-  line-height: 1.45;
 }
 
 .mediaExportLocalHint,
 .mediaExportStatus {
-  margin: 0 18px 14px;
+  margin: 0;
   padding: 10px 12px;
   border-left: 3px solid var(--accent-3);
   background: var(--panel-2);
   color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.mediaExportNotices {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 18px;
+  border-top: 3px solid var(--line);
+}
+
+.mediaExportLocalHint,
+.mediaExportNotices {
+  display: none;
+}
+
+.mediaExportNotices:has(.mediaExportStatus:not([data-tone="idle"])) {
+  display: block;
+}
+
+.mediaExportFooter > span {
+  display: none;
+}
+
+.mediaExportFooter {
+  justify-content: flex-end;
 }
 
 .mediaExportStatus[data-tone="error"] {
@@ -210,6 +578,11 @@ body.mediaExportOpen {
     padding: 12px;
   }
 
+  .mediaExportRecipe {
+    grid-template-columns: 1fr;
+    padding: 0 12px 12px;
+  }
+
   .mediaExportSummary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     padding: 10px 12px;
@@ -223,5 +596,520 @@ body.mediaExportOpen {
   .mediaExportFooter div,
   .mediaExportFooter button {
     width: 100%;
+  }
+
+  .mediaExportNotices {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1040px) {
+  .mediaExportCard {
+    height: auto;
+    grid-template-rows: none;
+    overflow: auto;
+  }
+  .mediaExportWorkspace {
+    min-height: auto;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    overflow: visible;
+  }
+  .mediaExportControls {
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 3px solid var(--line);
+  }
+  .mediaExportPreview {
+    min-height: 560px;
+  }
+}
+
+/* Reference-aligned export workspace. */
+.mediaExportCard {
+  width: min(1580px, 100%);
+  height: min(960px, calc(100dvh - 24px));
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+}
+
+.mediaExportHeader {
+  justify-content: flex-start;
+  padding: 12px 18px;
+}
+
+.mediaExportHeader h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.mediaExportStep {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-2);
+  color: #06120f;
+  font: 950 18px/1 var(--data-font);
+}
+
+.mediaExportClose {
+  margin-left: auto;
+}
+
+.mediaExportNameRow {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  border-bottom: 2px solid var(--line);
+}
+
+.mediaExportNameRow label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.mediaExportNameRow input[type="text"] {
+  width: min(430px, 38vw);
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 2px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+}
+
+.mediaExportUseSourceName input,
+.mediaExportSettingRow input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent-2);
+}
+
+.mediaExportWorkspace {
+  grid-template-columns: minmax(590px, 0.95fr) minmax(560px, 1.05fr);
+}
+
+.mediaExportControls {
+  padding-bottom: 24px;
+}
+
+.mediaExportFormatSection {
+  padding: 16px 22px 10px;
+}
+
+.mediaExportFormatSection h3,
+.mediaExportReferenceSection legend,
+.mediaExportSheetSettings > legend,
+.mediaExportFormatSettings > legend {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.mediaExportFormatSection h3 {
+  margin: 0 0 12px;
+}
+
+.mediaExportFormats {
+  padding: 0;
+}
+
+.mediaExportFormat {
+  min-height: 38px;
+  padding: 7px 15px;
+  border-width: 1px;
+  box-shadow: none;
+}
+
+.mediaExportFormat:has(input:checked) {
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--accent-2) 35%, transparent);
+}
+
+.mediaExportRecipe {
+  padding: 0 22px 22px;
+}
+
+.mediaExportReferenceSection {
+  min-width: 0;
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+}
+
+.mediaExportReferenceSection legend {
+  margin-bottom: 11px;
+}
+
+.mediaExportPills,
+.mediaExportSegments {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mediaExportSegments {
+  gap: 0;
+}
+
+.mediaExportPills label,
+.mediaExportSegments label {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.mediaExportPills input[type="radio"],
+.mediaExportSegments input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mediaExportPills label > span,
+.mediaExportSegments label > span {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  cursor: pointer;
+}
+
+.mediaExportSegments label > span {
+  border-radius: 0;
+}
+
+.mediaExportSegments label:first-child > span {
+  border-radius: 7px 0 0 7px;
+}
+
+.mediaExportSegments label:last-child > span {
+  border-radius: 0 7px 7px 0;
+}
+
+.mediaExportPills input:checked + span,
+.mediaExportSegments input:checked + span {
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: #06120f;
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--accent-2) 30%, transparent);
+}
+
+.mediaExportResolutionSection {
+  padding-top: 4px;
+  border-left: 3px solid var(--accent-2);
+  padding-left: 14px;
+}
+
+.mediaExportCustomSize {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mediaExportCustomSize[hidden] {
+  display: none;
+}
+
+.mediaExportCustomSize input {
+  width: 96px;
+}
+
+.mediaExportQuickActions {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mediaExportQuickActions button {
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-2);
+}
+
+.mediaExportTransformFields {
+  display: grid;
+  gap: 9px;
+}
+
+.mediaExportTransformFields label {
+  display: grid;
+  grid-template-columns: 42px 42px minmax(120px, 1fr) 54px 72px 26px;
+  align-items: center;
+  gap: 7px;
+}
+
+.mediaExportTransformFields label small {
+  color: var(--muted);
+  text-align: center;
+}
+
+.mediaExportTransformFields input[type="range"] {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--accent-2);
+}
+
+.mediaExportTransformFields input[type="number"] {
+  min-width: 0;
+  width: 72px;
+  text-align: center;
+}
+
+.mediaExportTransformFields .mediaExportScaleLock {
+  grid-template-columns: auto auto;
+  justify-content: end;
+}
+
+.mediaExportFillSection abbr,
+.mediaExportSettingRow abbr {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 11px;
+}
+
+.mediaExportFillSection input[type="color"] {
+  width: 42px;
+  height: 38px;
+  padding: 3px;
+}
+
+.mediaExportFillColorRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.mediaExportFillColorRow[hidden] {
+  display: none;
+}
+
+.mediaExportFillColorRow output {
+  color: var(--muted);
+  font-family: var(--data-font);
+}
+
+.mediaExportFillColorRow button {
+  min-height: 38px;
+  padding: 5px 10px;
+}
+
+.mediaExportSheetSettings,
+.mediaExportFormatSettings {
+  min-width: 0;
+  display: grid;
+  gap: 13px;
+  margin: 20px 0 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.mediaExportSheetSettings[hidden],
+.mediaExportFormatSettings[hidden] {
+  display: none;
+}
+
+.mediaExportSheetSettings > legend,
+.mediaExportFormatSettings > legend {
+  padding: 0 8px;
+}
+
+.mediaExportRecipe .mediaExportSettingRow {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  color: var(--ink);
+}
+
+.mediaExportSettingRow > b {
+  font-size: 13px;
+}
+
+.mediaExportSettingRow input[type="number"],
+.mediaExportSettingRow input[type="text"] {
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.mediaExportTextureSizes {
+  align-items: start;
+}
+
+.mediaExportTextureSizes .mediaExportPills {
+  gap: 7px;
+}
+
+.mediaExportColumns,
+.mediaExportColumns label,
+.mediaExportMetadata > span {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mediaExportColumns input[type="number"] {
+  width: 80px;
+}
+
+.mediaExportColumns i {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.mediaExportImageName > span {
+  display: grid;
+  gap: 6px;
+}
+
+.mediaExportImageName small {
+  color: var(--muted);
+}
+
+.mediaExportMetadata label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mediaExportEstimate {
+  margin: 4px 0 0;
+  padding: 13px;
+  border: 1px solid var(--ok);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--ok) 9%, var(--panel));
+  color: var(--ok);
+}
+
+.mediaExportRecipe .mediaExportFormatRange {
+  grid-template-columns: 110px 32px minmax(120px, 1fr) 32px 80px 36px;
+}
+
+.mediaExportFormatRange input[type="range"] {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--accent-2);
+}
+
+.mediaExportAdvanced {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.mediaExportAdvanced summary {
+  padding: 11px 14px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.mediaExportAdvancedBody {
+  display: grid;
+  gap: 11px;
+  padding: 12px 14px;
+}
+
+.mediaExportAdvancedBody > div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.mediaExportAdvancedBody .mediaExportSegments label > span {
+  min-height: 34px;
+  padding: 5px 10px;
+}
+
+.mediaExportFormatHint {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.mediaExportShortcut {
+  display: inline-block;
+  margin-top: 14px;
+  color: var(--muted);
+  font: 800 10px/1 var(--data-font);
+}
+
+.mediaExportPreview {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100%;
+}
+
+@media (max-width: 1040px) {
+  .mediaExportCard {
+    height: auto;
+    max-height: calc(100dvh - 16px);
+  }
+
+  .mediaExportWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .mediaExportPreview {
+    position: static;
+    min-height: 540px;
+  }
+}
+
+@media (max-width: 700px) {
+  .mediaExportNameRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mediaExportNameRow input[type="text"] {
+    width: 100%;
+  }
+
+  .mediaExportSettingRow,
+  .mediaExportAdvancedBody > div {
+    grid-template-columns: 1fr;
+  }
+
+  .mediaExportTransformFields label,
+  .mediaExportFormatRange {
+    grid-template-columns: 42px 34px minmax(90px, 1fr) 44px 64px 24px;
   }
 }

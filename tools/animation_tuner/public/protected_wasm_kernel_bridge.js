@@ -139,10 +139,25 @@
      * @param {Uint8Array|Uint8ClampedArray|number} input Bytes or required length.
      * @returns {{pointer:number,length:number}} Allocation record.
      */
+    function growMemoryFor(byteLength) {
+      const memory = exports?.memory;
+      if (!memory || typeof memory.grow !== "function") return;
+      const needed = Number(byteLength) + 65_536;
+      const available = memory.buffer.byteLength;
+      if (available >= needed) return;
+      const pages = Math.ceil((needed - available) / 65_536);
+      try {
+        memory.grow(pages);
+      } catch (_error) {
+        // Reserve still reports the final failure if growth is rejected.
+      }
+    }
+
     function allocate(input) {
       const bytes = typeof input === "number" ? new Uint8Array(input) : new Uint8Array(input);
+      growMemoryFor(bytes.length);
       const pointer = exports.protected_core_reserve(bytes.length);
-      if (!pointer) throw new Error("ENGINE_EXECUTION_FAILED");
+      if (!pointer) throw new Error("ENGINE_MEMORY_EXHAUSTED");
       if (bytes.length) new Uint8Array(exports.memory.buffer, pointer, bytes.length).set(bytes);
       return { pointer, length: bytes.length };
     }

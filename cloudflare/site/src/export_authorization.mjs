@@ -1,4 +1,4 @@
-import { createActivationService } from "./activation.mjs";
+import { createAccountAuthService } from "./account_auth.mjs";
 import { bytesToBase64Url, signToken, verifyToken } from "./activation_crypto.mjs";
 
 const EXPORT_PERMIT_TTL_MS = 60 * 1000;
@@ -77,11 +77,11 @@ function jsonResponse(payload, status = 200) {
 }
 
 /**
- * Handles device-bound short-lived permits for the official Pro export path.
+ * Handles account-bound short-lived permits for the official Pro export path.
  * Animation pixels and tuning data never leave the browser.
  * @param {Request} request Incoming request.
  * @param {{LICENSE_DB?:D1Database,XSXB_ACTIVATION_SECRET?:string}} env Worker environment.
- * @param {{activationService?:object,cryptoApi?:Crypto,now?:()=>number}} [options] Test adapters.
+ * @param {{accountService?:object,cryptoApi?:Crypto,now?:()=>number}} [options] Test adapters.
  * @returns {Promise<Response>} Export authorization response.
  */
 export async function handleExportAuthorizationRequest(request, env, options = {}) {
@@ -94,10 +94,10 @@ export async function handleExportAuthorizationRequest(request, env, options = {
     const cryptoApi = options.cryptoApi || globalThis.crypto;
     const now = options.now || Date.now;
     const secret = String(env?.XSXB_ACTIVATION_SECRET || "");
-    const activation = options.activationService || createActivationService(env, { cryptoApi, now });
-    const session = await activation.status(request);
-    if (!session.activated || !session.deviceId) {
-      throw Object.assign(new Error("An active device license is required for this Pro export."), {
+    const accounts = options.accountService || createAccountAuthService(env, { cryptoApi, now });
+    const session = await accounts.status(request);
+    if (!session.authenticated || !session.proEnabled || !session.accountId) {
+      throw Object.assign(new Error("An email account with active Pro access is required for this export."), {
         status: 401,
       });
     }
@@ -107,7 +107,7 @@ export async function handleExportAuthorizationRequest(request, env, options = {
       const permit = await signToken(
         {
           type: "export-permit",
-          deviceId: session.deviceId,
+          accountId: session.accountId,
           features,
           nonce,
           exp: expiresAt,
@@ -122,7 +122,7 @@ export async function handleExportAuthorizationRequest(request, env, options = {
       if (
         !permit ||
         permit.type !== "export-permit" ||
-        permit.deviceId !== session.deviceId ||
+        permit.accountId !== session.accountId ||
         Number(permit.exp || 0) <= now() ||
         JSON.stringify(permit.features) !== JSON.stringify(features)
       ) {

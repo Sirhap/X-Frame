@@ -67,6 +67,10 @@ body.organizerOpen .organizerClose {
   display: none;
 }
 
+.organizerWorkbench.importMode.createProjectMode .organizerProjectMetadata {
+  display: grid;
+}
+
 .organizerWorkbench.importMode .organizerHeader {
   min-height: 58px;
   padding: 8px 16px;
@@ -225,7 +229,25 @@ body.organizerOpen .organizerClose {
 
 .organizerToolbarPrimary {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.organizerToolbarActions {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.organizerToolbarActions button {
+  min-height: 100%;
+  padding-inline: 12px;
+  color: var(--accent-3);
+  font-size: 10px;
+}
+
+.organizerWorkbench.hasFrames:not(.showImportSetup) .organizerImportSetup,
+.organizerWorkbench.hasFrames:not(.showMoreTools) .organizerToolbarSecondary {
+  display: none;
 }
 
 .organizerToolbarSecondary {
@@ -333,7 +355,7 @@ body.organizerOpen .organizerClose {
   color: #06120f;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1000px) {
   .organizerToolbarPrimary,
   .organizerToolbarSecondary {
     grid-template-columns: minmax(0, 1fr);
@@ -354,6 +376,10 @@ body.organizerOpen .organizerClose {
   align-self: start;
   border-color: color-mix(in srgb, var(--danger) 72%, var(--line));
   background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+}
+
+.organizerDangerTools:not(:has(button:not([hidden]))) {
+  display: none;
 }
 
 .organizerReduceControl {

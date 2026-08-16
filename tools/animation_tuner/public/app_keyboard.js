@@ -130,6 +130,11 @@
         else undo();
         return;
       }
+      if (!typing && command && key === "y") {
+        event.preventDefault?.();
+        redo();
+        return;
+      }
       if (!typing && command && key === "c" && copyFrameImageAttachments()) {
         event.preventDefault?.();
         event.stopPropagation?.();

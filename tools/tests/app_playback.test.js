@@ -1,7 +1,23 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { createController } = require("../animation_tuner/public/app_playback");
+const {
+  canPlayGroup,
+  createController,
+  playableFrameCount,
+} = require("../animation_tuner/public/app_playback");
+
+test("playback requires at least two enabled frames", () => {
+  const group = { frames: [{}, {}, {}] };
+  const getFramePlayback = (index) => ({ disabled: index !== 0 });
+
+  assert.equal(playableFrameCount(group, getFramePlayback), 1);
+  assert.equal(canPlayGroup(group, getFramePlayback), false);
+  assert.equal(
+    canPlayGroup(group, () => ({ disabled: false })),
+    true,
+  );
+});
 
 function createPlaybackFixture(overrides = {}) {
   const group = { uiId: "idle", frames: [{}, {}, {}] };

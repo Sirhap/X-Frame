@@ -21,6 +21,7 @@
    *   renderPreview:()=>void,
    *   restartPreview:()=>void,
    *   setStatus:(message:string,tone?:string)=>void,
+   *   onWorksetChanged?:(frames:object[])=>void,
    *   document?:Document
    * }} dependencies Organizer integration dependencies.
    * @returns {{renderCounts:()=>void,renderGrid:()=>void,selectFrame:(index:number,event:MouseEvent|object)=>void,selectIndexes:(indexes:number[],analysisType?:"jump"|"duplicate"|"")=>void}}
@@ -51,18 +52,68 @@
       const animation = dependencies.getCurrentAnimation();
       const canAddAssets = dependencies.canAddAssets();
       const canExport = dependencies.canExport();
+      const hasFrames = state.frames.length > 0;
+      if (hasFrames && !state.hadFrames) {
+        state.showImportSetup = false;
+        state.showMoreTools = false;
+      } else if (!hasFrames) {
+        state.showImportSetup = true;
+        state.showMoreTools = false;
+        state.lastExpandedPanel = "";
+      }
+      state.hadFrames = hasFrames;
+      const workbench = elements.organizerImportSetup?.closest?.(".organizerWorkbench");
+      workbench?.classList?.toggle("hasFrames", hasFrames);
+      workbench?.classList?.toggle("showImportSetup", Boolean(state.showImportSetup));
+      workbench?.classList?.toggle("showMoreTools", Boolean(state.showMoreTools));
+      elements.organizerToggleImportSetup.hidden = state.mode !== "import" || !hasFrames;
+      elements.organizerToggleImportSetup.setAttribute(
+        "aria-expanded",
+        String(state.mode === "import" && hasFrames && state.showImportSetup),
+      );
+      elements.organizerMoreTools.hidden = !hasFrames;
+      elements.organizerMoreTools.setAttribute("aria-expanded", String(hasFrames && state.showMoreTools));
+      const hasEditedResult = includedFrames().some((frame) => frame.hasEditedResult === true);
+      elements.organizerViewEdited.disabled = !hasEditedResult || state.busy;
+      if (!hasEditedResult && state.viewMode === "edited") state.viewMode = "original";
+      elements.organizerViewOriginal.classList.toggle("active", state.viewMode === "original");
+      elements.organizerViewEdited.classList.toggle("active", state.viewMode === "edited");
       elements.organizerCount.textContent = text("workset", { included, total: state.frames.length });
       elements.organizerSelection.textContent = text("selected", { count: selected });
+      const batchScope = documentApi?.querySelector?.("#organizerBatchScope");
+      const batchScopeText = documentApi?.querySelector?.("#organizerBatchScopeText");
+      const cutoutScope = documentApi?.querySelector?.("#organizerBatchCutoutScope");
+      if (batchScope) batchScope.hidden = selected < 2;
+      if (batchScopeText) batchScopeText.textContent = `将操作应用到 ${selected} 帧`;
+      if (cutoutScope) {
+        cutoutScope.textContent = selected
+          ? `作用于当前选择 · ${selected} 帧`
+          : `作用于参与工作集 · ${included} 帧`;
+      }
       elements.organizerApply.disabled =
         !included || state.busy || (state.mode === "edit" && !animation?.frames?.length);
+      if (state.mode === "import" && elements.organizerCreationMode) {
+        const groupCount = new Set(
+          state.frames
+            .filter((frame) => frame.included)
+            .map((frame) => frame.groupId)
+            .filter(Boolean),
+        ).size;
+        if (elements.organizerCreationMode.value === "groups" && groupCount > 1) {
+          elements.organizerApply.textContent = `创建 ${groupCount} 个动画并进入调参`;
+        }
+      }
       elements.organizerGodotPlaceholder.disabled =
         dependencies.browserExportOnly !== true || state.mode !== "import" || !included || state.busy;
       elements.organizerDeleteSelected.disabled = !selected || state.busy;
+      elements.organizerDeleteSelected.hidden = !selected;
       elements.organizerClearWorkset.disabled = !state.frames.length || state.busy;
       elements.organizerBatchCutout.disabled = !included || state.busy;
       elements.organizerInvert.disabled = !state.frames.length || state.busy;
+      elements.organizerInvertSelection.disabled = !state.frames.length || state.busy;
       elements.organizerFlip.disabled = (!selected && !included) || state.busy;
       elements.organizerDeleteExcluded.disabled = included === state.frames.length || state.busy;
+      elements.organizerDeleteExcluded.hidden = included === state.frames.length;
       elements.organizerFileInput.disabled = state.busy;
       elements.organizerVideoInput.disabled = state.busy;
       elements.organizerAddAssets.hidden = !canAddAssets;
@@ -79,6 +130,7 @@
       });
       elements.organizerReduce.title = included ? "" : text("needFrames");
       elements.organizerBatchCutout.title = included ? text("batchCutoutHint") : text("needFrames");
+      elements.organizerViewEdited.title = hasEditedResult ? "" : text("editedUnavailable");
       elements.organizerAddAssets.title = included ? "" : text("needFrames");
       elements.organizerExport.title = included ? "" : text("needFrames");
       elements.organizerFindJump.title = included >= 3 ? "" : text("needThreeFrames");
@@ -213,6 +265,7 @@
       });
       elements.organizerGrid.replaceChildren(fragment);
       renderCounts();
+      dependencies.onWorksetChanged?.(state.frames);
     }
 
     return { renderCounts, renderGrid, selectFrame, selectIndexes };

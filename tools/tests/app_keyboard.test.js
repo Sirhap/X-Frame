@@ -296,3 +296,29 @@ test("native text editing keeps undo and copy shortcuts", () => {
   assert.equal(state.undoCalls, 0);
   assert.equal(state.copyCalls, 0);
 });
+
+test("Ctrl or Cmd Y redoes an editor action outside text inputs", () => {
+  let redoCount = 0;
+  const { controller, state } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      redo: () => {
+        redoCount += 1;
+      },
+    },
+  });
+  const event = {
+    key: "y",
+    ctrlKey: true,
+    metaKey: false,
+    target: { tagName: "DIV" },
+    preventDefault() {
+      this.prevented = true;
+    },
+  };
+
+  controller.handleEditorKeydown(event);
+
+  assert.equal(event.prevented, true);
+  assert.equal(redoCount, 1);
+});

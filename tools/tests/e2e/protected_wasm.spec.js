@@ -157,7 +157,6 @@ test("@cross-browser browser imports remain available after switching to the pro
   page,
 }) => {
   await page.goto(`${productionOrigin}/tools/import`, { waitUntil: "load" });
-  await page.locator("#organizerAnimationName").fill("browser-session-idle");
   await page.locator("#organizerFileInput").setInputFiles([
     { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
     { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
@@ -186,7 +185,11 @@ test("@cross-browser production includes the embedded scatter-slice workbench", 
 
 test("@cross-browser English mode localizes the browser workbench shell", async ({ page }) => {
   await page.goto(`${productionOrigin}/workspace`, { waitUntil: "load" });
-  await page.locator('[data-language="en"]').click();
+  await page.evaluate(() => {
+    localStorage.setItem("xsxbFrameTuner.language", "en");
+    localStorage.setItem("xsxbFrameTuner.languageExplicit", "true");
+  });
+  await page.reload({ waitUntil: "load" });
 
   await expect(page.locator('a[data-app-mode="projects"]')).toContainText("Projects");
   await expect(page.locator('a[data-app-mode="tools"]')).toContainText("Tools");
@@ -195,7 +198,7 @@ test("@cross-browser English mode localizes the browser workbench shell", async 
   await expect(page.locator("#browserModeBanner strong")).toHaveText("Assets stay in this browser");
   await page.locator('a[data-app-mode="projects"]').click();
   await expect(page.locator("#projectHubTitle")).toHaveText("Animation Projects");
-  await expect(page.locator("#projectHubRecentSummary")).toContainText("animation groups");
+  await expect(page.locator("#projectHubRecentSummary")).toContainText("No animation frames yet");
 });
 
 test("@cross-browser production Worker loads WASM locally without pixel POST", async ({ page }) => {

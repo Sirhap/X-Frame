@@ -105,6 +105,39 @@ a {
   transform: translateX(-50%);
 }
 
+.header-actions,
+.landingLanguageButtons {
+  display: flex;
+  align-items: center;
+}
+
+.header-actions {
+  justify-self: end;
+  gap: 12px;
+}
+
+.landingLanguageButtons {
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--black) 76%, var(--ink));
+}
+
+.landingLanguageButtons button {
+  min-width: 34px;
+  min-height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: 800 11px/1 var(--mono);
+}
+
+.landingLanguageButtons button[aria-pressed="true"] {
+  background: var(--mint);
+  color: var(--black);
+}
+
 .wordmark {
   min-height: 44px;
   display: inline-flex;

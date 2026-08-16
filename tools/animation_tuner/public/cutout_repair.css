@@ -192,6 +192,20 @@
   opacity: 0.42;
 }
 
+.cutoutRepairTools[data-preview-mode="alpha"] {
+  grid-template-columns: minmax(220px, 1fr) 132px;
+}
+
+.cutoutRepairTools[data-preview-mode="alpha"] .cutoutRepairModes {
+  display: none;
+}
+
+.cutoutRepairTools[data-preview-mode="alpha"] .cutoutRepairIntro::after {
+  content: "Alpha 诊断模式仅用于检查透明度；切回“结果”后可继续局部编辑。";
+  color: var(--accent-3);
+  font: 650 10px/1.35 var(--ui-font);
+}
+
 .cutoutAreaControls {
   display: grid;
   grid-template-columns: auto minmax(180px, 1fr) minmax(140px, auto) minmax(190px, 1fr);

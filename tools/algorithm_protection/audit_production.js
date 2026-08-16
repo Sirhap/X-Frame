@@ -11,13 +11,26 @@ const PRODUCTION_APP_ROUTES = new Set([
   "/workspace",
   "/workspace/tools/organizer",
   "/workspace/tools/cutout",
+  "/workspace/resources/import",
+  "/workspace/resources/cutout",
+  "/workspace/resources/scatter",
+  "/workspace/animation/transform",
+  "/workspace/animation/boxes",
+  "/workspace/animation/trails",
+  "/workspace/animation/audio",
+  "/workspace/animation/attachments",
+  "/workspace/delivery/export",
+  "/workspace/delivery/godot",
+  "/workspace/delivery/codex-pet",
   "/tools/import",
   "/tools/organizer",
   "/tools/cutout",
   "/tools/scatter-slice",
+  "/tools/watermark",
+  "/tools/export",
   "/scatter-slice.html",
 ]);
-const HASHED_ASSET_REFERENCE = /^\/assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm|ico)$/;
+const HASHED_ASSET_REFERENCE = /^\/assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm|ico|png)$/;
 
 /**
  * Distinguishes approved application deep links from content-addressed assets.
@@ -173,7 +186,7 @@ function auditArtifacts(manifest, failures) {
     assetPaths.add(assetPath);
     assertAudit(
       failures,
-      /^assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm|ico)$/.test(assetPath),
+      /^assets\/[a-z-]+\.[a-f0-9]{16}\.(?:js|css|wasm|ico|png)$/.test(assetPath),
       `invalid manifest asset path: ${assetPath}`,
     );
     assertAudit(failures, /^[a-f0-9]{64}$/.test(asset.sha256 || ""), `invalid SHA-256: ${assetPath}`);
@@ -276,12 +289,13 @@ function auditFinalPosture(manifest, failures) {
     ["protected-core", { extension: ".wasm", mediaType: "application/wasm" }],
     ["styles", { extension: ".css", mediaType: "text/css" }],
     ["favicon", { extension: ".ico", mediaType: "image/x-icon" }],
+    ["attack-trail-texture", { extension: ".png", mediaType: "image/png" }],
   ]);
 
   assertAudit(
     failures,
     assets.length === expectedAssets.size,
-    "final build must contain only the approved UI, worker glue, WASM core, styles, and favicon assets",
+    "final build must contain only approved UI, worker glue, WASM, style, icon, and texture assets",
   );
   for (const [role, policy] of expectedAssets) {
     const matches = assets.filter((asset) => asset.role === role);

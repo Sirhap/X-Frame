@@ -68,6 +68,7 @@ function createFixture() {
       return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
     },
     normalizeTuningScaleValues: (values) => values || {},
+    normalizeReferenceFrameDescriptor: (value) => value || null,
     withFrameAttachmentHash: (_project, attachment) => ({
       ...attachment,
       assetHash: attachment.assetHash || "test-hash",
@@ -88,6 +89,33 @@ function createFixture() {
     dispose: () => fs.rmSync(root, { recursive: true, force: true }),
   };
 }
+
+test("tuning persistence retains the normalized reference-frame descriptor", () => {
+  const fixture = createFixture();
+  try {
+    fixture.persistence.saveTuningPayload(
+      {
+        values: {},
+        reference_frame: {
+          profile_id: "hero",
+          animation_id: "idle",
+          frame_index: 1,
+          transform: { scale: 2 },
+        },
+      },
+      fixture.project,
+    );
+    const saved = JSON.parse(fs.readFileSync(fixture.paths.tuning, "utf8"));
+    assert.deepEqual(saved.reference_frame, {
+      profile_id: "hero",
+      animation_id: "idle",
+      frame_index: 1,
+      transform: { scale: 2 },
+    });
+  } finally {
+    fixture.dispose();
+  }
+});
 
 test("animation replacement validates PNG targets and supports explicit rollback", () => {
   const fixture = createFixture();

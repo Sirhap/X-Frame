@@ -260,7 +260,7 @@
     /**
      * Opens an isolated cutout session for an unsaved animation workset.
      * Applying resolves with processed outputs; closing resolves with null.
-     * @param {{name?:string,mode?:"single"|"batch",selectedIndex?:number,autoDetectBackground?:boolean,processingParameters?:object,onLiveApply?:(outputs:Array<object>)=>void,items:Array<{name?:string,image:CanvasImageSource,frame?:object,cutoutState?:object}>}} workset Unsaved frame workset.
+     * @param {{name?:string,mode?:"single"|"batch",selectedIndex?:number,autoDetectBackground?:boolean,processingParameters?:object,onLiveApply?:(outputs:Array<object>)=>void,present?:boolean,items:Array<{name?:string,image:CanvasImageSource,frame?:object,cutoutState?:object}>}} workset Unsaved frame workset.
      * @returns {Promise<Array<object>|null>}
      */
     function openWorkset(workset) {
@@ -327,19 +327,21 @@
       return new Promise((resolve) => {
         resolve.liveApply = typeof workset.onLiveApply === "function" ? workset.onLiveApply : null;
         state.worksetResolver = resolve;
-        // A workset belongs to the organizer that created it. Keep the host
-        // route and editor lifecycle intact instead of presenting the child
-        // session as a standalone cutout workbench.
-        open({ syncRoute: false });
-        renderQueue();
-        renderPreview();
-        scheduleBatchThumbnails();
-        setStatus(
-          state.sessionMode === "single"
-            ? text("singleLoaded")
-            : text("worksetLoaded", { name: state.worksetName, count: state.items.length }),
-          "success",
-        );
+        if (workset.present !== false) {
+          // A workset belongs to the organizer that created it. Keep the host
+          // route and editor lifecycle intact instead of presenting the child
+          // session as a standalone cutout workbench.
+          open({ syncRoute: false });
+          renderQueue();
+          renderPreview();
+          scheduleBatchThumbnails();
+          setStatus(
+            state.sessionMode === "single"
+              ? text("singleLoaded")
+              : text("worksetLoaded", { name: state.worksetName, count: state.items.length }),
+            "success",
+          );
+        }
       });
     }
     /**

@@ -36,6 +36,7 @@ const { createMediaRoutes } = require("./server_media_routes");
 const { createStaticHandler } = require("./server_static");
 const { createServerIoOperations } = require("./server_io_operations");
 const { createActivationService } = require("./server_activation");
+const { createLocalAccountAuthService } = require("./server_account_auth");
 const { createPremiumAuthorizer } = require("./server_premium_authorization");
 const { createMediaExportService } = require("./server_media_export");
 const { createWatermarkStudioService } = require("./server_watermark_studio");
@@ -44,7 +45,10 @@ const {
   decodeDataUrl,
   imageExtensionFromMime,
   isInside,
+  isManagedWorkspaceAsset,
+  isServableAsset,
   normalizeManifest: normalizeManifestInput,
+  normalizeReferenceFrameDescriptor,
   normalizeTuningScaleValues,
   safeResolve,
   sanitizeSegment,
@@ -85,9 +89,21 @@ const WORKBENCH_ROUTES = new Set([
   "/tools/import",
   "/tools/organizer",
   "/tools/scatter-slice",
+  "/tools/export",
   "/workspace",
   "/workspace/tools/cutout",
   "/workspace/tools/organizer",
+  "/workspace/resources/import",
+  "/workspace/resources/cutout",
+  "/workspace/resources/scatter",
+  "/workspace/animation/transform",
+  "/workspace/animation/boxes",
+  "/workspace/animation/trails",
+  "/workspace/animation/audio",
+  "/workspace/animation/attachments",
+  "/workspace/delivery/export",
+  "/workspace/delivery/godot",
+  "/workspace/delivery/codex-pet",
 ]);
 
 const DEFAULT_SUPPORTS = [
@@ -128,6 +144,13 @@ const watermarkStudioService = createWatermarkStudioService({
 const activationService = createActivationService({
   codeHashes: process.env.XSXB_ACTIVATION_CODE_HASHES || "",
   secret: process.env.XSXB_ACTIVATION_SECRET || "",
+});
+const accountAuthService = createLocalAccountAuthService({
+  codeHashes: process.env.XSXB_ACTIVATION_CODE_HASHES || "",
+  secret: process.env.XSXB_ACTIVATION_SECRET || "",
+  resendApiKey: process.env.RESEND_API_KEY || "",
+  emailFrom: process.env.XSXB_EMAIL_FROM || "",
+  development: HOST === "127.0.0.1" || HOST === "localhost" || HOST === "::1",
 });
 const premiumAuthorizer = createPremiumAuthorizer({ activationService, HttpError });
 const {
@@ -170,6 +193,7 @@ const {
   reslash,
   getPngSize,
   normalizeTuningScaleValues,
+  normalizeReferenceFrameDescriptor,
   withFrameAttachmentHash,
   HttpError,
 });
@@ -560,6 +584,7 @@ function readTuningFile(project) {
     schemaVersion: Number(raw.schemaVersion || 1),
     values: raw.values && typeof raw.values === "object" ? raw.values : {},
     scene_settings: raw.scene_settings && typeof raw.scene_settings === "object" ? raw.scene_settings : {},
+    reference_frame: normalizeReferenceFrameDescriptor(raw.reference_frame),
     frame_visual_overrides:
       raw.frame_visual_overrides && typeof raw.frame_visual_overrides === "object"
         ? raw.frame_visual_overrides
@@ -652,6 +677,7 @@ function tuningForClient(tuningFile) {
   return {
     ...tuningFile.values,
     scene_settings: tuningFile.scene_settings,
+    reference_frame: tuningFile.reference_frame,
     frame_visual_overrides: tuningFile.frame_visual_overrides,
     frame_playback_overrides: tuningFile.frame_playback_overrides,
     frame_box_overrides: tuningFile.frame_box_overrides,
@@ -883,6 +909,40 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && parsed.pathname === "/api/activation") {
       return send(res, 200, activationService.status(req));
     }
+    if (
+      req.method === "GET" &&
+      ["/api/auth/session", "/api/entitlements/current"].includes(parsed.pathname)
+    ) {
+      return send(res, 200, accountAuthService.status(req));
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/auth/code/request") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      return send(res, 202, await accountAuthService.requestCode(payload.email));
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/auth/code/verify") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      const result = accountAuthService.verifyCode(payload.email, payload.code);
+      res.setHeader("set-cookie", accountAuthService.cookieHeader(result.token, req));
+      const { token, ...body } = result;
+      return send(res, 200, body);
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/auth/logout") {
+      accountAuthService.logout(req);
+      res.setHeader("set-cookie", accountAuthService.clearCookieHeader());
+      return send(res, 200, { authenticated: false });
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/entitlements/redeem") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      return send(res, 200, accountAuthService.redeem(payload.code, req));
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/export/authorize") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      return send(res, 200, accountAuthService.authorizeExport(payload.features, req));
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/export/verify") {
+      const payload = await readJsonBody(req, parsed.pathname);
+      return send(res, 200, accountAuthService.verifyExport(payload.permit, payload.features, req));
+    }
     if (req.method === "POST" && parsed.pathname === "/api/activation") {
       const payload = await readJsonBody(req, parsed.pathname);
       const result = activationService.activate(payload.code);
@@ -957,7 +1017,16 @@ const server = http.createServer(async (req, res) => {
         ".webp": "image/webp",
         ".gif": "image/gif",
       };
-      if (!full || !fs.existsSync(full) || !imageTypes[ext]) {
+      const registry = projectStore.readRegistry();
+      const managedProjects = registry.projects.map((project) => ({
+        workspaceDir: projectStore.projectWorkspaceDir(project),
+      }));
+      if (
+        !full ||
+        !imageTypes[ext] ||
+        !isServableAsset(full, { publicRoot: PUBLIC, projects: managedProjects }) ||
+        !fs.existsSync(full)
+      ) {
         return send(res, 404, "Not found", "text/plain");
       }
       res.writeHead(200, { "content-type": imageTypes[ext], "cache-control": "no-store" });
@@ -966,7 +1035,10 @@ const server = http.createServer(async (req, res) => {
     return serveStatic(req, res, parsed.pathname);
   } catch (error) {
     console.error(error);
-    send(res, Number(error.status || 500), { error: String(error.message || error) });
+    send(res, Number(error.status || 500), {
+      error: String(error.message || error),
+      ...(error.code ? { code: String(error.code) } : {}),
+    });
     return undefined;
   }
 });

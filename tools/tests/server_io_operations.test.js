@@ -67,6 +67,22 @@ test("server I/O operations serialize project writes and keep revision tokens st
     assert.equal(revision, operations.projectDataRevision(fixture.project));
     fs.appendFileSync(fixture.paths.tuning, "changed\n");
     assert.notEqual(operations.projectDataRevision(fixture.project), revision);
+
+    const workspaceDir = path.join(fixture.root, "workspace", "projects", "demo");
+    const framePath = path.join(workspaceDir, "frames", "idle.png");
+    fs.mkdirSync(path.dirname(framePath), { recursive: true });
+    fs.writeFileSync(framePath, "png-a");
+    fixture.paths.workspaceDir = workspaceDir;
+    fs.writeFileSync(
+      fixture.paths.manifest,
+      JSON.stringify({
+        schemaVersion: 1,
+        profiles: [{ animations: [{ frames: [{ path: "workspace/projects/demo/frames/idle.png" }] }] }],
+      }),
+    );
+    const withFrame = operations.projectDataRevision(fixture.project);
+    fs.writeFileSync(framePath, "png-b");
+    assert.notEqual(operations.projectDataRevision(fixture.project), withFrame);
   } finally {
     fixture.dispose();
   }

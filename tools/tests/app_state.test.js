@@ -30,6 +30,7 @@ test("createInitialState combines URL and persisted preferences", () => {
     storage: createStorage({
       "xsxbFrameTuner.project": "stored-project",
       "xsxbFrameTuner.language": "en",
+      "xsxbFrameTuner.languageExplicit": "true",
       "xsxbFrameTuner.theme": "light",
       "xsxbFrameTuner.canvasColor": "#123456",
       "xsxbFrameTuner.selectedBox": "hurtbox",
@@ -56,6 +57,17 @@ test("createInitialState combines URL and persisted preferences", () => {
   assert.equal(state.filmstripLayout, "grid");
   assert.equal(state.kunkunUnlocked, true);
   assert.deepEqual(state.view, { zoom: 1, x: 0, y: 0 });
+});
+
+test("createInitialState migrates an unconfirmed legacy English preference to Chinese", () => {
+  const state = createInitialState({
+    location: { search: "" },
+    storage: createStorage({
+      "xsxbFrameTuner.language": "en",
+    }),
+  });
+
+  assert.equal(state.language, "zh");
 });
 
 test("createInitialState falls back safely when storage access throws", () => {

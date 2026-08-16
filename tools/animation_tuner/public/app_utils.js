@@ -14,7 +14,13 @@
    */
   function assetUrl(frame) {
     const sourcePath = String(frame?.path || "");
-    if (sourcePath.startsWith("data:image/") || sourcePath.startsWith("blob:")) return sourcePath;
+    if (
+      sourcePath.startsWith("data:image/") ||
+      sourcePath.startsWith("blob:") ||
+      sourcePath.startsWith("/assets/")
+    ) {
+      return sourcePath;
+    }
     return `/asset?path=${encodeURIComponent(sourcePath)}&v=${Date.now()}`;
   }
 

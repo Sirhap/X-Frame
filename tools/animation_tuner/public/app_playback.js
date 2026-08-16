@@ -7,6 +7,20 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
+  /** Counts frames that participate in playback. */
+  function playableFrameCount(group, getFramePlayback = () => ({ disabled: false })) {
+    const frames = Array.isArray(group?.frames) ? group.frames : [];
+    return frames.reduce(
+      (count, _frame, index) => count + (getFramePlayback(index, group)?.disabled ? 0 : 1),
+      0,
+    );
+  }
+
+  /** Reports whether playback would produce a visible frame transition. */
+  function canPlayGroup(group, getFramePlayback = () => ({ disabled: false })) {
+    return playableFrameCount(group, getFramePlayback) > 1;
+  }
+
   /**
    * Creates the animation playback controller used by the main canvas.
    * @param {{
@@ -220,5 +234,5 @@
     };
   }
 
-  return { createController };
+  return { canPlayGroup, createController, playableFrameCount };
 });

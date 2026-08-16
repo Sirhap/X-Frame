@@ -149,12 +149,12 @@
               <h2>拼接与导出</h2>
             </header>
             <label class="cutoutModeButton">
-              <input id="scatterTransparent" type="checkbox" checked />
+              <input id="scatterTransparent" type="checkbox" aria-label="智能抠图" checked />
               <span><strong>智能抠图</strong><small>自动背景清除 · 常规模式</small></span>
               <b aria-hidden="true">ON</b>
             </label>
             <label class="cutoutModeButton">
-              <input id="scatterUniformOutput" type="checkbox" checked />
+              <input id="scatterUniformOutput" type="checkbox" aria-label="统一输出画布" checked />
               <span><strong>统一输出画布</strong><small>组内最大画布 · 底部居中</small></span>
               <b aria-hidden="true">ON</b>
             </label>
@@ -260,6 +260,7 @@
     <script src="/batch_cutout_protection_core.js"></script>
     <script src="/batch_cutout_reference_recovery_core.js"></script>
     <script src="/batch_cutout_reference_replace_core.js"></script>
+    <script src="/batch_cutout_background_estimator.js"></script>
     <script src="/batch_cutout_reference_input.js"></script>
     <script src="/batch_cutout_core.js"></script>
     <script src="/scatter_slice_core.js"></script>

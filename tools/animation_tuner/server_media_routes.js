@@ -62,6 +62,31 @@ function createMediaRoutes(dependencies = {}) {
     );
   }
 
+  /** Restores and disposes import transactions in reverse mutation order. */
+  async function rollbackImportTransactions(transactions, cause) {
+    const failures = [];
+    for (const transaction of Array.from(transactions || [])
+      .filter(Boolean)
+      .reverse()) {
+      try {
+        await transaction.restore();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    for (const transaction of Array.from(transactions || []).filter(Boolean)) {
+      try {
+        await transaction.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length) {
+      throw new AggregateError([cause, ...failures], "Animation import failed and rollback was incomplete.");
+    }
+    throw cause;
+  }
+
   /** Reads all project-owned state required for workset preflight. */
   function worksetPlanningState(project) {
     const paths = projectStore.projectPaths(project);
@@ -422,51 +447,63 @@ function createMediaRoutes(dependencies = {}) {
       }
       const requestedProjectId = payload.projectId ? projectStore.slug(payload.projectId) : "";
       await withProjectWrite(requestedProjectId || "__registry__", async () => {
-        let registry = projectStore.readRegistry();
-        let project = requestedProjectId
-          ? registry.projects.find((entry) => entry.id === requestedProjectId)
-          : null;
-        if (requestedProjectId && !project) throw new Error(`Project not found: ${payload.projectId}`);
-        if (!project) {
-          registry = projectStore.addProject({
-            label: projectLabel,
+        const registryTransaction = await createFilesystemSnapshot([projectStore.path]);
+        let projectTransaction = null;
+        let responsePayload = null;
+        let transactionsDisposed = false;
+        try {
+          let registry = projectStore.readRegistry();
+          let project = requestedProjectId
+            ? registry.projects.find((entry) => entry.id === requestedProjectId)
+            : null;
+          if (requestedProjectId && !project) throw new Error(`Project not found: ${payload.projectId}`);
+          if (!project) {
+            registry = projectStore.addProject({ label: projectLabel });
+            project = projectStore.resolveProject(registry, registry.activeProjectId);
+          } else if (registry.activeProjectId !== project.id) {
+            registry = projectStore.setActiveProject(project.id);
+            project = projectStore.resolveProject(registry, project.id);
+          }
+          projectTransaction = await createFilesystemSnapshot(managedProjectPaths(project));
+          const imported = importAnimation({
+            root,
+            projectStore,
+            project,
+            profileId: projectStore.slug(payload.profileId || profileLabel, "character"),
+            profileLabel,
+            profileKind: String(payload.profileKind || "actor"),
+            animationId: projectStore.slug(payload.animationId || animationName, "animation"),
+            animationName,
+            animationType: String(payload.animationType || "actor"),
+            anchorMode: String(payload.anchorMode || "canvas_bottom_center"),
+            fps: Number(payload.fps || 12),
+            items,
           });
-          project = projectStore.resolveProject(registry, registry.activeProjectId);
-        } else if (registry.activeProjectId !== project.id) {
-          registry = projectStore.setActiveProject(project.id);
-          project = projectStore.resolveProject(registry, project.id);
+          const godotSync = await syncGodotProjectAsync(project, {
+            manifest: imported.manifest,
+            tuning: imported.tuning,
+          });
+          const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
+          responsePayload = {
+            ok: true,
+            activeProjectId: project.id,
+            profileId: imported.profileId,
+            animationId: imported.animationId,
+            frameCount: imported.frameCount,
+            godotSync,
+            godotHandoff: godotHandoffService.status(project),
+            dataRevision: projectDataRevision(project),
+            runtimeProjectIdFiles,
+            warnings: validateProject(project, imported.manifest),
+          };
+          await projectTransaction.dispose();
+          await registryTransaction.dispose();
+          transactionsDisposed = true;
+        } catch (error) {
+          if (transactionsDisposed) throw error;
+          return rollbackImportTransactions([projectTransaction, registryTransaction], error);
         }
-        const imported = importAnimation({
-          root,
-          projectStore,
-          project,
-          profileId: projectStore.slug(payload.profileId || profileLabel, "character"),
-          profileLabel,
-          profileKind: String(payload.profileKind || "actor"),
-          animationId: projectStore.slug(payload.animationId || animationName, "animation"),
-          animationName,
-          animationType: String(payload.animationType || "actor"),
-          anchorMode: String(payload.anchorMode || "canvas_bottom_center"),
-          fps: Number(payload.fps || 12),
-          items,
-        });
-        const godotSync = await syncGodotProjectAsync(project, {
-          manifest: imported.manifest,
-          tuning: imported.tuning,
-        });
-        const runtimeProjectIdFiles = syncGodotRuntimeProjectId(project);
-        return send(res, 200, {
-          ok: true,
-          activeProjectId: project.id,
-          profileId: imported.profileId,
-          animationId: imported.animationId,
-          frameCount: imported.frameCount,
-          godotSync,
-          godotHandoff: godotHandoffService.status(project),
-          dataRevision: projectDataRevision(project),
-          runtimeProjectIdFiles,
-          warnings: validateProject(project, imported.manifest),
-        });
+        return send(res, 200, responsePayload);
       });
       return true;
     }

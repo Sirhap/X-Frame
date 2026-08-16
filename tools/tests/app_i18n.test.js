@@ -10,6 +10,9 @@ test("main workbench translations expose both supported languages", () => {
   assert.equal(messages.en.languageEnglish, "English");
   assert.equal(messages.zh.saveTuning, "保存调参");
   assert.equal(messages.en.saveTuning, "Save tuning");
+  assert.equal(messages.zh.browserModeLocalProcessing, "网页模式 / 本地处理");
+  assert.equal(messages.zh.currentProjectEyebrow, "当前项目");
+  assert.equal(messages.zh.rootX, "根 X");
 });
 
 test("main workbench translations retain the shared key set", () => {

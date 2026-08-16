@@ -189,6 +189,40 @@ test("development adapter and facade expose the product-level contract", async (
   assert.deepEqual(result.qualityMetrics, { opaquePixels: 1 });
 });
 
+test("runtime preserves abort semantics when normalizing a cancelled request", async () => {
+  const runtime = createRuntime({
+    adapter: {
+      mode: "test",
+      async initialize() {},
+      async applyProductCutout() {
+        throw new DOMException("Superseded preview.", "AbortError");
+      },
+      cancel() {},
+      dispose() {},
+    },
+  });
+
+  await assert.rejects(
+    runtime.applyProductCutout({}, {}, "cancelled-preview"),
+    (error) => error.name === "AbortError" && error.code === "ENGINE_CANCELLED",
+  );
+});
+
+test("runtime expands packed RGB buffers to RGBA before processing", async () => {
+  const runtime = createRuntime({
+    adapter: createDevelopmentJsAdapter(createDevelopmentDependencies()),
+  });
+  const rgb = Uint8Array.from([0, 255, 0, 10, 20, 30]);
+  const result = await runtime.applyProductCutout(
+    { data: rgb, width: 2, height: 1 },
+    { automaticCutout: false },
+    "rgb-expand",
+  );
+  assert.equal(result.data.length, 8);
+  assert.equal(result.data[3], 255);
+  assert.equal(result.data[7], 255);
+});
+
 test("runtime rejects protocol mismatch, duplicate ids, and invalid image buffers", async () => {
   const runtime = createRuntime({
     adapter: createDevelopmentJsAdapter(createDevelopmentDependencies()),

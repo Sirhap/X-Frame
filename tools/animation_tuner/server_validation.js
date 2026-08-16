@@ -48,12 +48,47 @@ function sanitizeSegment(value, fallback = "asset") {
 function decodeDataUrl(dataUrl) {
   const match = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/i.exec(String(dataUrl || ""));
   if (!match) return null;
+  let decodedText = "";
+  if (!match[2]) {
+    try {
+      decodedText = decodeURIComponent(match[3] || "");
+    } catch (error) {
+      throw Object.assign(new Error("Invalid data URL encoding."), { status: 400, cause: error });
+    }
+  }
   return {
     mime: String(match[1] || "").toLowerCase(),
-    buffer: match[2]
-      ? Buffer.from(match[3], "base64")
-      : Buffer.from(decodeURIComponent(match[3] || ""), "utf8"),
+    buffer: match[2] ? Buffer.from(match[3], "base64") : Buffer.from(decodedText, "utf8"),
   };
+}
+
+/**
+ * Checks whether an asset path belongs to one of the registered project workspaces.
+ * @param {string} candidatePath Absolute candidate asset path.
+ * @param {object[]} projects Project records with absolute workspace directories.
+ * @returns {boolean} True when the asset is inside a managed workspace.
+ */
+function isManagedWorkspaceAsset(candidatePath, projects) {
+  const candidate = path.resolve(String(candidatePath || ""));
+  return Array.from(projects || []).some((project) => {
+    const workspace = String(project?.workspaceDir || "").trim();
+    return workspace && isInside(candidate, path.resolve(workspace));
+  });
+}
+
+/**
+ * Checks whether an absolute path may be served by the asset endpoint. Built-in
+ * public assets (for example attack-trail preset textures) are always allowed,
+ * while user-authored assets must live inside a registered project workspace.
+ * @param {string} candidatePath Absolute candidate asset path.
+ * @param {{publicRoot?:string,projects?:object[]}} options Public asset root and managed project records.
+ * @returns {boolean} True when the asset is servable.
+ */
+function isServableAsset(candidatePath, options = {}) {
+  const full = path.resolve(String(candidatePath || ""));
+  const publicRoot = String(options.publicRoot || "").trim();
+  if (publicRoot && isInside(full, path.resolve(publicRoot))) return true;
+  return isManagedWorkspaceAsset(full, options.projects);
 }
 
 /**
@@ -116,11 +151,49 @@ function normalizeTuningScaleValues(values) {
   return normalizedValues;
 }
 
+/**
+ * Normalizes a JSON-safe reference-frame descriptor and strips unknown fields.
+ * @param {unknown} value Candidate persisted descriptor.
+ * @returns {object|null} Safe descriptor or null when identity/index is invalid.
+ */
+function normalizeReferenceFrameDescriptor(value) {
+  if (!value || typeof value !== "object") return null;
+  const profileId = String(value.profile_id || "")
+    .trim()
+    .slice(0, 80);
+  const animationId = String(value.animation_id || "")
+    .trim()
+    .slice(0, 80);
+  const frameIndex = Number(value.frame_index);
+  if (
+    !profileId ||
+    !animationId ||
+    !Number.isInteger(frameIndex) ||
+    frameIndex < 0 ||
+    frameIndex > 1_000_000
+  ) {
+    return null;
+  }
+  const candidateTransform = value.transform && typeof value.transform === "object" ? value.transform : {};
+  const transform = {};
+  for (const key of ["scale", "scaleX", "scaleY", "rotation"]) {
+    const number = Number(candidateTransform[key]);
+    if (Number.isFinite(number)) transform[key] = number;
+  }
+  const offsetX = Number(candidateTransform.offset?.x);
+  const offsetY = Number(candidateTransform.offset?.y);
+  if (Number.isFinite(offsetX) && Number.isFinite(offsetY)) transform.offset = { x: offsetX, y: offsetY };
+  return { profile_id: profileId, animation_id: animationId, frame_index: frameIndex, transform };
+}
+
 module.exports = {
   decodeDataUrl,
   imageExtensionFromMime,
   isInside,
+  isManagedWorkspaceAsset,
+  isServableAsset,
   normalizeManifest,
+  normalizeReferenceFrameDescriptor,
   normalizeTuningScaleValues,
   safeResolve,
   sanitizeSegment,

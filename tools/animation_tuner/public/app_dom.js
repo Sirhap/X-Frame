@@ -58,6 +58,7 @@
       coordHud: documentRef.querySelector("#coordHud"),
       stage: documentRef.querySelector("#stage"),
       filmstrip: documentRef.querySelector("#filmstrip"),
+      playbackAvailability: documentRef.querySelector("#playbackAvailability"),
       attachmentAssetTrayHost: documentRef.querySelector("#attachmentAssetTrayHost"),
       deleteSelectedFrames: documentRef.querySelector("#deleteSelectedFrames"),
       clearAnimation: documentRef.querySelector("#clearAnimation"),

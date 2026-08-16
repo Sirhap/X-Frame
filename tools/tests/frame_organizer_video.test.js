@@ -38,3 +38,34 @@ test("video controller rejects missing integration dependencies", () => {
   assert.throws(() => createController(), /dependencies are required/);
   assert.throws(() => createController({ elements: {} }), /dependencies are required/);
 });
+
+test("video controller allows selections above the former frame and decoded-pixel budgets", () => {
+  const elements = {
+    organizerVideoStatus: { textContent: "", dataset: {} },
+    organizerVideoStart: { value: "0" },
+    organizerVideoEnd: { value: "31" },
+    organizerVideoStartRange: { value: "" },
+    organizerVideoEndRange: { value: "" },
+    organizerVideoFps: { value: "10" },
+    organizerVideoFpsNumber: { value: "10" },
+    organizerVideoDuration: { textContent: "" },
+    organizerVideoEstimate: { textContent: "" },
+    organizerVideoExtract: { disabled: true },
+  };
+  const controller = createController({
+    elements,
+    state: {
+      videoDuration: 31,
+      videoWidth: 7680,
+      videoHeight: 4320,
+      videoExtracting: false,
+    },
+    text: (key) => key,
+  });
+
+  controller.syncControls();
+
+  assert.equal(elements.organizerVideoExtract.disabled, false);
+  assert.equal(elements.organizerVideoEstimate.textContent, "310");
+  assert.equal(elements.organizerVideoStatus.textContent, "videoLoaded");
+});

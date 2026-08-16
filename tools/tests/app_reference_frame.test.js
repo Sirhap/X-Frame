@@ -4,7 +4,7 @@ const test = require("node:test");
 const { createController } = require("../animation_tuner/public/app_reference_frame");
 
 function createFixture() {
-  const group = { uiId: "attack" };
+  const group = { uiId: "attack", profileId: "hero", animationId: "slash", frames: [{}, {}] };
   const images = [{ id: "a" }, { id: "b" }];
   let selectedFrame = 1;
   let referenceFrame = null;
@@ -43,4 +43,34 @@ test("reference frame is scoped to its group and can be cleared", () => {
   controller.setReferenceFrameEnabled(false);
   assert.equal(controller.referenceFrameIndex(group), null);
   assert.deepEqual(events, ["filmstrip", "draw", "filmstrip", "draw"]);
+});
+
+test("reference frame serializes stable identity and restores its frozen snapshot", async () => {
+  const { controller, group, images, getReferenceFrame } = createFixture();
+  controller.setReferenceFrameEnabled(true);
+  const descriptor = controller.serializeReferenceFrame();
+  assert.deepEqual(descriptor, {
+    profile_id: "hero",
+    animation_id: "slash",
+    frame_index: 1,
+    transform: { scale: 2, offset: { x: 3, y: 4 } },
+  });
+
+  controller.setReferenceFrameEnabled(false);
+  const restored = await controller.restoreReferenceFrame(descriptor, [group], async () => images);
+  assert.equal(restored, true);
+  assert.equal(getReferenceFrame().group, group);
+  assert.equal(getReferenceFrame().image, images[1]);
+  assert.deepEqual(getReferenceFrame().transform, descriptor.transform);
+});
+
+test("reference frame rejects stale persisted identities without throwing", async () => {
+  const { controller, group, getReferenceFrame } = createFixture();
+  const restored = await controller.restoreReferenceFrame(
+    { profile_id: "hero", animation_id: "missing", frame_index: 99, transform: {} },
+    [group],
+    async () => [],
+  );
+  assert.equal(restored, false);
+  assert.equal(getReferenceFrame(), null);
 });

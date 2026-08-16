@@ -99,7 +99,7 @@ function runCutoutProductGoldenTests(dependencies) {
     .createHash("sha256")
     .update(Uint8Array.from(productGoldenBytes))
     .digest("hex");
-  assert.equal(productGoldenHash, "ae1425d2810d90ec5c8aefcea5d59cbcf714a61907bb1a630f808f2feabfec03");
+  assert.equal(productGoldenHash, "132bc4968e7446793fcae46c8198e098a0f12c8546941036b590f2ff864893da");
 }
 
 module.exports = { runCutoutProductGoldenTests };

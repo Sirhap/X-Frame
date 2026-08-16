@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { prepareCloudflareLanding } = require("./site_html");
+const { prepareCloudflareLanding, stripCloudflareLocalOnly } = require("./site_html");
 
 const projectRoot = path.resolve(__dirname, "../..");
 const protectedDist = path.join(projectRoot, "dist");
@@ -38,7 +38,9 @@ function buildSite() {
   fs.rmSync(siteDist, { force: true, recursive: true });
   fs.mkdirSync(siteDist, { recursive: true });
   fs.cpSync(protectedDist, siteDist, { recursive: true });
-  fs.renameSync(path.join(siteDist, "index.html"), path.join(siteDist, "workbench.html"));
+  const workbenchDist = path.join(siteDist, "workbench.html");
+  fs.renameSync(path.join(siteDist, "index.html"), workbenchDist);
+  fs.writeFileSync(workbenchDist, stripCloudflareLocalOnly(fs.readFileSync(workbenchDist, "utf8")));
   const factoryHtml = fs.readFileSync(factoryEntry, "utf8");
   fs.writeFileSync(path.join(siteDist, "index.html"), prepareCloudflareLanding(factoryHtml));
   fs.copyFileSync(path.join(publicRoot, "admin.html"), path.join(siteDist, "admin.html"));
@@ -58,6 +60,8 @@ function buildSite() {
   fs.copyFileSync(path.join(publicRoot, "landing.css"), path.join(siteDist, "landing.css"));
   fs.copyFileSync(path.join(publicRoot, "landing-admin.css"), path.join(siteDist, "landing-admin.css"));
   fs.copyFileSync(path.join(publicRoot, "landing-admin.js"), path.join(siteDist, "landing-admin.js"));
+  fs.copyFileSync(path.join(publicRoot, "factory_account.js"), path.join(siteDist, "factory_account.js"));
+  fs.copyFileSync(path.join(publicRoot, "admin_error_text.js"), path.join(siteDist, "admin_error_text.js"));
   fs.copyFileSync(path.join(publicRoot, "favicon.ico"), path.join(siteDist, "favicon.ico"));
   fs.cpSync(landingAssetsSource, path.join(siteDist, "assets/landing"), { recursive: true });
   fs.copyFileSync(staticHeadersSource, path.join(siteDist, "_headers"));

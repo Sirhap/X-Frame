@@ -79,7 +79,14 @@
           circular: currentAnimation?.loop === true,
         });
       } catch (error) {
-        setStatus(error?.code || error?.message || "ENGINE_EXECUTION_FAILED", "error");
+        const code = error?.code || error?.message || "ENGINE_EXECUTION_FAILED";
+        const mapped =
+          code === "ENGINE_MEMORY_EXHAUSTED"
+            ? text("engineMemoryExhausted")
+            : code === "ENGINE_EXECUTION_FAILED"
+              ? text("engineExecutionFailed")
+              : code;
+        setStatus(mapped, "error");
         return;
       }
       if (

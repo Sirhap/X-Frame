@@ -1,10 +1,13 @@
 (function attachBrowserRuntime(root, factory) {
   "use strict";
 
-  const api = factory(root);
+  const projectStorageModule =
+    root?.XSXBBrowserProjectStorage ||
+    (typeof module === "object" && module.exports ? require("./browser_project_storage") : null);
+  const api = factory(root, projectStorageModule);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.XSXBBrowserRuntime = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (root, projectStorageModule) => {
   "use strict";
 
   const FRAME_NAME_PADDING = 4;
@@ -13,6 +16,8 @@
     activeProjectId: "browser-session",
     projects: [{ id: "browser-session", label: "浏览器临时工作区", projectRoot: "" }],
   };
+  const projectStorage = projectStorageModule?.createStore({ indexedDBRef: root?.indexedDB });
+  let hydrationPromise = null;
 
   /** @param {unknown} value Cloneable value. @returns {any} Independent copy. */
   function cloneValue(value) {
@@ -208,9 +213,15 @@
       if (!data.startsWith("data:image/png")) throw new Error(`Frame ${index + 1} is missing PNG data.`);
       return {
         ...(sourceFrame || {}),
-        id: `frame_${String(index + 1).padStart(FRAME_NAME_PADDING, "0")}`,
+        id: String(
+          item.frameId ||
+            item.id ||
+            sourceFrame?.id ||
+            `frame_${String(index + 1).padStart(FRAME_NAME_PADDING, "0")}`,
+        ),
         name: String(item.name || sourceFrame?.name || `frame_${index + 1}.png`),
         path: data,
+        assetRevision: Math.max(0, Number(item.assetRevision ?? sourceFrame?.assetRevision) || 0),
         duration: Number(sourceFrame?.duration || 1),
       };
     });
@@ -383,6 +394,7 @@
       return {
         ...frame,
         path: data,
+        assetRevision: Math.max(0, Number(frame.assetRevision) || 0) + 1,
         width: Number(output?.canvas?.width || frame.width || 0),
         height: Number(output?.canvas?.height || frame.height || 0),
       };
@@ -392,6 +404,36 @@
       ...Array.from(premiumFeatures || []),
     ]);
     return group.frames;
+  }
+
+  /**
+   * Replaces one transient browser-animation frame without rebuilding its siblings.
+   * @param {object} group Active browser group.
+   * @param {number} frameIndex Zero-based target frame index.
+   * @param {{data?:string,canvas?:HTMLCanvasElement}} output Processed frame.
+   * @param {Iterable<string>} [premiumFeatures] Used Pro features.
+   * @returns {object} Updated frame.
+   */
+  function replaceSessionAnimationFrame(group, frameIndex, output, premiumFeatures = []) {
+    if (!group?.frames?.length || !Number.isInteger(frameIndex) || !group.frames[frameIndex]) {
+      throw new Error("The selected browser animation frame is unavailable.");
+    }
+    const data = String(output?.data || output?.canvas?.toDataURL?.("image/png") || "");
+    if (!data.startsWith("data:image/png")) throw new Error("The processed frame is missing PNG data.");
+    const frame = group.frames[frameIndex];
+    const updatedFrame = {
+      ...frame,
+      path: data,
+      assetRevision: Math.max(0, Number(frame.assetRevision) || 0) + 1,
+      width: Number(output?.canvas?.width || frame.width || 0),
+      height: Number(output?.canvas?.height || frame.height || 0),
+    };
+    group.frames = group.frames.map((candidate, index) => (index === frameIndex ? updatedFrame : candidate));
+    group.premiumFeatures = mergeFeatureIds([
+      ...Array.from(group.premiumFeatures || []),
+      ...Array.from(premiumFeatures || []),
+    ]);
+    return updatedFrame;
   }
 
   /** @param {object} record Indexed record. @param {string} prefix Group prefix. @returns {object} */
@@ -464,6 +506,25 @@
   }
 
   /**
+   * Adds current animation-group counts to browser project summaries.
+   * @param {Array<object>} projects Project registry entries.
+   * @param {Map<string,object>} configs Project configs keyed by project ID.
+   * @returns {Array<object>} Cloned project summaries with derived counts.
+   */
+  function projectSummaries(projects = sessionRegistry.projects, configs = sessionProjects) {
+    return Array.from(projects || [], (project) => {
+      const config = configs?.get?.(String(project?.id || ""));
+      const storedCount = Number(project?.animationGroupCount);
+      const animationGroupCount = Array.isArray(config?.groups)
+        ? config.groups.length
+        : Number.isFinite(storedCount) && storedCount >= 0
+          ? Math.floor(storedCount)
+          : 0;
+      return { ...cloneValue(project), animationGroupCount };
+    });
+  }
+
+  /**
    * Creates a transient project shell for UI components that expect project metadata.
    * @returns {object} Empty browser-session configuration.
    */
@@ -472,7 +533,7 @@
     return {
       activeProjectId: activeProject.id,
       activeProject,
-      projects: cloneValue(sessionRegistry.projects),
+      projects: projectSummaries([activeProject]),
       profiles: [{ id: "browser-character", label: "新角色", kind: "actor" }],
       groups: [],
       scenes: [],
@@ -488,6 +549,36 @@
     }
   }
 
+  /** Restores browser projects before the first configuration query. */
+  async function hydrateSessionProjects() {
+    if (hydrationPromise) return hydrationPromise;
+    hydrationPromise = (async () => {
+      try {
+        const snapshot = await projectStorage?.load();
+        if (snapshot) {
+          sessionRegistry.activeProjectId = String(snapshot.registry.activeProjectId || "browser-session");
+          sessionRegistry.projects = cloneValue(snapshot.registry.projects);
+          sessionProjects.clear();
+          for (const [projectId, config] of snapshot.projects) {
+            if (projectId && config) sessionProjects.set(String(projectId), cloneValue(config));
+          }
+        }
+      } catch (error) {
+        root?.console?.warn?.("Browser projects could not be restored; using the in-memory session.", error);
+      }
+      ensureSessionProjects();
+    })();
+    return hydrationPromise;
+  }
+
+  /** Persists the complete browser project registry atomically. */
+  async function persistSessionProjects() {
+    const saved = await projectStorage?.save(sessionRegistry, sessionProjects);
+    if (!saved) {
+      throw new Error("浏览器项目存储不可用，无法保证刷新后保留项目。请允许本站使用 IndexedDB。");
+    }
+  }
+
   /** Returns a cloned browser-session project config by stable identifier. */
   function getSessionProjectConfig(projectId) {
     ensureSessionProjects();
@@ -496,24 +587,33 @@
     return {
       ...cloneValue(config),
       activeProjectId: config.activeProject?.id || projectId,
-      projects: cloneValue(sessionRegistry.projects),
+      projects: projectSummaries(),
     };
   }
 
   /** Atomically replaces one browser-session project config. */
-  function commitSessionProjectConfig(projectId, nextConfig) {
+  async function commitSessionProjectConfig(projectId, nextConfig) {
     ensureSessionProjects();
     const id = String(projectId || "");
     const project = sessionRegistry.projects.find((entry) => entry.id === id);
     if (!project) throw new Error(`Project not found: ${id}`);
+    const previous = sessionProjects.has(id) ? cloneValue(sessionProjects.get(id)) : null;
     const committed = {
       ...cloneValue(nextConfig),
       activeProjectId: id,
       activeProject: cloneValue(project),
-      projects: cloneValue(sessionRegistry.projects),
+      projects: [],
     };
     sessionProjects.set(id, committed);
-    return getSessionProjectConfig(id);
+    committed.projects = projectSummaries();
+    try {
+      await persistSessionProjects();
+      return getSessionProjectConfig(id);
+    } catch (error) {
+      if (previous) sessionProjects.set(id, previous);
+      else sessionProjects.delete(id);
+      throw error;
+    }
   }
 
   /** Creates an empty browser-session project without persisting image data to disk. */
@@ -552,6 +652,7 @@
    * @returns {Promise<{ok:boolean,status:number,json:()=>Promise<object>,text:()=>Promise<string>}>} Config response.
    */
   async function fetchConfig(input = "/api/config") {
+    await hydrateSessionProjects();
     ensureSessionProjects();
     const parsed = new URL(String(input || "/api/config"), "https://xsxb.local");
     const requestedProjectId = parsed.searchParams.get("project") || sessionRegistry.activeProjectId;
@@ -643,9 +744,10 @@
       premiumFeatures: Array.from(metadata?.premiumFeatures || []),
       speed: Math.max(1, Math.min(120, Number(metadata?.fps || 12))),
       frames: items.map((item, index) => ({
-        id: `frame_${String(index + 1).padStart(FRAME_NAME_PADDING, "0")}`,
+        id: String(item.frameId || item.id || `frame_${String(index + 1).padStart(FRAME_NAME_PADDING, "0")}`),
         name: String(item.name || `frame_${index + 1}.png`),
         path: String(item.data),
+        assetRevision: Math.max(0, Number(item.assetRevision) || 0),
         duration: 1,
         width: 0,
         height: 0,
@@ -700,11 +802,13 @@
       frames: dependencies.formats?.frames !== false,
       spritesheet: dependencies.formats?.spritesheet === true,
     };
+    const recipe = metadata.exportRecipe || {};
+    const imageStem = safeFilename(recipe.imageName || metadata.animationName || "animation");
     const frameEntries = items.map((item, index) => {
       if (typeof item?.data !== "string" || !item.data.startsWith("data:image/png")) {
         throw new Error(`Frame ${index + 1} is missing processed PNG data.`);
       }
-      const frameName = `frame_${String(index + 1).padStart(FRAME_NAME_PADDING, "0")}.png`;
+      const frameName = `${imageStem}${index + 1}.png`;
       return { name: `frames/${frameName}`, data: item.data };
     });
     const manifest = {
@@ -767,7 +871,13 @@
       ) {
         throw new Error("Sprite-sheet export requires decoded frame canvases.");
       }
-      const plan = mediaExportCore.planSpriteSheets(items);
+      const plan = mediaExportCore.planSpriteSheets(items, {
+        columns: recipe.sheetColumns,
+        gap: recipe.sheetGap,
+        maxTextureSize: recipe.maxTextureSize,
+        fixedPageSize: recipe.sheetFixedSize,
+        powerOfTwo: recipe.sheetPowerOfTwo,
+      });
       const atlas = mediaExportCore.createAtlasManifest(metadata, plan);
       entries.push(
         ...(await mediaExportCore.renderSpriteSheetEntries(items, plan, {
@@ -775,7 +885,28 @@
           metadata,
           signal: dependencies.signal,
         })),
-        { name: "spritesheets/atlas.json", data: `${JSON.stringify(atlas, null, 2)}\n` },
+        ...(recipe.metadataJson !== false
+          ? [{ name: "spritesheets/atlas.json", data: `${JSON.stringify(atlas, null, 2)}\n` }]
+          : []),
+        ...(recipe.metadataGodot && typeof mediaExportCore.createGodotSpriteFrames === "function"
+          ? [
+              {
+                name: "spritesheets/godot_spriteframes.tres",
+                data: mediaExportCore.createGodotSpriteFrames(metadata, plan),
+              },
+            ]
+          : []),
+        ...(recipe.metadataUnity && typeof mediaExportCore.createUnityTpsheet === "function"
+          ? [
+              {
+                name: "spritesheets/unity.tpsheet.json",
+                data: `${JSON.stringify(mediaExportCore.createUnityTpsheet(metadata, plan), null, 2)}\n`,
+              },
+            ]
+          : []),
+        ...(recipe.metadataPlist && typeof mediaExportCore.createPlistAtlas === "function"
+          ? [{ name: "spritesheets/atlas.plist", data: mediaExportCore.createPlistAtlas(metadata, plan) }]
+          : []),
       );
     }
     throwIfExportCancelled(dependencies.signal);
@@ -944,7 +1075,9 @@
     getSessionProjectConfig,
     isEnabled,
     reorganizeSessionAnimation,
+    replaceSessionAnimationFrame,
     replaceSessionAnimationFrames,
     safeFilename,
+    projectSummaries,
   };
 });

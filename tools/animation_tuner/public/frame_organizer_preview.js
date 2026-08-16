@@ -69,9 +69,14 @@
         : -1;
       state.previewIndex = normalizedIndex >= 0 ? normalizedIndex : 0;
       const frame = normalizedIndex >= 0 ? frames[normalizedIndex] : null;
+      const allFrames = Array.from(state.frames || frames);
+      const selectedCount = allFrames.filter((candidate) => candidate.selected).length;
+      const sourceIndex = frame ? allFrames.indexOf(frame) : -1;
       elements.organizerPreviewFrame.textContent =
-        normalizedIndex >= 0
-          ? text("previewFrame", { current: normalizedIndex + 1, total: frames.length })
+        sourceIndex >= 0
+          ? selectedCount
+            ? `主选帧：第 ${sourceIndex + 1} 帧 · 共选中 ${selectedCount} 帧`
+            : text("previewFrame", { current: normalizedIndex + 1, total: frames.length })
           : text("previewFrameEmpty");
       drawFrameToCanvas(frame, elements.organizerPreview);
     }

@@ -14,9 +14,10 @@
     <link rel="stylesheet" href="/animation_factory-console.css" />
     <link rel="stylesheet" href="/animation_factory-sections.css" />
     <link rel="stylesheet" href="/animation_factory-responsive.css" />
+    <script src="/factory_account.js" defer></script>
   </head>
   <body>
-    <a class="skip-link" href="#factoryTools">跳到工具入口</a>
+    <a class="skip-link" href="#factoryTools" data-factory-copy="skipTools">跳到工具入口</a>
 
     <header class="factory-header">
       <a class="brand" href="/" aria-label="XSXB 动画工厂首页">
@@ -26,28 +27,47 @@
           <path d="M24 14v20M16 18l8 4 8-4" />
         </svg>
         <span>
-          <strong>动画工厂</strong>
+          <strong data-factory-copy="factoryName">动画工厂</strong>
           <small>XSXB / FRAME TUNER</small>
         </span>
       </a>
 
       <nav class="primary-nav" aria-label="主导航">
-        <a href="#factoryTools">工作台</a>
-        <a href="#workflow">生产流程</a>
-        <a href="#localFirst">本地处理</a>
+        <a href="#factoryTools" data-factory-copy="toolsNav">工作台</a>
+        <a href="#workflow" data-factory-copy="workflowNav">生产流程</a>
+        <a href="#localFirst" data-factory-copy="localNav">本地处理</a>
       </nav>
 
       <nav class="header-actions" aria-label="辅助导航">
-        <span class="local-status"><i aria-hidden="true"></i> LOCAL</span>
-        <a class="license-link" href="/admin/licenses" aria-label="许可证管理">
+        <span class="local-status"
+          ><i aria-hidden="true"></i> <span data-factory-copy="local">LOCAL</span></span
+        >
+        <div class="factoryLanguageButtons" role="group" aria-label="语言 / Language">
+          <button type="button" data-factory-language="zh" aria-pressed="true">中</button>
+          <button type="button" data-factory-language="en" aria-pressed="false">EN</button>
+        </div>
+        <button class="license-link" type="button" data-account-open aria-label="登录或注册">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="8" cy="15" r="4" />
             <path d="m11 12 8-8 2 2-2 2 1.5 1.5-2 2L17 10l-3 3" />
           </svg>
-          <span>许可证</span>
+          <span data-account-label>登录 / 注册</span>
+        </button>
+        <a
+          class="license-link factory-admin-link"
+          href="/admin/licenses"
+          data-administrator-console-link
+          aria-label="后台管理"
+          hidden
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3 4.5 6v5.5c0 4.7 3.1 8.6 7.5 9.5 4.4-.9 7.5-4.8 7.5-9.5V6z" />
+            <path d="M9 12h6M12 9v6" />
+          </svg>
+          <span>后台管理</span>
         </a>
-        <a class="header-button" href="/projects">
-          <span>动画项目</span>
+        <a class="header-button" href="/projects" aria-label="动画项目" title="动画项目">
+          <span data-factory-copy="projects">动画项目</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
         </a>
       </nav>
@@ -56,7 +76,10 @@
     <main>
       <section class="factory-hero" aria-labelledby="factoryTitle">
         <div class="hero-copy">
-          <p class="eyebrow"><span>FRAME PIPELINE / 01</span> LOCAL PRODUCTION CONSOLE</p>
+          <p class="eyebrow">
+            <span data-factory-copy="heroEyebrow">帧动画流程 / 01</span>
+            <span data-factory-copy="localConsole">本地制作控制台</span>
+          </p>
           <h1 id="factoryTitle">从原始素材，<br />到<span>可用动画。</span></h1>
           <p class="hero-description">
             继续一个动画项目，或先用快速工具单独处理素材。两种方式共享同一套本地处理能力，结果可以随时加入项目。
@@ -75,15 +98,15 @@
           </div>
           <dl class="hero-facts">
             <div>
-              <dt>INPUT</dt>
+              <dt data-factory-copy="input">输入</dt>
               <dd>图片序列 / 视频</dd>
             </div>
             <div>
-              <dt>PROCESSING</dt>
+              <dt data-factory-copy="processing">处理</dt>
               <dd>浏览器本地完成</dd>
             </div>
             <div>
-              <dt>OUTPUT</dt>
+              <dt data-factory-copy="output">输出</dt>
               <dd>PNG / SHEET / GIF / MOV</dd>
             </div>
           </dl>
@@ -93,7 +116,9 @@
           <div class="console-titlebar">
             <span class="window-controls" aria-hidden="true"><i></i><i></i><i></i></span>
             <code>PLAYER / SWORD_ATTACK / FRAME_05</code>
-            <span class="live-badge"><i aria-hidden="true"></i> LIVE</span>
+            <span class="live-badge"
+              ><i aria-hidden="true"></i> <span data-factory-copy="live">实时</span></span
+            >
           </div>
           <ol class="console-pipeline" aria-label="动画处理流程">
             <li><span>01</span> 导入</li>
@@ -120,7 +145,7 @@
             </div>
             <aside class="console-inspector" aria-label="当前帧参数">
               <header>
-                <span>TRANSFORM</span>
+                <span data-factory-copy="transform">变换</span>
                 <b>FRAME 05</b>
               </header>
               <dl>
@@ -142,7 +167,7 @@
                 </div>
               </dl>
               <div class="inspector-layers">
-                <p>COLLISION LAYERS</p>
+                <p data-factory-copy="collisionLayers">碰撞层</p>
                 <span><i class="layer-mint" aria-hidden="true"></i> 受击框 <b>ON</b></span>
                 <span><i class="layer-coral" aria-hidden="true"></i> 攻击框 <b>ON</b></span>
               </div>
@@ -156,7 +181,7 @@
             <li class="active" aria-current="true"><span>05</span><i></i></li>
           </ol>
           <div class="console-statusbar">
-            <span><i aria-hidden="true"></i> LOCAL PROCESSING</span>
+            <span><i aria-hidden="true"></i> <span data-factory-copy="localProcessing">本地处理</span></span>
             <code>09 FRAMES&nbsp;&nbsp;/&nbsp;&nbsp;22 MS&nbsp;&nbsp;/&nbsp;&nbsp;LOOP ON</code>
           </div>
         </div>
@@ -169,10 +194,14 @@
         <p><span>04</span> 导出即可复用的动画包</p>
       </section>
 
+      <p id="factoryNotice" class="factory-notice" hidden role="status"></p>
       <section id="factoryTools" class="tool-section" aria-labelledby="toolsTitle">
         <header class="section-heading">
           <div>
-            <p class="eyebrow"><span>FACTORY FLOOR / 02</span> SIX WORKSTATIONS</p>
+            <p class="eyebrow">
+              <span data-factory-copy="factoryFloor">工厂工作台 / 02</span>
+              <span data-workstation-count>SIX</span> <span data-factory-copy="workstations">个工作站</span>
+            </p>
             <h2 id="toolsTitle">今天，从哪道工序开始？</h2>
           </div>
           <p>已有素材时直接进入对应工具；需要完整调参和项目管理时，打开核心工作台。</p>
@@ -212,13 +241,13 @@
           <a class="tool-card tool-card-compact tool-import" href="/tools/import">
             <div class="tool-card-topline">
               <span class="tool-number">02</span>
-              <span class="tool-state">INGEST</span>
+              <span class="tool-state" data-factory-copy="ingest">导入</span>
             </div>
             <div class="tool-icon" aria-hidden="true">
               <svg viewBox="0 0 32 32"><path d="M6 22v5h20v-5M16 4v17m-7-7 7 7 7-7" /></svg>
             </div>
             <div class="tool-copy">
-              <p>IMAGE + VIDEO</p>
+              <p data-factory-copy="imageVideo">图片 + 视频</p>
               <h3>导入与预处理</h3>
               <span>导入图片序列或提取视频帧，检查画布并建立动画组。</span>
             </div>
@@ -231,7 +260,7 @@
           <a class="tool-card tool-card-compact tool-cutout" href="/tools/cutout">
             <div class="tool-card-topline">
               <span class="tool-number">03</span>
-              <span class="tool-state">ALPHA</span>
+              <span class="tool-state" data-factory-copy="alpha">抠图</span>
             </div>
             <div class="tool-icon" aria-hidden="true">
               <svg viewBox="0 0 32 32">
@@ -240,7 +269,7 @@
               </svg>
             </div>
             <div class="tool-copy">
-              <p>CHROMA + LUMA</p>
+              <p data-factory-copy="chromaLuma">色键 + 明度</p>
               <h3>批量抠图</h3>
               <span>移除背景、修复边缘和局部区域，再把参数传播到整组。</span>
             </div>
@@ -253,7 +282,7 @@
           <a class="tool-card tool-card-compact tool-organizer" href="/tools/organizer">
             <div class="tool-card-topline">
               <span class="tool-number">04</span>
-              <span class="tool-state">OUTPUT</span>
+              <span class="tool-state" data-factory-copy="output">输出</span>
             </div>
             <div class="tool-icon" aria-hidden="true">
               <svg viewBox="0 0 32 32">
@@ -262,7 +291,7 @@
               </svg>
             </div>
             <div class="tool-copy">
-              <p>SEQUENCE + EXPORT</p>
+              <p data-factory-copy="sequenceExport">序列 + 导出</p>
               <h3>整理与导出</h3>
               <span>排序、删帧、循环分析，并输出多种可复用动画格式。</span>
             </div>
@@ -275,7 +304,7 @@
           <a class="tool-card tool-card-compact tool-scatter" href="/tools/scatter-slice">
             <div class="tool-card-topline">
               <span class="tool-number">05</span>
-              <span class="tool-state">SLICE</span>
+              <span class="tool-state" data-factory-copy="slice">切片</span>
             </div>
             <div class="tool-icon" aria-hidden="true">
               <svg viewBox="0 0 32 32">
@@ -283,7 +312,7 @@
               </svg>
             </div>
             <div class="tool-copy">
-              <p>CONNECTED COMPONENTS</p>
+              <p data-factory-copy="connectedComponents">连通组件</p>
               <h3>零散切图</h3>
               <span>识别散落在图片中的独立元素，预览、筛选并重新拼接为规则精灵表。</span>
             </div>
@@ -297,7 +326,7 @@
           <a class="tool-card tool-card-compact tool-watermark" href="/tools/watermark">
             <div class="tool-card-topline">
               <span class="tool-number">06</span>
-              <span class="tool-state">VIDEO REPAIR</span>
+              <span class="tool-state" data-factory-copy="videoRepair">视频修复</span>
             </div>
             <div class="tool-icon" aria-hidden="true">
               <svg viewBox="0 0 32 32">
@@ -305,7 +334,7 @@
               </svg>
             </div>
             <div class="tool-copy">
-              <p>FFMPEG + LOCAL</p>
+              <p data-factory-copy="ffmpegLocal">FFmpeg + 本地</p>
               <h3>视频去水印</h3>
               <span>框选带时间范围的水印区域，使用快速矩形或智能白印修复并导出视频。</span>
             </div>
@@ -320,7 +349,10 @@
 
       <section id="workflow" class="workflow-section" aria-labelledby="workflowTitle">
         <header class="workflow-heading">
-          <p class="eyebrow"><span>PIPELINE / 03</span> ONE CONTINUOUS WORKFLOW</p>
+          <p class="eyebrow">
+            <span data-factory-copy="pipeline">流程 / 03</span>
+            <span data-factory-copy="continuousWorkflow">连续工作流</span>
+          </p>
           <h2 id="workflowTitle">一条流水线，<br />四次明确交付。</h2>
         </header>
         <ol class="workflow-list">
@@ -362,7 +394,10 @@
           <i></i>
         </div>
         <div class="local-copy">
-          <p class="eyebrow"><span>LOCAL FIRST / 04</span> YOUR ASSETS STAY YOURS</p>
+          <p class="eyebrow">
+            <span data-factory-copy="localFirstEyebrow">本地优先 / 04</span>
+            <span data-factory-copy="assetsStayYours">素材留在你的设备</span>
+          </p>
           <h2 id="localTitle">素材留在本机，<br />创作路径更短。</h2>
           <p>网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理结果直接下载。</p>
           <ul>
@@ -392,9 +427,267 @@
       <nav aria-label="页脚导航">
         <a href="#factoryTools">工作台</a>
         <a href="#workflow">流程</a>
-        <a href="/admin/licenses">许可证</a>
+        <button type="button" data-account-open><span data-account-label>登录 / 注册</span></button>
       </nav>
-      <p>LOCAL-FIRST · OPEN WORKFLOW</p>
+      <p data-factory-copy="footerTagline">本地优先 · 开放工作流</p>
     </footer>
+    <section
+      id="factoryAccountDialog"
+      class="factory-account-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="factoryAccountTitle"
+      hidden
+    >
+      <div class="factory-account-card">
+        <div class="factory-account-rail" aria-hidden="true">
+          <b>ID</b><span data-factory-copy="sessionLength">7 天会话</span>
+        </div>
+        <div class="factory-account-body">
+          <button
+            id="factoryAccountClose"
+            class="factory-account-close"
+            type="button"
+            aria-label="关闭"
+            data-factory-aria="close"
+          >
+            ×
+          </button>
+          <p class="factory-account-kicker" data-factory-copy="secureAccess">账户 / 安全访问</p>
+          <h2 id="factoryAccountTitle" data-factory-copy="signIn">登录 / 注册</h2>
+          <p id="factoryAccountMessage" data-factory-copy="accountHint">
+            输入邮箱/用户名和密码。需要安全验证时，下一步才会显示验证码。
+          </p>
+          <div id="factoryAccountSummary" class="factory-account-summary" hidden>
+            <span id="factoryAccountPlan" data-factory-copy="account">账户</span>
+            <strong id="factoryAccountIdentity"></strong>
+            <small id="factoryAccountEntitlement"></small>
+          </div>
+          <form id="factoryAccountForm" class="factory-account-form">
+            <div id="factoryAccountCredentials">
+              <label for="factoryAccountEmail" data-factory-copy="emailLabel">邮箱/用户名</label>
+              <input
+                id="factoryAccountEmail"
+                type="text"
+                autocomplete="username"
+                maxlength="254"
+                placeholder="邮箱地址或用户名"
+                data-factory-placeholder="emailPlaceholder"
+                required
+              />
+              <label for="factoryAccountPassword" data-factory-copy="passwordLabel">密码</label>
+              <input
+                id="factoryAccountPassword"
+                type="password"
+                autocomplete="current-password"
+                minlength="8"
+                maxlength="256"
+                placeholder="输入密码"
+                data-factory-placeholder="passwordPlaceholder"
+                required
+              />
+              <button
+                id="factoryAccountContinue"
+                class="factory-account-primary"
+                type="submit"
+                data-factory-copy="continue"
+              >
+                继续
+              </button>
+            </div>
+            <div id="factoryAccountChallenge" hidden>
+              <label id="factoryAccountCodeLabel" for="factoryAccountCode" data-factory-copy="emailCode">
+                邮箱验证码
+              </label>
+              <input
+                id="factoryAccountCode"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="6"
+                pattern="[0-9]{6}"
+                placeholder="000000"
+              />
+              <button
+                id="factoryAccountVerify"
+                class="factory-account-primary"
+                type="submit"
+                data-factory-copy="verify"
+              >
+                验证并登录
+              </button>
+              <button id="factoryAccountBack" type="button" data-factory-copy="back">返回修改账号</button>
+            </div>
+          </form>
+          <div id="factoryAccountActions" class="factory-account-actions" hidden>
+            <a href="/projects" data-factory-copy="enterWorkbench">进入工作台</a>
+            <button id="factoryAccountLogout" type="button" data-factory-copy="signOut">退出登录</button>
+          </div>
+          <p id="factoryAccountStatus" class="factory-account-status" role="status"></p>
+        </div>
+      </div>
+    </section>
+    <script>
+      (() => {
+        const languageKey = "xsxbFrameTuner.language";
+        const explicitKey = "xsxbFrameTuner.languageExplicit";
+        const buttons = Array.from(document.querySelectorAll("[data-factory-language]"));
+        const copy = {
+          zh: {
+            skipTools: "跳到工具入口",
+            factoryName: "动画工厂",
+            toolsNav: "工作台",
+            workflowNav: "生产流程",
+            localNav: "本地处理",
+            local: "本地",
+            projects: "动画项目",
+            heroEyebrow: "帧动画流程 / 01",
+            localConsole: "本地制作控制台",
+            input: "输入",
+            processing: "处理",
+            output: "输出",
+            live: "实时",
+            transform: "变换",
+            collisionLayers: "碰撞层",
+            localProcessing: "本地处理",
+            factoryFloor: "工厂工作台 / 02",
+            workstations: "个工作站",
+            ingest: "导入",
+            imageVideo: "图片 + 视频",
+            alpha: "抠图",
+            chromaLuma: "色键 + 明度",
+            sequenceExport: "序列 + 导出",
+            slice: "切片",
+            connectedComponents: "连通组件",
+            videoRepair: "视频修复",
+            ffmpegLocal: "FFmpeg + 本地",
+            pipeline: "流程 / 03",
+            continuousWorkflow: "连续工作流",
+            localFirstEyebrow: "本地优先 / 04",
+            assetsStayYours: "素材留在你的设备",
+            footerTagline: "本地优先 · 开放工作流",
+            localWatermarkNotice:
+              "视频去水印仅在本地桌面版可用。云端站点没有 FFmpeg 处理后端，因此不会打开该工具。",
+            sessionLength: "7 天会话",
+            secureAccess: "账户 / 安全访问",
+            account: "账户",
+            close: "关闭",
+            signIn: "登录 / 注册",
+            accountHint: "输入邮箱/用户名和密码。需要安全验证时，下一步才会显示验证码。",
+            emailLabel: "邮箱/用户名",
+            emailPlaceholder: "邮箱地址或用户名",
+            passwordLabel: "密码",
+            passwordPlaceholder: "输入密码",
+            continue: "继续",
+            emailCode: "邮箱验证码",
+            verify: "验证并登录",
+            back: "返回修改账号",
+            enterWorkbench: "进入工作台",
+            signOut: "退出登录",
+          },
+          en: {
+            skipTools: "Skip to tools",
+            factoryName: "Animation Factory",
+            toolsNav: "Workbench",
+            workflowNav: "Workflow",
+            localNav: "Local processing",
+            local: "LOCAL",
+            projects: "Animation projects",
+            heroEyebrow: "FRAME PIPELINE / 01",
+            localConsole: "LOCAL PRODUCTION CONSOLE",
+            input: "INPUT",
+            processing: "PROCESSING",
+            output: "OUTPUT",
+            live: "LIVE",
+            transform: "TRANSFORM",
+            collisionLayers: "COLLISION LAYERS",
+            localProcessing: "LOCAL PROCESSING",
+            factoryFloor: "FACTORY FLOOR / 02",
+            workstations: "WORKSTATIONS",
+            ingest: "INGEST",
+            imageVideo: "IMAGE + VIDEO",
+            alpha: "ALPHA",
+            chromaLuma: "CHROMA + LUMA",
+            sequenceExport: "SEQUENCE + EXPORT",
+            slice: "SLICE",
+            connectedComponents: "CONNECTED COMPONENTS",
+            videoRepair: "VIDEO REPAIR",
+            ffmpegLocal: "FFMPEG + LOCAL",
+            pipeline: "PIPELINE / 03",
+            continuousWorkflow: "ONE CONTINUOUS WORKFLOW",
+            localFirstEyebrow: "LOCAL FIRST / 04",
+            assetsStayYours: "YOUR ASSETS STAY YOURS",
+            footerTagline: "LOCAL-FIRST · OPEN WORKFLOW",
+            localWatermarkNotice:
+              "Video watermark repair is available in the local desktop app only. This cloud site has no FFmpeg backend, so that tool is not opened.",
+            sessionLength: "7 DAY SESSION",
+            secureAccess: "ACCOUNT / SECURE ACCESS",
+            account: "ACCOUNT",
+            close: "Close",
+            signIn: "Sign in / Register",
+            accountHint:
+              "Enter your email/username and password. A verification code appears only when extra security is required.",
+            emailLabel: "Email / username",
+            emailPlaceholder: "Email address or username",
+            passwordLabel: "Password",
+            passwordPlaceholder: "Enter password",
+            continue: "Continue",
+            emailCode: "Email verification code",
+            verify: "Verify and sign in",
+            back: "Edit account details",
+            enterWorkbench: "Open workbench",
+            signOut: "Sign out",
+          },
+        };
+        const readLanguage = () => {
+          try {
+            const explicit = localStorage.getItem(explicitKey) === "true";
+            return explicit && localStorage.getItem(languageKey) === "en" ? "en" : "zh";
+          } catch (_error) {
+            return "zh";
+          }
+        };
+        const sync = (language) => {
+          document.documentElement.lang = language === "en" ? "en" : "zh-CN";
+          const table = copy[language] || copy.zh;
+          for (const node of document.querySelectorAll("[data-factory-copy]")) {
+            const value = table[node.dataset.factoryCopy];
+            if (value) node.textContent = value;
+          }
+          for (const node of document.querySelectorAll("[data-factory-placeholder]")) {
+            const value = table[node.dataset.factoryPlaceholder];
+            if (value) node.placeholder = value;
+          }
+          for (const node of document.querySelectorAll("[data-factory-aria]")) {
+            const value = table[node.dataset.factoryAria];
+            if (value) node.setAttribute("aria-label", value);
+          }
+          const workstationCount = document.querySelector("[data-workstation-count]");
+          if (workstationCount) workstationCount.textContent = language === "en" ? "SIX" : "六个";
+          for (const button of buttons) {
+            button.setAttribute("aria-pressed", String(button.dataset.factoryLanguage === language));
+          }
+          const notice = document.getElementById("factoryNotice");
+          if (notice) {
+            const showNotice = new URLSearchParams(location.search).get("notice") === "local-watermark";
+            notice.hidden = !showNotice;
+            notice.textContent = showNotice ? table.localWatermarkNotice || "" : "";
+          }
+        };
+        sync(readLanguage());
+        for (const button of buttons) {
+          button.addEventListener("click", () => {
+            const language = button.dataset.factoryLanguage === "en" ? "en" : "zh";
+            try {
+              localStorage.setItem(languageKey, language);
+              localStorage.setItem(explicitKey, "true");
+            } catch (_error) {
+              // The selection remains available for this page when storage is restricted.
+            }
+            sync(language);
+          });
+        }
+      })();
+    </script>
   </body>
 </html>

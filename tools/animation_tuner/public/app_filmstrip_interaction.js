@@ -48,6 +48,7 @@
 
     const getCurrentGroup = state.getCurrentGroup || (() => null);
     const getSelectedFrame = state.getSelectedFrame || (() => 0);
+    const getPlaying = state.getPlaying || (() => false);
     const getSelectedFrames = state.getSelectedFrames || (() => new Set());
     const getSelectedAttachmentId = state.getSelectedAttachmentId || (() => "");
     const setSelectedAttachmentId = state.setSelectedAttachmentId || (() => {});
@@ -489,7 +490,9 @@
         const inSelection = isCurrent && getSelectedFrames().has(index) && !getSelectedAttachmentId();
         item.setAttribute("aria-selected", String(inSelection));
         const audioBinding = frameAudioBinding(index, group);
-        item.className = `thumb ${inSelection ? "selected" : ""} ${isCurrent && index === getSelectedFrame() ? "primary" : ""} ${isReferenceFrame(index, group) ? "reference" : ""} ${!isCurrent ? "chained" : ""} ${store[tuningFrameKey(index, group)] ? "overridden" : ""} ${playback.disabled ? "disabled" : ""} ${audioBinding ? "hasSfx" : ""}`;
+        const isPlayhead = isCurrent && getPlaying() && index === getSelectedFrame();
+        item.className = `thumb ${inSelection ? "selected" : ""} ${isCurrent && index === getSelectedFrame() ? "primary" : ""} ${isPlayhead ? "playhead" : ""} ${isReferenceFrame(index, group) ? "reference" : ""} ${!isCurrent ? "chained" : ""} ${store[tuningFrameKey(index, group)] ? "overridden" : ""} ${playback.disabled ? "disabled" : ""} ${audioBinding ? "hasSfx" : ""}`;
+        if (isPlayhead) item.setAttribute("aria-current", "true");
         const sourceLabel =
           Array.isArray(group.sourceFrameIndices) && group.sourceFrameIndices.length
             ? ` (src ${sourceFrameIndex(index, group) + 1})`

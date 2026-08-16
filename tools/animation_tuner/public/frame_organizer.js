@@ -20,6 +20,7 @@
    *   onOpen?:(mode:"edit"|"import")=>void,
    *   onClose?:()=>void,
    *   onStatus?:(message:string)=>void
+   *   onWorksetChanged?:(workset:{name:string,mode:string,frames:object[]})=>void
    * }} hooks Host integration hooks.
    * @returns {{open:(options?:object)=>Promise<void>,openImport:(options?:object)=>Promise<void>,close:(options?:object)=>void,requestClose:(options?:object)=>Promise<boolean>,isOpen:()=>boolean,getMode:()=>"edit"|"import",hasUnsavedChanges:()=>boolean,setLanguage:(language:string)=>void}}
    */
@@ -59,20 +60,23 @@
     const ids = [
       "organizerOpen",
       "organizerModal",
-      "organizerCopyLink",
       "organizerHome",
       "organizerClose",
       "organizerTitle",
       "organizerSubtitle",
       "organizerImportSetup",
+      "organizerToggleImportSetup",
+      "organizerMoreTools",
       "organizerProjectSelect",
       "organizerProjectNameField",
       "organizerProjectName",
       "organizerProfileName",
       "organizerAnimationName",
-      "organizerImportFps",
+      "organizerCreationMode",
+      "organizerCreationModeField",
       "organizerAnimationType",
       "organizerInvert",
+      "organizerInvertSelection",
       "organizerReduce",
       "organizerReduceStep",
       "organizerUndoDelete",
@@ -155,6 +159,7 @@
       "organizerApply",
       "organizerGrid",
       "organizerStatus",
+      "organizerStatusDismiss",
       "organizerCount",
       "organizerSelection",
       "organizerPreview",
@@ -166,12 +171,92 @@
       "mediaExportDialog",
       "mediaExportClose",
       "mediaExportFrameCount",
-      "mediaExportFps",
       "mediaExportCanvas",
+      "mediaExportFilename",
+      "mediaExportUseSourceName",
       "mediaExportFrames",
       "mediaExportSheet",
       "mediaExportGif",
       "mediaExportMov",
+      "mediaExportMp4",
+      "mediaExportPreset",
+      "mediaExportCanvasMode",
+      "mediaExportWidth",
+      "mediaExportHeight",
+      "mediaExportFit",
+      "mediaExportAnchor",
+      "mediaExportScaleXRange",
+      "mediaExportScaleX",
+      "mediaExportScaleYRange",
+      "mediaExportScaleY",
+      "mediaExportScaleLinked",
+      "mediaExportOffsetXRange",
+      "mediaExportOffsetX",
+      "mediaExportOffsetYRange",
+      "mediaExportOffsetY",
+      "mediaExportPadding",
+      "mediaExportExtrude",
+      "mediaExportInterpolation",
+      "mediaExportBackground",
+      "mediaExportBackgroundColor",
+      "mediaExportSpeed",
+      "mediaExportColumns",
+      "mediaExportGap",
+      "mediaExportMaxTexture",
+      "mediaExportCustomSize",
+      "mediaExportOriginalResolution",
+      "mediaExportFitComplete",
+      "mediaExportFillCanvas",
+      "mediaExportOffsetXMin",
+      "mediaExportOffsetXMax",
+      "mediaExportOffsetYMin",
+      "mediaExportOffsetYMax",
+      "mediaExportFillColorRow",
+      "mediaExportFillColor",
+      "mediaExportFillColorValue",
+      "mediaExportFillColorReset",
+      "mediaExportSheetSettings",
+      "mediaExportZipSettings",
+      "mediaExportGifSettings",
+      "mediaExportMp4Settings",
+      "mediaExportPowerOfTwo",
+      "mediaExportTrimTransparent",
+      "mediaExportColumnsAuto",
+      "mediaExportColumnsTotal",
+      "mediaExportImageName",
+      "mediaExportImageNameHint",
+      "mediaExportMetadataJson",
+      "mediaExportMetadataGodot",
+      "mediaExportMetadataUnity",
+      "mediaExportMetadataPlist",
+      "mediaExportQuality",
+      "mediaExportEstimate",
+      "mediaExportZipImageName",
+      "mediaExportZipImageNameHint",
+      "mediaExportZipQuality",
+      "mediaExportGifLoop",
+      "mediaExportGifFpsRange",
+      "mediaExportGifFps",
+      "mediaExportGifAlphaRange",
+      "mediaExportGifAlpha",
+      "mediaExportGifPalette",
+      "mediaExportGifDenoise",
+      "mediaExportGifCompression",
+      "mediaExportGifSoften",
+      "mediaExportMp4FpsRange",
+      "mediaExportMp4Fps",
+      "mediaExportMp4Quality",
+      "mediaExportPreviewTitle",
+      "mediaExportPreviewSize",
+      "mediaExportPreviewRefresh",
+      "mediaExportPreviewCanvas",
+      "mediaExportPreviewPrevious",
+      "mediaExportPreviewPage",
+      "mediaExportPreviewNext",
+      "mediaExportPreviewFrame",
+      "mediaExportPreviewAnimation",
+      "mediaExportPreviewSheet",
+      "mediaExportPreviewMeta",
       "mediaExportLocalHint",
       "mediaExportStatus",
       "mediaExportDownloads",
@@ -189,9 +274,14 @@
       previewIndex: 0,
       previewTimer: 0,
       viewMode: "edited",
+      showImportSetup: true,
+      showMoreTools: false,
+      lastExpandedPanel: "",
+      hadFrames: false,
       busy: false,
       sequenceAnalyzing: false,
       animationName: "",
+      animationNameAuto: true,
       videoUrl: "",
       videoFileName: "",
       videoDuration: 0,
@@ -276,8 +366,27 @@
       renderPreview,
       restartPreview,
       setStatus,
+      onWorksetChanged: (frames) =>
+        hooks.onWorksetChanged?.({ name: state.animationName || "临时工作集", mode: state.mode, frames }),
     });
     const { renderCounts, renderGrid, selectFrame, selectIndexes } = gridController;
+
+    /**
+     * Uses an imported source filename as the new-animation default while preserving a user override.
+     * @param {string} filename Imported local filename.
+     * @returns {void}
+     */
+    function setDefaultAnimationName(filename) {
+      if (state.mode !== "import" || !state.animationNameAuto) return;
+      const basename =
+        String(filename || "")
+          .trim()
+          .split(/[\\/]/)
+          .at(-1) || "";
+      const extensionIndex = basename.lastIndexOf(".");
+      const animationName = extensionIndex > 0 ? basename.slice(0, extensionIndex) : basename;
+      if (animationName) elements.organizerAnimationName.value = animationName;
+    }
 
     const videoImporter = videoModule.createController({
       elements,
@@ -289,6 +398,7 @@
       renderGrid,
       restartPreview,
       setStatus,
+      setDefaultAnimationName,
     });
     const imageImporter = imageImportModule.createController({
       elements,
@@ -301,6 +411,7 @@
       renderGrid,
       restartPreview,
       setStatus,
+      setDefaultAnimationName,
     });
     const loopFinder = loopModule.createController({
       elements,
@@ -372,6 +483,7 @@
     function setStatus(message, tone = "idle") {
       elements.organizerStatus.textContent = message;
       elements.organizerStatus.dataset.tone = tone;
+      elements.organizerStatusDismiss.hidden = tone !== "error";
       hooks.onStatus?.(message);
     }
 
@@ -416,6 +528,7 @@
         ...orderMetadata,
         originalCanvas,
         editedCanvas: originalCanvas,
+        hasEditedResult: false,
         included: true,
         selected: false,
         flipped: false,
@@ -506,14 +619,18 @@
         setStatus(error.message, "error");
         return;
       }
-      state.frames = animation.frames.map((frame, index) =>
-        createFrame(animation.images[index], {
+      state.frames = animation.frames.map((frame, index) => {
+        const organizerFrame = createFrame(animation.images[index], {
           sourceIndex: index,
           originalIndex: index,
           sourcePath: frame.path,
           name: frame.name,
-        }),
-      );
+        });
+        organizerFrame.uid = String(frame.id || organizerFrame.uid);
+        organizerFrame.assetRevision = Math.max(0, Number(frame.assetRevision) || 0);
+        organizerFrame.hasEditedResult = organizerFrame.assetRevision > 0;
+        return organizerFrame;
+      });
       state.baselineFrameIds = state.frames.map((frame) => frame.uid);
       state.animationName = animation.name;
       state.anchorIndex = -1;
@@ -619,6 +736,7 @@
         context.scale(-1, 1);
         context.drawImage(source, 0, 0);
         frame.editedCanvas = canvas;
+        frame.hasEditedResult = true;
         frame.flipped = !frame.flipped;
         frame.signature = null;
         frame.analysisRevision = Number(frame.analysisRevision || 0) + 1;
@@ -662,12 +780,28 @@
         const height = Math.max(0, ...frames.map((frame) => Number(frame.editedCanvas?.height) || 0));
         return {
           frameCount: frames.length,
-          fps:
-            state.mode === "import"
-              ? Number(elements.organizerImportFps.value || 12)
-              : Number(animation.fps || 12),
+          fps: state.mode === "import" ? 12 : Number(animation.fps || 12),
           canvas: width && height ? `${width}×${height}` : "—",
+          width,
+          height,
+          name:
+            (state.mode === "import" ? state.animationName : animation.name) ||
+            frames[0]?.name?.replace(/\.[^.]+$/, "") ||
+            "animation",
         };
+      },
+      getPreviewItems: () => {
+        const animation = hooks.getCurrentAnimation?.() || {};
+        const fallbackDurationMs = Math.round(1000 / Number(animation.fps || 12));
+        return includedFrames().map((frame) => ({
+          name: frame.name,
+          image: frame.editedCanvas,
+          width: frame.editedCanvas.width,
+          height: frame.editedCanvas.height,
+          frameId: frame.uid,
+          assetRevision: Math.max(0, Number(frame.assetRevision) || 0),
+          durationMs: Number(frame.durationMs || frame.duration || 0) || fallbackDurationMs,
+        }));
       },
       onExport: (options) => exportIncludedFrames(options),
       fetchImpl: root.fetch,
@@ -698,6 +832,27 @@
       elements.organizerFileInput.focus();
     }
 
+    /** Opens the current animation and then presents the shared multi-format export dialog. */
+    async function openCurrentExport() {
+      await open({ syncRoute: false });
+      mediaExportDialog.open();
+    }
+
+    /** Mounts the shared export workbench directly inside the delivery page. */
+    async function mountCurrentExport(mount) {
+      if (!mount?.append) throw new TypeError("An export page mount is required.");
+      state.mode = "edit";
+      await loadCurrentAnimation();
+      mediaExportDialog.open({ mount });
+    }
+
+    /** Mounts an explicit temporary workset instead of relying on retained organizer state. */
+    function mountLoadedExport(mount, workset) {
+      if (!mount?.append) throw new TypeError("An export page mount is required.");
+      installTemporaryWorkset(workset);
+      mediaExportDialog.open({ mount });
+    }
+
     /**
      * Opens a blank organizer workset for creating a new animation.
      * @param {{syncRoute?:boolean}} [options] Route synchronization behavior.
@@ -710,10 +865,13 @@
       state.importOrderStrategy = sequenceOrder.ORDER_STRATEGIES.FILENAME;
       state.nextImportBatchIndex = 0;
       state.animationName = "";
+      state.animationNameAuto = true;
       state.anchorIndex = -1;
       state.previewIndex = 0;
       state.deletedFramesSnapshot = null;
       state.premiumFeatures.clear();
+      elements.organizerCreationModeField.hidden = true;
+      elements.organizerCreationMode.value = "merge";
       elements.organizerUndoDelete.hidden = true;
       elements.organizerModal.hidden = false;
       uiController.setEditorInert(true);
@@ -725,6 +883,56 @@
       restartPreview();
       setStatus(text("importReady"));
       elements.organizerProjectSelect.focus();
+    }
+
+    /**
+     * Installs retained Canvas resources into organizer state without presenting its page.
+     * @param {{name?:string,frames:Array<{id?:string,name?:string,image:CanvasImageSource,enabled?:boolean}>}} workset Temporary workset.
+     * @returns {void}
+     */
+    function installTemporaryWorkset(workset) {
+      if (!Array.isArray(workset?.frames) || !workset.frames.length) {
+        throw new Error("Temporary workset has no exportable frames.");
+      }
+      state.mode = "import";
+      state.animationName = String(workset?.name || "临时工作集");
+      state.animationNameAuto = false;
+      state.frames = Array.from(workset?.frames || []).map((item, index) => {
+        const frame = createFrame(item.image, {
+          name: item.name || `frame_${String(index + 1).padStart(4, "0")}.png`,
+          imported: true,
+          reuseCanvas: item.image instanceof HTMLCanvasElement,
+          sourceIndex: index,
+        });
+        frame.uid = String(item.id || frame.uid);
+        frame.included = item.enabled !== false;
+        frame.hasEditedResult = Number(item.assetRevision || 0) > 0;
+        frame.assetRevision = Math.max(0, Number(item.assetRevision) || 0);
+        frame.groupId = String(item.groupId || "");
+        frame.groupName = String(item.groupName || "");
+        return frame;
+      });
+      const groupCount = new Set(state.frames.map((frame) => frame.groupId).filter(Boolean)).size;
+      elements.organizerCreationModeField.hidden = groupCount < 2;
+      elements.organizerCreationMode.value = groupCount > 1 ? "groups" : "merge";
+      state.showImportSetup = groupCount > 1;
+      if (groupCount > 1) state.hadFrames = true;
+      state.previewIndex = 0;
+      state.anchorIndex = -1;
+      renderGrid();
+      restartPreview();
+      setStatus(text("loaded", { name: state.animationName, count: state.frames.length }), "success");
+    }
+
+    /**
+     * Restores a temporary image workset without re-decoding its retained Canvas resources.
+     * @param {{name?:string,frames:Array<{id?:string,name?:string,image:CanvasImageSource,enabled?:boolean}>}} workset Temporary workset.
+     * @param {{syncRoute?:boolean}} [options] Route synchronization behavior.
+     * @returns {Promise<void>}
+     */
+    async function openWorkset(workset, options = {}) {
+      await openImport(options);
+      installTemporaryWorkset(workset);
     }
 
     /**
@@ -755,6 +963,7 @@
         const confirmed = await uiController.requestConfirmation(text("discardConfirm"), [], {
           title: text("discardTitle"),
           confirmLabel: text("discardAccept"),
+          cancelLabel: text("discardStay"),
           tone: "danger",
         });
         if (!confirmed) return false;
@@ -800,7 +1009,11 @@
     renderCounts();
     return {
       open,
+      openCurrentExport,
+      mountCurrentExport,
+      mountLoadedExport,
       openImport,
+      openWorkset,
       close,
       requestClose,
       isOpen: () => !elements.organizerModal.hidden,

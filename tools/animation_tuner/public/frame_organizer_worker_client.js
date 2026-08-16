@@ -42,10 +42,15 @@
     if (!ArrayBuffer.isView(source)) {
       throw new TypeError("Loop analysis requires typed-array frame signatures.");
     }
-    const width = Number.isFinite(signature?.width)
-      ? Math.max(1, Math.round(signature.width))
-      : Math.max(1, Math.round(source.length / 4));
-    const height = Number.isFinite(signature?.height) ? Math.max(1, Math.round(signature.height)) : 1;
+    const hasCompleteRgbaPixels = source.length > 0 && source.length % 4 === 0;
+    const pixelCount = source.length / 4;
+    const inferredWidth = Math.max(1, Math.round(pixelCount));
+    let width = Number.isFinite(signature?.width) ? Math.max(1, Math.round(signature.width)) : inferredWidth;
+    let height = Number.isFinite(signature?.height) ? Math.max(1, Math.round(signature.height)) : 1;
+    if (hasCompleteRgbaPixels && width * height !== pixelCount) {
+      width = pixelCount;
+      height = 1;
+    }
     return { data: new Uint8Array(source), width, height };
   }
 

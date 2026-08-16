@@ -59,7 +59,8 @@
 }
 
 .number {
-  grid-template-columns: 86px 1fr;
+  min-width: 0;
+  grid-template-columns: minmax(0, 86px) minmax(0, 1fr);
   align-items: center;
 }
 
@@ -280,7 +281,7 @@
 
 .numberStepper {
   display: grid;
-  grid-template-columns: 30px minmax(48px, 1fr) 30px;
+  grid-template-columns: 26px minmax(0, 1fr) 26px;
   gap: 5px;
   min-width: 0;
 }
@@ -467,6 +468,7 @@ button.save {
 }
 
 button:disabled {
-  opacity: 0.45;
-  cursor: default;
+  color: var(--muted);
+  opacity: 0.72;
+  cursor: not-allowed;
 }

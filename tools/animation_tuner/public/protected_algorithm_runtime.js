@@ -17,6 +17,7 @@
     "ENGINE_INVALID_CAPABILITIES",
     "ENGINE_INVALID_CANCELLATION_ID",
     "ENGINE_INVALID_REQUEST",
+    "ENGINE_MEMORY_EXHAUSTED",
     "ENGINE_PRODUCTION_DEPENDENCY_MISSING",
     "ENGINE_TRANSPORT_FAILED",
     "ENGINE_UNSUPPORTED_OPERATION",
@@ -32,7 +33,7 @@
      */
     constructor(code, message = code, cause) {
       super(message, cause === undefined ? undefined : { cause });
-      this.name = "ProtectedAlgorithmError";
+      this.name = code === "ENGINE_CANCELLED" ? "AbortError" : "ProtectedAlgorithmError";
       this.code = code;
     }
   }
@@ -52,8 +53,25 @@
     if (!(data instanceof Uint8Array) && !(data instanceof Uint8ClampedArray)) {
       throw new ProtectedAlgorithmError("ENGINE_INVALID_REQUEST");
     }
-    const expectedLength = width * height * 4;
-    if (!Number.isSafeInteger(expectedLength) || data.length !== expectedLength) {
+    const pixelCount = width * height;
+    const expectedRgba = pixelCount * 4;
+    const expectedRgb = pixelCount * 3;
+    if (!Number.isSafeInteger(expectedRgba)) {
+      throw new ProtectedAlgorithmError("ENGINE_INVALID_REQUEST");
+    }
+    if (data.length === expectedRgb) {
+      const rgba = new Uint8ClampedArray(expectedRgba);
+      for (let index = 0; index < pixelCount; index += 1) {
+        const source = index * 3;
+        const target = index * 4;
+        rgba[target] = data[source];
+        rgba[target + 1] = data[source + 1];
+        rgba[target + 2] = data[source + 2];
+        rgba[target + 3] = 255;
+      }
+      return { data: rgba, width, height };
+    }
+    if (data.length !== expectedRgba) {
       throw new ProtectedAlgorithmError("ENGINE_INVALID_REQUEST");
     }
     return { data: new Uint8ClampedArray(data), width, height };

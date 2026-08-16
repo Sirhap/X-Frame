@@ -22,6 +22,12 @@ const elements = {
   qualityOutput: document.querySelector("#qualityOutput"),
   exportButton: document.querySelector("#exportButton"),
   exportLabel: document.querySelector("#exportLabel"),
+  exportReason: document.querySelector("#exportReason"),
+  exportDuration: document.querySelector("#exportDuration"),
+  exportResolution: document.querySelector("#exportResolution"),
+  exportRegions: document.querySelector("#exportRegions"),
+  exportSize: document.querySelector("#exportSize"),
+  workflowSteps: document.querySelectorAll("#watermarkWorkflowSteps li"),
   progressWrap: document.querySelector("#progressWrap"),
   progressBar: document.querySelector("#progressBar"),
   progressText: document.querySelector("#progressText"),
@@ -662,6 +668,50 @@ function updateExportState() {
     control.disabled = state.exporting;
   });
   smartControls.setDisabled(state.exporting);
+  updateExportSummary();
+  updateWorkflowState(hasValidInput);
+}
+
+/** Summarizes the final processing scope with a deliberately approximate encoded size. */
+function updateExportSummary() {
+  const metadata = state.metadata;
+  elements.exportDuration.textContent = metadata ? formatTime(metadata.duration) : "—";
+  elements.exportResolution.textContent = metadata ? `${metadata.width} × ${metadata.height}` : "—";
+  elements.exportRegions.textContent = `${state.regions.length} 个区域`;
+  if (!metadata) {
+    elements.exportSize.textContent = "—";
+    return;
+  }
+  const estimatedBytes = metadata.width * metadata.height * metadata.duration * 0.045;
+  elements.exportSize.textContent =
+    estimatedBytes >= 1024 * 1024
+      ? `约 ${(estimatedBytes / (1024 * 1024)).toFixed(1)} MB`
+      : `约 ${Math.max(1, Math.round(estimatedBytes / 1024))} KB`;
+}
+
+/** Updates progressive disclosure, step semantics, and the disabled export explanation. */
+function updateWorkflowState(hasValidInput) {
+  const step = !state.sourceId
+    ? "source"
+    : !state.regions.length
+      ? "region"
+      : hasValidInput
+        ? "preview"
+        : "repair";
+  const order = ["source", "region", "repair", "preview", "export"];
+  document.body.dataset.workflowStep = step;
+  const currentIndex = order.indexOf(step);
+  elements.workflowSteps.forEach((item, index) => {
+    item.classList.toggle("is-complete", index < currentIndex);
+    if (index === currentIndex) item.setAttribute("aria-current", "step");
+    else item.removeAttribute("aria-current");
+  });
+  elements.exportReason.hidden = !elements.exportButton.disabled;
+  if (!state.engineAvailable) elements.exportReason.textContent = "本地 FFmpeg 引擎不可用";
+  else if (!state.sourceId) elements.exportReason.textContent = "请先载入视频";
+  else if (!state.regions.length) elements.exportReason.textContent = "请在画面中框选至少一个水印区域";
+  else if (!hasValidInput) elements.exportReason.textContent = "请完善当前智能修复参数";
+  else elements.exportReason.textContent = "";
 }
 
 /** Clears a completed export whenever its source configuration becomes stale. */

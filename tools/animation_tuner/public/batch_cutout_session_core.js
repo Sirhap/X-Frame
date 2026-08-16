@@ -576,51 +576,6 @@
   }
 
   /**
-   * Applies one reviewable automatic candidate to an explicit target subset.
-   * Existing local repairs and protected colors remain owned by each target.
-   * @param {object[]} items Target session items.
-   * @param {object} sourceItem Item that owns the reversible transaction.
-   * @param {{parameters:object,backgroundSamples?:object[],seedPoints?:object[]}} candidate Candidate state.
-   * @param {{live?:boolean,mapSeedPoints?:boolean}} [options] Transaction behavior.
-   * @returns {number} Number of updated targets.
-   */
-  function applyAutomaticCandidate(items, sourceItem, candidate, options = {}) {
-    const targets = Array.from(items || []).filter(Boolean);
-    if (!sourceItem || !candidate?.parameters) {
-      throw new TypeError("Candidate application requires a source item and parameters.");
-    }
-    if (!targets.length) return 0;
-    const draft = {
-      ...sourceItem,
-      processingParameters: normalizeProcessingParameters(
-        candidate.parameters,
-        sourceItem.processingParameters,
-      ),
-      backgroundSamples: cloneSessionValue(candidate.backgroundSamples || []),
-      seedPoints: cloneSessionValue(candidate.seedPoints || []),
-      automaticCutoutActivated: true,
-      processingActivated: true,
-    };
-    beginPropagation(targets, sourceItem, { ...options, live: options.live === true });
-    for (const target of targets) {
-      if (target === sourceItem) {
-        target.processingParameters = cloneSessionValue(draft.processingParameters);
-        target.backgroundSamples = cloneSessionValue(draft.backgroundSamples);
-        target.seedPoints = cloneSessionValue(draft.seedPoints);
-        target.automaticCutoutActivated = true;
-        target.processingActivated = true;
-        target.pendingAutomaticPropagation = false;
-        resetItemProcessing(target);
-        continue;
-      }
-      copyAutomaticProcessingState(target, draft, {
-        mapSeedPoints: options.mapSeedPoints !== false,
-      });
-    }
-    return targets.length;
-  }
-
-  /**
    * Starts a reversible apply-to-all transaction on the source item.
    * @param {object[]} items Session items.
    * @param {object} sourceItem Selected source item.
@@ -749,7 +704,6 @@
   }
 
   return Object.freeze({
-    applyAutomaticCandidate,
     applyProcessingParameters,
     beginPropagation,
     captureProcessingParameters,

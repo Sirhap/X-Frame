@@ -43,11 +43,6 @@
     const resultArtifacts = resultCacheCore.createResultArtifactCache();
     const elements = runtimeSetup.collectElements(document);
     const state = runtimeSetup.createInitialState(hooks.getLanguage?.());
-    let candidateController = null;
-    /** @param {object} [options] Candidate reset behavior. @returns {void} */
-    function invalidateCandidateComparison(options = {}) {
-      candidateController?.invalidate(options);
-    }
     if (elements.cutoutSidebarBatchPanel && elements.cutoutBatchTray) {
       elements.cutoutSidebarBatchPanel.append(elements.cutoutBatchTray);
     }
@@ -83,6 +78,10 @@
     /** @returns {void} Renders status and control state. */
     function renderStatus(...args) {
       return settingsCall("renderStatus", ...args);
+    }
+    /** @returns {object} Synchronizes dependent automatic parameter controls. */
+    function syncAutomaticControlDependencies(...args) {
+      return settingsCall("syncAutomaticControlDependencies", ...args);
     }
     /** @returns {void} Selects the active repair mode. */
     function setRepairMode(...args) {
@@ -194,7 +193,10 @@
     function applyProcessingParametersToControls(parameters) {
       sessionCore.applyProcessingParameters(elements, parameters, {
         syncNumericRange,
-        onApplied: renderAdvancedMode,
+        onApplied() {
+          renderAdvancedMode();
+          syncAutomaticControlDependencies();
+        },
       });
     }
     const imageControllerModule = root.BatchCutoutImageController;
@@ -273,7 +275,6 @@
      * @returns {void}
      */
     function setPreviewMode(mode) {
-      invalidateCandidateComparison({ cancel: true, redraw: false });
       state.previewMode = mode;
       state.repairDrag = null;
       renderPreview();
@@ -281,8 +282,8 @@
 
     /** @param {{recordHistory?:boolean}} [options] Preview history behavior. @returns {void} */
     function schedulePreview(options = {}) {
-      invalidateCandidateComparison({ cancel: false, redraw: false });
       cutoutExecutor.cancelAll();
+      setStatus(text("recalculating"), "busy");
       state.previewRevision += 1;
       state.thumbnailJob += 1;
       const currentParameters = captureProcessingParameters();
@@ -319,6 +320,7 @@
           renderQueue();
           renderPreview();
           scheduleBatchThumbnails();
+          setStatus(text("resultUpdated"), "success");
         }
       }, 40);
     }
@@ -340,7 +342,6 @@
       renderStatus,
       updateQueueCard: (...args) => updateQueueCard(...args),
       processItem: (...args) => processItem(...args),
-      onSelectionChange: () => invalidateCandidateComparison({ cancel: true, redraw: false }),
       windowRef: window,
     });
     const {
@@ -390,10 +391,9 @@
       scheduleBatchThumbnails,
     });
     const { updateQueueCard, renderQueue: renderQueueInternal } = queueController;
-    /** Renders the queue and refreshes candidate availability after queue mutations. @returns {void} */
+    /** Renders the current batch queue. @returns {void} */
     function renderQueue() {
       renderQueueInternal();
-      candidateController?.render();
     }
     const processingHelpersModule = root.BatchCutoutProcessingHelpers;
     if (!processingHelpersModule) {
@@ -566,44 +566,6 @@
     });
     const { renderProtectedColors, renderBackgroundSamples } = previewRenderer;
 
-    const candidateControllerModule = root.BatchCutoutCandidateController;
-    const candidateCore = root.BatchCutoutCandidateCore;
-    const presetStoreModule = root.BatchCutoutPresetStore;
-    if (!candidateControllerModule || !candidateCore || !presetStoreModule) {
-      throw new Error("Batch cutout candidate modules are required.");
-    }
-    let candidatePresetStorage = null;
-    try {
-      candidatePresetStorage = window.localStorage;
-    } catch (_error) {
-      // Candidate comparison remains available when browser storage is blocked.
-    }
-    candidateController = candidateControllerModule.createController({
-      state,
-      elements,
-      text,
-      selectedItem,
-      sessionCore,
-      candidateCore,
-      presetStore: presetStoreModule.createStore({ storage: candidatePresetStorage }),
-      cutoutExecutor,
-      cutoutAnalysisExecutor,
-      processItem,
-      estimateBackgroundColor: backgroundEstimator.estimateBackgroundColor,
-      colorUtils,
-      requestConfirmation,
-      applyProcessingParametersToControls,
-      renderPreview,
-      renderQueue,
-      renderStatus,
-      scheduleBatchThumbnails,
-      refreshQualityAnalysis,
-      setStatus,
-      getCurrentAnimation: () => hooks.getCurrentAnimation?.(),
-      documentRef: document,
-      imageDataConstructor: ImageData,
-    });
-
     const gestureControllerModule = globalThis.BatchCutoutGestureController;
     if (!gestureControllerModule) {
       throw new Error("BatchCutoutGestureController is required.");
@@ -698,10 +660,31 @@
       requestConfirmation,
       estimateBackgroundColor: backgroundEstimator.estimateBackgroundColor,
       backgroundController,
-      onSessionReset: () => invalidateCandidateComparison({ cancel: true, redraw: false }),
     });
     const { clear, deleteSelectedItems, open, openWorkset, close, requestClose, hasWorksetChanges } =
       sessionController;
+
+    /**
+     * Processes an organizer-owned workset without opening the batch-editing modal.
+     * @param {object} workset Workset source and automatic processing settings.
+     * @returns {Promise<Array<object>|null>} Processed frame outputs, or null when processing is incomplete.
+     */
+    async function autoApplyWorkset(workset) {
+      const completion = openWorkset({ ...workset, present: false });
+      try {
+        const { outputs, failures, cancelled } = await processAll({ applyProgress: true });
+        if (cancelled || failures.length || outputs.length !== state.items.length) {
+          close(null, { syncRoute: false });
+          if (failures.length) throw new Error(failures[0].message);
+          return null;
+        }
+        close(outputs, { syncRoute: false });
+        return completion;
+      } catch (error) {
+        if (typeof state.worksetResolver === "function") close(null, { syncRoute: false });
+        throw error;
+      }
+    }
 
     const eventsModule = globalThis.BatchCutoutEvents;
     if (!eventsModule) throw new Error("BatchCutoutEvents is required.");
@@ -759,6 +742,7 @@
       updateLatestAreaRepair,
       updateLatestProtectionRepair,
       bindNumericRange,
+      syncAutomaticControlDependencies,
       renderBackgroundSamples,
       renderProtectedColors,
       backgroundController,
@@ -778,7 +762,6 @@
       schedulePreview,
     });
     eventController.bind();
-    candidateController.bind();
     renderLanguage();
     renderAdvancedMode();
     setPreviewBackground(state.previewBackground);
@@ -787,6 +770,7 @@
     return {
       open,
       openWorkset,
+      autoApplyWorkset,
       close,
       requestClose,
       isOpen: () => !elements.cutoutModal.hidden,
@@ -795,7 +779,6 @@
       setLanguage(nextLanguage) {
         state.language = nextLanguage === "en" ? "en" : "zh";
         renderLanguage();
-        candidateController.render();
       },
     };
   }

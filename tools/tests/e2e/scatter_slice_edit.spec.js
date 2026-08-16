@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const path = require("node:path");
 const { expect, test } = require("@playwright/test");
 
 /**
@@ -19,7 +20,7 @@ function toClientPoint(point, canvasBox, source) {
 
 /**
  * Loads the former generated sample through the real file-input path.
- * @param {import("@playwright/test").FrameLocator} tool Scatter tool frame.
+ * @param {import("@playwright/test").Page} tool Integrated scatter tool page.
  * @param {string} [fileName] Browser file name.
  * @returns {Promise<void>}
  */
@@ -61,7 +62,7 @@ async function loadGeneratedScatterImage(tool, fileName = "scatter-test.png") {
 
 /**
  * Reads the selected box geometry from the compact canvas toolbar.
- * @param {import("@playwright/test").FrameLocator} tool Scatter tool frame.
+ * @param {import("@playwright/test").Page} tool Integrated scatter tool page.
  * @returns {Promise<{x:number,y:number,w:number,h:number}>}
  */
 async function readActiveBox(tool) {
@@ -71,11 +72,24 @@ async function readActiveBox(tool) {
   return { x: Number(match[1]), y: Number(match[2]), w: Number(match[3]), h: Number(match[4]) };
 }
 
+/**
+ * Expands the workflow step containing a control before interacting with it.
+ * @param {import("@playwright/test").Page} tool Integrated scatter tool page.
+ * @param {string} selector Control selector.
+ * @returns {Promise<void>}
+ */
+async function revealControl(tool, selector) {
+  await tool.locator(selector).evaluate((element) => {
+    const panel = element.closest("details");
+    if (panel) panel.open = true;
+  });
+}
+
 test("detected slices can be moved, resized, edited, and deleted before export", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("/tools/scatter-slice");
-  const tool = page.frameLocator('iframe[title="零散切片"]');
+  const tool = page;
   await loadGeneratedScatterImage(tool);
   await expect(tool.locator("#scatterSample")).toHaveCount(0);
   await expect(
@@ -170,6 +184,7 @@ test("detected slices can be moved, resized, edited, and deleted before export",
 
   const beforeInputShortcut = await tool.locator(".sliceCard").count();
   const animationNameInput = tool.locator("#scatterAnimationName");
+  await revealControl(tool, "#scatterAnimationName");
   await animationNameInput.focus();
   await page.keyboard.press("Backspace");
   await expect(tool.locator(".sliceCard")).toHaveCount(beforeInputShortcut);
@@ -199,9 +214,122 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   expect(pageErrors).toEqual([]);
 });
 
+test("standalone scatter slices enter the shared temporary organizer workset", async ({ page }) => {
+  await page.goto("/tools/scatter-slice");
+  await loadGeneratedScatterImage(page, "temporary-scatter.png");
+  await page.locator("#scatterDetect").click();
+  await expect.poll(() => page.locator(".sliceCard").count()).toBeGreaterThan(0);
+  const detectedCount = await page.locator(".sliceCard").count();
+  await expect(page.locator("#scatterStageAction")).toHaveText("应用到工作集");
+
+  await page.locator("#scatterStageAction").click();
+
+  await expect(page).toHaveURL(/\/tools\/organizer/);
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  await expect(page.locator(".organizerFrame")).toHaveCount(detectedCount);
+  const retainedFrames = await page.evaluate(() => globalThis.XSXBTemporaryWorkset.getSnapshot().frames);
+  expect(retainedFrames).toHaveLength(detectedCount);
+  expect(retainedFrames.every((frame) => frame.id.startsWith("scatter:"))).toBe(true);
+  expect(retainedFrames.every((frame) => /^动画组 .+-\d{3}\.png$/u.test(frame.name))).toBe(true);
+  await expect(page.locator("#worksetHandoffDialog")).toBeHidden();
+  await expect(page.locator("#organizerCreationModeField")).toBeVisible();
+  await expect(page.locator("#organizerCreationMode")).toHaveValue("groups");
+  await expect(page.locator("#organizerApply")).toHaveText(/创建 \d+ 个动画并进入调参/u);
+
+  const expectedAnimationNames = [
+    ...new Set(retainedFrames.map((frame) => frame.name.replace(/-\d{3}\.png$/u, ""))),
+  ];
+  await page.locator("#organizerApply").click();
+  await expect(page.locator("#organizerConfirmMessage")).toContainText("创建");
+  await expect(page.locator("#organizerConfirmDetails")).toContainText(
+    `按组创建 ${expectedAnimationNames.length} 个动画`,
+  );
+  if (process.env.XSXB_CAPTURE_DIR) {
+    await page.screenshot({
+      path: path.join(process.env.XSXB_CAPTURE_DIR, "round-6-group-creation.png"),
+      fullPage: false,
+    });
+  }
+  await page.locator("#organizerConfirmAccept").click();
+
+  await expect(page.locator("#organizerModal")).toBeHidden();
+  await expect(page).toHaveURL(/\/workspace/);
+  const animationOptions = await page.locator("#groupSelect option").allTextContents();
+  for (const animationName of expectedAnimationNames) {
+    expect(animationOptions.some((label) => label.includes(animationName))).toBe(true);
+  }
+  const beforeReload = await page.evaluate(() =>
+    globalThis.XSXBWorkspace.getSnapshot().frames.map((frame) => ({
+      id: frame.id,
+      persistedId: frame.persistedId,
+      revision: frame.assetRevision,
+    })),
+  );
+  const scatterFramesBeforeReload = beforeReload.filter(
+    (frame) => frame.persistedId?.startsWith("scatter:") || frame.id.includes(":scatter:"),
+  );
+  expect(scatterFramesBeforeReload, JSON.stringify(beforeReload)).toHaveLength(detectedCount);
+  await page.reload();
+  await expect(page.locator(".app")).toBeVisible();
+  await expect(page.locator("#playPause")).toBeEnabled();
+  await expect(page.locator("#playbackAvailability")).toContainText("帧可播放");
+  const afterReload = await page.evaluate(() =>
+    globalThis.XSXBWorkspace.getSnapshot()
+      .frames.filter((frame) => frame.persistedId?.startsWith("scatter:") || frame.id.includes(":scatter:"))
+      .map((frame) => ({ id: frame.id, persistedId: frame.persistedId, revision: frame.assetRevision })),
+  );
+  expect(afterReload).toEqual(scatterFramesBeforeReload);
+  if (process.env.XSXB_CAPTURE_DIR) {
+    for (const viewport of [
+      { width: 1280, height: 720 },
+      { width: 1440, height: 900 },
+      { width: 1920, height: 1080 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.screenshot({
+        path: path.join(
+          process.env.XSXB_CAPTURE_DIR,
+          `final-animation-workspace-${viewport.width}x${viewport.height}.png`,
+        ),
+        fullPage: false,
+      });
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+  }
+
+  await page.locator('[data-workbench-route="export"]').first().click();
+  await expect(page).toHaveURL(/\/workspace\/delivery\/export/);
+  await expect(page.locator("#deliverySurface")).toBeVisible();
+  await expect(page.locator("#deliveryGodotAnimationCount")).toHaveText(`${animationOptions.length} 个`);
+  const projectFrameCount = await page.evaluate(() => globalThis.XSXBWorkspace.getSnapshot().frames.length);
+  await expect(page.locator("#deliveryGodotFrameCount")).toHaveText(`${projectFrameCount} 帧`);
+  await expect(page.locator("#deliveryPetCurrentAnimation")).not.toHaveText("—");
+  await expect(page.locator("#deliveryGodotStatus")).toHaveText("尚未绑定");
+  await expect(page.locator("#deliveryGodotStatus")).toHaveAttribute("data-tone", "neutral");
+  await expect(page.locator("#deliveryGodotChecks")).toContainText("尚未绑定");
+  await expect(page.locator("#deliveryPetStatus")).toHaveText("非 Pet 项目");
+  await expect(page.locator("#deliveryPetBoundCount")).toHaveText("0 个");
+  await expect(page.locator("#deliveryPetChecks")).toContainText("当前项目不是 Codex Pet 项目");
+  if (process.env.XSXB_CAPTURE_DIR) {
+    await page.screenshot({
+      path: path.join(process.env.XSXB_CAPTURE_DIR, "round-7-delivery-hub.png"),
+      fullPage: false,
+    });
+  }
+  await expect(page.locator("#mediaExportDialog")).toBeVisible();
+  await expect(page.locator("#mediaExportDialog")).toHaveAttribute("data-presentation", "embedded");
+  await expect(page.locator("#mediaExportDialog")).toContainText("Sprite Sheet 预览");
+  if (process.env.XSXB_CAPTURE_DIR) {
+    await page.screenshot({
+      path: path.join(process.env.XSXB_CAPTURE_DIR, "round-7-export-dialog.png"),
+      fullPage: false,
+    });
+  }
+});
+
 test("automatic recognition ignores a decorative border and connected editor grid", async ({ page }) => {
   await page.goto("/tools/scatter-slice");
-  const tool = page.frameLocator('iframe[title="零散切片"]');
+  const tool = page;
   await tool.locator("body").evaluate(async () => {
     const canvas = document.createElement("canvas");
     canvas.width = 200;
@@ -237,7 +365,7 @@ test("smart cutout removes black backgrounds in alpha detection mode without era
   page,
 }) => {
   await page.goto("/tools/scatter-slice");
-  const tool = page.frameLocator('iframe[title="零散切片"]');
+  const tool = page;
   await tool.locator("body").evaluate(async () => {
     const canvas = document.createElement("canvas");
     canvas.width = 100;
@@ -277,6 +405,7 @@ test("smart cutout removes black backgrounds in alpha detection mode without era
       };
     });
   const smartAlpha = await readAlpha();
+  await revealControl(tool, "#scatterTransparent");
   await tool.locator("#scatterTransparent").uncheck();
   const originalAlpha = await readAlpha();
 
@@ -290,7 +419,7 @@ test("workspace editing supports multi-select, group management, history, and cr
   page,
 }) => {
   await page.goto("/tools/scatter-slice");
-  const tool = page.frameLocator('iframe[title="零散切片"]');
+  const tool = page;
   await loadGeneratedScatterImage(tool);
   await tool.locator("#scatterDetect").click();
   await expect.poll(() => tool.locator(".sliceCard").count()).toBeGreaterThan(3);
@@ -351,8 +480,9 @@ test("real-material cleanup refreshes automatic names and selects small slices i
   page,
 }) => {
   await page.goto("/tools/scatter-slice");
-  const tool = page.frameLocator('iframe[title="零散切片"]');
+  const tool = page;
   const animationName = tool.locator("#scatterAnimationName");
+  await revealControl(tool, "#scatterAnimationName");
 
   await loadGeneratedScatterImage(tool, "first-sheet.png");
   await expect(animationName).toHaveValue("first-sheet");
@@ -388,7 +518,7 @@ test("real-material cleanup refreshes automatic names and selects small slices i
 
 test("uniform output produces equal frame canvases for each separate project workset", async ({ page }) => {
   await page.goto("/tools/scatter-slice");
-  const tool = page.frameLocator('iframe[title="零散切片"]');
+  const tool = page;
   await loadGeneratedScatterImage(tool);
   await tool.locator("#scatterDetect").click();
   await expect.poll(() => tool.locator(".sliceCard").count()).toBeGreaterThan(3);
@@ -432,6 +562,7 @@ test("uniform output produces equal frame canvases for each separate project wor
     assert.equal(new Set(worksetDimensions.map((size) => size.join("x"))).size, 1);
   }
 
+  await revealControl(tool, "#scatterUniformOutput");
   await tool.locator("#scatterUniformOutput").uncheck();
   await tool.locator("#scatterAddProject").click();
   const variableDimensions = await page.evaluate(async () => {

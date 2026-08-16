@@ -1,4 +1,4 @@
-import { handleActivationRequest } from "./activation.mjs";
+import { createAccountAuthService, handleAccountAuthRequest } from "./account_auth.mjs";
 import { handleAdminRequest } from "./admin.mjs";
 import { handleExportAuthorizationRequest } from "./export_authorization.mjs";
 
@@ -9,9 +9,21 @@ const WORKBENCH_ROUTES = new Set([
   "/tools/cutout",
   "/tools/organizer",
   "/tools/scatter-slice",
+  "/tools/export",
   "/workspace",
   "/workspace/tools/cutout",
   "/workspace/tools/organizer",
+  "/workspace/resources/import",
+  "/workspace/resources/cutout",
+  "/workspace/resources/scatter",
+  "/workspace/animation/transform",
+  "/workspace/animation/boxes",
+  "/workspace/animation/trails",
+  "/workspace/animation/audio",
+  "/workspace/animation/attachments",
+  "/workspace/delivery/export",
+  "/workspace/delivery/godot",
+  "/workspace/delivery/codex-pet",
 ]);
 
 /**
@@ -21,9 +33,40 @@ const WORKBENCH_ROUTES = new Set([
  */
 export function resolveAssetPath(pathname) {
   if (pathname === "/") return "/index.html";
-  if (pathname === "/admin/licenses") return "/admin.html";
+  if (pathname === "/admin/login" || pathname === "/admin/licenses") return "/admin.html";
   if (WORKBENCH_ROUTES.has(pathname)) return "/workbench.html";
   return pathname;
+}
+
+/**
+ * Reports media encoders that are intentionally unavailable in the static Cloudflare deployment.
+ * @returns {Response} Stable capability response consumed by the organizer export dialog.
+ */
+function mediaExportCapabilitiesResponse() {
+  return Response.json(
+    {
+      mode: "cloudflare-static",
+      ffmpeg: { available: false, version: "" },
+    },
+    { headers: { "Cache-Control": "public, max-age=300" } },
+  );
+}
+
+/**
+ * Creates an administrator redirect that cannot be reused across authentication states.
+ * @param {string} pathname Destination pathname.
+ * @param {URL} requestUrl Incoming URL.
+ * @returns {Response} Private redirect response.
+ */
+function adminRedirect(pathname, requestUrl) {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      "Cache-Control": "private, no-store",
+      Location: new URL(pathname, requestUrl).toString(),
+      Vary: "Cookie",
+    },
+  });
 }
 
 /**
@@ -55,17 +98,53 @@ export default {
    */
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/media-export/capabilities" && request.method === "GET") {
+      return mediaExportCapabilitiesResponse();
+    }
     if (url.pathname === "/api/admin" || url.pathname.startsWith("/api/admin/")) {
       return handleAdminRequest(request, env);
     }
-    if (url.pathname === "/api/activation" || url.pathname.startsWith("/api/activation/")) {
-      return handleActivationRequest(request, env);
+    if (url.pathname.startsWith("/api/auth/") || url.pathname.startsWith("/api/entitlements/")) {
+      return handleAccountAuthRequest(request, env);
     }
     if (url.pathname === "/api/export" || url.pathname.startsWith("/api/export/")) {
       return handleExportAuthorizationRequest(request, env);
     }
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method Not Allowed", { status: 405, headers: { Allow: "GET, HEAD" } });
+    }
+    if (url.pathname === "/tools/watermark") {
+      return Response.redirect(new URL("/?notice=local-watermark#factoryTools", url), 302);
+    }
+    if (url.pathname === "/admin.html") {
+      return new Response("Not Found", { status: 404 });
+    }
+    if (url.pathname === "/admin/login" || url.pathname === "/admin/licenses") {
+      const session = await createAccountAuthService(env).status(request);
+      if (url.pathname === "/admin/licenses" && !session.administrator) {
+        return adminRedirect("/admin/login", url);
+      }
+      if (url.pathname === "/admin/login" && session.administrator) {
+        return adminRedirect("/admin/licenses", url);
+      }
+      const assetUrl = new URL(url);
+      assetUrl.pathname = "/admin.html";
+      try {
+        const response = await env.ASSETS.fetch(new Request(assetUrl, request));
+        const protectedResponse = withResponseHeaders(response, "/admin.html");
+        protectedResponse.headers.set("Cache-Control", "private, no-store");
+        protectedResponse.headers.set("Vary", "Cookie");
+        return protectedResponse;
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            event: "static_asset_fetch_failed",
+            pathname: "/admin.html",
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        );
+        return new Response("Static asset temporarily unavailable", { status: 502 });
+      }
     }
     const assetPath = resolveAssetPath(url.pathname);
     url.pathname = assetPath;

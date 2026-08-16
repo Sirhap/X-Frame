@@ -1,9 +1,11 @@
 import { hmacHex, safeEqual, signToken, verifyToken } from "./activation_crypto.mjs";
 import { createAdminLicenseService } from "./admin_license_service.mjs";
+import { createAdminAccountService } from "./admin_account_service.mjs";
 import { createAdminRepository } from "./admin_repository.mjs";
 import { isPermanentLicenseExpiry } from "./license_duration.mjs";
 
 const ADMIN_COOKIE_NAME = "xsxb_admin";
+const ADMIN_WORKBENCH_COOKIE_NAME = "xsxb_admin_workbench";
 const DEFAULT_ADMIN_SESSION_MINUTES = 4 * 60;
 const MIN_ADMIN_SESSION_MINUTES = 15;
 const MAX_ADMIN_SESSION_MINUTES = 24 * 60;
@@ -185,38 +187,27 @@ function serializeLicense(row, now, code = "") {
       : row.first_activated_at
         ? "active"
         : "unused";
-  const devices = Array.isArray(row.devices)
-    ? row.devices.map((device) => ({
-        id: device.id,
-        name: device.device_name || "Browser device",
-        country: device.last_country || device.first_country || "",
-        createdAt: device.created_at || "",
-        lastSeenAt: device.last_seen_at || "",
-        revoked: Boolean(device.revoked_at),
-      }))
-    : [];
   return {
     id: row.id,
-    source: row.source === "automatic_trial" ? "automatic_trial" : "code",
+    source: ["code", "email_trial", "admin_grant"].includes(row.source) ? row.source : "code",
     code,
     codeAvailable: Boolean(code),
     codeHashPrefix: String(row.code_hash || "").slice(0, 12),
     durationDays: row.duration_days,
-    maxDevices: row.max_devices === null ? null : Number(row.max_devices || 1),
-    unlimitedDevices: row.max_devices === null,
-    activeDeviceCount: devices.filter((device) => !device.revoked).length,
-    devices,
     permanent: isPermanentLicenseExpiry(row.expires_at),
     redeemBy: row.redeem_by || "",
     activatedAt: row.first_activated_at || "",
     expiresAt: row.expires_at || "",
+    accountId: row.account_id || "",
+    accountEmail: row.account_email || "",
+    adminNote: row.admin_note || "",
     status,
   };
 }
 
 /**
  * Creates the TOTP-protected administrator service.
- * @param {{LICENSE_DB?:D1Database,XSXB_ACTIVATION_SECRET?:string,XSXB_ADMIN_SESSION_MINUTES?:string|number,XSXB_ADMIN_TOTP_SECRET?:string,XSXB_ADMIN_USERNAME?:string}} env Worker environment.
+ * @param {{LICENSE_DB?:D1Database,PASSWORD?:string,XSXB_ACTIVATION_SECRET?:string,XSXB_ADMIN_SESSION_MINUTES?:string|number,XSXB_ADMIN_TOTP_SECRET?:string,XSXB_ADMIN_USERNAME?:string}} env Worker environment.
  * @param {{cryptoApi?:Crypto,now?:()=>number,repository?:object}} [options] Test adapters.
  * @returns {object} Administrator operations.
  */
@@ -225,6 +216,7 @@ export function createAdminService(env, options = {}) {
   const subtle = cryptoApi.subtle;
   const now = options.now || Date.now;
   const sessionSecret = String(env?.XSXB_ACTIVATION_SECRET || "");
+  const adminPassword = String(env?.PASSWORD || "");
   const adminUsername = normalizeAdminUsername(env?.XSXB_ADMIN_USERNAME || DEFAULT_ADMIN_USERNAME);
   const adminSessionTtlSeconds = resolveAdminSessionTtlSeconds(env?.XSXB_ADMIN_SESSION_MINUTES);
   let totpSecret = null;
@@ -236,6 +228,7 @@ export function createAdminService(env, options = {}) {
   const configured = Boolean(
     (options.repository || env?.LICENSE_DB) &&
       sessionSecret.length >= 32 &&
+      adminPassword.length >= 8 &&
       totpSecret &&
       ADMIN_USERNAME_PATTERN.test(adminUsername),
   );
@@ -271,6 +264,51 @@ export function createAdminService(env, options = {}) {
         username: payload ? payload.username : "",
       };
     },
+    /** Verifies administrator credentials before revealing the TOTP step. */
+    async startLogin(payload, request) {
+      if (!configured)
+        throw Object.assign(new Error("Administrator authentication is not configured."), { status: 503 });
+      const currentTime = now();
+      const clientAddress = String(request.headers.get("cf-connecting-ip") || "unknown").trim();
+      const fingerprintHash = await hmacHex(`admin-login:${clientAddress}`, sessionSecret, subtle);
+      const attempt = await repository.findLoginAttempt(fingerprintHash);
+      if (Number(attempt?.blocked_until || 0) > currentTime) {
+        throw Object.assign(new Error("Too many attempts. Try again later."), { status: 429 });
+      }
+      const submittedUsername = normalizeAdminUsername(payload.username);
+      const submittedPassword = String(payload.password || "");
+      const usernameMatches =
+        ADMIN_USERNAME_PATTERN.test(submittedUsername) &&
+        (await safeEqual(textEncoder.encode(submittedUsername), textEncoder.encode(adminUsername), subtle));
+      const passwordMatches = await safeEqual(
+        textEncoder.encode(submittedPassword),
+        textEncoder.encode(adminPassword),
+        subtle,
+      );
+      if (!usernameMatches || !passwordMatches) {
+        const withinWindow = currentTime - Number(attempt?.window_started_at || 0) < LOGIN_WINDOW_MS;
+        const failedCount = withinWindow ? Number(attempt?.failed_count || 0) + 1 : 1;
+        await repository.saveLoginAttempt({
+          fingerprintHash,
+          failedCount,
+          windowStartedAt: withinWindow ? Number(attempt.window_started_at) : currentTime,
+          blockedUntil: failedCount >= MAX_LOGIN_FAILURES ? currentTime + LOGIN_BLOCK_MS : 0,
+          updatedAt: new Date(currentTime).toISOString(),
+        });
+        throw Object.assign(new Error("用户名或密码错误。"), { status: 401 });
+      }
+      await repository.clearLoginAttempt(fingerprintHash);
+      const expiresAt = currentTime + 5 * 60 * 1000;
+      return {
+        challengeType: "admin_totp",
+        challengeToken: await signToken(
+          { type: "admin-login-challenge", username: adminUsername, exp: expiresAt },
+          sessionSecret,
+          subtle,
+        ),
+        expiresInSeconds: 300,
+      };
+    },
     async login(payload, request) {
       if (!configured) {
         throw Object.assign(new Error("Administrator authentication is not configured."), { status: 503 });
@@ -285,12 +323,28 @@ export function createAdminService(env, options = {}) {
           status: 429,
         });
       }
+      const loginChallenge = payload.challengeToken
+        ? await verifyToken(String(payload.challengeToken), sessionSecret, subtle)
+        : null;
+      const challengeMatches =
+        loginChallenge?.type === "admin-login-challenge" &&
+        loginChallenge.username === adminUsername &&
+        Number(loginChallenge.exp || 0) > currentTime;
       const submittedUsername = normalizeAdminUsername(payload.username);
+      const submittedPassword = String(payload.password || "");
       const usernameMatches =
-        ADMIN_USERNAME_PATTERN.test(submittedUsername) &&
-        safeEqual(textEncoder.encode(submittedUsername), textEncoder.encode(adminUsername), subtle);
+        challengeMatches ||
+        (ADMIN_USERNAME_PATTERN.test(submittedUsername) &&
+          (await safeEqual(
+            textEncoder.encode(submittedUsername),
+            textEncoder.encode(adminUsername),
+            subtle,
+          )));
+      const passwordMatches =
+        challengeMatches ||
+        (await safeEqual(textEncoder.encode(submittedPassword), textEncoder.encode(adminPassword), subtle));
       const counter = await verifyTotp(payload.code, totpSecret, currentTime, subtle);
-      if (!usernameMatches || counter === null) {
+      if (!usernameMatches || !passwordMatches || counter === null) {
         const withinWindow = currentTime - Number(attempt?.window_started_at || 0) < LOGIN_WINDOW_MS;
         const failedCount = withinWindow ? Number(attempt?.failed_count || 0) + 1 : 1;
         await repository.saveLoginAttempt({
@@ -300,7 +354,9 @@ export function createAdminService(env, options = {}) {
           blockedUntil: failedCount >= MAX_LOGIN_FAILURES ? currentTime + LOGIN_BLOCK_MS : 0,
           updatedAt: new Date(currentTime).toISOString(),
         });
-        throw Object.assign(new Error("The username or verification code is invalid."), { status: 401 });
+        throw Object.assign(new Error("The username, password, or verification code is invalid."), {
+          status: 401,
+        });
       }
       if (!(await repository.consumeTotpCounter(counter, new Date(currentTime).toISOString()))) {
         throw Object.assign(new Error("This verification code has already been used."), { status: 409 });
@@ -324,16 +380,7 @@ export function createAdminService(env, options = {}) {
         throw Object.assign(new Error("Administrator session is required."), { status: 401 });
       }
       const rows = await repository.listLicenses(200);
-      const devices = await repository.listLicenseDevices(rows.map((row) => row.id));
-      const devicesByLicense = new Map();
-      for (const device of devices) {
-        const entries = devicesByLicense.get(device.license_id) || [];
-        entries.push(device);
-        devicesByLicense.set(device.license_id, entries);
-      }
-      return licenseService.list(
-        rows.map((row) => ({ ...row, devices: devicesByLicense.get(row.id) || [] })),
-      );
+      return licenseService.list(rows);
     },
     async createLicenses(payload, request) {
       if (!(await sessionPayload(request))) {
@@ -383,10 +430,34 @@ export function createAdminService(env, options = {}) {
         .filter(Boolean)
         .join("; ");
     },
+    workbenchCookieHeader(token, request) {
+      return [
+        `${ADMIN_WORKBENCH_COOKIE_NAME}=${encodeURIComponent(token)}`,
+        "Path=/",
+        `Max-Age=${adminSessionTtlSeconds}`,
+        "HttpOnly",
+        "SameSite=Strict",
+        new URL(request.url).protocol === "https:" ? "Secure" : "",
+      ]
+        .filter(Boolean)
+        .join("; ");
+    },
     clearCookieHeader(request) {
       return [
         `${ADMIN_COOKIE_NAME}=`,
         "Path=/api/admin",
+        "Max-Age=0",
+        "HttpOnly",
+        "SameSite=Strict",
+        new URL(request.url).protocol === "https:" ? "Secure" : "",
+      ]
+        .filter(Boolean)
+        .join("; ");
+    },
+    clearWorkbenchCookieHeader(request) {
+      return [
+        `${ADMIN_WORKBENCH_COOKIE_NAME}=`,
+        "Path=/",
         "Max-Age=0",
         "HttpOnly",
         "SameSite=Strict",
@@ -408,10 +479,37 @@ function jsonResponse(payload, status = 200, extra = {}) {
   return new Response(JSON.stringify(payload), { status, headers });
 }
 
+/** @param {string} value CSV cell. @returns {string} Escaped CSV field. */
+function csvCell(value) {
+  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+}
+
+/** @param {string[]} headings Column headings. @param {Array<Array<unknown>>} rows CSV rows. @param {string} filename Download filename. @returns {Response} Private CSV response. */
+function csvResponse(headings, rows, filename) {
+  const body = [headings, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  return new Response(`\uFEFF${body}\r\n`, {
+    headers: {
+      "Cache-Control": "no-store",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Type": "text/csv; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+/** @param {Request} request Request. @param {object} service Administrator auth service. @returns {Promise<void>} */
+async function requireAdministrator(request, service) {
+  const session = await service.status(request);
+  if (!session.authenticated) {
+    throw Object.assign(new Error("Administrator session is required."), { status: 401 });
+  }
+}
+
 /** @param {Request} request Incoming request. @param {object} env Worker environment. @returns {Promise<Response>} Administrator API response. */
 export async function handleAdminRequest(request, env) {
   const pathname = new URL(request.url).pathname;
   const service = createAdminService(env);
+  const accountService = env?.LICENSE_DB ? createAdminAccountService(env) : null;
   try {
     if (request.method === "GET" && pathname === "/api/admin/session") {
       return jsonResponse(await service.status(request));
@@ -419,25 +517,188 @@ export async function handleAdminRequest(request, env) {
     if (request.method === "GET" && pathname === "/api/admin/licenses") {
       return jsonResponse({ licenses: await service.listLicenses(request) });
     }
+    if (request.method === "GET" && pathname === "/api/admin/accounts") {
+      await requireAdministrator(request, service);
+      return jsonResponse(await accountService.list(new URL(request.url).searchParams.get("q")));
+    }
+    if (request.method === "GET" && pathname === "/api/admin/accounts/export") {
+      await requireAdministrator(request, service);
+      const { accounts } = await accountService.list(new URL(request.url).searchParams.get("q"));
+      return csvResponse(
+        [
+          "email",
+          "status",
+          "last_login_at",
+          "license_count",
+          "trial_count",
+          "admin_grant_count",
+          "expires_at",
+        ],
+        accounts.map((account) => [
+          account.email,
+          account.status || "active",
+          account.last_login_at,
+          account.license_count,
+          account.trial_count,
+          account.admin_grant_count,
+          account.license_expires_at,
+        ]),
+        "accounts.csv",
+      );
+    }
+    const accountDetailMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)$/u);
+    if (request.method === "GET" && accountDetailMatch) {
+      await requireAdministrator(request, service);
+      return jsonResponse(await accountService.detail(decodeURIComponent(accountDetailMatch[1])));
+    }
+    if (request.method === "GET" && pathname === "/api/admin/trials") {
+      await requireAdministrator(request, service);
+      const params = new URL(request.url).searchParams;
+      return jsonResponse(
+        await accountService.listTrials({
+          q: params.get("q"),
+          state: params.get("state"),
+          expiresBefore: params.get("expiresBefore"),
+        }),
+      );
+    }
+    if (request.method === "GET" && pathname === "/api/admin/audit-log") {
+      await requireAdministrator(request, service);
+      return jsonResponse(await accountService.listAudit(new URL(request.url).searchParams.get("q")));
+    }
+    if (request.method === "GET" && pathname === "/api/admin/audit-log/export") {
+      await requireAdministrator(request, service);
+      const { entries } = await accountService.listAudit(new URL(request.url).searchParams.get("q"));
+      return csvResponse(
+        ["created_at", "actor", "action", "target_type", "target_id", "details"],
+        entries.map((entry) => [
+          entry.created_at,
+          entry.actor_id,
+          entry.action,
+          entry.target_type,
+          entry.target_id,
+          entry.details_json,
+        ]),
+        "authorization-audit.csv",
+      );
+    }
+    if (request.method === "GET" && pathname === "/api/admin/metrics/authorization") {
+      await requireAdministrator(request, service);
+      return jsonResponse(await accountService.metrics());
+    }
     if (!["POST", "PATCH", "DELETE"].includes(request.method)) {
       return jsonResponse({ error: "Method Not Allowed" }, 405, { Allow: "GET, POST, PATCH, DELETE" });
     }
     assertSameOrigin(request);
     if (request.method === "POST" && pathname === "/api/admin/logout") {
-      return jsonResponse({ authenticated: false }, 200, {
-        "Set-Cookie": service.clearCookieHeader(request),
-      });
+      const response = jsonResponse({ authenticated: false });
+      response.headers.append("Set-Cookie", service.clearCookieHeader(request));
+      response.headers.append("Set-Cookie", service.clearWorkbenchCookieHeader(request));
+      return response;
     }
-    const payload = await readJsonObject(request);
+    const revokeSessionsMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/sessions\/revoke$/u);
+    const payload = revokeSessionsMatch && request.method === "POST" ? {} : await readJsonObject(request);
     if (request.method === "POST" && pathname === "/api/admin/login") {
       const result = await service.login(payload, request);
+      const response = jsonResponse({
+        authenticated: true,
+        expiresAt: result.expiresAt,
+        username: result.username,
+      });
+      response.headers.append("Set-Cookie", service.cookieHeader(result.token, request));
+      response.headers.append("Set-Cookie", service.workbenchCookieHeader(result.token, request));
+      return response;
+    }
+    if (request.method === "POST" && pathname === "/api/admin/login/start") {
+      return jsonResponse(await service.startLogin(payload, request));
+    }
+    if (
+      pathname.startsWith("/api/admin/accounts") ||
+      pathname === "/api/admin/grants" ||
+      pathname === "/api/admin/grants/batch" ||
+      pathname.startsWith("/api/admin/trials/") ||
+      pathname === "/api/admin/email-licenses/revocation" ||
+      pathname === "/api/admin/settings/authorization" ||
+      pathname === "/api/admin/licenses/account"
+    ) {
+      const session = await service.status(request);
+      if (!session.authenticated) {
+        throw Object.assign(new Error("Administrator session is required."), { status: 401 });
+      }
+    }
+    if (request.method === "PATCH" && pathname === "/api/admin/accounts/authorization") {
+      return jsonResponse(await accountService.updateAccount(payload));
+    }
+    if (request.method === "PATCH" && pathname === "/api/admin/accounts/status") {
+      return jsonResponse(await accountService.updateAccountStatus(payload));
+    }
+    const accountStatusMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/status$/u);
+    if (request.method === "PATCH" && accountStatusMatch) {
       return jsonResponse(
-        { authenticated: true, expiresAt: result.expiresAt, username: result.username },
-        200,
-        {
-          "Set-Cookie": service.cookieHeader(result.token, request),
-        },
+        await accountService.updateAccountStatus({
+          ...payload,
+          accountId: decodeURIComponent(accountStatusMatch[1]),
+        }),
       );
+    }
+    if (request.method === "POST" && revokeSessionsMatch) {
+      return jsonResponse(
+        await accountService.revokeAccountSessions(decodeURIComponent(revokeSessionsMatch[1])),
+      );
+    }
+    if (request.method === "POST" && pathname === "/api/admin/grants") {
+      return jsonResponse(await accountService.createGrant(payload), 201);
+    }
+    if (request.method === "POST" && pathname === "/api/admin/grants/batch") {
+      return jsonResponse(
+        await accountService.createGrantBatch({
+          ...payload,
+          idempotencyKey: request.headers.get("idempotency-key") || payload.idempotencyKey,
+        }),
+        201,
+      );
+    }
+    if (request.method === "POST" && pathname === "/api/admin/accounts/batch/status") {
+      return jsonResponse(await accountService.updateAccountStatusBatch(payload));
+    }
+    if (request.method === "PATCH" && pathname === "/api/admin/email-licenses/revocation") {
+      return jsonResponse(await accountService.setEmailLicenseRevoked(payload));
+    }
+    const trialMatch = pathname.match(/^\/api\/admin\/trials\/([^/]+)$/u);
+    if (request.method === "PATCH" && trialMatch) {
+      return jsonResponse(
+        await accountService.updateEmailLicense({ ...payload, licenseId: decodeURIComponent(trialMatch[1]) }),
+      );
+    }
+    const trialRevocationMatch = pathname.match(/^\/api\/admin\/trials\/([^/]+)\/revocation$/u);
+    if (request.method === "PATCH" && trialRevocationMatch) {
+      return jsonResponse(
+        await accountService.setEmailLicenseRevoked({
+          ...payload,
+          licenseId: decodeURIComponent(trialRevocationMatch[1]),
+        }),
+      );
+    }
+    const grantMatch = pathname.match(/^\/api\/admin\/grants\/([^/]+)$/u);
+    if (request.method === "PATCH" && grantMatch) {
+      return jsonResponse(
+        await accountService.updateEmailLicense({ ...payload, licenseId: decodeURIComponent(grantMatch[1]) }),
+      );
+    }
+    const grantRevocationMatch = pathname.match(/^\/api\/admin\/grants\/([^/]+)\/revocation$/u);
+    if (request.method === "PATCH" && grantRevocationMatch) {
+      return jsonResponse(
+        await accountService.setEmailLicenseRevoked({
+          ...payload,
+          licenseId: decodeURIComponent(grantRevocationMatch[1]),
+        }),
+      );
+    }
+    if (request.method === "PATCH" && pathname === "/api/admin/settings/authorization") {
+      return jsonResponse(await accountService.updateSettings(payload));
+    }
+    if (request.method === "PATCH" && pathname === "/api/admin/licenses/account") {
+      return jsonResponse(await accountService.rebindLicense(payload));
     }
     if (request.method === "POST" && pathname === "/api/admin/licenses") {
       return jsonResponse(await service.createLicenses(payload, request), 201);
@@ -447,12 +708,6 @@ export async function handleAdminRequest(request, env) {
     }
     if (request.method === "PATCH" && pathname === "/api/admin/licenses/revocation") {
       return jsonResponse(await service.setLicensesRevoked(payload, request));
-    }
-    if (request.method === "PATCH" && pathname === "/api/admin/licenses/devices/revocation") {
-      return jsonResponse(await service.setDevicesRevoked(payload, request));
-    }
-    if (request.method === "DELETE" && pathname === "/api/admin/licenses/devices") {
-      return jsonResponse(await service.deleteDevices(payload, request));
     }
     if (request.method === "DELETE" && pathname === "/api/admin/licenses") {
       return jsonResponse(await service.deleteLicenses(payload, request));
@@ -478,4 +733,4 @@ export async function handleAdminRequest(request, env) {
   }
 }
 
-export { ADMIN_COOKIE_NAME };
+export { ADMIN_COOKIE_NAME, ADMIN_WORKBENCH_COOKIE_NAME };

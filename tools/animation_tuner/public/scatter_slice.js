@@ -7,6 +7,7 @@
   const editorCore = root.XSXBScatterSliceEditorCore;
   const workspaceCore = root.XSXBScatterSliceWorkspaceCore;
   const groupControllerCore = root.XSXBScatterSliceGroupController;
+  const temporaryWorksetCore = root.XSXBScatterTemporaryWorkset;
   const historyCore = root.XSXBHistory;
   const clipboardMedia = root.ClipboardMedia;
   if (!core) throw new Error("零散切图核心模块未加载");
@@ -15,6 +16,7 @@
   if (!editorCore) throw new Error("切片编辑核心模块未加载");
   if (!workspaceCore) throw new Error("切片工作区核心模块未加载");
   if (!groupControllerCore) throw new Error("切片分组控制器未加载");
+  if (!temporaryWorksetCore) throw new Error("切片临时工作集模块未加载");
   if (!historyCore) throw new Error("编辑历史模块未加载");
   if (!clipboardMedia) throw new Error("剪贴板媒体模块未加载");
 
@@ -80,6 +82,12 @@
     uploadButton: requireElement("#scatterUpload"),
     undoButton: requireElement("#scatterUndo"),
     uniformOutputInput: requireElement("#scatterUniformOutput"),
+    actionSummary: document.querySelector("#scatterActionSummary"),
+    organizePanel: document.querySelector("[data-requires-detection]"),
+    resultSummary: document.querySelector("#scatterResultSummary"),
+    stageAction: document.querySelector("#scatterStageAction"),
+    surface: document.querySelector("#scatterSliceSurface"),
+    workflowSteps: Array.from(document.querySelectorAll("[data-scatter-step]")),
   };
 
   const sourceCanvas = document.createElement("canvas");
@@ -219,6 +227,7 @@
     elements.uploadButton.disabled = state.busy;
     elements.clearSourceButton.disabled = state.busy || !state.source;
     elements.detectButton.disabled = state.busy || !state.source;
+    if (elements.stageAction) elements.stageAction.disabled = state.busy;
   }
 
   /**
@@ -256,7 +265,7 @@
    * @returns {Array<{id:string,boxes:object[]}>} Selected groups.
    */
   function selectedGroups() {
-    return state.groups.filter((group) => group.enabled && group.boxes.length > 0);
+    return state.groups.filter((group) => group.enabled && Array.isArray(group.boxes) && group.boxes.length > 0);
   }
 
   /**
@@ -694,8 +703,88 @@
     groupController.render();
   }
 
-  /** Synchronizes previews, counters, selection details, and action state. @returns {void} */
+  /**
+   * Writes detection counters and export enablement before any preview work.
+   * Preview failures must not leave the UI stuck at the initial 0 BOXES state.
+   * @returns {void}
+   */
+  function syncDetectionChrome() {
+    const includedGroups = selectedGroups();
+    const allGroupsSelected = state.groups.length > 0 && includedGroups.length === state.groups.length;
+    elements.boxCount.textContent = `${state.boxes.length} BOXES / ${state.groups.length} GROUPS`;
+    elements.groupSelection.textContent = `${includedGroups.length} / ${state.groups.length} 组`;
+    elements.toggleGroupsButton.disabled = state.groups.length === 0;
+    elements.toggleGroupsButton.textContent = allGroupsSelected ? "全部取消" : "全部选择";
+    elements.editModeButton.disabled = state.boxes.length === 0;
+    elements.addModeButton.disabled = !state.source;
+    elements.sampleModeButton.disabled = !state.source;
+    elements.playAllButton.disabled = state.boxes.length === 0;
+    elements.regroupButton.disabled = state.boxes.length === 0;
+    elements.normalizeBoxesButton.disabled = state.workspace.selection.ids.length < 2;
+    elements.selectSmallSlicesButton.disabled = state.boxes.length < 2;
+    elements.uniformOutputInput.checked = state.workspace.uniformOutput;
+    const selected = state.selectedIndex === null ? null : state.boxes[state.selectedIndex];
+    let position = null;
+    try {
+      position = selected ? locateBox(selected) : null;
+    } catch (_error) {
+      position = null;
+    }
+    elements.activeBox.textContent =
+      selected && position
+        ? `已选 ${state.workspace.selection.ids.length} · G${ordinal(position.groupIndex)} F${ordinal(position.frameIndex)} · X:${selected.x} Y:${selected.y} W:${selected.w} H:${selected.h}`
+        : "NO SELECTION";
+    elements.deleteButton.disabled = state.workspace.selection.ids.length === 0;
+    elements.downloadSliceButton.disabled = !selected;
+    elements.downloadSheetButton.disabled = includedGroups.length === 0;
+    elements.addProjectButton.disabled = state.busy || includedGroups.length === 0;
+    elements.clearSourceButton.disabled = state.busy || !state.source;
+    elements.surface?.classList.toggle("hasSource", Boolean(state.source));
+    elements.surface?.classList.toggle("hasDetection", state.boxes.length > 0);
+    const stage = !state.source ? "source" : state.boxes.length ? "organize" : "detect";
+    for (const step of elements.workflowSteps) {
+      const order = ["source", "detect", "organize", "deliver"];
+      step.classList.toggle("active", order.indexOf(step.dataset.scatterStep) <= order.indexOf(stage));
+    }
+    if (elements.resultSummary) {
+      const label = elements.resultSummary.querySelector("span");
+      const detail = elements.resultSummary.querySelector("strong");
+      if (label) label.textContent = state.boxes.length ? "识别完成" : state.source ? "素材已就绪" : "等待素材";
+      if (detail) {
+        detail.textContent = state.boxes.length
+          ? `已识别 ${state.boxes.length} 个区域 · 已建立 ${state.groups.length} 个分组`
+          : state.source
+            ? "下一步：智能识别主体"
+            : "先选择一张包含散落元素的图片";
+      }
+    }
+    if (elements.actionSummary) {
+      elements.actionSummary.textContent = state.boxes.length
+        ? `${includedGroups.length} 个动画组 · ${state.boxes.length} 个切片`
+        : state.source
+          ? "素材已载入，等待识别"
+          : "尚未识别切片";
+    }
+    if (elements.stageAction) {
+      elements.stageAction.disabled = state.busy;
+      elements.stageAction.textContent = !state.source
+        ? "选择素材"
+        : state.boxes.length
+          ? isStandaloneTool()
+            ? "应用到工作集"
+            : "加入动画项目"
+          : "智能识别";
+    }
+  }
+
+  /** Synchronizes counters first, then previews. @returns {boolean} Whether preview rendering succeeded. */
   function renderAll() {
+    try {
+      syncDetectionChrome();
+    } catch (error) {
+      reportFailure(error, "预览更新失败");
+      return false;
+    }
     try {
       if (state.previewFrameId !== null) {
         root.cancelAnimationFrame(state.previewFrameId);
@@ -703,35 +792,12 @@
       }
       renderPreview();
       renderSliceList();
-      const includedGroups = selectedGroups();
-      const allGroupsSelected = state.groups.length > 0 && includedGroups.length === state.groups.length;
-      elements.boxCount.textContent = `${state.boxes.length} BOXES / ${state.groups.length} GROUPS`;
-      elements.groupSelection.textContent = `${includedGroups.length} / ${state.groups.length} 组`;
-      elements.toggleGroupsButton.disabled = state.groups.length === 0;
-      elements.toggleGroupsButton.textContent = allGroupsSelected ? "全部取消" : "全部选择";
-      elements.editModeButton.disabled = state.boxes.length === 0;
-      elements.addModeButton.disabled = !state.source;
-      elements.sampleModeButton.disabled = !state.source;
-      elements.playAllButton.disabled = state.boxes.length === 0;
-      elements.regroupButton.disabled = state.boxes.length === 0;
-      elements.normalizeBoxesButton.disabled = state.workspace.selection.ids.length < 2;
-      elements.selectSmallSlicesButton.disabled = state.boxes.length < 2;
-      elements.uniformOutputInput.checked = state.workspace.uniformOutput;
       setToolMode(state.toolMode);
-      const selected = state.selectedIndex === null ? null : state.boxes[state.selectedIndex];
-      const position = selected ? locateBox(selected) : null;
-      elements.activeBox.textContent =
-        selected && position
-          ? `已选 ${state.workspace.selection.ids.length} · G${ordinal(position.groupIndex)} F${ordinal(position.frameIndex)} · X:${selected.x} Y:${selected.y} W:${selected.w} H:${selected.h}`
-          : "NO SELECTION";
-      elements.deleteButton.disabled = state.workspace.selection.ids.length === 0;
-      elements.downloadSliceButton.disabled = !selected;
-      elements.downloadSheetButton.disabled = includedGroups.length === 0;
-      elements.addProjectButton.disabled = state.busy || includedGroups.length === 0;
-      elements.clearSourceButton.disabled = state.busy || !state.source;
       history.updateHistoryControls();
+      return true;
     } catch (error) {
       reportFailure(error, "预览更新失败");
+      return false;
     }
   }
 
@@ -754,8 +820,10 @@
       installGroups(result.boxes);
       state.resolvedMode = result.mode;
       state.selectedIndex = state.boxes.length > 0 ? 0 : null;
+      if (elements.organizePanel && state.boxes.length > 0) elements.organizePanel.open = true;
       setToolMode(state.boxes.length > 0 ? "edit" : "sample");
-      renderAll();
+      const rendered = renderAll();
+      if (!rendered) return;
       const duration = (performance.now() - startedAt).toFixed(1);
       const guideSummary = result.ignoredGuidePixels
         ? ` · 已过滤 ${result.ignoredGuidePixels} 个网格像素`
@@ -982,6 +1050,51 @@
         })),
       };
     });
+  }
+
+  /** Returns whether the slice editor is running as a project-free quick tool. */
+  function isStandaloneTool() {
+    return root.location.pathname.startsWith("/tools/");
+  }
+
+  /** Builds canvases for enabled groups while preserving their visual order and identity. */
+  function temporaryWorkset() {
+    const groups = selectedGroups().map((group) => {
+      const uniformSize = state.workspace.uniformOutput ? maximumFrameSize(group.boxes) : null;
+      return {
+        id: group.id,
+        name: group.name,
+        enabled: true,
+        frames: group.boxes,
+        uniformSize,
+      };
+    });
+    const baseName = elements.animationNameInput.value.trim() || state.source?.name || "零散切片";
+    return temporaryWorksetCore.createTemporaryWorkset({
+      name: baseName.replace(/\.[^.]+$/, ""),
+      groups,
+      createCanvas: (frame, group) => createOutputFrame(frame, group.uniformSize),
+    });
+  }
+
+  /** Publishes selected slice groups to the shared quick-tool session and opens organizer. */
+  async function applySelectedGroupsToTemporaryWorkset() {
+    if (state.busy) return;
+    setStatus("正在生成临时工作集…", "working");
+    try {
+      const parentWindow = root.parent && root.parent !== root ? root.parent : root;
+      const temporaryStore = parentWindow.XSXBTemporaryWorkset;
+      const navigate = parentWindow.XSXBNavigateWorkbench;
+      if (!temporaryStore?.setWorkset || typeof navigate !== "function") {
+        throw new Error("临时工作集尚未就绪，请从快速工具首页重新进入零散切片");
+      }
+      const workset = temporaryWorkset();
+      temporaryStore.setWorkset(workset);
+      setStatus(`已生成 ${workset.frames.length} 帧，正在进入导入与整理…`, "success");
+      await navigate("organizer", "standalone");
+    } catch (error) {
+      reportFailure(error, "应用到工作集失败");
+    }
   }
 
   /** Opens the parent application's shared project handoff without discarding slice state. */
@@ -1281,7 +1394,7 @@
   clipboardMedia.bindPaste({
     target: document,
     accept: ["image"],
-    isActive: () => !state.busy,
+    isActive: () => !state.busy && !elements.surface?.hidden,
     onPaste: async ({ images }) => {
       const installed = await handleFile(images[0]);
       if (installed && images.length > 1) {
@@ -1393,7 +1506,14 @@
     if (!state.pointerEdit && state.toolMode === "edit") elements.previewCanvas.style.cursor = "default";
   });
   elements.deleteButton.addEventListener("click", deleteSelectedBox);
+  elements.stageAction?.addEventListener("click", () => {
+    if (!state.source) elements.fileInput.click();
+    else if (!state.boxes.length) runDetection();
+    else if (isStandaloneTool()) void applySelectedGroupsToTemporaryWorkset();
+    else elements.addProjectButton.click();
+  });
   document.addEventListener("keydown", (event) => {
+    if (elements.surface?.hidden) return;
     if (isInteractiveTarget(event.target)) return;
     const command = event.metaKey || event.ctrlKey;
     if (command && event.key.toLowerCase() === "z") {
@@ -1422,6 +1542,7 @@
     hasUnsavedChanges() {
       return Boolean(state.source);
     },
+    clear: clearSource,
   });
   root.addEventListener("beforeunload", (event) => {
     if (state.suppressBeforeUnload || !state.source) return;

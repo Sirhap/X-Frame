@@ -16,6 +16,37 @@
   }
   /** Default automatic-removal profile used by the organizer's batch action. */
   const ORGANIZER_BATCH_CUTOUT_PARAMETERS = smartCutoutDefaults.REGULAR_AUTO_BACKGROUND_PARAMETERS;
+  /** Maximum decoded pixels held by one embedded cutout session. */
+  const ORGANIZER_CUTOUT_BATCH_PIXEL_LIMIT = 64_000_000;
+
+  /**
+   * Splits organizer frames into stable, pixel-safe workbench batches.
+   * A single oversized frame remains isolated so the cutout workbench can
+   * report its per-image limit without losing the frame's identity.
+   *
+   * @param {object[]} frames Ordered organizer frames.
+   * @param {number} [maxPixels] Maximum decoded pixels per workbench batch.
+   * @returns {object[][]} Stable batches preserving source order.
+   */
+  function partitionFramesByPixelBudget(frames, maxPixels = ORGANIZER_CUTOUT_BATCH_PIXEL_LIMIT) {
+    const limit = Math.max(1, Number(maxPixels) || ORGANIZER_CUTOUT_BATCH_PIXEL_LIMIT);
+    const batches = [];
+    let currentBatch = [];
+    let currentPixels = 0;
+    Array.from(frames || []).forEach((frame) => {
+      const source = frame?.editedCanvas || frame?.originalCanvas;
+      const pixels = Math.max(0, Number(source?.width) || 0) * Math.max(0, Number(source?.height) || 0);
+      if (currentBatch.length && currentPixels + pixels > limit) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        currentPixels = 0;
+      }
+      currentBatch.push(frame);
+      currentPixels += pixels;
+    });
+    if (currentBatch.length) batches.push(currentBatch);
+    return batches;
+  }
 
   /**
    * Creates the frame-organizer operation controller.
@@ -28,7 +59,7 @@
    *   elements:Record<string,any>,
    *   state:Record<string,any>,
    *   text:(key:string,variables?:Record<string,string|number>)=>string,
-   *   hooks?:{browserExportOnly?:boolean,getCurrentAnimation?:()=>object|null,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,createSessionAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,exportAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<object|null>,addToProject?:(request:{worksets:object[],sourceTool:string})=>Promise<void>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
+   *   hooks?:{browserExportOnly?:boolean,getCurrentAnimation?:()=>object|null,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,createSessionAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,exportAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<object|null>,addToProject?:(request:{worksets:object[],sourceTool:string})=>Promise<void>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,autoCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
    *   includedFrames:()=>object[],
    *   imageCanvas:(image:CanvasImageSource)=>HTMLCanvasElement,
    *   renderCounts:()=>void,
@@ -104,7 +135,7 @@
 
     /**
      * Opens the shared cutout workbench and writes processed canvases and parameter state back to frames.
-     * @param {{mode:"single"|"batch",sourceFrames:object[],selectedIndex?:number,autoDetectBackground?:boolean,processingParameters?:object,returnFrame?:object|null}} options Workbench behavior.
+     * @param {{mode:"single"|"batch",sourceFrames:object[],selectedIndex?:number,autoDetectBackground?:boolean,processingParameters?:object,returnFrame?:object|null,direct?:boolean}} options Workbench behavior.
      * @returns {Promise<void>}
      */
     async function runCutoutWorkset(options) {
@@ -113,8 +144,9 @@
         setStatus(text("cutoutNeedFrames"), "error");
         return;
       }
-      if (typeof hooks.editCutout !== "function") {
-        setStatus(text("failed", { message: "Batch cutout is unavailable." }), "error");
+      const cutout = options.direct ? hooks.autoCutout : hooks.editCutout;
+      if (typeof cutout !== "function") {
+        setStatus(text("failed", { message: "Smart cutout is unavailable." }), "error");
         return;
       }
       /**
@@ -122,17 +154,19 @@
        * @param {Array<object>} outputs Processed workset outputs.
        * @returns {void}
        */
-      const applyCutoutOutputs = (outputs) => {
-        if (outputs.length !== sourceFrames.length) {
-          throw new Error(`Expected ${sourceFrames.length} cutout frames, received ${outputs.length}.`);
+      const applyCutoutOutputs = (outputs, batchFrames) => {
+        if (outputs.length !== batchFrames.length) {
+          throw new Error(`Expected ${batchFrames.length} cutout frames, received ${outputs.length}.`);
         }
         const outputByUid = new Map(
           outputs.filter((output) => output?.frame?.uid).map((output) => [output.frame.uid, output]),
         );
-        sourceFrames.forEach((frame, index) => {
+        batchFrames.forEach((frame, index) => {
           const output = outputByUid.get(frame.uid) || outputs[index];
           if (!output?.canvas) throw new Error(`Missing cutout canvas for frame ${index + 1}.`);
           frame.editedCanvas = imageCanvas(output.canvas);
+          frame.hasEditedResult = true;
+          frame.assetRevision = Math.max(0, Number(frame.assetRevision) || 0) + 1;
           frame.imported = true;
           frame.flipped = false;
           frame.signature = null;
@@ -148,40 +182,61 @@
       state.busy = true;
       renderCounts();
       windowApi.clearTimeout(state.previewTimer);
-      elements.organizerModal.inert = true;
-      elements.organizerModal.setAttribute("aria-hidden", "true");
+      if (!options.direct) {
+        elements.organizerModal.inert = true;
+        elements.organizerModal.setAttribute("aria-hidden", "true");
+      }
       try {
-        const outputs = await hooks.editCutout({
-          name: elements.organizerAnimationName.value.trim() || "animation",
-          mode: options.mode,
-          selectedIndex: Number(options.selectedIndex) || 0,
-          autoDetectBackground: Boolean(options.autoDetectBackground),
-          processingParameters: options.processingParameters,
-          onLiveApply: applyCutoutOutputs,
-          items: sourceFrames.map((frame) => ({
-            name: frame.name,
-            image: frame.editedCanvas,
-            frame: { uid: frame.uid },
-            cutoutState: frame.cutoutState,
-          })),
-        });
-        if (!outputs) return;
-        applyCutoutOutputs(outputs);
-        setStatus(text("cutoutReady", { count: outputs.length }), "success");
+        const batches = partitionFramesByPixelBudget(sourceFrames);
+        let appliedCount = 0;
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+          const batchFrames = batches[batchIndex];
+          if (batches.length > 1) {
+            setStatus(
+              text("cutoutBatchProgress", {
+                current: batchIndex + 1,
+                total: batches.length,
+                count: batchFrames.length,
+              }),
+              "busy",
+            );
+          }
+          const outputs = await cutout({
+            name: elements.organizerAnimationName.value.trim() || "animation",
+            mode: options.mode,
+            selectedIndex: batchIndex === 0 ? Number(options.selectedIndex) || 0 : 0,
+            autoDetectBackground: Boolean(options.autoDetectBackground),
+            processingParameters: options.processingParameters,
+            onLiveApply: (liveOutputs) => applyCutoutOutputs(liveOutputs, batchFrames),
+            items: batchFrames.map((frame) => ({
+              name: frame.name,
+              image: frame.editedCanvas,
+              frame: { uid: frame.uid },
+              cutoutState: frame.cutoutState,
+            })),
+          });
+          if (!outputs) return;
+          applyCutoutOutputs(outputs, batchFrames);
+          appliedCount += outputs.length;
+        }
+        if ((options.mode === "single" || options.direct) && appliedCount) state.viewMode = "edited";
+        setStatus(text("cutoutReady", { count: appliedCount }), "success");
       } catch (error) {
         setStatus(text("failed", { message: error.message }), "error");
       } finally {
         state.busy = false;
-        elements.organizerModal.inert = false;
-        elements.organizerModal.removeAttribute("aria-hidden");
-        uiController().setEditorInert(true);
+        if (!options.direct) {
+          elements.organizerModal.inert = false;
+          elements.organizerModal.removeAttribute("aria-hidden");
+          uiController().setEditorInert(true);
+        }
         renderGrid();
         restartPreview();
         if (options.returnFrame) {
           elements.organizerGrid
             .querySelector(`[data-frame-uid="${cssEscape(options.returnFrame.uid)}"] .organizerFrameCutout`)
             ?.focus({ preventScroll: true });
-        } else {
+        } else if (!options.direct) {
           elements.organizerBatchCutout?.focus({ preventScroll: true });
         }
       }
@@ -198,24 +253,29 @@
         setStatus(text("cutoutNeedFrames"), "error");
         return;
       }
+      const targetBatch = partitionFramesByPixelBudget(state.frames).find((batch) =>
+        batch.includes(targetFrame),
+      ) || [targetFrame];
       await runCutoutWorkset({
         mode: "single",
-        sourceFrames: state.frames,
-        selectedIndex: state.frames.indexOf(targetFrame),
+        sourceFrames: targetBatch,
+        selectedIndex: targetBatch.indexOf(targetFrame),
         returnFrame: targetFrame,
       });
     }
 
     /**
-     * Opens all included frames with automatic background detection and the organizer batch profile.
+     * Automatically clears backgrounds from all included frames without opening the batch editor.
      * @returns {Promise<void>}
      */
     async function editBatchCutout() {
+      const selected = state.frames.filter((frame) => frame.selected && frame.included);
       await runCutoutWorkset({
         mode: "batch",
-        sourceFrames: includedFrames(),
+        sourceFrames: selected.length ? selected : includedFrames(),
         autoDetectBackground: true,
         processingParameters: { ...ORGANIZER_BATCH_CUTOUT_PARAMETERS },
+        direct: true,
       });
     }
 
@@ -238,6 +298,7 @@
         Array.from(state.premiumFeatures || []);
       const sessionImport = hooks.browserExportOnly === true && state.mode === "import";
       const browserExportOnly = hooks.browserExportOnly === true && state.mode === "import" && !sessionImport;
+      const sourceGroupCount = new Set(frames.map((frame) => frame.groupId).filter(Boolean)).size;
       const confirmation =
         state.mode === "import"
           ? text(browserExportOnly ? "exportConfirm" : "createConfirm", { count: frames.length })
@@ -247,7 +308,15 @@
           ? [
               [text("detailProject"), metadata.projectId || metadata.projectLabel],
               [text("detailProfile"), metadata.profileLabel],
-              [text("detailAnimation"), metadata.animationName],
+              [
+                text("detailAnimation"),
+                metadata.creationMode === "groups" && sourceGroupCount > 1
+                  ? `${sourceGroupCount} 个动画组（按组命名）`
+                  : metadata.animationName,
+              ],
+              ...(metadata.creationMode === "groups" && sourceGroupCount > 1
+                ? [["创建方式", `按组创建 ${sourceGroupCount} 个动画`]]
+                : []),
               [text("detailFrames"), frames.length],
               [text("detailFps"), metadata.fps],
             ]
@@ -259,7 +328,9 @@
       state.busy = true;
       renderCounts();
       try {
-        const items = frames.map((frame) => ({
+        const itemForFrame = (frame) => ({
+          frameId: frame.uid,
+          assetRevision: Math.max(0, Number(frame.assetRevision) || (frame.hasEditedResult ? 1 : 0)),
           sourceIndex: frame.sourceIndex,
           sourcePath: frame.sourcePath,
           name: frame.name,
@@ -268,11 +339,32 @@
             state.mode === "import" || frame.imported || frame.flipped
               ? frame.editedCanvas.toDataURL("image/png")
               : "",
-        }));
+        });
+        const items = frames.map(itemForFrame);
         if (state.mode === "import") {
           const createAnimation = sessionImport ? hooks.createSessionAnimation : hooks.createAnimation;
           if (typeof createAnimation !== "function") throw new Error("Animation import is unavailable.");
-          await createAnimation(metadata, items, { premiumFeatures: usedPremiumFeatures });
+          const groupedFrames = new Map();
+          if (metadata.creationMode === "groups") {
+            for (const frame of frames) {
+              const groupId = String(frame.groupId || "");
+              if (!groupId) continue;
+              if (!groupedFrames.has(groupId)) groupedFrames.set(groupId, []);
+              groupedFrames.get(groupId).push(frame);
+            }
+          }
+          if (groupedFrames.size > 1) {
+            for (const groupFrames of groupedFrames.values()) {
+              const animationName = String(groupFrames[0]?.groupName || metadata.animationName).trim();
+              await createAnimation(
+                { ...metadata, animationName, creationMode: undefined },
+                groupFrames.map(itemForFrame),
+                { premiumFeatures: usedPremiumFeatures },
+              );
+            }
+          } else {
+            await createAnimation(metadata, items, { premiumFeatures: usedPremiumFeatures });
+          }
           setStatus(text(browserExportOnly ? "exportedZip" : "created", { count: items.length }), "success");
           if (!browserExportOnly) state.mode = "edit";
           renderLanguage();
@@ -385,7 +477,7 @@
 
     /**
      * Downloads the included processed frames as an animation ZIP.
-     * @param {{confirmed?:boolean,formats?:{frames?:boolean,spritesheet?:boolean,gif?:boolean,mov?:boolean},signal?:AbortSignal}} [exportOptions] Selected export formats and cancellation signal.
+     * @param {{confirmed?:boolean,formats?:{frames?:boolean,spritesheet?:boolean,gif?:boolean,mp4?:boolean,mov?:boolean},recipe?:object,signal?:AbortSignal}} [exportOptions] Selected export formats, transient recipe, and cancellation signal.
      * @returns {Promise<object|null|undefined>}
      */
     async function exportIncludedFrames(exportOptions = {}) {
@@ -434,20 +526,18 @@
               name: frame.name,
               flipped: frame.flipped,
               data: frame.editedCanvas.toDataURL("image/png"),
+              image: frame.editedCanvas,
+              width: frame.editedCanvas.width,
+              height: frame.editedCanvas.height,
+              frameId: frame.uid,
+              assetRevision: Math.max(0, Number(frame.assetRevision) || 0),
+              durationMs: Number(frame.durationMs || frame.duration || 0) || Math.round(1000 / metadata.fps),
             };
-            if (
-              exportOptions.formats?.spritesheet ||
-              exportOptions.formats?.gif ||
-              exportOptions.formats?.mov
-            ) {
-              item.image = frame.editedCanvas;
-              item.width = frame.editedCanvas.width;
-              item.height = frame.editedCanvas.height;
-            }
             return item;
           }),
           {
             formats: exportOptions.formats,
+            recipe: exportOptions.recipe,
             signal: exportOptions.signal,
             premiumFeatures: usedPremiumFeatures,
             onProgress: (current, total) => setStatus(text("exportingZip", { current, total }), "busy"),
@@ -476,5 +566,5 @@
     };
   }
 
-  return { createController };
+  return { createController, partitionFramesByPixelBudget };
 });

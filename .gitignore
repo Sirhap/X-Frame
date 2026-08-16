@@ -55,7 +55,13 @@ audio/projects/*
 output/
 .playwright-cli/
 .codex-artifacts/
+.superpowers/
 reprocessed-frames/
+
+# Local sample dumps, sale snapshots, and one-off session reports.
+artifacts/
+release/
+reports/
 
 # Reproducible production output. Publish the directory as one immutable unit.
 dist/

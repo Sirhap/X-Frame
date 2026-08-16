@@ -2,6 +2,7 @@
 :root {
   --shell-rail-width: 64px;
   --shell-sidebar-width: 320px;
+  --shell-flow-height: 52px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -102,8 +103,152 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
 }
 
 .app {
+  box-sizing: border-box;
   grid-template-columns: var(--shell-rail-width) var(--shell-sidebar-width) minmax(0, 1fr);
+  height: 100dvh;
+  padding-top: var(--shell-flow-height);
   transition: grid-template-columns var(--motion-standard) var(--ease-standard);
+}
+
+.app > .sidebar,
+.app > .workspace {
+  height: 100%;
+}
+
+.workspaceFlowHeader {
+  position: fixed;
+  z-index: 1010;
+  inset: 0 0 auto var(--shell-rail-width);
+  height: var(--shell-flow-height);
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(148px, 0.72fr) auto minmax(230px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel-3) 96%, transparent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.workspaceFlowContext {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+}
+
+.workspaceFlowContext > span {
+  grid-column: 1 / -1;
+  color: var(--accent-2);
+  font: 780 8px/1 var(--data-font);
+  letter-spacing: 0.13em;
+}
+
+.workspaceFlowContext strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceFlowContext output {
+  color: var(--muted);
+  font: 700 9px/1 var(--data-font);
+  white-space: nowrap;
+}
+
+.workspaceFlowContext output[data-status="saving"] {
+  color: var(--accent-3);
+}
+
+.workspaceFlowContext output:is([data-status="error"], [data-status="conflict"]) {
+  color: var(--danger);
+}
+
+.workspacePrimaryTabs,
+.workspaceSecondaryTabs,
+.workspaceSecondaryTabs > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.workspacePrimaryTabs {
+  align-self: stretch;
+  gap: 2px;
+}
+
+.workspacePrimaryTabs a,
+.workspaceSecondaryTabs a {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  font: 720 11px/1 var(--ui-font);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.workspacePrimaryTabs a {
+  padding: 0 13px;
+}
+
+.workspaceSecondaryTabs {
+  overflow: hidden;
+  justify-content: flex-end;
+}
+
+.workspaceSecondaryTabs > span {
+  gap: 1px;
+}
+
+.workspaceSecondaryTabs > span:not(.active) {
+  display: none;
+}
+
+.workspaceSecondaryTabs a {
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 10px;
+}
+
+.workspacePrimaryTabs a:hover,
+.workspaceSecondaryTabs a:hover,
+.workspacePrimaryTabs a.active,
+.workspaceSecondaryTabs a.active {
+  border-color: color-mix(in srgb, var(--accent-2) 34%, var(--line));
+  background: color-mix(in srgb, var(--accent-2) 9%, var(--panel-2));
+  color: var(--ink);
+}
+
+.workspacePrimaryTabs a.active {
+  box-shadow: inset 0 -2px 0 var(--accent-2);
+  color: var(--accent-2);
+}
+
+.workspaceAccount {
+  min-height: 34px;
+  padding: 0 12px;
+  border-color: var(--line);
+  background: var(--control-bg);
+  color: var(--ink);
+  font: 720 11px/1 var(--ui-font);
+}
+
+body[data-app-surface="projects"] .workspaceFlowHeader,
+body[data-app-surface="tools"] .workspaceFlowHeader {
+  display: none;
+}
+
+body[data-app-surface="projects"] .app,
+body[data-app-surface="tools"] .app {
+  padding-top: 0;
 }
 
 .toolRail {
@@ -185,6 +330,59 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
   color: var(--accent-2);
 }
 
+.toolRailContextMenu {
+  position: fixed;
+  z-index: 1190;
+  top: 112px;
+  left: calc(var(--shell-rail-width) + 10px);
+  width: min(272px, calc(100vw - var(--shell-rail-width) - 24px));
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 35%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 96%, var(--panel-3));
+  box-shadow: var(--soft-shadow);
+}
+
+.toolRailContextEyebrow {
+  margin: 0 0 5px;
+  color: var(--accent-2);
+  font: 800 10px/1 var(--data-font);
+  letter-spacing: 0.12em;
+}
+
+.toolRailContextMenu strong {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.toolRailContextHint,
+.toolRailContextFootnote {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.toolRailContextActions {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.toolRailContextActions button {
+  min-height: 34px;
+  border-color: var(--line);
+  background: var(--control-bg);
+  color: var(--control-ink);
+  font: 700 12px/1.2 var(--ui-font);
+}
+
+.toolRailContextActions button:first-child {
+  border-color: color-mix(in srgb, var(--accent-2) 55%, var(--line));
+  color: var(--accent-2);
+}
+
 .toolRailCollapse {
   margin-top: auto;
   font-family: inherit;
@@ -199,7 +397,8 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
   grid-column: 2 / 4;
   grid-row: 1;
   min-width: 0;
-  min-height: 100dvh;
+  height: 100%;
+  min-height: 0;
   padding: clamp(24px, 4vw, 64px);
   overflow: auto;
   background:
@@ -219,7 +418,7 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
 }
 
 .scatterSliceSurface {
-  height: 100dvh;
+  height: 100%;
   min-height: 0;
   padding: 0;
   overflow: hidden;
@@ -234,7 +433,222 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
   background: var(--bg);
 }
 
+.deliverySurface {
+  overflow: hidden;
+}
+
+.deliveryExportMount {
+  width: min(1480px, 100%);
+  margin: 22px auto 0;
+}
+
+.deliveryExportLoading {
+  display: grid;
+  gap: 8px;
+  min-height: 180px;
+  place-content: center;
+  color: var(--muted);
+  text-align: center;
+}
+
+.deliveryExportLoading span {
+  color: var(--accent-2);
+  font: 760 10px/1 var(--data-font);
+  letter-spacing: 0.12em;
+}
+
+.deliveryIntegrationGrid {
+  height: auto;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  margin-top: 14px;
+  padding-bottom: 28px;
+}
+
+.playbackAvailability {
+  align-self: center;
+  min-width: max-content;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font: 700 10px/1.2 var(--data-font);
+  white-space: nowrap;
+}
+
+.playbackAvailability[data-state="single"] {
+  color: #f6c867;
+}
+
+.deliveryGrid {
+  width: min(1180px, 100%);
+  height: calc(100% - 106px);
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(220px, 0.8fr));
+  gap: 14px;
+  margin: 24px auto 0;
+}
+
+.deliveryCard {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+}
+
+.deliveryCard.active {
+  border-color: color-mix(in srgb, var(--accent-2) 54%, var(--line));
+  box-shadow: inset 0 3px 0 var(--accent-2);
+}
+
+.deliverySurface [data-delivery-panel]:not(.active) {
+  display: none;
+}
+
+.deliveryIntegrationGrid:not(:has(> .deliveryCard.active)) {
+  display: none;
+}
+
+.deliveryCard > span,
+.deliveryCardKicker > span {
+  color: var(--accent-2);
+  font: 760 10px/1 var(--data-font);
+  letter-spacing: 0.12em;
+}
+
+.deliveryCardKicker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.deliveryStatus {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font: 760 10px/1 var(--data-font);
+}
+
+.deliveryStatus[data-tone="success"] {
+  border-color: color-mix(in srgb, #35d7b9 55%, var(--line));
+  color: #62e4cc;
+  background: color-mix(in srgb, #35d7b9 10%, transparent);
+}
+
+.deliveryStatus[data-tone="warning"] {
+  border-color: color-mix(in srgb, #f4b84a 55%, var(--line));
+  color: #f6c867;
+  background: color-mix(in srgb, #f4b84a 10%, transparent);
+}
+
+.deliveryStatus[data-tone="danger"] {
+  border-color: color-mix(in srgb, #f06666 55%, var(--line));
+  color: #ff8b8b;
+  background: color-mix(in srgb, #f06666 10%, transparent);
+}
+
+.deliveryChecks {
+  display: grid;
+  gap: 7px;
+  margin: -8px 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.deliveryChecks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.deliveryChecks li::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.deliveryChecks li[data-tone="success"] {
+  color: #62e4cc;
+}
+
+.deliveryChecks li[data-tone="warning"] {
+  color: #f6c867;
+}
+
+.deliveryChecks li[data-tone="danger"] {
+  color: #ff8b8b;
+}
+
+.deliveryCard h2 {
+  margin: 12px 0 7px;
+  color: var(--ink);
+  font-size: 19px;
+  text-transform: none;
+}
+
+.deliveryCard p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.deliveryCard .deliveryScopeNote {
+  margin: -8px 0 16px;
+  color: color-mix(in srgb, var(--accent-2) 74%, var(--muted));
+  font-size: 11px;
+}
+
+.deliveryCard dl {
+  display: grid;
+  gap: 1px;
+  margin: 22px 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.deliveryCard dl div {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 12px;
+  background: var(--panel-2);
+}
+
+.deliveryCard :is(dt, dd) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.deliveryCard dd {
+  color: var(--ink);
+  font-weight: 740;
+}
+
+.deliveryCard > button {
+  width: 100%;
+  margin-top: auto;
+}
+
 .modeHubHeader,
+.temporaryWorksetResume,
 .modeHubFeatured,
 .modeHubSectionHeading,
 .projectHubList,
@@ -276,6 +690,7 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
 }
 
 .modeHubHeader p,
+.temporaryWorksetResume p,
 .modeHubFeatured p,
 .modeHubEmpty p,
 .quickToolCard p,
@@ -284,6 +699,41 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.65;
+}
+
+.temporaryWorksetResume {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 48%, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent-2) 8%, var(--panel));
+}
+
+.temporaryWorksetResume[hidden] {
+  display: none;
+}
+
+.temporaryWorksetResume span {
+  display: block;
+  color: var(--accent-text);
+  font: 750 10px/1.4 var(--data-font);
+  letter-spacing: 0.14em;
+}
+
+.temporaryWorksetResume strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+}
+
+.temporaryWorksetActions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .modeHubPrimary,
@@ -399,6 +849,11 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
 }
 
 @media (max-width: 900px) {
+  .app,
+  body.sidebarCollapsed .app {
+    padding-left: 0;
+  }
+
   .modeHub {
     grid-column: 1 / 4;
     padding: 84px 16px 32px;
@@ -552,7 +1007,7 @@ body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
   padding: 0 10px 10px;
 }
 
-.projectProcessingActions :is(#organizerOpen, #cutoutOpen) {
+.projectProcessingActions :is(#organizerOpen, #cutoutOpen, #cutoutCurrentFrame) {
   min-height: 44px;
   margin: 0;
   padding: 7px 8px;
@@ -560,6 +1015,14 @@ body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
   background: var(--control-bg);
   color: var(--ink);
   font-size: 11px;
+}
+
+.projectProcessingActions #cutoutCurrentFrame {
+  grid-column: 1 / -1;
+  border-color: color-mix(in srgb, var(--accent-2) 62%, var(--line));
+  background: color-mix(in srgb, var(--accent-2) 12%, var(--control-bg));
+  color: var(--accent-text);
+  font-weight: 800;
 }
 
 .contextBreadcrumb {
@@ -660,7 +1123,8 @@ body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
   gap: 6px;
 }
 
-.toolbarActions > :is(.factoryHomeLaunch, #cutoutOpen, #organizerOpen, #organizerNewOpen) {
+.toolbarActions
+  > :is(.factoryHomeLaunch, #cutoutOpen, #cutoutCurrentFrame, #organizerOpen, #organizerNewOpen) {
   display: none;
 }
 
@@ -784,6 +1248,14 @@ body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
   overflow-y: auto;
 }
 
+.singleFrameAnimation .filmstripPanel {
+  max-height: 132px;
+}
+
+.singleFrameAnimation .filmstrip {
+  padding-block: 5px;
+}
+
 .filmstripPanel[data-layout="grid"] .frameStack {
   flex-basis: 104px;
   min-width: 104px;
@@ -870,12 +1342,17 @@ body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
 }
 
 .contextActionBarActions {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
 }
 
 .contextActionBarActions button {
+  max-width: 100%;
   min-height: 34px;
   padding: 6px 14px;
 }
@@ -896,7 +1373,22 @@ body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
 }
 
 body:is(.cutoutOpen, .organizerOpen) :is(.cutoutModal, .organizerModal) {
-  inset: 0 0 0 var(--shell-rail-width);
+  inset: var(--shell-flow-height) 0 0 var(--shell-rail-width);
+}
+
+@media (max-width: 1180px) {
+  .workspaceFlowHeader {
+    grid-template-columns: minmax(120px, 0.5fr) auto minmax(130px, 0.7fr) auto;
+    gap: 8px;
+  }
+
+  .workspaceSecondaryTabs a {
+    padding-inline: 6px;
+  }
+
+  .deliveryGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 body:is(.cutoutOpen, .organizerOpen) :is(.cutoutHeader, .organizerHeader) {
@@ -953,6 +1445,119 @@ body:not(.theme-kunkun).organizerOpen .organizerPrimary {
   border-color: var(--accent-2);
   background: var(--accent-2);
   color: #06120f;
+}
+
+.organizerScopedAction {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+
+.organizerScopedAction small {
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.organizerBatchScope {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent-3) 62%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent-3) 8%, var(--panel-2));
+}
+
+.organizerBatchScope > span {
+  color: var(--accent-3);
+  font: 780 9px/1 var(--data-font);
+  letter-spacing: 0.08em;
+}
+
+.organizerBatchScope strong {
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.organizerBatchScope small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.organizerWorkbench.hasFrames:not(.showMoreTools)
+  :is(#organizerInvert, .organizerReduceControl, #organizerAutoSort, #organizerFlip) {
+  display: none;
+}
+
+.organizerFooterActions {
+  position: relative;
+  grid-template-columns: minmax(118px, auto) minmax(170px, 1fr) !important;
+}
+
+.organizerDownstreamMenu {
+  position: relative;
+  min-width: 0;
+}
+
+.organizerDownstreamMenu > summary {
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--ink);
+  font: 760 10px/1 var(--ui-font);
+  cursor: pointer;
+  list-style: none;
+}
+
+.organizerDownstreamMenu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.organizerDownstreamMenu > summary::after {
+  margin-left: 5px;
+  color: var(--muted);
+  content: "···";
+}
+
+.organizerDownstreamMenu > div {
+  position: absolute;
+  z-index: 40;
+  right: 0;
+  bottom: calc(100% + 7px);
+  width: 210px;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--soft-shadow);
+}
+
+.organizerDownstreamMenu > div button {
+  width: 100%;
+  min-height: 36px !important;
+  grid-column: auto !important;
+}
+
+.organizerFooterActions #organizerApply {
+  grid-column: 2 !important;
+  min-height: 40px;
+}
+
+.organizerFooterActions #organizerGodotPlaceholder:not([hidden]) {
+  grid-column: 1 / -1;
 }
 
 body:not(.theme-kunkun).organizerOpen .organizerSourceTools {
@@ -1082,5 +1687,148 @@ body.organizerOpen .organizerFooterActions {
   .sidebar :is(.projectContextBody, .panel[open] > :not(summary)) {
     transition: none;
     animation: none;
+  }
+}
+
+/*
+ * Desktop document-flow contract
+ *
+ * The workspace is intentionally one vertically scrolling page. Tool panels may
+ * keep horizontal scrollers (frame strips), but must not create a second
+ * vertical scroll area beside the browser scrollbar.
+ */
+@media (min-width: 1121px) {
+  html {
+    height: auto;
+    min-height: 100%;
+    scroll-padding-top: var(--shell-flow-height);
+  }
+
+  body,
+  body:is(.cutoutOpen, .organizerOpen) {
+    height: auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .workspaceFlowHeader {
+    position: sticky;
+    inset: auto;
+    top: 0;
+    margin-left: var(--shell-rail-width);
+  }
+
+  .app,
+  body.sidebarCollapsed .app {
+    height: auto;
+    min-height: calc(100vh - var(--shell-flow-height));
+    padding-top: 0;
+    overflow: visible;
+    align-items: start;
+  }
+
+  .app > .sidebar,
+  .app > .workspace {
+    height: auto;
+  }
+
+  .sidebar {
+    position: relative;
+    height: auto;
+    min-height: calc(100vh - var(--shell-flow-height));
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .workspace {
+    min-height: calc(100vh - var(--shell-flow-height));
+    grid-template-rows: auto minmax(420px, 64vh) auto auto;
+    overflow: visible;
+  }
+
+  .workspace:has(.filmstripPanel[data-layout="grid"]) {
+    grid-template-rows: auto minmax(420px, 64vh) auto auto;
+  }
+
+  .filmstrip,
+  .settingsScroll {
+    overflow-y: visible;
+  }
+
+  .filmstrip {
+    overflow-x: auto;
+  }
+
+  .contextActionBar,
+  .scatterActionBar,
+  body.cutoutOpen :is(.cutoutFooter, .cutoutBatchWorkspaceActions),
+  body.organizerOpen .organizerFooterActions {
+    position: sticky;
+    z-index: 30;
+    bottom: 0;
+  }
+
+  /* The organizer footer is a grid row after its preview, never an overlay. */
+  body.organizerOpen .organizerFooterActions {
+    position: static;
+  }
+
+  .modeHub,
+  .deliverySurface,
+  .scatterSliceSurface {
+    height: auto;
+    min-height: calc(100vh - var(--shell-flow-height));
+    overflow: visible;
+  }
+
+  .deliveryGrid {
+    height: auto;
+    min-height: 560px;
+    padding-bottom: 24px;
+  }
+
+  /* URL tools are page sections. Nested edit sessions retain modal behavior. */
+  body:is(.cutoutOpen, .organizerOpen) .app {
+    display: none;
+  }
+
+  body:is(.cutoutOpen, .organizerOpen) :is(.cutoutModal, .organizerModal) {
+    position: static;
+    inset: auto;
+    width: auto;
+    min-height: calc(100vh - var(--shell-flow-height));
+    margin-left: var(--shell-rail-width);
+    padding: 0;
+    overflow: visible;
+    background: var(--panel-3);
+    backdrop-filter: none;
+    overscroll-behavior: auto;
+  }
+
+  body:is(.cutoutOpen, .organizerOpen) :is(.cutoutWorkbench, .organizerWorkbench) {
+    width: 100%;
+    height: auto;
+    min-height: calc(100vh - var(--shell-flow-height));
+    overflow: visible;
+  }
+
+  body.cutoutOpen .cutoutModal:is(.singleEditSession, .worksetSession) {
+    position: fixed;
+    inset: var(--shell-flow-height) 0 0 var(--shell-rail-width);
+    z-index: 1002;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    display: grid;
+    overflow: hidden;
+    background: rgba(5, 7, 10, 0.82);
+    backdrop-filter: blur(8px);
+  }
+
+  body.cutoutOpen .cutoutModal:is(.singleEditSession, .worksetSession) .cutoutWorkbench {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
   }
 }

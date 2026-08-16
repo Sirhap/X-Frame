@@ -140,6 +140,7 @@ function createIntegrationTests(options) {
     const store = createProjectStore(isolatedRoot);
     const godotRoot = pathApi.join(isolatedRoot, "godot-project");
     fsApi.mkdirSync(godotRoot, { recursive: true });
+    fsApi.writeFileSync(pathApi.join(godotRoot, "project.godot"), "; Minimal Godot project\n");
     const registry = store.addProject({
       id: "golden-replacement",
       label: "Golden Replacement",

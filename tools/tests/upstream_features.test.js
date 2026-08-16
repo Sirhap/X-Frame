@@ -46,6 +46,7 @@ test("attack-trail sync prunes stale project textures before rebuilding current 
   try {
     const godotRoot = path.join(root, "godot");
     fs.mkdirSync(godotRoot, { recursive: true });
+    fs.writeFileSync(path.join(godotRoot, "project.godot"), '[application]\nconfig/name="Trail Sync"\n');
     const store = createProjectStore(root);
     const registry = store.addProject({ id: "trail-sync", label: "Trail Sync", projectRoot: godotRoot });
     const project = store.resolveProject(registry, "trail-sync");

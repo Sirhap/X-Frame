@@ -57,7 +57,7 @@
 }
 
 .organizerPreviewPanel {
-  grid-template-rows: auto minmax(260px, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(clamp(160px, calc(100vh - 560px), 260px), 1fr) auto;
   background: var(--panel);
 }
 
@@ -122,6 +122,9 @@
 }
 
 .organizerFrame {
+  content-visibility: auto;
+  contain: layout paint style;
+  contain-intrinsic-size: 148px 132px;
   position: relative;
   min-width: 0;
   min-height: 210px;
@@ -347,13 +350,17 @@
 .organizerPreviewStage {
   position: relative;
   min-width: 0;
-  min-height: 320px;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
 #organizerPreview {
+  grid-row: 1;
   width: 100%;
   height: 100%;
-  min-height: 320px;
+  min-height: 0;
   border: 4px solid var(--line);
   border-radius: 10px;
   image-rendering: pixelated;
@@ -379,11 +386,7 @@
 }
 
 .organizerSpeed {
-  position: absolute;
-  right: 14px;
-  bottom: 14px;
-  left: 14px;
-  z-index: 2;
+  grid-row: 2;
   display: grid;
   grid-template-columns: auto 18px minmax(0, 1fr) 18px;
   align-items: center;
@@ -435,6 +438,16 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 7px;
+}
+
+.organizerStatusRow:has(.organizerStatus[data-tone="error"]) {
+  position: relative;
+  z-index: 3;
+}
+
+.organizerStatusRow:has(.organizerStatus[data-tone="error"]) .organizerStatus {
+  border-color: color-mix(in srgb, var(--danger) 76%, var(--line));
+  background: color-mix(in srgb, var(--danger) 11%, var(--panel-2));
 }
 
 .organizerStatusRow .organizerStatus {
@@ -509,4 +522,51 @@
   color: #05070a;
   font-weight: 950;
   box-shadow: 4px 4px 0 var(--line);
+}
+
+/* Keep desktop controls compact so a one-pixel height change never collapses the preview. */
+@media (min-width: 721px) {
+  .organizerFramesPanel,
+  .organizerPreviewPanel {
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .organizerPanelHeading {
+    min-height: 34px;
+  }
+
+  .organizerPreviewStage {
+    min-height: 110px;
+    gap: 6px;
+  }
+
+  .organizerSpeed {
+    padding: 6px 8px;
+  }
+
+  .organizerStatus {
+    min-height: 30px;
+    padding: 6px;
+  }
+
+  .organizerFooterActions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .organizerFooterActions
+    :is(#organizerReset, #organizerAddAssets, #organizerExport, #organizerAddProject, #organizerApply) {
+    min-height: 40px;
+    padding: 4px 6px;
+    font: 850 10px/1.15 var(--data-font);
+  }
+
+  .organizerFooterActions #organizerAddProject {
+    grid-column: span 2;
+  }
+
+  .organizerFooterActions #organizerApply {
+    grid-column: 3;
+  }
 }

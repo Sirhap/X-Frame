@@ -16,6 +16,7 @@
    *   getReferenceFrame?:()=>object|null,
    *   setReferenceFrame?:(value:object|null)=>void,
    *   frameTransform:(index:number,group:object)=>object,
+   *   markDirty?:()=>void,
    *   renderFilmstrip?:()=>void,
    *   draw?:()=>void,
    * }} dependencies Controller dependencies.
@@ -29,6 +30,7 @@
       getReferenceFrame = () => null,
       setReferenceFrame = () => {},
       frameTransform,
+      markDirty = () => {},
       renderFilmstrip = () => {},
       draw = () => {},
     } = dependencies;
@@ -75,11 +77,66 @@
       } else {
         setReferenceFrame(null);
       }
+      markDirty();
       renderFilmstrip();
       draw();
     }
 
-    return { isReferenceFrame, referenceFrameIndex, setReferenceFrameEnabled };
+    /** Returns a JSON-safe reference-frame descriptor with stable project identity. */
+    function serializeReferenceFrame() {
+      const referenceFrame = getReferenceFrame();
+      const profileId = String(referenceFrame?.group?.profileId || "").trim();
+      const animationId = String(referenceFrame?.group?.animationId || "").trim();
+      const frameIndex = Number(referenceFrame?.index);
+      if (!profileId || !animationId || !Number.isInteger(frameIndex) || frameIndex < 0) return null;
+      return {
+        profile_id: profileId,
+        animation_id: animationId,
+        frame_index: frameIndex,
+        transform: structuredClone(referenceFrame.transform || {}),
+      };
+    }
+
+    /**
+     * Rebuilds the runtime image snapshot represented by a persisted descriptor.
+     * Invalid or stale descriptors are cleared without blocking project loading.
+     */
+    async function restoreReferenceFrame(descriptor, groups, loadImages) {
+      setReferenceFrame(null);
+      if (!descriptor || typeof descriptor !== "object" || typeof loadImages !== "function") return false;
+      const frameIndex = Number(descriptor.frame_index);
+      const group = Array.from(groups || []).find(
+        (entry) =>
+          entry?.profileId === descriptor.profile_id && entry?.animationId === descriptor.animation_id,
+      );
+      const frames = Array.isArray(group?.frames) ? group.frames : [];
+      if (!group || !Number.isInteger(frameIndex) || frameIndex < 0 || frameIndex >= frames.length) {
+        return false;
+      }
+      try {
+        const referenceImages = await loadImages(frames);
+        if (!referenceImages?.[frameIndex]) return false;
+        setReferenceFrame({
+          group,
+          index: frameIndex,
+          image: referenceImages[frameIndex],
+          images: referenceImages.slice(),
+          transform: structuredClone(descriptor.transform || {}),
+        });
+        return true;
+      } catch (_error) {
+        setReferenceFrame(null);
+        return false;
+      }
+    }
+
+    return {
+      isReferenceFrame,
+      referenceFrameIndex,
+      restoreReferenceFrame,
+      serializeReferenceFrame,
+      setReferenceFrameEnabled,
+    };
   }
 
   return { createController };

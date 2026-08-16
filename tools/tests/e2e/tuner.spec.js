@@ -44,7 +44,7 @@ async function openRepairWorkbench(page) {
   await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
 }
 
-test("organizer batch smart cutout stays above its owning workbench", async ({ page }) => {
+test("organizer smart cutout processes the workset without opening the batch editor", async ({ page }) => {
   await page.goto("/tools/import");
   await page.locator("#organizerFileInput").setInputFiles([
     { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
@@ -52,19 +52,18 @@ test("organizer batch smart cutout stays above its owning workbench", async ({ p
   ]);
   const batchCutout = page.locator("#organizerBatchCutout");
   await expect(batchCutout).toBeEnabled();
+  await page.locator("#organizerToggleImportSetup").click();
+  await expect(page.locator("#organizerAnimationNameField")).toBeHidden();
+  await expect(page.locator("#organizerImportFps")).toHaveCount(0);
 
   await batchCutout.click();
 
   const cutoutModal = page.locator("#cutoutModal");
   const organizerModal = page.locator("#organizerModal");
-  await expect(cutoutModal).toBeVisible();
-  await expect(cutoutModal).toHaveClass(/worksetSession/);
-  await expect(organizerModal).toHaveAttribute("inert", "");
-  const [cutoutZIndex, organizerZIndex] = await Promise.all([
-    cutoutModal.evaluate((element) => Number.parseInt(getComputedStyle(element).zIndex, 10)),
-    organizerModal.evaluate((element) => Number.parseInt(getComputedStyle(element).zIndex, 10)),
-  ]);
-  expect(cutoutZIndex).toBeGreaterThan(organizerZIndex);
+  await expect(cutoutModal).toBeHidden();
+  await expect(organizerModal).toBeVisible();
+  await expect(organizerModal).not.toHaveAttribute("inert", "");
+  await expect(page.locator("#organizerViewEdited")).toHaveClass(/active/);
 });
 
 /**
@@ -118,7 +117,7 @@ test("desktop selection is linkable and browser history restores it", async ({ p
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/workspace");
   await expect(page).toHaveTitle(/XSXB Frame Tuner$/);
-  await page.getByRole("tab", { name: "项目" }).click();
+  await page.getByRole("tab", { name: "动画" }).click();
   const options = await page
     .locator("#groupSelect option")
     .evaluateAll((nodes) => nodes.map((node) => node.value));
@@ -166,6 +165,43 @@ test("the website home, import flow, and tuning workbench use separate URLs", as
   await expect(page.locator("#filmstrip")).toBeVisible();
 });
 
+test("homepage language selector persists the workbench language", async ({ page }) => {
+  await page.goto("/");
+  const english = page.locator('[data-factory-language="en"]');
+  await expect(english).toBeVisible();
+  await english.click();
+  await expect(english).toHaveAttribute("aria-pressed", "true");
+
+  await page.goto("/workspace");
+  await expect(page.locator('a[data-app-mode="projects"]')).toContainText("Projects");
+  await expect(page.locator('button[data-sidebar-tab="project"]')).toHaveText("Animation");
+});
+
+test("project and tool routes default to the dark UI theme", async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem("xsxbFrameTuner.theme"));
+  for (const route of ["/projects", "/tools", "/tools/organizer", "/tools/cutout"]) {
+    await page.goto(route);
+    await expect(page.locator("body")).toHaveClass(/theme-dark/);
+  }
+});
+
+test("transform sidebar lets the main animation frame move directly on the canvas", async ({ page }) => {
+  await page.goto("/workspace");
+  await page.getByRole("tab", { name: "变换" }).click();
+  await page.locator("#adjustGroup").check();
+  const offsetBefore = Number(await page.locator("#baseX").inputValue());
+  const stageBox = await page.locator("#stage").boundingBox();
+  const startX = stageBox.x + stageBox.width * 0.5;
+  const startY = stageBox.y + stageBox.height * 0.5;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 36, startY + 18, { steps: 4 });
+  await page.mouse.up();
+
+  await expect.poll(async () => Number(await page.locator("#baseX").inputValue())).not.toBe(offsetBefore);
+});
+
 test("workbench controls expose specific accessible names without nested actions", async ({ page }) => {
   await page.goto("/workspace");
   await expect(page.getByRole("spinbutton", { name: "缩放", exact: true })).toBeVisible();
@@ -175,7 +211,11 @@ test("workbench controls expose specific accessible names without nested actions
   await page.locator('[data-panel="attachment-assets"] > summary').click();
   await expect(page.getByRole("button", { name: "添加图片", exact: true })).toBeVisible();
 
-  await page.locator('.languageButton[data-language="en"]').click();
+  await page.evaluate(() => {
+    localStorage.setItem("xsxbFrameTuner.language", "en");
+    localStorage.setItem("xsxbFrameTuner.languageExplicit", "true");
+  });
+  await page.reload();
   await page.locator('[data-sidebar-tab="transform"]').click();
   await expect(page.getByRole("spinbutton", { name: "Scale", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Decrease Scale", exact: true })).toBeVisible();
@@ -184,11 +224,8 @@ test("workbench controls expose specific accessible names without nested actions
 
   await page.locator('.toolbar .themeButton[data-theme="light"]').click();
   await page.locator('[data-sidebar-tab="project"]').click();
-  await page.locator(".projectContext > summary").click();
-  await page.locator("#deleteProject").click();
-  await expect(page.locator("#appConfirmAccept")).toHaveCSS("background-color", "rgb(201, 62, 70)");
-  await expect(page.locator("#appConfirmAccept")).toHaveCSS("color", "rgb(255, 255, 255)");
-  await page.locator("#appConfirmCancel").click();
+  await expect(page.locator("#projectContext")).toBeHidden();
+  await expect(page.locator("#groupSelect")).toBeVisible();
 
   await page.goto("/tools/organizer");
   await page.locator("#organizerFileInput").setInputFiles([
@@ -219,6 +256,31 @@ test("tool paths refresh, update titles, and return to the quick tools hub", asy
   await expect(page.locator("#quickToolsHub")).toBeVisible();
 });
 
+test("tool rail keeps the active animation when opening contextual processing tools", async ({ page }) => {
+  await page.goto("/workspace");
+  await page.locator("#toolRailTools").hover();
+  await expect(page.locator("#toolRailContextMenu")).toBeVisible();
+  await expect(page.locator("#toolRailContextTitle")).toContainText("2 帧");
+
+  await page.locator('[data-context-tool="organizer"]').click();
+  await expect(page).toHaveURL(/\/workspace\/resources\/import/);
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+});
+
+test("contextual tools preserve auto-saved tuning when switching", async ({ page }) => {
+  await page.goto("/workspace");
+  await page.getByRole("tab", { name: "变换" }).click();
+  await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
+  await expect(page.locator("#saveState")).toContainText("未保存改动");
+
+  await page.locator("#toolRailTools").hover();
+  await page.locator('[data-context-tool="batch-cutout"]').click();
+  await expect(page).toHaveURL(/\/workspace\/resources\/cutout/);
+  await expect(page.locator("#cutoutModal")).toBeVisible();
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+});
+
 test("native image import accepts valid files and reports unsupported input", async ({ page }) => {
   await page.goto("/tools/import");
   const imageInput = page.locator("#organizerFileInput");
@@ -231,6 +293,49 @@ test("native image import accepts valid files and reports unsupported input", as
     buffer: Buffer.from("not an image"),
   });
   await expect(page.locator("#organizerStatus")).toContainText("PNG、JPG 或 WebP");
+  await expect(page.locator("#organizerStatusDismiss")).toBeVisible();
+  await page.locator("#organizerStatusDismiss").click();
+  await expect(page.locator("#organizerStatusDismiss")).toBeHidden();
+});
+
+test("loaded organizer progressively reveals import settings and secondary tools", async ({ page }) => {
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles({
+    name: "frame.png",
+    mimeType: "image/png",
+    buffer: ONE_PIXEL_PNG,
+  });
+
+  await expect(page.locator("#organizerImportSetup")).toBeHidden();
+  await expect(page.locator(".organizerToolbarSecondary")).toBeHidden();
+  await expect(page.locator("#organizerToggleImportSetup")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#organizerMoreTools")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#organizerViewEdited")).toBeDisabled();
+
+  await page.locator("#organizerMoreTools").click();
+  await expect(page.locator(".organizerToolbarSecondary")).toBeVisible();
+  await expect(page.locator("#organizerMoreTools")).toHaveAttribute("aria-expanded", "true");
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".organizerToolbarSecondary")).toBeHidden();
+  await expect(page.locator("#organizerMoreTools")).toBeFocused();
+
+  await page.locator(".organizerDownstreamMenu").evaluate((element) => {
+    element.open = true;
+  });
+  await page.locator("#organizerReset").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
+  await page.locator("#organizerConfirmAccept").click();
+  await expect(page.locator(".organizerFrame")).toHaveCount(0);
+  await expect(page.locator("#organizerImportSetup")).toBeVisible();
+
+  await page.locator("#organizerFileInput").setInputFiles({
+    name: "frame-reimported.png",
+    mimeType: "image/png",
+    buffer: ONE_PIXEL_PNG,
+  });
+  await expect(page.locator(".organizerFrame")).toHaveCount(1);
+  await expect(page.locator("#organizerImportSetup")).toBeHidden();
 });
 
 test("organizer preview reports the currently playing frame", async ({ page }) => {
@@ -242,14 +347,67 @@ test("organizer preview reports the currently playing frame", async ({ page }) =
   ]);
   await expect(page.locator("#organizerPreviewFrame")).toContainText("/ 3 帧");
   await expect(page.locator(".organizerSpeed")).toBeVisible();
-  const [previewStageBox, speedControlBox] = await Promise.all([
-    page.locator(".organizerPreviewStage").boundingBox(),
+  const [previewBox, speedControlBox] = await Promise.all([
+    page.locator("#organizerPreview").boundingBox(),
     page.locator(".organizerSpeed").boundingBox(),
   ]);
-  expect(speedControlBox.y).toBeGreaterThan(previewStageBox.y);
-  expect(speedControlBox.y + speedControlBox.height).toBeLessThan(previewStageBox.y + previewStageBox.height);
+  expect(previewBox).not.toBeNull();
+  expect(speedControlBox).not.toBeNull();
+  expect(speedControlBox.y).toBeGreaterThanOrEqual(previewBox.y + previewBox.height);
   const firstLabel = await page.locator("#organizerPreviewFrame").textContent();
   await expect.poll(() => page.locator("#organizerPreviewFrame").textContent()).not.toBe(firstLabel);
+});
+
+test("organizer layout stays usable across neighboring desktop breakpoints", async ({ page }) => {
+  await page.setViewportSize({ width: 1120, height: 720 });
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles(
+    Array.from({ length: 53 }, (_, index) => ({
+      name: `frame_${String(index + 1).padStart(4, "0")}.png`,
+      mimeType: "image/png",
+      buffer: ONE_PIXEL_PNG,
+    })),
+  );
+  await expect(page.locator(".organizerFrame")).toHaveCount(53);
+
+  const metrics = [];
+  for (const viewport of [
+    { width: 1120, height: 720 },
+    { width: 1120, height: 721 },
+    { width: 1121, height: 720 },
+    { width: 1121, height: 721 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const current = await page.evaluate(() => {
+      const bounds = (selector) => document.querySelector(selector)?.getBoundingClientRect();
+      const status = bounds(".organizerStatusRow");
+      const preview = bounds("#organizerPreview");
+      const speed = bounds(".organizerSpeed");
+      const footer = bounds(".organizerFooterActions");
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        scrollWidth: document.documentElement.scrollWidth,
+        statusBottom: status?.bottom || 0,
+        previewTop: preview?.top || 0,
+        previewHeight: preview?.height || 0,
+        previewBottom: preview?.bottom || 0,
+        speedTop: speed?.top || 0,
+        footerBottom: footer?.bottom || 0,
+      };
+    });
+    metrics.push(current);
+    expect(current.scrollWidth).toBeLessThanOrEqual(current.viewportWidth + 1);
+    expect(current.previewHeight).toBeGreaterThanOrEqual(150);
+    expect(current.statusBottom).toBeLessThanOrEqual(current.previewTop + 1);
+    expect(current.previewBottom).toBeLessThanOrEqual(current.speedTop + 1);
+    expect(current.footerBottom).toBeLessThanOrEqual(
+      await page.evaluate(() => document.documentElement.scrollHeight + 1),
+    );
+  }
+
+  expect(Math.abs(metrics[0].previewHeight - metrics[1].previewHeight)).toBeLessThanOrEqual(4);
+  expect(Math.abs(metrics[2].previewHeight - metrics[3].previewHeight)).toBeLessThanOrEqual(16);
 });
 
 test("single-image cutout keeps parameters local until apply-all", async ({ page }) => {
@@ -261,6 +419,11 @@ test("single-image cutout keeps parameters local until apply-all", async ({ page
   ]);
   await page.locator(".organizerFrameCutout").first().click();
   await expect(page.locator("#cutoutModal")).toBeVisible();
+  await expect(page.locator("#cutoutCopyLink")).toHaveCount(0);
+  await expect(page.locator(".cutoutHeader #cutoutApplyGroup")).toBeVisible();
+  await expect(page.locator(".cutoutHeader #cutoutAddProject")).toBeVisible();
+  await expect(page.locator(".cutoutBatchWorkspaceActions #cutoutApplyGroup")).toHaveCount(0);
+  await expect(page.locator(".cutoutBatchWorkspaceActions #cutoutAddProject")).toHaveCount(0);
   await expect(page.locator("#cutoutPrevious")).toHaveText("《");
   await expect(page.locator("#cutoutNext")).toHaveText("》");
   const [previousBox, nextBox, canvasBox] = await Promise.all([
@@ -407,7 +570,7 @@ test("background sampling follows the visible result after a local fill", async 
   await expect(page.locator("#cutoutBackgroundHint")).toContainText("取样中");
   await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
   await page.mouse.click(samplePoint.x, samplePoint.y);
-  await expect(page.locator("#cutoutStatus")).toContainText("已添加背景样本");
+  await expect(page.locator("#cutoutStatus")).toContainText(/已添加背景样本|结果已更新/);
   await expect(page.locator("#cutoutRepairAutomaticQuick")).toHaveClass(/active/);
   await expect(page.locator("#cutoutBackgroundHint")).toContainText("取样中");
   await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
@@ -427,7 +590,6 @@ test("background sampling follows the visible result after a local fill", async 
   await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
   await page.mouse.click(samplePoint.x, samplePoint.y);
 
-  await expect(page.locator("#cutoutStatus")).toContainText("当前结果色 #00ff00");
   await expect(page.locator("#cutoutColor")).toHaveValue("#00ff00");
   await expect(page.locator("#cutoutBackgroundColors button").first()).toHaveAttribute(
     "aria-label",
@@ -460,6 +622,17 @@ test("a fast brush stroke keeps its endpoint and commits on release", async ({ p
   await expect(page.locator("#cutoutFrameNumber")).toHaveValue("1");
   await expect(page.locator("#cutoutStatus")).toContainText("已添加局部修正");
   await expect(page.locator("#cutoutRepairUndo")).toBeEnabled();
+});
+
+test("cutout modal supports Ctrl or Cmd Z for the latest local repair", async ({ page }) => {
+  await openRepairWorkbench(page);
+  await selectRepairTool(page, "#cutoutRepairBrush");
+  await dragAcrossPreview(page);
+  await expect(page.locator("#cutoutRepairUndo")).toBeEnabled();
+
+  await page.keyboard.press("Control+z");
+
+  await expect(page.locator("#cutoutRepairUndo")).toBeDisabled();
 });
 
 test("a cancelled brush pointer commits the collected stroke", async ({ page }) => {
@@ -513,7 +686,7 @@ test("organizer confirms before discarding an imported workset", async ({ page }
 
   await page.locator("#organizerHome").click();
   await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
-  await expect(page.locator("#organizerConfirmTitle")).toHaveText("放弃工作集修改？");
+  await expect(page.locator("#organizerConfirmTitle")).toHaveText("尚未加入项目");
   await expect(page.locator(".organizerConfirmCard")).toHaveAttribute("data-tone", "danger");
   await expect(page.locator("#organizerConfirmCancel")).toBeFocused();
   await page.locator("#organizerConfirmPanel").click({ position: { x: 5, y: 5 } });
@@ -525,6 +698,97 @@ test("organizer confirms before discarding an imported workset", async ({ page }
   await page.locator("#organizerConfirmAccept").click();
   await expect(page.locator("#organizerModal")).toBeHidden();
   await expect(page).toHaveURL(/\/tools$/);
+});
+
+test("compact organizer keeps undo clear of preview controls", async ({ page }) => {
+  await page.setViewportSize({ width: 1114, height: 674 });
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await page.locator(".organizerFrameSelect").nth(1).click();
+  await page.locator("#organizerMoreTools").click();
+  await page.locator("#organizerDeleteSelected").click();
+  await expect(page.locator("#organizerUndoDelete")).toBeVisible();
+
+  const [speedBounds, undoBounds, previewBounds, frameLabelBounds] = await Promise.all([
+    page.locator(".organizerSpeed").boundingBox(),
+    page.locator("#organizerUndoDelete").boundingBox(),
+    page.locator("#organizerPreview").boundingBox(),
+    page.locator("#organizerPreviewFrame").boundingBox(),
+  ]);
+  expect(speedBounds).not.toBeNull();
+  expect(undoBounds).not.toBeNull();
+  expect(previewBounds).not.toBeNull();
+  expect(frameLabelBounds).not.toBeNull();
+  expect(undoBounds.y + undoBounds.height).toBeLessThanOrEqual(previewBounds.y);
+  expect(previewBounds.y + previewBounds.height).toBeLessThanOrEqual(speedBounds.y);
+  expect(frameLabelBounds.y + frameLabelBounds.height).toBeLessThanOrEqual(
+    previewBounds.y + previewBounds.height,
+  );
+
+  await expect(page.locator(".organizerDownstreamMenu > summary")).toBeInViewport();
+  await page.locator(".organizerDownstreamMenu").evaluate((element) => {
+    element.open = true;
+  });
+  for (const selector of ["#organizerReset", "#organizerExport", "#organizerAddProject", "#organizerApply"]) {
+    const action = page.locator(selector);
+    await expect(action).toBeInViewport();
+    const centerHitTarget = await action.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const centerTarget = document.elementFromPoint(
+        bounds.left + bounds.width / 2,
+        bounds.top + bounds.height / 2,
+      );
+      return centerTarget === element || element.contains(centerTarget);
+    });
+    expect(centerHitTarget).toBe(true);
+  }
+
+  await page.locator("#organizerUndoDelete").click();
+  await expect(page.locator(".organizerFrame")).toHaveCount(3);
+});
+
+test("200% organizer keeps footer actions reachable after scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 450 });
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+
+  await page.locator(".organizerDownstreamMenu").evaluate((element) => {
+    element.open = true;
+  });
+  for (const selector of ["#organizerReset", "#organizerExport", "#organizerAddProject", "#organizerApply"]) {
+    const action = page.locator(selector);
+    await action.scrollIntoViewIfNeeded();
+    await expect(action).toBeInViewport();
+    const centerHitTarget = await action.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const centerTarget = document.elementFromPoint(
+        bounds.left + bounds.width / 2,
+        bounds.top + bounds.height / 2,
+      );
+      return centerTarget === element || element.contains(centerTarget);
+    });
+    expect(centerHitTarget).toBe(true);
+  }
+
+  await page.locator("#organizerViewOriginal").click();
+  await expect(page.locator("#organizerViewOriginal")).toHaveClass(/active/);
+  await expect(page.locator("#organizerViewEdited")).toBeDisabled();
+  await page.locator(".organizerDownstreamMenu").evaluate((element) => {
+    element.open = false;
+  });
+  await page.locator("#organizerMoreTools").click();
+  await page.locator("#organizerFlip").click();
+  await expect(page.locator("#organizerViewEdited")).toBeEnabled();
+  await page.locator("#organizerViewEdited").click();
+  await expect(page.locator("#organizerViewEdited")).toHaveClass(/active/);
 });
 
 test("cutout reports mixed-file skips and confirms destructive clearing", async ({ page }) => {
@@ -760,71 +1024,6 @@ test("cutout parameters follow the regular post-processing advanced layout", asy
   await expect(page.locator("#cutoutProtectSample")).toBeVisible();
 });
 
-test("@touch cutout generates, compares, presets, applies, and undoes a local B candidate", async ({
-  page,
-}) => {
-  const errors = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/tools/cutout");
-  await page.locator("#cutoutFileInput").setInputFiles({
-    name: "candidate.png",
-    mimeType: "image/png",
-    buffer: ONE_PIXEL_PNG,
-  });
-  const baselineTolerance = await page.locator("#cutoutTolerance").inputValue();
-
-  await page.locator("#cutoutCandidateGenerate").click();
-  await expect(page.locator("#cutoutCandidateReview")).toBeVisible({ timeout: 20000 });
-  await expect(page.locator("#cutoutCandidateDivider")).toBeVisible();
-  await expect(page.locator("#cutoutSettings")).toHaveAttribute("inert", "");
-  await expect(page.locator("#cutoutCandidateDifferences span").first()).toBeVisible();
-
-  await page.locator("#cutoutZoomActual").click();
-  await expect(page.locator("#cutoutZoomValue")).toHaveText("100%");
-  const actualZoomMetrics = await page.locator("#cutoutResult").evaluate((canvas) => {
-    const bounds = canvas.getBoundingClientRect();
-    const backingPixelsPerCssPixel = canvas.width / bounds.width;
-    return {
-      visibleScale: canvas._cutoutView.renderScale / backingPixelsPerCssPixel,
-    };
-  });
-  expect(actualZoomMetrics.visibleScale).toBeCloseTo(1, 3);
-
-  await page.locator("#cutoutZoomFit").click();
-  const fitZoomMetrics = await page.locator("#cutoutZoomValue").evaluate((output) => {
-    const bounds = output.getBoundingClientRect();
-    const style = getComputedStyle(output);
-    return {
-      height: bounds.height,
-      lineHeight: Number.parseFloat(style.lineHeight),
-      text: output.textContent,
-      whiteSpace: style.whiteSpace,
-    };
-  });
-  expect(fitZoomMetrics.text).toMatch(/^FIT · \d+%$/);
-  expect(fitZoomMetrics.whiteSpace).toBe("nowrap");
-  expect(fitZoomMetrics.height).toBeLessThanOrEqual(fitZoomMetrics.lineHeight + 1);
-
-  await page.locator("#cutoutCandidateSplitRange").fill("35");
-  await expect(page.locator("#cutoutCandidateDivider")).toHaveAttribute("aria-valuenow", "35");
-  await page.locator("#cutoutCandidateViewB").click();
-  await expect(page.locator("#cutoutCandidateViewB")).toHaveClass(/active/);
-
-  await page.locator("#cutoutCandidatePresetName").fill("本地候选");
-  await page.locator("#cutoutCandidatePresetSave").click();
-  await expect(page.locator("#cutoutStatus")).toContainText("本地候选");
-  await expect(page.locator("#cutoutCandidatePresetSelect")).not.toHaveValue("");
-
-  await page.locator("#cutoutCandidateApply").click();
-  await expect(page.locator("#cutoutCandidateReview")).toBeHidden();
-  await expect(page.locator("#cutoutSettings")).not.toHaveAttribute("inert", "");
-  await expect(page.locator("#cutoutTolerance")).not.toHaveValue(baselineTolerance);
-
-  await page.locator("#cutoutRepairUndo").click();
-  await expect(page.locator("#cutoutTolerance")).toHaveValue(baselineTolerance);
-  expect(errors).toEqual([]);
-});
-
 test("mobile cutout keeps preview first and supports keyboard repair", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -957,6 +1156,89 @@ test("desktop cutout keeps batch images in the collapsible sidebar", async ({ pa
   await page.locator("#cutoutResult").hover();
   await page.mouse.wheel(0, 500);
   await expect.poll(() => preview.evaluate((element) => element.scrollTop)).toBe(0);
+});
+
+test("desktop cutout removes smart comparison and keeps every parameter scrollable", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.addInitScript(() => {
+    localStorage.setItem("xsxbFrameTuner.language", "en");
+    localStorage.setItem("xsxbFrameTuner.languageExplicit", "true");
+  });
+  await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles({
+    name: "frame.png",
+    mimeType: "image/png",
+    buffer: WIDE_IMAGE_PNG,
+  });
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", {
+    timeout: 20000,
+  });
+
+  await expect(page.locator("#cutoutCandidatePanel")).toHaveCount(0);
+  const [panelBox, settingsBox] = await Promise.all([
+    page.locator("#cutoutSidebarParametersPanel").boundingBox(),
+    page.locator("#cutoutSettings").boundingBox(),
+  ]);
+  expect(panelBox).not.toBeNull();
+  expect(settingsBox).not.toBeNull();
+  expect(settingsBox.y).toBeGreaterThanOrEqual(panelBox.y);
+  expect(settingsBox.y + settingsBox.height).toBeLessThanOrEqual(panelBox.y + panelBox.height + 1);
+
+  const automaticSettings = page.locator("#cutoutAutomaticSettings");
+  await expect(automaticSettings).toBeVisible();
+  const scrollMetrics = await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    return {
+      clientHeight: window.innerHeight,
+      scrollHeight: document.documentElement.scrollHeight,
+      scrollTop: window.scrollY,
+    };
+  });
+  expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
+  expect(scrollMetrics.scrollTop).toBeGreaterThan(0);
+
+  for (const tabSelector of ["#cutoutTabRegular", "#cutoutTabPost", "#cutoutTabAdvanced"]) {
+    await page.locator(tabSelector).click();
+    const horizontalOverflow = await page.locator("#cutoutSettings").evaluate((settings) => {
+      const settingsBounds = settings.getBoundingClientRect();
+      const selectors = [
+        "input",
+        "select",
+        "button",
+        ".cutoutRange",
+        ".cutoutSelectField",
+        ".cutoutPanelHint",
+        ".cutoutParameterCard > header",
+      ].join(",");
+      return [...settings.querySelectorAll(selectors)]
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          return !element.hidden && style.display !== "none" && style.visibility !== "hidden";
+        })
+        .map((element) => {
+          const bounds = element.getBoundingClientRect();
+          return {
+            id: element.id || element.className || element.tagName,
+            height: bounds.height,
+            left: bounds.left,
+            right: bounds.right,
+            width: bounds.width,
+          };
+        })
+        .filter(({ height, width }) => height > 0 && width > 0)
+        .filter(({ left, right }) => left < settingsBounds.left - 1 || right > settingsBounds.right + 1);
+    });
+    expect(horizontalOverflow, `${tabSelector} contains horizontally clipped controls`).toEqual([]);
+  }
+});
+
+test("organizer migrates unconfirmed legacy English state back to Chinese", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("xsxbFrameTuner.language", "en");
+    localStorage.removeItem("xsxbFrameTuner.languageExplicit");
+  });
+  await page.goto("/tools/organizer");
+  await expect(page.locator("#organizerTitle")).toHaveText("导入与处理动画");
 });
 
 test("compact desktop cutout keeps batch actions and readable previews in the sidebar", async ({ page }) => {

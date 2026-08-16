@@ -19,4 +19,8 @@ test("organizer text keeps language fallback and interpolation behavior", () => 
 test("organizer text exposes the original bilingual keys", () => {
   assert.ok(Object.keys(TEXT.zh).length > 100);
   assert.deepEqual(Object.keys(TEXT.zh), Object.keys(TEXT.en));
+  assert.equal(TEXT.zh.discardTitle, "尚未加入项目");
+  assert.equal(TEXT.en.discardTitle, "Results are not in a project yet");
+  assert.match(TEXT.zh.discardConfirm, /抠图/);
+  assert.match(TEXT.en.discardConfirm, /cutout/);
 });

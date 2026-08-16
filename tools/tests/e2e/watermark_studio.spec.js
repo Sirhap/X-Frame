@@ -137,7 +137,7 @@ test("watermark studio exports real rectangle and smart repairs", async ({ page 
       r_frame_rate: `${VIDEO_FPS}/1`,
     });
 
-    await page.locator("label").filter({ hasText: "智能白印" }).click();
+    await page.locator("label").filter({ hasText: "智能修复" }).click();
     const referenceTime = page.locator("#referenceTime");
     await expect(referenceTime).toHaveValue("0.91");
     expect(await referenceTime.evaluate((input) => input.checkValidity())).toBe(true);

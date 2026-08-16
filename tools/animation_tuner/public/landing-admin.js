@@ -11,7 +11,9 @@
     loginButton: document.querySelector("#adminLoginButton"),
     loginStatus: document.querySelector("#adminLoginStatus"),
     username: document.querySelector("#adminUsername"),
+    password: document.querySelector("#adminPassword"),
     totpCode: document.querySelector("#adminTotpCode"),
+    totpStep: document.querySelector("#adminTotpStep"),
     countdown: document.querySelector("#adminCodeCountdown"),
     progress: document.querySelector("#adminCodeProgress"),
     dashboardView: document.querySelector("#adminDashboardView"),
@@ -21,8 +23,6 @@
     activationCode: document.querySelector("#adminActivationCode"),
     batchCount: document.querySelector("#adminBatchCount"),
     durationDays: document.querySelector("#adminDurationDays"),
-    maxDevices: document.querySelector("#adminMaxDevices"),
-    unlimitedDevices: document.querySelector("#adminUnlimitedDevices"),
     permanentDurationButton: document.querySelector("#adminPermanentDurationButton"),
     redeemBy: document.querySelector("#adminRedeemBy"),
     permanentRedeemButton: document.querySelector("#adminPermanentRedeemButton"),
@@ -37,6 +37,11 @@
     copyAllButton: document.querySelector("#adminCopyAllButton"),
     licenseItems: document.querySelector("#adminLicenseItems"),
     licenseSearch: document.querySelector("#adminLicenseSearch"),
+    licenseSort: document.querySelector("#adminLicenseSort"),
+    licensePageSize: document.querySelector("#adminLicensePageSize"),
+    licensePreviousPage: document.querySelector("#adminLicensePreviousPage"),
+    licenseNextPage: document.querySelector("#adminLicenseNextPage"),
+    licensePageStatus: document.querySelector("#adminLicensePageStatus"),
     refreshButton: document.querySelector("#adminRefreshButton"),
     selectAll: document.querySelector("#adminSelectAll"),
     selectedCount: document.querySelector("#adminSelectedCount"),
@@ -46,12 +51,16 @@
     codeCount: document.querySelector("#adminCodeCount"),
     trialCount: document.querySelector("#adminTrialCount"),
     activeCount: document.querySelector("#adminActiveCount"),
-    deviceCount: document.querySelector("#adminDeviceCount"),
+    accountCount: document.querySelector("#adminAccountCount"),
     codeTabCount: document.querySelector("#adminCodeTabCount"),
     trialTabCount: document.querySelector("#adminTrialTabCount"),
+    grantTabCount: document.querySelector("#adminGrantTabCount"),
+    accountSearch: document.querySelector("#adminAccountSearch"),
+    accountRefresh: document.querySelector("#adminAccountRefresh"),
+    accountStatus: document.querySelector("#adminAccountStatus"),
+    accountItems: document.querySelector("#adminAccountItems"),
+    defaultProEnabled: document.querySelector("#adminDefaultProEnabled"),
     bulkDurationDays: document.querySelector("#adminBulkDurationDays"),
-    bulkMaxDevices: document.querySelector("#adminBulkMaxDevices"),
-    bulkUnlimitedDevices: document.querySelector("#adminBulkUnlimitedDevices"),
     bulkPermanentButton: document.querySelector("#adminBulkPermanentButton"),
     bulkRedeemBy: document.querySelector("#adminBulkRedeemBy"),
     bulkApplyButton: document.querySelector("#adminBulkApplyButton"),
@@ -61,15 +70,17 @@
     bulkStatus: document.querySelector("#adminBulkStatus"),
   };
   if (!elements.console || !elements.loginForm) return;
+  const adminErrorText = globalThis.XSXBAdminErrorText;
+  if (typeof adminErrorText?.localize !== "function") {
+    throw new Error("Administrator error localization is required.");
+  }
 
   const selectedLicenseIds = new Set();
   let countdownTimer = 0;
   let licenses = [];
   let periodSeconds = 30;
-  let activeSourceFilter =
-    new URLSearchParams(window.location.search).get("source") === "automatic_trial"
-      ? "automatic_trial"
-      : "code";
+  let activeSourceFilter = "code";
+  let licensePage = 1;
 
   /** @param {HTMLElement|null} element Status element. @param {string} message Message. @param {string} [tone] Visual tone. @returns {void} */
   function setStatus(element, message, tone = "") {
@@ -101,7 +112,7 @@
       throw new Error("服务返回了无法识别的响应。");
     }
     if (!response.ok) {
-      const error = new Error(payload.error || "请求失败，请稍后重试。");
+      const error = new Error(adminErrorText.localize(payload.error, response.status));
       error.status = response.status;
       throw error;
     }
@@ -179,9 +190,10 @@
     elements.codeCount.textContent = "—";
     elements.trialCount.textContent = "—";
     elements.activeCount.textContent = "—";
-    elements.deviceCount.textContent = "—";
+    elements.accountCount.textContent = "—";
     elements.codeTabCount.textContent = "0";
-    elements.trialTabCount.textContent = "0";
+    if (elements.trialTabCount) elements.trialTabCount.textContent = "0";
+    if (elements.grantTabCount) elements.grantTabCount.textContent = "0";
   }
 
   /** @returns {void} */
@@ -220,26 +232,13 @@
     button.textContent = permanent ? "永久有效" : "设为永久";
   }
 
-  /** @param {HTMLInputElement} input Device-count input. @param {HTMLInputElement} checkbox Unlimited checkbox. @returns {void} */
-  function syncUnlimitedDevices(input, checkbox) {
-    input.disabled = checkbox.checked;
-    input.required = !checkbox.checked;
-  }
-
   /** @returns {void} */
   function updateCreationPreview() {
     const durationDays = Number(elements.durationDays.value);
-    const maxDevices = Number(elements.maxDevices.value);
-    const unlimitedDevices = elements.unlimitedDevices.checked;
     const batchCount = Math.min(100, Math.max(1, Number(elements.batchCount.value) || 1));
     elements.createButton.firstChild.textContent = `创建 ${batchCount} 个激活码 `;
-    if (!unlimitedDevices && (!Number.isSafeInteger(maxDevices) || maxDevices < 1)) {
-      elements.expiryPreview.textContent = "请输入正整数设备数量，或选择不限设备。";
-      return;
-    }
-    const deviceSummary = unlimitedDevices ? "不限设备" : `最多 ${maxDevices} 台设备`;
     if (isPermanentDuration(elements.permanentDurationButton)) {
-      elements.expiryPreview.textContent = `${deviceSummary}；激活后永久有效。`;
+      elements.expiryPreview.textContent = "激活后永久有效。";
       return;
     }
     const expectedExpiry = Date.now() + durationDays * MILLISECONDS_PER_DAY;
@@ -252,61 +251,84 @@
       elements.expiryPreview.textContent = "请输入有效的正整数天数；超长期授权请设为永久。";
       return;
     }
-    elements.expiryPreview.textContent = `${deviceSummary}；若现在首次激活，预计到期：${formatDate(expectedExpiry)}。`;
-  }
-
-  /** @param {string} deviceId Device ID. @param {string} method HTTP method. @param {string} path API path. @param {object} body Additional payload. @param {string} message Success message. @returns {Promise<void>} */
-  async function mutateDevice(deviceId, method, path, body, message) {
-    setStatus(elements.bulkStatus, "正在更新设备…");
-    try {
-      await requestJson(path, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [deviceId], ...body }),
-      });
-      setStatus(elements.bulkStatus, message, "success");
-      await loadLicenses();
-    } catch (error) {
-      if (error.status === 401) showAuthenticatedView(false);
-      setStatus(elements.bulkStatus, error.message, "error");
-    }
+    elements.expiryPreview.textContent = `若现在首次激活，预计到期：${formatDate(expectedExpiry)}。`;
   }
 
   /** @returns {object[]} Licenses matching the current source and text filters. */
-  function visibleLicenses() {
+  function matchingLicenses() {
     const query = elements.licenseSearch.value.trim().toLocaleLowerCase("zh-CN");
     return licenses.filter((license) => {
       if (license.source !== activeSourceFilter) return false;
       if (!query) return true;
-      const deviceText = Array.isArray(license.devices)
-        ? license.devices
-            .map((device) => `${device.name} ${device.id} ${device.country}`)
-            .join(" ")
-            .toLocaleLowerCase("zh-CN")
-        : "";
-      return `${license.code || ""} ${license.codeHashPrefix || ""} ${license.id} ${deviceText}`
+      return `${license.code || ""} ${license.codeHashPrefix || ""} ${license.id} ${license.accountEmail || ""}`
         .toLocaleLowerCase("zh-CN")
         .includes(query);
     });
   }
 
+  /** @param {object} license License record. @returns {number} Sortable expiry timestamp. */
+  function sortableExpiry(license) {
+    const timestamp = Date.parse(String(license.expiresAt || ""));
+    return Number.isFinite(timestamp) && new Date(timestamp).getUTCFullYear() < 9999
+      ? timestamp
+      : Number.POSITIVE_INFINITY;
+  }
+
+  /** @returns {object[]} Sorted licenses matching current filters. */
+  function sortedLicenses() {
+    const rows = matchingLicenses();
+    const statusWeight = { active: 0, unused: 1, expired: 2, revoked: 3 };
+    return rows.sort((left, right) => {
+      if (elements.licenseSort.value === "expires-asc") {
+        return (
+          sortableExpiry(left) - sortableExpiry(right) || String(right.id).localeCompare(String(left.id))
+        );
+      }
+      if (elements.licenseSort.value === "expires-desc") {
+        return (
+          sortableExpiry(right) - sortableExpiry(left) || String(right.id).localeCompare(String(left.id))
+        );
+      }
+      if (elements.licenseSort.value === "status") {
+        return (
+          (statusWeight[left.status] ?? 99) - (statusWeight[right.status] ?? 99) ||
+          sortableExpiry(left) - sortableExpiry(right) ||
+          String(right.id).localeCompare(String(left.id))
+        );
+      }
+      return String(right.id).localeCompare(String(left.id));
+    });
+  }
+
+  /** @returns {{items:object[],pageCount:number,total:number}} Current display page. */
+  function visibleLicenses() {
+    const rows = sortedLicenses();
+    const pageSize = Number(elements.licensePageSize.value) || 20;
+    const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+    licensePage = Math.min(Math.max(licensePage, 1), pageCount);
+    const start = (licensePage - 1) * pageSize;
+    return { items: rows.slice(start, start + pageSize), pageCount, total: rows.length };
+  }
+
+  /** @returns {void} Updates the pagination controls from current filters. */
+  function updatePagination() {
+    const { pageCount, total } = visibleLicenses();
+    elements.licensePageStatus.textContent = `第 ${licensePage} / ${pageCount} 页 · 共 ${total} 条`;
+    elements.licensePreviousPage.disabled = licensePage <= 1;
+    elements.licenseNextPage.disabled = licensePage >= pageCount;
+  }
+
   /** @returns {void} Updates summary metrics from the loaded administrator records. */
   function updateOverview() {
     const codeLicenses = licenses.filter((license) => license.source === "code");
-    const trialLicenses = licenses.filter((license) => license.source === "automatic_trial");
+    const trialLicenses = licenses.filter((license) => license.source === "email_trial");
+    const grantLicenses = licenses.filter((license) => license.source === "admin_grant");
     const activeLicenses = licenses.filter((license) => license.status === "active");
-    const activeDevices = licenses.reduce(
-      (count, license) =>
-        count +
-        (Array.isArray(license.devices) ? license.devices.filter((device) => !device.revoked).length : 0),
-      0,
-    );
     elements.codeCount.textContent = String(codeLicenses.length);
-    elements.trialCount.textContent = String(trialLicenses.length);
     elements.activeCount.textContent = String(activeLicenses.length);
-    elements.deviceCount.textContent = String(activeDevices);
     elements.codeTabCount.textContent = String(codeLicenses.length);
-    elements.trialTabCount.textContent = String(trialLicenses.length);
+    if (elements.trialTabCount) elements.trialTabCount.textContent = String(trialLicenses.length);
+    if (elements.grantTabCount) elements.grantTabCount.textContent = String(grantLicenses.length);
   }
 
   /** @returns {void} Persists the current list view in the address bar. */
@@ -322,7 +344,7 @@
 
   /** @returns {void} */
   function updateSelectionState() {
-    const visibleRows = visibleLicenses();
+    const { items: visibleRows } = visibleLicenses();
     const visibleIds = visibleRows.map((license) => license.id);
     const selectedVisibleCount = visibleIds.filter((id) => selectedLicenseIds.has(id)).length;
     elements.selectedCount.textContent = `已选择 ${selectedLicenseIds.size} 个`;
@@ -342,6 +364,7 @@
     const managesCodes = activeSourceFilter === "code";
     elements.selectionBar.hidden = !managesCodes;
     elements.bulkEditor.hidden = !managesCodes || selectedLicenseIds.size === 0;
+    updatePagination();
   }
 
   /** @param {object[]} nextLicenses License records. @returns {void} */
@@ -356,29 +379,32 @@
     for (const tab of elements.sourceTabs) {
       tab.setAttribute("aria-pressed", String(tab.dataset.sourceFilter === activeSourceFilter));
     }
-    const filteredLicenses = visibleLicenses();
+    const { items: filteredLicenses } = visibleLicenses();
     if (!filteredLicenses.length) {
       const empty = document.createElement("p");
       empty.className = "admin-license-empty";
       const hasSearch = Boolean(elements.licenseSearch.value.trim());
       empty.textContent = hasSearch
-        ? "没有匹配的授权或设备，请调整搜索关键词。"
-        : activeSourceFilter === "automatic_trial"
-          ? "还没有设备领取自动试用。"
-          : "还没有创建激活码。";
+        ? "没有匹配的邮箱授权，请调整搜索关键词。"
+        : activeSourceFilter === "email_trial"
+          ? "还没有邮箱领取试用。"
+          : activeSourceFilter === "admin_grant"
+            ? "还没有管理员直接授权。"
+            : "还没有创建激活码。";
       elements.licenseItems.append(empty);
       updateSelectionState();
       return;
     }
     const statusLabels = { active: "使用中", expired: "已过期", revoked: "已撤销", unused: "未使用" };
     for (const license of filteredLicenses) {
-      const isTrial = license.source === "automatic_trial";
+      const isTrial = license.source === "email_trial";
+      const isEmailLicense = isTrial || license.source === "admin_grant";
       const item = document.createElement("article");
       item.className = "admin-license-item";
       item.dataset.source = license.source;
 
       let selection;
-      if (isTrial) {
+      if (isEmailLicense) {
         selection = document.createElement("span");
         selection.className = "admin-trial-marker";
         selection.setAttribute("aria-hidden", "true");
@@ -398,20 +424,21 @@
 
       const header = document.createElement("header");
       const code = document.createElement("strong");
-      const primaryDevice = Array.isArray(license.devices) ? license.devices[0] : null;
-      code.textContent = isTrial
-        ? primaryDevice?.name || "自动试用设备"
+      code.textContent = isEmailLicense
+        ? license.accountEmail || (isTrial ? "邮箱试用" : "管理员授权")
         : license.code || `旧码不可恢复 · ${license.codeHashPrefix}…`;
-      code.title = isTrial
-        ? "该设备通过自动试用流程创建"
+      code.title = isEmailLicense
+        ? isTrial
+          ? "该邮箱已领取试用"
+          : "管理员为该邮箱授予的 Pro"
         : license.code || "该激活码创建于加密存储上线之前，无法从哈希恢复原文。";
       const identity = document.createElement("small");
-      identity.textContent = isTrial ? `TRIAL · ${license.id}` : license.id;
+      identity.textContent = isEmailLicense ? `${isTrial ? "TRIAL" : "GRANT"} · ${license.id}` : license.id;
       header.append(code, identity);
 
       const state = document.createElement("span");
       state.className = "admin-license-state";
-      const displayStatus = isTrial && primaryDevice?.revoked ? "revoked" : license.status;
+      const displayStatus = license.status;
       state.dataset.state = displayStatus;
       state.textContent = statusLabels[displayStatus] || displayStatus;
 
@@ -422,6 +449,36 @@
       copyButton.disabled = !license.code;
       copyButton.title = license.code ? "复制完整激活码" : "旧激活码没有可恢复的原文";
       copyButton.addEventListener("click", () => void copyText(license.code, elements.bulkStatus));
+      const bindButton = document.createElement("button");
+      bindButton.className = "admin-license-copy";
+      bindButton.type = "button";
+      bindButton.textContent = license.accountEmail ? "改绑" : "绑定邮箱";
+      bindButton.addEventListener("click", async () => {
+        const nextEmail = window.prompt("输入目标邮箱；留空将解除当前绑定。", license.accountEmail || "");
+        if (
+          nextEmail === null ||
+          nextEmail.trim().toLowerCase() === String(license.accountEmail || "").toLowerCase()
+        )
+          return;
+        const action = nextEmail.trim() ? `改绑至 ${nextEmail.trim()}` : "解除邮箱绑定";
+        if (!window.confirm(`确定${action}吗？该操作会写入授权审计记录。`)) return;
+        try {
+          await requestJson("/api/admin/licenses/account", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              licenseId: license.id,
+              accountEmail: nextEmail.trim(),
+              accountId: nextEmail.trim() ? undefined : null,
+              previousAccountId: license.accountId || null,
+            }),
+          });
+          setStatus(elements.bulkStatus, "激活码邮箱绑定已更新。", "success");
+          await loadLicenses();
+        } catch (error) {
+          setStatus(elements.bulkStatus, error.message, "error");
+        }
+      });
 
       const meta = document.createElement("div");
       meta.className = "admin-license-meta";
@@ -430,8 +487,8 @@
         ? "授权周期 · 永久"
         : `${isTrial ? "试用周期" : "激活后"} · ${license.durationDays} 天`;
       const redeemBy = document.createElement("span");
-      redeemBy.textContent = isTrial
-        ? `领取时间 · ${formatDate(license.activatedAt)}`
+      redeemBy.textContent = isEmailLicense
+        ? `${isTrial ? "领取时间" : "授予时间"} · ${formatDate(license.activatedAt)}`
         : `兑换截止 · ${formatRedeemBy(license.redeemBy)}`;
       const expiry = document.createElement("span");
       expiry.textContent = license.permanent
@@ -439,56 +496,18 @@
         : license.expiresAt
           ? `实际到期 · ${formatDate(license.expiresAt)}`
           : "实际到期 · 激活后计算";
-      const device = document.createElement("span");
-      device.textContent = `设备绑定 · ${license.activeDeviceCount || 0} / ${license.unlimitedDevices ? "不限" : license.maxDevices || 1}`;
-      meta.append(duration, redeemBy, expiry, device);
+      const account = document.createElement("span");
+      account.textContent = license.accountEmail
+        ? `绑定邮箱 · ${license.accountEmail}`
+        : "绑定邮箱 · 尚未兑换";
+      meta.append(duration, redeemBy, expiry, account);
       const actions = document.createElement("div");
       actions.className = "admin-license-actions";
       actions.append(state);
-      if (!isTrial) actions.append(copyButton);
-      item.append(selection, header, actions, meta);
-      const devices = document.createElement("div");
-      devices.className = "admin-license-devices";
-      for (const boundDevice of Array.isArray(license.devices) ? license.devices : []) {
-        const row = document.createElement("section");
-        row.className = "admin-license-device";
-        const summary = document.createElement("p");
-        const deviceTitle = document.createElement("strong");
-        const deviceMeta = document.createElement("small");
-        const location = boundDevice.country ? ` · ${boundDevice.country}` : "";
-        const stateLabel = boundDevice.revoked ? " · 已撤销" : "";
-        deviceTitle.textContent = `${boundDevice.name}${location}${stateLabel}`;
-        deviceMeta.textContent = `设备 ID ${boundDevice.id} · 首次绑定 ${formatDate(boundDevice.createdAt)} · 最后使用 ${formatDate(boundDevice.lastSeenAt)}`;
-        summary.append(deviceTitle, deviceMeta);
-        const controls = document.createElement("div");
-        const revoke = document.createElement("button");
-        revoke.type = "button";
-        revoke.textContent = boundDevice.revoked ? "恢复" : "撤销";
-        revoke.addEventListener(
-          "click",
-          () =>
-            void mutateDevice(
-              boundDevice.id,
-              "PATCH",
-              "/api/admin/licenses/devices/revocation",
-              { revoked: !boundDevice.revoked },
-              boundDevice.revoked ? "设备已恢复。" : "设备已撤销。",
-            ),
-        );
-        const reset = document.createElement("button");
-        reset.type = "button";
-        reset.dataset.action = "reset";
-        reset.textContent = "重置槽位";
-        reset.addEventListener("click", () => {
-          if (!window.confirm(`确定移除设备“${boundDevice.name}”的绑定吗？`)) return;
-          void mutateDevice(boundDevice.id, "DELETE", "/api/admin/licenses/devices", {}, "设备槽位已重置。");
-        });
-        controls.append(revoke);
-        if (!isTrial) controls.append(reset);
-        row.append(summary, controls);
-        devices.append(row);
+      if (!isEmailLicense) {
+        actions.append(copyButton, bindButton);
       }
-      if (devices.childElementCount) item.append(devices);
+      item.append(selection, header, actions, meta);
       elements.licenseItems.append(item);
     }
     updateSelectionState();
@@ -516,6 +535,99 @@
     }
   }
 
+  /** @param {object[]} accounts Email account summaries. @returns {void} */
+  function renderAccounts(accounts) {
+    elements.accountItems.replaceChildren();
+    if (!accounts.length) {
+      const empty = document.createElement("p");
+      empty.className = "admin-license-empty";
+      empty.textContent = "暂无匹配的邮箱账户。";
+      elements.accountItems.append(empty);
+      return;
+    }
+    for (const account of accounts) {
+      const item = document.createElement("article");
+      item.className = "admin-account-item";
+      const summary = document.createElement("div");
+      const email = document.createElement("strong");
+      email.textContent = account.email;
+      const metadata = document.createElement("small");
+      metadata.textContent = `最后登录 ${formatDate(account.last_login_at)} · 激活码 ${Number(account.license_count || 0)} 个`;
+      summary.append(email, metadata);
+      const actions = document.createElement("div");
+      actions.className = "admin-account-actions";
+      const override = document.createElement("select");
+      for (const [value, label] of [
+        ["inherit", "跟随全局"],
+        ["enabled", "开启 Pro"],
+        ["disabled", "关闭 Pro"],
+      ]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        option.selected = account.pro_override === value;
+        override.append(option);
+      }
+      const save = document.createElement("button");
+      save.type = "button";
+      save.textContent = "保存";
+      save.addEventListener("click", async () => {
+        setBusy(save, true);
+        try {
+          await requestJson("/api/admin/accounts/authorization", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ accountId: account.id, proOverride: override.value }),
+          });
+          setStatus(elements.accountStatus, `${account.email} 的 Pro 权限已更新。`, "success");
+          await loadAccounts();
+        } catch (error) {
+          setStatus(elements.accountStatus, error.message, "error");
+        } finally {
+          setBusy(save, false);
+        }
+      });
+      const forceLogout = document.createElement("button");
+      forceLogout.type = "button";
+      forceLogout.textContent = "强制退出";
+      forceLogout.addEventListener("click", async () => {
+        if (!window.confirm(`确定让 ${account.email} 的所有浏览器退出登录吗？`)) return;
+        try {
+          await requestJson("/api/admin/accounts/authorization", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ accountId: account.id, proOverride: override.value, forceLogout: true }),
+          });
+          setStatus(elements.accountStatus, "该账户的全部会话已撤销。", "success");
+        } catch (error) {
+          setStatus(elements.accountStatus, error.message, "error");
+        }
+      });
+      actions.append(override, save, forceLogout);
+      item.append(summary, actions);
+      elements.accountItems.append(item);
+    }
+  }
+
+  /** @returns {Promise<void>} */
+  async function loadAccounts() {
+    setBusy(elements.accountRefresh, true);
+    try {
+      const query = encodeURIComponent(elements.accountSearch.value.trim());
+      const payload = await requestJson(`/api/admin/accounts?q=${query}`);
+      elements.defaultProEnabled.checked = Boolean(payload.defaultProEnabled);
+      const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+      elements.accountCount.textContent = String(accounts.length);
+      elements.trialCount.textContent = payload.defaultProEnabled ? "开启" : "关闭";
+      renderAccounts(accounts);
+    } catch (error) {
+      if (error.status === 401) showAuthenticatedView(false);
+      setStatus(elements.accountStatus, error.message, "error");
+    } finally {
+      setBusy(elements.accountRefresh, false);
+    }
+  }
+
   /** @returns {Promise<void>} */
   async function loadSession() {
     setStatus(elements.loginStatus, "正在检查管理会话…");
@@ -533,7 +645,7 @@
       setStatus(elements.loginStatus, "");
       if (session.authenticated) {
         elements.sessionExpiry.textContent = `${session.username} · 会话有效至 ${formatDate(session.sessionExpiresAt)}`;
-        await loadLicenses();
+        await Promise.all([loadLicenses(), loadAccounts()]);
       }
     } catch (error) {
       showAuthenticatedView(false);
@@ -557,7 +669,7 @@
       });
       selectedLicenseIds.clear();
       setStatus(elements.bulkStatus, `${successMessage}，共 ${result.count} 个。`, "success");
-      await loadLicenses();
+      await Promise.all([loadLicenses(), loadAccounts()]);
     } catch (error) {
       if (error.status === 401) showAuthenticatedView(false);
       setStatus(elements.bulkStatus, error.message, "error");
@@ -571,32 +683,62 @@
   startCountdown();
   void loadSession();
 
+  let adminChallengeToken = "";
+
   elements.loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const username = elements.username.value.trim();
+    const password = elements.password.value;
     const code = elements.totpCode.value.replace(/\D/gu, "");
     if (!/^[A-Za-z0-9._-]{1,64}$/u.test(username)) {
       setStatus(elements.loginStatus, "请输入有效的用户名。", "error");
       elements.username.focus();
       return;
     }
-    if (code.length !== 6) {
+    if (adminChallengeToken && code.length !== 6) {
       setStatus(elements.loginStatus, "请输入 6 位数字验证码。", "error");
+      return;
+    }
+    if (password.length < 8) {
+      setStatus(elements.loginStatus, "请输入管理员密码。", "error");
+      elements.password.focus();
       return;
     }
     setBusy(elements.loginButton, true);
     setStatus(elements.loginStatus, "正在验证…");
     try {
+      if (!adminChallengeToken) {
+        const challenge = await requestJson("/api/admin/login/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        adminChallengeToken = challenge.challengeToken;
+        elements.username.disabled = true;
+        elements.password.disabled = true;
+        elements.totpStep.hidden = false;
+        elements.totpCode.required = true;
+        elements.loginButton.firstChild.textContent = "验证并进入 ";
+        setStatus(elements.loginStatus, "密码正确，请输入管理员动态验证码。", "success");
+        elements.totpCode.focus();
+        return;
+      }
       const result = await requestJson("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, code }),
+        body: JSON.stringify({ challengeToken: adminChallengeToken, code }),
       });
+      adminChallengeToken = "";
+      elements.password.value = "";
       elements.totpCode.value = "";
       elements.sessionExpiry.textContent = `${result.username} · 会话有效至 ${formatDate(result.expiresAt)}`;
       showAuthenticatedView(true);
       await loadLicenses();
+      if (window.location.pathname === "/admin/login") {
+        window.location.replace("/admin/licenses");
+      }
     } catch (error) {
+      elements.password.value = "";
       setStatus(elements.loginStatus, error.message, "error");
       elements.totpCode.select();
     } finally {
@@ -631,14 +773,6 @@
     );
   });
   elements.durationDays.addEventListener("input", updateCreationPreview);
-  elements.maxDevices.addEventListener("input", updateCreationPreview);
-  elements.unlimitedDevices.addEventListener("change", () => {
-    syncUnlimitedDevices(elements.maxDevices, elements.unlimitedDevices);
-    updateCreationPreview();
-  });
-  elements.bulkUnlimitedDevices.addEventListener("change", () => {
-    syncUnlimitedDevices(elements.bulkMaxDevices, elements.bulkUnlimitedDevices);
-  });
   elements.batchCount.addEventListener("input", updateCreationPreview);
 
   elements.licenseForm.addEventListener("submit", async (event) => {
@@ -659,7 +793,6 @@
         body: JSON.stringify({
           codes,
           durationDays: Number(elements.durationDays.value),
-          maxDevices: elements.unlimitedDevices.checked ? null : Number(elements.maxDevices.value),
           permanent: isPermanentDuration(elements.permanentDurationButton),
           redeemBy: localDateToIso(elements.redeemBy.value),
         }),
@@ -683,7 +816,7 @@
   );
 
   elements.selectAll.addEventListener("change", () => {
-    for (const license of visibleLicenses()) {
+    for (const license of visibleLicenses().items) {
       if (elements.selectAll.checked) selectedLicenseIds.add(license.id);
       else selectedLicenseIds.delete(license.id);
     }
@@ -696,18 +829,36 @@
     void copyText(codes.join("\n"), elements.bulkStatus);
   });
   elements.copyAllButton.addEventListener("click", () => {
-    const codes = visibleLicenses()
+    const codes = matchingLicenses()
       .filter((license) => license.code)
       .map((license) => license.code);
     void copyText(codes.join("\n"), elements.bulkStatus);
   });
   elements.licenseSearch.addEventListener("input", () => {
+    licensePage = 1;
     syncListUrl();
+    renderLicenses(licenses);
+  });
+  elements.licenseSort.addEventListener("change", () => {
+    licensePage = 1;
+    renderLicenses(licenses);
+  });
+  elements.licensePageSize.addEventListener("change", () => {
+    licensePage = 1;
+    renderLicenses(licenses);
+  });
+  elements.licensePreviousPage.addEventListener("click", () => {
+    licensePage -= 1;
+    renderLicenses(licenses);
+  });
+  elements.licenseNextPage.addEventListener("click", () => {
+    licensePage += 1;
     renderLicenses(licenses);
   });
   for (const tab of elements.sourceTabs) {
     tab.addEventListener("click", () => {
       activeSourceFilter = tab.dataset.sourceFilter;
+      licensePage = 1;
       syncListUrl();
       renderLicenses(licenses);
     });
@@ -720,7 +871,6 @@
         "/api/admin/licenses",
         {
           durationDays: Number(elements.bulkDurationDays.value),
-          maxDevices: elements.bulkUnlimitedDevices.checked ? null : Number(elements.bulkMaxDevices.value),
           permanent: isPermanentDuration(elements.bulkPermanentButton),
           redeemBy: localDateToIso(elements.bulkRedeemBy.value),
         },
@@ -745,6 +895,22 @@
   });
 
   elements.refreshButton.addEventListener("click", () => void loadLicenses());
+  elements.accountRefresh.addEventListener("click", () => void loadAccounts());
+  elements.accountSearch.addEventListener("search", () => void loadAccounts());
+  elements.defaultProEnabled.addEventListener("change", async () => {
+    try {
+      const payload = await requestJson("/api/admin/settings/authorization", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultProEnabled: elements.defaultProEnabled.checked }),
+      });
+      elements.defaultProEnabled.checked = Boolean(payload.defaultProEnabled);
+      setStatus(elements.accountStatus, "新账户默认 Pro 设置已更新。", "success");
+    } catch (error) {
+      elements.defaultProEnabled.checked = !elements.defaultProEnabled.checked;
+      setStatus(elements.accountStatus, error.message, "error");
+    }
+  });
   elements.logoutButton.addEventListener("click", async () => {
     setBusy(elements.logoutButton, true);
     let logoutError = null;
@@ -767,8 +933,6 @@
     }
   });
 
-  syncUnlimitedDevices(elements.maxDevices, elements.unlimitedDevices);
-  syncUnlimitedDevices(elements.bulkMaxDevices, elements.bulkUnlimitedDevices);
   updateCreationPreview();
   updateSelectionState();
 })();

@@ -32,6 +32,18 @@
   line-height: 1;
 }
 
+.administratorConsoleLink {
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  color: var(--mint, #48e2bd);
+  text-decoration: none;
+}
+
+.administratorConsoleLink[hidden] {
+  display: none !important;
+}
+
 .activationManageLaunch > span {
   font-weight: 950;
 }

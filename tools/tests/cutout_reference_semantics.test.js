@@ -306,3 +306,54 @@ test("zero edge enhancement leaves a background-mixed edge unchanged", () => {
   );
   assert.equal(result.data[4], 180);
 });
+
+test("hard alpha threshold clears low-alpha pixels introduced by reference feathering", () => {
+  const pixels = Uint8ClampedArray.from([
+    0, 255, 0, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+  ]);
+  const options = {
+    referenceChromaKey: true,
+    connected: false,
+    backgroundColors: [{ r: 0, g: 255, b: 0, a: 255 }],
+    tolerance: 0,
+    edgeBoost: 0,
+    blendStrength: 0,
+    feather: 24,
+    chromaFeather: 0,
+    despillStrength: 0,
+    alphaLow: 0,
+    alphaHigh: 255,
+  };
+
+  const softResult = applyCutout(pixels, 5, 1, { ...options, alphaThreshold: 0 });
+  const thresholdedResult = applyCutout(pixels, 5, 1, { ...options, alphaThreshold: 48 });
+
+  assert.deepEqual(
+    [...softResult.data].filter((_value, offset) => offset % 4 === 3),
+    [26, 87, 168, 229, 255],
+  );
+  assert.deepEqual(
+    [...thresholdedResult.data].filter((_value, offset) => offset % 4 === 3),
+    [0, 87, 168, 229, 255],
+  );
+});
+
+test("perceptual cutout gives general and chroma despill distinct behavior", () => {
+  const pixels = Uint8ClampedArray.from([0, 220, 0, 255]);
+  const options = {
+    referenceChromaKey: false,
+    perceptual: true,
+    connected: false,
+    backgroundColor: { r: 0, g: 255, b: 0 },
+    backgroundColors: [{ r: 0, g: 255, b: 0 }],
+    tolerance: 0,
+    feather: 0,
+    despillStrength: 100,
+    edgeDespillRadius: 12,
+  };
+
+  const generalResult = applyCutout(pixels, 1, 1, { ...options, despillMode: "general" });
+  const chromaResult = applyCutout(pixels, 1, 1, { ...options, despillMode: "chroma" });
+
+  assert.notDeepEqual([...generalResult.data], [...chromaResult.data]);
+});

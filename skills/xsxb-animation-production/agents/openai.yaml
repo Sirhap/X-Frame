@@ -1,0 +1,4 @@
+interface:
+  display_name: "XSXB Animation Production"
+  short_description: "Produce and integrate Godot frame animations with AI"
+  default_prompt: "Use $xsxb-animation-production to plan, generate or import an animation, sync it to Godot, validate it, and open the local tuner."

@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   createAtlasManifest,
+  createGodotSpriteFrames,
   createFramesManifest,
   planSpriteSheets,
   renderSpriteSheetEntries,
@@ -52,16 +53,56 @@ test("sprite-sheet planning automatically paginates within the texture limit", (
 
 test("atlas and frame manifests expose deterministic timing and page filenames", () => {
   const frames = [
-    { name: "idle-a.png", width: 32, height: 32 },
-    { name: "idle-b.png", width: 32, height: 32 },
+    { name: "idle-a.png", width: 32, height: 32, frameId: "idle:a", assetRevision: 2 },
+    { name: "idle-b.png", width: 32, height: 32, frameId: "idle:b", assetRevision: 4 },
   ];
   const plan = planSpriteSheets(frames);
   const atlas = createAtlasManifest({ animationName: "Hero Idle", fps: 20 }, plan);
-  const manifest = createFramesManifest({ animationName: "Hero Idle", fps: 20 }, frames);
+  const manifest = createFramesManifest(
+    { animationName: "Hero Idle", fps: 20, exportRecipe: { imageName: "hero" } },
+    frames,
+  );
   assert.equal(atlas.sheets[0].file, "spritesheets/Hero_Idle.png");
   assert.equal(atlas.frameDurationMs, 50);
-  assert.equal(manifest.frames[1].file, "frames/frame_0002.png");
+  assert.equal(manifest.frames[1].file, "frames/hero2.png");
+  assert.equal(manifest.frames[1].frameId, "idle:b");
+  assert.equal(manifest.frames[1].assetRevision, 4);
+  assert.equal(atlas.frames[1].frameId, "idle:b");
+  assert.equal(atlas.frames[1].assetRevision, 4);
   assert.equal(manifest.totalDurationMs, 100);
+});
+
+test("fixed sprite-sheet sizes match the selected atlas page and power-of-two option", () => {
+  const frames = Array.from({ length: 17 }, () => ({ width: 128, height: 128 }));
+  const fixed = planSpriteSheets(frames, { maxTextureSize: 512, fixedPageSize: true });
+  assert.equal(fixed.pages.length, 2);
+  assert.deepEqual(
+    fixed.pages.map(({ width, height }) => [width, height]),
+    [
+      [512, 512],
+      [512, 512],
+    ],
+  );
+  const aligned = planSpriteSheets([{ width: 150, height: 90 }], {
+    maxTextureSize: 512,
+    powerOfTwo: true,
+  });
+  assert.deepEqual([aligned.pages[0].width, aligned.pages[0].height], [256, 128]);
+});
+
+test("sprite-sheet recipe options preserve gap, per-frame durations, and Godot paths", () => {
+  const frames = [
+    { name: "a.png", width: 16, height: 16, durationMs: 80 },
+    { name: "b.png", width: 16, height: 16, durationMs: 120 },
+  ];
+  const plan = planSpriteSheets(frames, { columns: 1, gap: 4, maxTextureSize: 64 });
+  const manifest = createFramesManifest(
+    { animationName: "idle", fps: 12, exportRecipe: { anchor: "bottom-center" } },
+    frames,
+  );
+  assert.equal(plan.pages[0].height, 36);
+  assert.equal(manifest.totalDurationMs, 200);
+  assert.match(createGodotSpriteFrames({ animationName: "idle" }, plan), /path="idle\.png"/);
 });
 
 test("sprite-sheet planning rejects a frame larger than the safe canvas", () => {

@@ -15,9 +15,29 @@ function createFixture(options = {}) {
     mode: options.mode || "edit",
     busy: options.busy === true,
     sequenceAnalyzing: false,
-    frames: [{ included: options.included !== false, selected: false }],
+    viewMode: "edited",
+    showImportSetup: true,
+    showMoreTools: false,
+    hadFrames: false,
+    frames: [{ included: options.included !== false, selected: false, hasEditedResult: false }],
   };
-  const button = () => ({ disabled: false, hidden: false, title: "" });
+  const activeClasses = new Set();
+  const button = () => ({
+    disabled: false,
+    hidden: false,
+    title: "",
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    },
+    classList: {
+      toggle(name, enabled) {
+        if (enabled) activeClasses.add(name);
+        else activeClasses.delete(name);
+      },
+    },
+  });
+  const workbenchClasses = new Set();
   const elements = {
     organizerCount: { textContent: "" },
     organizerSelection: { textContent: "" },
@@ -27,6 +47,7 @@ function createFixture(options = {}) {
     organizerClearWorkset: button(),
     organizerBatchCutout: button(),
     organizerInvert: button(),
+    organizerInvertSelection: button(),
     organizerFlip: button(),
     organizerDeleteExcluded: button(),
     organizerFileInput: button(),
@@ -38,6 +59,20 @@ function createFixture(options = {}) {
     organizerFindJump: button(),
     organizerFindDuplicate: button(),
     organizerFindLoop: button(),
+    organizerToggleImportSetup: button(),
+    organizerMoreTools: button(),
+    organizerViewOriginal: button(),
+    organizerViewEdited: button(),
+    organizerImportSetup: {
+      closest: () => ({
+        classList: {
+          toggle(name, enabled) {
+            if (enabled) workbenchClasses.add(name);
+            else workbenchClasses.delete(name);
+          },
+        },
+      }),
+    },
     organizerGrid: { querySelectorAll: () => [] },
   };
   const controller = createController({
@@ -52,7 +87,7 @@ function createFixture(options = {}) {
     restartPreview: () => {},
     setStatus: () => {},
   });
-  return { controller, elements, state };
+  return { controller, elements, state, activeClasses, workbenchClasses };
 }
 
 test("attached-assets action remains available while editing an existing animation", () => {
@@ -93,4 +128,51 @@ test("attached-assets action is disabled without frames and hidden without host 
   exportUnsupportedFixture.controller.renderCounts();
   assert.equal(exportUnsupportedFixture.elements.organizerExport.hidden, true);
   assert.equal(exportUnsupportedFixture.elements.organizerExport.disabled, true);
+});
+
+test("loaded worksets collapse low-frequency controls and disable missing edited results", () => {
+  const fixture = createFixture({ mode: "import" });
+
+  fixture.controller.renderCounts();
+
+  assert.equal(fixture.state.showImportSetup, false);
+  assert.equal(fixture.state.showMoreTools, false);
+  assert.equal(fixture.elements.organizerToggleImportSetup.hidden, false);
+  assert.equal(fixture.elements.organizerToggleImportSetup.attributes["aria-expanded"], "false");
+  assert.equal(fixture.elements.organizerMoreTools.attributes["aria-expanded"], "false");
+  assert.equal(fixture.elements.organizerViewEdited.disabled, true);
+  assert.equal(fixture.state.viewMode, "original");
+  assert.equal(fixture.workbenchClasses.has("hasFrames"), true);
+});
+
+test("edited-result view activates after a real frame edit", () => {
+  const fixture = createFixture({ mode: "import" });
+  fixture.state.frames[0].hasEditedResult = true;
+
+  fixture.controller.renderCounts();
+
+  assert.equal(fixture.elements.organizerViewEdited.disabled, false);
+  assert.equal(fixture.state.viewMode, "edited");
+});
+
+test("secondary removal actions only occupy space when their selection state is actionable", () => {
+  const fixture = createFixture({ mode: "import" });
+  fixture.state.frames = [
+    { included: true, selected: false, hasEditedResult: false },
+    { included: true, selected: false, hasEditedResult: false },
+  ];
+
+  fixture.controller.renderCounts();
+  assert.equal(fixture.elements.organizerDeleteSelected.hidden, true);
+  assert.equal(fixture.elements.organizerDeleteExcluded.hidden, true);
+
+  fixture.state.frames[0].selected = true;
+  fixture.controller.renderCounts();
+  assert.equal(fixture.elements.organizerDeleteSelected.hidden, false);
+  assert.equal(fixture.elements.organizerDeleteExcluded.hidden, true);
+
+  fixture.state.frames[1].included = false;
+  fixture.controller.renderCounts();
+  assert.equal(fixture.elements.organizerDeleteSelected.hidden, false);
+  assert.equal(fixture.elements.organizerDeleteExcluded.hidden, false);
 });
