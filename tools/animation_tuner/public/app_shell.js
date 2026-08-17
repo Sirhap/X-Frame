@@ -370,7 +370,6 @@
                     : "workspace");
       documentRef.documentElement?.setAttribute?.("data-app-surface", surface);
       elements.body?.setAttribute("data-app-surface", surface);
-      root.XSXBAppSurface?.applyAppSurface?.(documentRef, path);
       if (elements.body?.dataset.appSurface !== "workspace") hideContextToolMenu();
       syncHiddenWorkbenchAccessibility();
     }

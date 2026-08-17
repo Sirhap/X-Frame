@@ -73,10 +73,14 @@
     if (workspace) workspace.hidden = surface !== "workspace";
     const organizerModal = documentRef?.getElementById?.("organizerModal");
     const cutoutModal = documentRef?.getElementById?.("cutoutModal");
-    if (organizerModal) organizerModal.hidden = overlay !== "organizer";
-    if (cutoutModal) cutoutModal.hidden = overlay !== "cutout";
-    documentRef?.body?.classList?.toggle?.("organizerOpen", overlay === "organizer");
-    documentRef?.body?.classList?.toggle?.("cutoutOpen", overlay === "cutout");
+    const liveOrganizer = Boolean(documentRef?.body?.classList?.contains?.("organizerOpen"));
+    const liveCutout = Boolean(documentRef?.body?.classList?.contains?.("cutoutOpen"));
+    if (organizerModal && (overlay === "organizer" || liveOrganizer)) organizerModal.hidden = false;
+    else if (organizerModal) organizerModal.hidden = true;
+    if (cutoutModal && (overlay === "cutout" || liveCutout)) cutoutModal.hidden = false;
+    else if (cutoutModal) cutoutModal.hidden = true;
+    if (overlay === "organizer") documentRef?.body?.classList?.add?.("organizerOpen");
+    if (overlay === "cutout") documentRef?.body?.classList?.add?.("cutoutOpen");
     return surface;
   }
 

@@ -37,6 +37,56 @@ test("tool overlays match the resource path before app boot", () => {
   assert.equal(resolveToolOverlay("/workspace/animation/transform"), "");
 });
 
+test("applyAppSurface keeps a live cutout session when the URL is still import", () => {
+  const classes = new Set(["organizerOpen", "cutoutOpen"]);
+  const organizerModal = { hidden: false, id: "organizerModal" };
+  const cutoutModal = { hidden: false, id: "cutoutModal" };
+  const workspace = { hidden: true };
+  const documentRef = {
+    documentElement: {
+      attributes: {},
+      setAttribute(name, value) {
+        this.attributes[name] = value;
+      },
+    },
+    body: {
+      attributes: {},
+      classList: {
+        add(name) {
+          classes.add(name);
+        },
+        contains(name) {
+          return classes.has(name);
+        },
+        remove(name) {
+          classes.delete(name);
+        },
+        toggle(name, on) {
+          if (on) classes.add(name);
+          else classes.delete(name);
+        },
+      },
+      setAttribute(name, value) {
+        this.attributes[name] = value;
+      },
+    },
+    getElementById(id) {
+      if (id === "organizerModal") return organizerModal;
+      if (id === "cutoutModal") return cutoutModal;
+      return null;
+    },
+    querySelector() {
+      return workspace;
+    },
+  };
+
+  applyAppSurface(documentRef, "/workspace/resources/import");
+
+  assert.equal(cutoutModal.hidden, false);
+  assert.equal(classes.has("cutoutOpen"), true);
+  assert.equal(organizerModal.hidden, false);
+});
+
 test("applyAppSurface hides the tuner and reveals the matching tool overlay", () => {
   const classes = new Set();
   const organizerModal = { hidden: true, id: "organizerModal" };
@@ -54,6 +104,9 @@ test("applyAppSurface hides the tuner and reveals the matching tool overlay", ()
       classList: {
         add(name) {
           classes.add(name);
+        },
+        contains(name) {
+          return classes.has(name);
         },
         remove(name) {
           classes.delete(name);
