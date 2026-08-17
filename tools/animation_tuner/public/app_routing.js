@@ -279,7 +279,7 @@
      * wrapper so asynchronous close/open operations cannot finish out of order.
      * @returns {Promise<boolean>} Whether the requested route was applied.
      */
-    async function applyWorkbenchRouteNow() {
+    async function applyWorkbenchRouteNow(options = {}) {
       const route = currentWorkbenchRoute();
       if (new URLSearchParams(windowRef.location?.search || "").has("tool")) {
         syncWorkbenchRoute(route);
@@ -295,7 +295,7 @@
         const visibleRoute = visibleWorkbenchRoute(batchCutout, frameOrganizer);
         const temporarySessionActive =
           currentNavigationContext() === "standalone" && Boolean(getTemporaryWorkset()?.frames?.length);
-        if (route && !visibleRoute && getWorkspaceDirty()) {
+        if (route && !visibleRoute && getWorkspaceDirty() && !options.skipDirtyPrompt) {
           const decision = await requestWorkspaceDecision();
           if (decision === "cancel") {
             syncWorkbenchRoute("", { context: "project" });
@@ -398,10 +398,12 @@
 
     /**
      * Opens or closes workbenches to match the current browser URL in order.
+     * @param {{skipDirtyPrompt?:boolean}} [options] When skipDirtyPrompt is set,
+     *   unsaved tuning does not block a tool that already attempted to save.
      * @returns {Promise<boolean>} Whether the requested route was applied.
      */
-    function applyWorkbenchRoute() {
-      const task = applyRouteQueue.then(() => applyWorkbenchRouteNow());
+    function applyWorkbenchRoute(options = {}) {
+      const task = applyRouteQueue.then(() => applyWorkbenchRouteNow(options));
       applyRouteQueue = task.catch(() => false);
       return task;
     }

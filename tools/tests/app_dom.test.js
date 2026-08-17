@@ -62,6 +62,14 @@ test("the frame editor is visible before application initialization", () => {
   assert.doesNotMatch(offsetInput[0], /\breadonly\b/);
 });
 
+test("delivery summary does not touch the later modeHubsModule binding", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app.js"), "utf8");
+  const match = source.match(/function updateDeliverySummary\(\) \{[\s\S]*?\nfunction /);
+  assert.ok(match);
+  assert.match(match[0], /globalThis\.XSXBModeHubs/);
+  assert.doesNotMatch(match[0], /\bmodeHubsModule\b/);
+});
+
 test("single-frame filmstrip keeps room for the thumbnail", () => {
   const css = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app_shell.css"), "utf8");
   assert.match(css, /\.singleFrameAnimation \.filmstripPanel\s*\{\s*max-height:\s*228px;/);

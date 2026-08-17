@@ -4033,15 +4033,17 @@ const appShell = appShellModule.createController({
     if (!(await requestScatterSliceLeave())) return false;
     if (dirty) await save();
     syncWorkbenchRoute(route, { push: true, context: "project" });
-    const opened = await applyWorkbenchRoute();
+    const opened = await applyWorkbenchRoute({ skipDirtyPrompt: true });
     return Boolean(opened) && tool === "current-frame-cutout";
   },
 });
 appShell.bind();
 /** Refreshes delivery cards from the same in-memory project state used by editing and export. */
 function updateDeliverySummary() {
-  const summary = modeHubsModule.summarizeDeliveryScope(config, currentGroup);
-  const readiness = modeHubsModule.summarizeDeliveryReadiness(config, { browserOnly: browserOnlyMode });
+  const hubs = globalThis.XSXBModeHubs;
+  if (!hubs?.summarizeDeliveryScope || !hubs?.summarizeDeliveryReadiness) return;
+  const summary = hubs.summarizeDeliveryScope(config, currentGroup);
+  const readiness = hubs.summarizeDeliveryReadiness(config, { browserOnly: browserOnlyMode });
   const values = {
     "#deliveryAnimationName": summary.currentAnimationName,
     "#deliveryFrameCount": t("deliveryCountFrames", { count: summary.currentFrameCount }),

@@ -199,6 +199,29 @@ test("applying the workspace URL keeps the frame editor route active", async () 
   assert.equal(windowRef.location.pathname, "/workspace");
 });
 
+test("skipDirtyPrompt opens a contextual tool without asking about unsaved edits", async () => {
+  const windowRef = createWindow("http://localhost/workspace/resources/cutout");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => {
+      events.push("prompt");
+      return "cancel";
+    },
+    getBatchCutout: () => ({
+      isOpen: () => false,
+      open() {
+        events.push("open-cutout");
+      },
+    }),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute({ skipDirtyPrompt: true }), true);
+  assert.deepEqual(events, ["open-cutout"]);
+});
+
 test("cancelling a standalone tool switch restores the project workspace", async () => {
   const windowRef = createWindow("http://localhost/tools");
   const controller = createController({
