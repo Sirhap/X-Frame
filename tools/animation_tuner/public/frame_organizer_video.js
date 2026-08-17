@@ -169,6 +169,9 @@
       state.videoUrl = urlApi.createObjectURL(file);
       state.videoFileName = file.name;
       dependencies.setDefaultAnimationName?.(file.name);
+      const downstreamMenu =
+        elements.organizerApply?.parentElement?.querySelector(".organizerDownstreamMenu");
+      if (downstreamMenu) downstreamMenu.open = false;
       elements.organizerVideoPanel.hidden = false;
       elements.organizerVideoName.textContent = file.name;
       elements.organizerVideoMeta.textContent = "…";

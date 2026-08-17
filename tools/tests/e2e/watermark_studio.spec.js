@@ -4,7 +4,7 @@ const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { expect, test } = require("@playwright/test");
+const { expect, test } = require("./fixtures");
 
 const VIDEO_WIDTH = 320;
 const VIDEO_HEIGHT = 180;

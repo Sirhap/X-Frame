@@ -1,6 +1,6 @@
 "use strict";
 
-const { expect, test } = require("@playwright/test");
+const { expect, test } = require("./fixtures");
 
 /**
  * Creates predictable code records for list ordering and paging coverage.

@@ -1,6 +1,6 @@
 "use strict";
 
-const { expect, test } = require("@playwright/test");
+const { expect, test } = require("./fixtures");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -131,7 +131,38 @@ test("organizer route renders as a page section and scrolls with the document", 
   expect(layout.bodyOverflow).not.toBe("hidden");
 });
 
-test("organizer primary action does not cover the preview canvas", async ({ page }) => {
+test("organizer video overlay covers preview actions", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/workspace/resources/import");
+  await expect(page.locator(".organizerFooterActions")).toBeVisible();
+  await page.locator(".organizerDownstreamMenu").evaluate((element) => {
+    element.open = true;
+  });
+  await page.locator("#organizerVideoPanel").evaluate((element) => {
+    element.hidden = false;
+  });
+  await expect(page.locator("#organizerVideoPanel")).toBeVisible();
+
+  const coverage = await page.evaluate(() => {
+    const overlay = document.querySelector("#organizerVideoPanel");
+    const hit = (selector) => {
+      const bounds = document.querySelector(selector).getBoundingClientRect();
+      const target = document.elementFromPoint(
+        bounds.left + bounds.width / 2,
+        bounds.top + bounds.height / 2,
+      );
+      return overlay.contains(target);
+    };
+    return {
+      applyCovered: hit("#organizerApply"),
+      moreCovered: hit(".organizerDownstreamMenu > summary"),
+    };
+  });
+  expect(coverage.applyCovered).toBe(true);
+  expect(coverage.moreCovered).toBe(true);
+});
+
+test("organizer primary action sits above the preview canvas", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/workspace/resources/import");
   await expect(page.locator("#organizerPreview")).toBeVisible();
@@ -140,9 +171,9 @@ test("organizer primary action does not cover the preview canvas", async ({ page
   const geometry = await page.evaluate(() => {
     const preview = document.querySelector("#organizerPreview").getBoundingClientRect();
     const actions = document.querySelector(".organizerFooterActions").getBoundingClientRect();
-    return { previewBottom: preview.bottom, actionsTop: actions.top };
+    return { previewTop: preview.top, actionsBottom: actions.bottom };
   });
-  expect(geometry.previewBottom).toBeLessThanOrEqual(geometry.actionsTop);
+  expect(geometry.actionsBottom).toBeLessThanOrEqual(geometry.previewTop);
 });
 
 test("file delivery embeds the complete export workbench without a second dialog", async ({ page }) => {

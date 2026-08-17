@@ -15,7 +15,11 @@
     backgroundColor: "#ffffff",
     connected: false,
     perceptual: false,
-    tolerance: -1,
+    // The tolerance slider reaches down to -1, which is its off position: the
+    // reference replacement compares distance <= tolerance, so -1 matches no
+    // pixel at all and the whole profile becomes a no-op. 1 is the value the
+    // cutout workbench itself starts from.
+    tolerance: 1,
     feather: 0,
     alphaThreshold: 0,
     chromaFeather: 0,

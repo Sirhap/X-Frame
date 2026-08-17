@@ -1,8 +1,9 @@
 "use strict";
 
-const { expect, test } = require("@playwright/test");
+const { expect, test } = require("./fixtures");
 const fs = require("node:fs");
 const path = require("node:path");
+const zlib = require("node:zlib");
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3n0AAAAASUVORK5CYII=",
@@ -10,6 +11,87 @@ const ONE_PIXEL_PNG = Buffer.from(
 );
 const WIDE_IMAGE_PATH = path.resolve(__dirname, "../../../docs/screenshot.png");
 const WIDE_IMAGE_PNG = fs.readFileSync(WIDE_IMAGE_PATH);
+const PNG_CRC_TABLE = Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  return value >>> 0;
+});
+
+/**
+ * Wraps PNG chunk data in its length, type and CRC envelope.
+ * @param {string} type Four-letter chunk type.
+ * @param {Buffer} data Chunk payload.
+ * @returns {Buffer} Encoded chunk.
+ */
+function pngChunk(type, data) {
+  const header = Buffer.alloc(8);
+  header.writeUInt32BE(data.length, 0);
+  header.write(type, 4, "ascii");
+  let crc = 0xffffffff;
+  for (const byte of Buffer.concat([Buffer.from(type, "ascii"), data])) {
+    crc = PNG_CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0, 0);
+  return Buffer.concat([header, data, checksum]);
+}
+
+/**
+ * Encodes an opaque frame whose centered quarter is the subject and whose
+ * remaining three quarters are a flat background. A one-pixel image cannot tell
+ * a working cutout apart from one that returns its input untouched.
+ * @param {number} size Square edge length in pixels.
+ * @param {number} shift Horizontal subject offset distinguishing the frames.
+ * @param {[number,number,number]} background Background RGB.
+ * @returns {Buffer} PNG file bytes.
+ */
+function subjectOnBackgroundPng(size, shift, background) {
+  const stride = size * 4 + 1;
+  const raw = Buffer.alloc(size * stride);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const inside =
+        x >= size / 4 + shift && x < (size * 3) / 4 + shift && y >= size / 4 && y < (size * 3) / 4;
+      const offset = y * stride + 1 + x * 4;
+      raw[offset] = inside ? 220 : background[0];
+      raw[offset + 1] = inside ? 60 : background[1];
+      raw[offset + 2] = inside ? 60 : background[2];
+      raw[offset + 3] = 255;
+    }
+  }
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(size, 0);
+  header.writeUInt32BE(size, 4);
+  header[8] = 8;
+  header[9] = 6;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk("IHDR", header),
+    pngChunk("IDAT", zlib.deflateSync(raw)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/**
+ * Measures the share of fully transparent pixels in every organizer thumbnail.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @returns {Promise<number[]>} Transparent pixel ratio per frame.
+ */
+function organizerThumbnailTransparency(page) {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll(".organizerFrame img"), (image) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+      const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+      let transparent = 0;
+      for (let offset = 3; offset < data.length; offset += 4) if (data[offset] === 0) transparent += 1;
+      return transparent / (data.length / 4);
+    }),
+  );
+}
 
 /**
  * Opens the sidebar batch panel after its queue is ready.
@@ -64,6 +146,171 @@ test("organizer smart cutout processes the workset without opening the batch edi
   await expect(organizerModal).toBeVisible();
   await expect(organizerModal).not.toHaveAttribute("inert", "");
   await expect(page.locator("#organizerViewEdited")).toHaveClass(/active/);
+});
+
+for (const [label, background] of [
+  ["white", [255, 255, 255]],
+  ["green screen", [0, 177, 64]],
+  ["near black", [12, 12, 12]],
+]) {
+  test(`organizer smart cutout erases a ${label} background from every frame`, async ({ page }) => {
+    await page.goto("/tools/import");
+    await page.locator("#organizerFileInput").setInputFiles(
+      [0, 2, 4].map((shift, index) => ({
+        name: `frame_${String(index + 1).padStart(4, "0")}.png`,
+        mimeType: "image/png",
+        buffer: subjectOnBackgroundPng(64, shift, background),
+      })),
+    );
+    await expect(page.locator(".organizerFrame")).toHaveCount(3);
+    expect(await organizerThumbnailTransparency(page)).toEqual([0, 0, 0]);
+
+    await page.locator("#organizerBatchCutout").click();
+
+    await expect(page.locator("#organizerStatus")).toContainText("已回写 3 帧", { timeout: 60000 });
+    await expect(page.locator("#organizerViewEdited")).toHaveClass(/active/);
+    // The subject covers exactly one quarter of each frame, so a working cutout
+    // clears the remaining three quarters. Reporting success while the frames
+    // stay opaque is the failure this guards.
+    for (const ratio of await organizerThumbnailTransparency(page)) {
+      expect(ratio).toBeGreaterThan(0.7);
+    }
+  });
+}
+
+test("organizer smart cutout reports progress and encodes every frame once", async ({ page }) => {
+  const errors = [];
+  const frameCount = 20;
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    window.__frameEncodes = 0;
+    const encode = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function countedToDataURL(...args) {
+      window.__frameEncodes += 1;
+      return encode.apply(this, args);
+    };
+  });
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles(
+    Array.from({ length: frameCount }, (_, index) => ({
+      name: `frame_${String(index + 1).padStart(4, "0")}.png`,
+      mimeType: "image/png",
+      buffer: ONE_PIXEL_PNG,
+    })),
+  );
+  await expect(page.locator(".organizerFrame")).toHaveCount(frameCount);
+
+  await page.locator("#organizerSmartCutoutProgress").evaluate((overlay) => {
+    window.__overlayShown = false;
+    new MutationObserver(() => {
+      window.__overlayShown ||= overlay.hidden === false;
+    }).observe(overlay, { attributes: true, attributeFilter: ["hidden"] });
+  });
+  const baselineEncodes = await page.evaluate(() => window.__frameEncodes);
+
+  await page.locator("#organizerBatchCutout").click();
+
+  await expect(page.locator("#organizerStatus")).toContainText(`已回写 ${frameCount} 帧`, {
+    timeout: 120000,
+  });
+  expect(await page.evaluate(() => window.__overlayShown)).toBe(true);
+  await expect(page.locator("#organizerSmartCutoutProgress")).toBeHidden();
+  await expect(page.locator("#organizerBatchCutout")).toBeEnabled();
+  await expect(page.locator("#organizerViewEdited")).toHaveClass(/active/);
+  await expect(page.locator("#cutoutModal")).toBeHidden();
+
+  const encodes = (await page.evaluate(() => window.__frameEncodes)) - baselineEncodes;
+  expect(encodes).toBeLessThanOrEqual(frameCount * 7);
+
+  const previewLabel = await page.locator("#organizerPreviewFrame").textContent();
+  await expect.poll(() => page.locator("#organizerPreviewFrame").textContent()).not.toBe(previewLabel);
+  expect(errors).toEqual([]);
+});
+
+const DOWNSTREAM_ACTIONS = Object.freeze([
+  "#organizerReset",
+  "#organizerExport",
+  "#organizerAddProject",
+  "#organizerApply",
+]);
+
+/**
+ * Asserts every downstream organizer action is on screen and receives its own
+ * clicks, naming the covering element when one steals the center point.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @param {{scroll?:boolean}} [options] Whether each action may be scrolled into view first.
+ * @returns {Promise<void>}
+ */
+async function expectDownstreamActionsHittable(page, options = {}) {
+  for (const selector of DOWNSTREAM_ACTIONS) {
+    const action = page.locator(selector);
+    await expect
+      .poll(
+        async () => {
+          // Re-scroll on every attempt: opening the downstream menu reflows the
+          // footer, which can push a previously revealed action back off screen.
+          if (options.scroll) await action.scrollIntoViewIfNeeded();
+          return action.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            const x = bounds.left + bounds.width / 2;
+            const y = bounds.top + bounds.height / 2;
+            if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {
+              return "outside the viewport";
+            }
+            const target = document.elementFromPoint(x, y);
+            if (target === element || element.contains(target)) return "reachable";
+            if (!target) return "covered by nothing";
+            return `covered by ${target.tagName}${target.id ? `#${target.id}` : ""}.${String(target.className || "")}`;
+          });
+        },
+        { message: `${selector} should receive its own clicks` },
+      )
+      .toBe("reachable");
+  }
+}
+
+/**
+ * Measures the unused strip between the organizer body and its workbench bottom.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @returns {Promise<{gap:number,bodyHeight:number}>}
+ */
+async function measureOrganizerFill(page) {
+  return page.evaluate(() => {
+    const workbench = document.querySelector(".organizerWorkbench");
+    const body = document.querySelector(".organizerBody");
+    const workbenchBounds = workbench.getBoundingClientRect();
+    const bodyBounds = body.getBoundingClientRect();
+    return {
+      gap: Math.round(workbenchBounds.bottom - bodyBounds.bottom),
+      bodyHeight: Math.round(bodyBounds.height),
+    };
+  });
+}
+
+test("organizer workbench fills its surface in every toolbar state", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto("/tools/import");
+
+  const empty = await measureOrganizerFill(page);
+  expect(empty.bodyHeight).toBeGreaterThan(400);
+  expect(empty.gap).toBeLessThanOrEqual(2);
+
+  await page.locator("#organizerFileInput").setInputFiles(
+    [1, 2, 3].map((index) => ({
+      name: `frame_000${index}.png`,
+      mimeType: "image/png",
+      buffer: ONE_PIXEL_PNG,
+    })),
+  );
+  await expect(page.locator(".organizerFrame")).toHaveCount(3);
+  const populated = await measureOrganizerFill(page);
+  expect(populated.gap).toBeLessThanOrEqual(2);
+
+  await page.locator("#organizerToggleImportSetup").click();
+  await expect(page.locator("#organizerImportSetup")).toBeVisible();
+  const expanded = await measureOrganizerFill(page);
+  expect(expanded.gap).toBeLessThanOrEqual(2);
+  expect(expanded.bodyHeight).toBeLessThan(populated.bodyHeight);
 });
 
 /**
@@ -349,7 +596,7 @@ test("organizer preview reports the currently playing frame", async ({ page }) =
   ]);
   expect(previewBox).not.toBeNull();
   expect(speedControlBox).not.toBeNull();
-  expect(speedControlBox.y).toBeGreaterThanOrEqual(previewBox.y + previewBox.height);
+  expect(speedControlBox.y + speedControlBox.height).toBeLessThanOrEqual(previewBox.y);
   const firstLabel = await page.locator("#organizerPreviewFrame").textContent();
   await expect.poll(() => page.locator("#organizerPreviewFrame").textContent()).not.toBe(firstLabel);
 });
@@ -384,20 +631,21 @@ test("organizer layout stays usable across neighboring desktop breakpoints", asy
         viewportWidth: innerWidth,
         viewportHeight: innerHeight,
         scrollWidth: document.documentElement.scrollWidth,
+        footerBottom: footer?.bottom || 0,
+        speedBottom: speed?.bottom || 0,
         statusBottom: status?.bottom || 0,
         previewTop: preview?.top || 0,
         previewHeight: preview?.height || 0,
         previewBottom: preview?.bottom || 0,
-        speedTop: speed?.top || 0,
-        footerBottom: footer?.bottom || 0,
       };
     });
     metrics.push(current);
     expect(current.scrollWidth).toBeLessThanOrEqual(current.viewportWidth + 1);
     expect(current.previewHeight).toBeGreaterThanOrEqual(150);
+    expect(current.footerBottom).toBeLessThanOrEqual(current.speedBottom + 1);
+    expect(current.speedBottom).toBeLessThanOrEqual(current.statusBottom + 1);
     expect(current.statusBottom).toBeLessThanOrEqual(current.previewTop + 1);
-    expect(current.previewBottom).toBeLessThanOrEqual(current.speedTop + 1);
-    expect(current.footerBottom).toBeLessThanOrEqual(
+    expect(current.previewBottom).toBeLessThanOrEqual(
       await page.evaluate(() => document.documentElement.scrollHeight + 1),
     );
   }
@@ -719,7 +967,7 @@ test("compact organizer keeps undo clear of preview controls", async ({ page }) 
   expect(previewBounds).not.toBeNull();
   expect(frameLabelBounds).not.toBeNull();
   expect(undoBounds.y + undoBounds.height).toBeLessThanOrEqual(previewBounds.y);
-  expect(previewBounds.y + previewBounds.height).toBeLessThanOrEqual(speedBounds.y);
+  expect(speedBounds.y + speedBounds.height).toBeLessThanOrEqual(undoBounds.y);
   expect(frameLabelBounds.y + frameLabelBounds.height).toBeLessThanOrEqual(
     previewBounds.y + previewBounds.height,
   );
@@ -728,19 +976,7 @@ test("compact organizer keeps undo clear of preview controls", async ({ page }) 
   await page.locator(".organizerDownstreamMenu").evaluate((element) => {
     element.open = true;
   });
-  for (const selector of ["#organizerReset", "#organizerExport", "#organizerAddProject", "#organizerApply"]) {
-    const action = page.locator(selector);
-    await expect(action).toBeInViewport();
-    const centerHitTarget = await action.evaluate((element) => {
-      const bounds = element.getBoundingClientRect();
-      const centerTarget = document.elementFromPoint(
-        bounds.left + bounds.width / 2,
-        bounds.top + bounds.height / 2,
-      );
-      return centerTarget === element || element.contains(centerTarget);
-    });
-    expect(centerHitTarget).toBe(true);
-  }
+  await expectDownstreamActionsHittable(page);
 
   await page.locator("#organizerUndoDelete").click();
   await expect(page.locator(".organizerFrame")).toHaveCount(3);
@@ -758,20 +994,7 @@ test("200% organizer keeps footer actions reachable after scrolling", async ({ p
   await page.locator(".organizerDownstreamMenu").evaluate((element) => {
     element.open = true;
   });
-  for (const selector of ["#organizerReset", "#organizerExport", "#organizerAddProject", "#organizerApply"]) {
-    const action = page.locator(selector);
-    await action.scrollIntoViewIfNeeded();
-    await expect(action).toBeInViewport();
-    const centerHitTarget = await action.evaluate((element) => {
-      const bounds = element.getBoundingClientRect();
-      const centerTarget = document.elementFromPoint(
-        bounds.left + bounds.width / 2,
-        bounds.top + bounds.height / 2,
-      );
-      return centerTarget === element || element.contains(centerTarget);
-    });
-    expect(centerHitTarget).toBe(true);
-  }
+  await expectDownstreamActionsHittable(page, { scroll: true });
 
   await page.locator("#organizerViewOriginal").click();
   await expect(page.locator("#organizerViewOriginal")).toHaveClass(/active/);

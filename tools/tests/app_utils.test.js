@@ -52,8 +52,9 @@ test("group labels replace legacy UUID names with a readable alias", () => {
     "未命名动画 91ed-2",
   );
   assert.equal(
-    groupLabel({ name: "91edf15f-ac7f-4af0-8ac0-bc55ddcbad61", type: "actor", profileLabel: "Hero" }, (key) =>
-      key === "unnamedAnimation" ? "未命名动画" : key,
+    groupLabel(
+      { name: "91edf15f-ac7f-4af0-8ac0-bc55ddcbad61", type: "actor", profileLabel: "Hero" },
+      (key) => (key === "unnamedAnimation" ? "未命名动画" : key),
     ),
     "Hero - 未命名动画 91ed",
   );

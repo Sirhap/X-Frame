@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { expect, test } = require("@playwright/test");
+const { expect, test } = require("./fixtures");
 const { readZipEntries } = require("./zip_test_utils");
 
 const REAL_TRAIL_ASSET = path.join(

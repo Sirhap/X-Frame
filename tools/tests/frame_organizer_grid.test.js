@@ -169,6 +169,19 @@ test("attached-assets action is disabled without frames and hidden without host 
   assert.equal(exportUnsupportedFixture.elements.organizerExport.disabled, true);
 });
 
+test("clearing an imported workset restores import settings", () => {
+  const fixture = createFixture({ mode: "import" });
+  fixture.controller.renderCounts();
+  assert.equal(fixture.state.showImportSetup, false);
+  assert.equal(fixture.state.hadFrames, true);
+
+  fixture.state.frames = [];
+  fixture.controller.renderCounts();
+
+  assert.equal(fixture.state.showImportSetup, true);
+  assert.equal(fixture.elements.organizerToggleImportSetup.attributes["aria-expanded"], "true");
+});
+
 test("loaded worksets collapse low-frequency controls and disable missing edited results", () => {
   const fixture = createFixture({ mode: "import" });
 
@@ -211,9 +224,27 @@ test("analysis hints sit on the matching buttons after a long hover instead of a
 test("organizer grid reorders frames when one card is dropped onto another", () => {
   const fixture = createFixture({ mode: "import" });
   fixture.state.frames = [
-    { uid: "frame-1", included: true, selected: false, hasEditedResult: false, thumbnails: { edited: "data:1" } },
-    { uid: "frame-2", included: true, selected: false, hasEditedResult: false, thumbnails: { edited: "data:2" } },
-    { uid: "frame-3", included: true, selected: false, hasEditedResult: false, thumbnails: { edited: "data:3" } },
+    {
+      uid: "frame-1",
+      included: true,
+      selected: false,
+      hasEditedResult: false,
+      thumbnails: { edited: "data:1" },
+    },
+    {
+      uid: "frame-2",
+      included: true,
+      selected: false,
+      hasEditedResult: false,
+      thumbnails: { edited: "data:2" },
+    },
+    {
+      uid: "frame-3",
+      included: true,
+      selected: false,
+      hasEditedResult: false,
+      thumbnails: { edited: "data:3" },
+    },
   ];
 
   fixture.controller.reorderFrame("frame-3", 0, false);

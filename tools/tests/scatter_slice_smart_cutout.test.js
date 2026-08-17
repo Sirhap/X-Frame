@@ -44,7 +44,7 @@ test("smart slice cutout uses the requested regular background-clear parameters"
 
   assert.deepEqual(options.backgroundColor, backgroundColor);
   assert.equal(options.referenceChromaKey, true);
-  assert.equal(options.tolerance, -1);
+  assert.equal(options.tolerance, 1);
   assert.equal(options.edgeBoost, 10);
   assert.equal(options.blendStrength, 100);
   assert.equal(options.blendMode, "blend");

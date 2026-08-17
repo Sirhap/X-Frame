@@ -7,10 +7,10 @@
     <title>XSXB Frame Tuner</title>
     <script src="/app_surface.js"></script>
     <script>
-      document.documentElement.setAttribute(
-        "data-app-surface",
-        window.XSXBAppSurface.resolveAppSurface(location.pathname),
-      );
+      // A missing surface module must never abort document parsing; the shell
+      // falls back to its default workspace layout instead.
+      var xsxbSurface = window.XSXBAppSurface?.resolveAppSurface?.(location.pathname);
+      if (xsxbSurface) document.documentElement.setAttribute("data-app-surface", xsxbSurface);
     </script>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="stylesheet" href="/tokens.css" />
@@ -3558,7 +3558,8 @@
             <div class="organizerEmptyState" role="status">
               <strong data-organizer-i18n="emptyWorksetTitle">先导入动画素材</strong>
               <span data-organizer-i18n="emptyWorksetHint"
-                >从上方选择图片或视频，也可按 Ctrl/⌘V 粘贴；编辑、分析和移除工具始终可用，导入后即可操作。</span
+                >从上方选择图片或视频，也可按 Ctrl/⌘V
+                粘贴；编辑、分析和移除工具始终可用，导入后即可操作。</span
               >
             </div>
             <div id="organizerGrid" class="organizerGrid"></div>
@@ -3585,54 +3586,12 @@
                 </button>
               </div>
             </div>
-            <div class="organizerStatusRow">
-              <div id="organizerStatus" class="organizerStatus" aria-live="polite">等待操作</div>
-              <button
-                id="organizerStatusDismiss"
-                type="button"
-                class="secondary"
-                data-organizer-i18n="dismissStatus"
-                hidden
-              >
-                关闭
-              </button>
-              <button
-                id="organizerUndoDelete"
-                type="button"
-                class="secondary"
-                data-organizer-i18n="undoDelete"
-                hidden
-              >
-                撤销删除
-              </button>
-              <button
-                id="organizerViewExportJob"
-                type="button"
-                class="secondary"
-                data-organizer-i18n="viewExportJob"
-                hidden
-              >
-                查看任务
-              </button>
-            </div>
-            <div class="organizerPreviewStage">
-              <canvas id="organizerPreview" width="520" height="520"></canvas>
-              <output id="organizerPreviewFrame" class="organizerPreviewFrame" aria-live="off"
-                >第 - / 0 帧</output
-              >
-              <label class="organizerSpeed">
-                <span data-organizer-i18n="speed">预览速度</span>
-                <b aria-hidden="true">−</b>
-                <input id="organizerSpeed" type="range" min="40" max="600" step="10" value="480" />
-                <b aria-hidden="true">+</b>
-              </label>
-            </div>
             <div class="organizerFooterActions">
               <details class="organizerDownstreamMenu">
                 <summary>其他操作</summary>
                 <div>
                   <button id="organizerReset" type="button" class="secondary" data-organizer-i18n="reset">
-                    还原
+                    恢复原动画
                   </button>
                   <button
                     id="organizerAddAssets"
@@ -3673,6 +3632,48 @@
               <button id="organizerApply" type="button" class="organizerPrimary" data-organizer-i18n="apply">
                 应用到动画
               </button>
+            </div>
+            <label class="organizerSpeed">
+              <span data-organizer-i18n="speed">预览速度</span>
+              <b aria-hidden="true">−</b>
+              <input id="organizerSpeed" type="range" min="40" max="600" step="10" value="480" />
+              <b aria-hidden="true">+</b>
+            </label>
+            <div class="organizerStatusRow">
+              <div id="organizerStatus" class="organizerStatus" aria-live="polite">等待操作</div>
+              <button
+                id="organizerStatusDismiss"
+                type="button"
+                class="secondary"
+                data-organizer-i18n="dismissStatus"
+                hidden
+              >
+                关闭
+              </button>
+              <button
+                id="organizerUndoDelete"
+                type="button"
+                class="secondary"
+                data-organizer-i18n="undoDelete"
+                hidden
+              >
+                撤销删除
+              </button>
+              <button
+                id="organizerViewExportJob"
+                type="button"
+                class="secondary"
+                data-organizer-i18n="viewExportJob"
+                hidden
+              >
+                查看任务
+              </button>
+            </div>
+            <div class="organizerPreviewStage">
+              <canvas id="organizerPreview" width="520" height="520"></canvas>
+              <output id="organizerPreviewFrame" class="organizerPreviewFrame" aria-live="off"
+                >第 - / 0 帧</output
+              >
             </div>
           </aside>
         </div>
@@ -4755,6 +4756,7 @@
     <script src="/workset_handoff_runtime.js"></script>
     <script src="/workset_handoff_dialog.js"></script>
     <script src="/app_shell.js"></script>
+    <script src="/organizer_progress_overlay.js"></script>
     <script src="/app.js"></script>
     <div
       id="organizerSmartCutoutProgress"
@@ -4832,67 +4834,17 @@
           if (handled) event.preventDefault();
         });
 
-        const button = document.querySelector("#organizerBatchCutout");
-        const progress = document.querySelector("#organizerSmartCutoutProgress");
-        const text = document.querySelector("#organizerSmartCutoutProgressText");
-        const organizer = document.querySelector("#organizerModal");
-        if (!button || !progress || !text || !organizer) return;
-        let startedAt = 0;
-        let sawBusyState = false;
-        let completionObserver = null;
-        const hide = () => {
-          progress.hidden = true;
-          completionObserver?.disconnect();
-          completionObserver = null;
-        };
-        const syncProgressText = () => {
-          const statusText = document.querySelector("#organizerStatus")?.textContent || "";
-          const progressMatch = `${button.textContent || ""} ${statusText}`.match(/(\d+)\s*\/\s*(\d+)/);
-          if (progressMatch) {
-            text.textContent = `智能抠图处理中 · ${progressMatch[1]} / ${progressMatch[2]} 帧`;
-          }
-          return statusText;
-        };
-        const observeCompletion = () => {
-          completionObserver?.disconnect();
-          completionObserver = new MutationObserver(() => {
-            const statusText = syncProgressText();
-            const finished = /完成|成功|complete|finished/i.test(statusText);
-            if (organizer.hidden || finished || (sawBusyState && !button.disabled)) hide();
-          });
-          completionObserver.observe(document.body, {
-            attributes: true,
-            attributeFilter: ["disabled", "hidden", "open", "class"],
-            childList: true,
-            subtree: true,
-            characterData: true,
-          });
-        };
-        button.addEventListener(
-          "click",
-          () => {
-            const frameCount = document.querySelectorAll(".organizerFrame").length;
-            text.textContent = frameCount ? `智能抠图处理中 · 共 ${frameCount} 帧` : "智能抠图处理中";
-            progress.hidden = false;
-            startedAt = Date.now();
-            sawBusyState = false;
-            observeCompletion();
-            const poll = () => {
-              if (progress.hidden) return;
-              sawBusyState ||= button.disabled;
-              if (sawBusyState && !button.disabled) return hide();
-              if (Date.now() - startedAt > 60000) return hide();
-              requestAnimationFrame(poll);
-            };
-            requestAnimationFrame(poll);
-          },
-          { capture: true },
-        );
+        window.XSXBOrganizerProgressOverlay?.createOverlay({
+          documentApi: document,
+          windowApi: window,
+        }).attach();
       })();
     </script>
     <script>
       (function revealXsxbSurface() {
-        var surface = window.XSXBAppSurface.applyAppSurface(document, location.pathname);
+        var surface =
+          window.XSXBAppSurface?.applyAppSurface?.(document, location.pathname) ||
+          document.documentElement.getAttribute("data-app-surface");
         var hubs = {
           projects: "projectHub",
           tools: "quickToolsHub",

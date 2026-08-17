@@ -151,11 +151,18 @@
         return;
       }
       /**
+       * Tracks the output already written per frame so progressive callbacks stay linear.
+       * Live callbacks report the whole processed prefix, and re-copying it every tick
+       * would re-encode every earlier thumbnail and stall the main thread.
+       * @type {Map<string,object>}
+       */
+      const writtenOutputs = new Map();
+      /**
        * Copies live or final cutout outputs into the organizer workset.
        * @param {Array<object>} outputs Processed workset outputs.
        * @param {object[]} batchFrames Frames belonging to the current pixel-safe batch.
        * @param {{partial?:boolean}} [applyOptions] Whether a prefix of the batch is allowed.
-       * @returns {number} Number of frames written in this call.
+       * @returns {number} Number of batch frames covered by these outputs.
        */
       const applyCutoutOutputs = (outputs, batchFrames, applyOptions = {}) => {
         const list = Array.from(outputs || []);
@@ -167,12 +174,17 @@
           list.filter((output) => output?.frame?.uid).map((output) => [output.frame.uid, output]),
         );
         let applied = 0;
+        let written = 0;
         batchFrames.forEach((frame, index) => {
-          const output = outputByUid.get(frame.uid) || (list.length === batchFrames.length ? list[index] : null);
+          const output =
+            outputByUid.get(frame.uid) || (list.length === batchFrames.length ? list[index] : null);
           if (!output?.canvas) {
             if (allowPartial) return;
             throw new Error(`Missing cutout canvas for frame ${index + 1}.`);
           }
+          applied += 1;
+          if (writtenOutputs.get(frame.uid) === output) return;
+          writtenOutputs.set(frame.uid, output);
           frame.editedCanvas = imageCanvas(output.canvas);
           frame.hasEditedResult = true;
           frame.assetRevision = Math.max(0, Number(frame.assetRevision) || 0) + 1;
@@ -182,13 +194,13 @@
           frame.analysisRevision = Number(frame.analysisRevision || 0) + 1;
           frame.thumbnails.edited = "";
           if (output.cutoutState) frame.cutoutState = output.cutoutState;
-          applied += 1;
+          written += 1;
         });
         for (const featureId of premiumFeatures?.normalizeFeatureIds?.(list.premiumFeatures) || []) {
           state.premiumFeatures.add(featureId);
         }
-        if (applied) {
-          if (options.direct || options.mode === "single") state.viewMode = "edited";
+        if (applied && (options.direct || options.mode === "single")) state.viewMode = "edited";
+        if (written) {
           renderGrid();
           renderPreview();
         }

@@ -2,6 +2,9 @@
 
 const crypto = require("node:crypto");
 const { defineConfig, devices } = require("@playwright/test");
+const { DEFAULT_E2E_ROOT } = require("./tools/tests/e2e/e2e_fixture");
+
+process.env.XSXB_E2E_ROOT = process.env.XSXB_E2E_ROOT || DEFAULT_E2E_ROOT;
 
 const E2E_ACTIVATION_CODE = "XSXB-E2E-ONLY";
 const E2E_ACTIVATION_HASH = crypto.createHash("sha256").update(E2E_ACTIVATION_CODE).digest("hex");
@@ -20,10 +23,13 @@ module.exports = defineConfig({
     env: {
       ...process.env,
       PORT: "5189",
+      XSXB_E2E_ROOT: process.env.XSXB_E2E_ROOT || DEFAULT_E2E_ROOT,
       XSXB_ACTIVATION_CODE_HASHES: E2E_ACTIVATION_HASH,
       XSXB_ACTIVATION_SECRET: "xsxb-e2e-secret-never-used-outside-tests",
     },
-    reuseExistingServer: false,
+    // Opt-in reuse keeps a manually started server (with readable stderr) usable
+    // while debugging; CI and normal runs still boot their own.
+    reuseExistingServer: Boolean(process.env.XSXB_E2E_REUSE_SERVER),
     timeout: 10000,
     url: "http://127.0.0.1:5189",
   },

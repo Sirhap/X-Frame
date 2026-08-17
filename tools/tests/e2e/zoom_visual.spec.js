@@ -1,6 +1,6 @@
 "use strict";
 
-const { expect, test } = require("@playwright/test");
+const { expect, test } = require("./fixtures");
 
 const BASE_PHYSICAL_VIEWPORT = Object.freeze({ width: 1600, height: 900 });
 const ONE_PIXEL_PNG = Buffer.from(

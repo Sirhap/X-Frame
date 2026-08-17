@@ -809,13 +809,33 @@
     display: none;
   }
 
+  /* Short viewports stack the workbench and scroll through .cutoutBody, so the
+     preview must claim its content height instead of collapsing to a sliver
+     behind the parameter sidebar. An auto minimum only applies while the
+     preview itself is not a scroll container. */
   .cutoutPreview {
-    min-height: 0;
+    min-height: auto;
+    overflow: visible;
   }
 
+  /* Browser zoom squeezes the chrome, never the canvas: the comparison stage
+     follows the preview header and the repair palette moves below it. */
   .cutoutPreviewHeader {
+    order: 1;
     min-height: 0;
     gap: 6px;
+  }
+
+  .cutoutCompare {
+    order: 2;
+  }
+
+  #cutoutRepairTools {
+    order: 3;
+  }
+
+  .cutoutFooter {
+    order: 4;
   }
 
   .cutoutPreviewHeader :is(button, input, output) {

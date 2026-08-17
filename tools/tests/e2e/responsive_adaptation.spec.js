@@ -1,6 +1,6 @@
 "use strict";
 
-const { expect, test } = require("@playwright/test");
+const { expect, test } = require("./fixtures");
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3n0AAAAASUVORK5CYII=",
@@ -14,6 +14,24 @@ const CUTOUT_FILES = [1, 2, 3].map((index) => ({
 }));
 
 /**
+ * Rewinds every scroll container between the element and the document, because
+ * work surfaces scroll inside their own panel rather than the window.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @param {string} selector Element selector.
+ * @returns {Promise<void>}
+ */
+async function scrollSurfaceToTop(page, selector) {
+  await page.evaluate((target) => {
+    window.scrollTo(0, 0);
+    let node = document.querySelector(target);
+    while (node) {
+      if (node.scrollTop) node.scrollTop = 0;
+      node = node.parentElement;
+    }
+  }, selector);
+}
+
+/**
  * Asserts that an element's box lies fully inside the viewport vertically,
  * which is the "preserve the canvas, squeeze the chrome" contract for work
  * surfaces under browser zoom.
@@ -23,6 +41,7 @@ const CUTOUT_FILES = [1, 2, 3].map((index) => ({
  * @returns {Promise<void>}
  */
 async function expectVerticallyInViewport(page, selector, viewport) {
+  await scrollSurfaceToTop(page, selector);
   const box = await page.locator(selector).boundingBox();
   expect(box, `${selector} should render a box`).not.toBeNull();
   expect(box.y, `${selector} should not start above the viewport`).toBeGreaterThanOrEqual(-1);

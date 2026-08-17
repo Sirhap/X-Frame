@@ -37,9 +37,9 @@ test("tool overlays match the resource path before app boot", () => {
   assert.equal(resolveToolOverlay("/workspace/animation/transform"), "");
 });
 
-test("applyAppSurface keeps a live cutout session when the URL is still import", () => {
-  const classes = new Set(["organizerOpen", "cutoutOpen"]);
-  const organizerModal = { hidden: false, id: "organizerModal" };
+test("applyAppSurface never touches workbench overlays", () => {
+  const classes = new Set(["cutoutOpen"]);
+  const organizerModal = { hidden: true, id: "organizerModal" };
   const cutoutModal = { hidden: false, id: "cutoutModal" };
   const workspace = { hidden: true };
   const documentRef = {
@@ -82,12 +82,17 @@ test("applyAppSurface keeps a live cutout session when the URL is still import",
 
   applyAppSurface(documentRef, "/workspace/resources/import");
 
-  assert.equal(cutoutModal.hidden, false);
+  assert.equal(cutoutModal.hidden, false, "a live cutout session must survive the surface pass");
   assert.equal(classes.has("cutoutOpen"), true);
-  assert.equal(organizerModal.hidden, false);
+  assert.equal(
+    organizerModal.hidden,
+    true,
+    "the organizer must stay closed so its controller still opens and loads frames",
+  );
+  assert.equal(classes.has("organizerOpen"), false);
 });
 
-test("applyAppSurface hides the tuner and reveals the matching tool overlay", () => {
+test("applyAppSurface hides the tuner on a tool route", () => {
   const classes = new Set();
   const organizerModal = { hidden: true, id: "organizerModal" };
   const cutoutModal = { hidden: true, id: "cutoutModal" };
@@ -135,10 +140,9 @@ test("applyAppSurface hides the tuner and reveals the matching tool overlay", ()
   assert.equal(documentRef.documentElement.attributes["data-app-surface"], "tool");
   assert.equal(documentRef.body.attributes["data-app-surface"], "tool");
   assert.equal(workspace.hidden, true);
-  assert.equal(organizerModal.hidden, false);
+  assert.equal(organizerModal.hidden, true);
   assert.equal(cutoutModal.hidden, true);
-  assert.equal(classes.has("organizerOpen"), true);
-  assert.equal(classes.has("cutoutOpen"), false);
+  assert.equal(classes.size, 0);
 });
 
 test("workbench HTML resolves resource tools before app.js boots", () => {
@@ -149,5 +153,5 @@ test("workbench HTML resolves resource tools before app.js boots", () => {
   const head = html.slice(0, html.indexOf("</head>"));
   assert.match(head, /src="\/app_surface\.js"/u);
   assert.match(html, /function revealXsxbSurface\(\)/u);
-  assert.match(html, /XSXBAppSurface\.applyAppSurface/u);
+  assert.match(html, /XSXBAppSurface\?\.applyAppSurface/u);
 });

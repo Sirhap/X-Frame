@@ -6,6 +6,7 @@ const {
   createController,
   partitionFramesByPixelBudget,
 } = require("../animation_tuner/public/frame_organizer_actions");
+const { REGULAR_AUTO_BACKGROUND_PARAMETERS } = require("../animation_tuner/public/smart_cutout_defaults");
 
 /** Creates the small host fixture needed to exercise organizer actions. */
 function createFixture() {
@@ -35,6 +36,8 @@ function createFixture() {
     animations: [],
     sessionAnimation: null,
     sessionAnimations: [],
+    imageCanvases: 0,
+    grids: 0,
     status: [],
     counts: 0,
     reloads: 0,
@@ -66,7 +69,9 @@ function createFixture() {
       },
       autoCutout: async (workset) => {
         calls.autoCutoutWorksets.push(workset);
-        if (state.liveCutoutOutputs) await workset.onLiveApply?.(state.liveCutoutOutputs);
+        const steps =
+          state.liveCutoutOutputSteps || (state.liveCutoutOutputs ? [state.liveCutoutOutputs] : []);
+        for (const step of steps) await workset.onLiveApply?.(step);
         return state.cutoutOutputsByCall?.shift?.() || state.cutoutOutputs || null;
       },
       getCurrentAnimation: () => ({
@@ -95,8 +100,13 @@ function createFixture() {
     },
     text: (key) => key,
     includedFrames: () => state.frames,
-    imageCanvas: (source) => source,
-    renderGrid: () => {},
+    imageCanvas: (source) => {
+      calls.imageCanvases += 1;
+      return source;
+    },
+    renderGrid: () => {
+      calls.grids += 1;
+    },
     renderCounts: () => {
       calls.counts += 1;
     },
@@ -248,7 +258,9 @@ test("direct batch cutout applies live partial outputs before the batch finishes
   fixture.frame.hasEditedResult = false;
   fixture.state.frames = [fixture.frame, second];
   fixture.state.viewMode = "original";
-  fixture.state.liveCutoutOutputs = [{ frame: { uid: fixture.frame.uid }, canvas: fixture.frame.editedCanvas }];
+  fixture.state.liveCutoutOutputs = [
+    { frame: { uid: fixture.frame.uid }, canvas: fixture.frame.editedCanvas },
+  ];
   fixture.state.cutoutOutputs = [
     { frame: { uid: fixture.frame.uid }, canvas: fixture.frame.editedCanvas },
     { frame: { uid: second.uid }, canvas: second.editedCanvas },
@@ -260,6 +272,40 @@ test("direct batch cutout applies live partial outputs before the batch finishes
   assert.equal(second.hasEditedResult, true);
   assert.equal(fixture.state.viewMode, "edited");
   assert.ok(fixture.calls.status.some((message) => message === "cutoutFrameProgress"));
+});
+
+test("live cutout progress rewrites each frame once instead of the whole applied prefix", async () => {
+  const fixture = createFixture();
+  fixture.frame.hasEditedResult = false;
+  const frames = [fixture.frame];
+  for (const uid of ["frame-2", "frame-3", "frame-4"]) {
+    frames.push({
+      ...fixture.frame,
+      uid,
+      name: `${uid}.png`,
+      hasEditedResult: false,
+      assetRevision: 1,
+      thumbnails: { edited: "" },
+    });
+  }
+  fixture.state.frames = frames;
+  fixture.state.viewMode = "original";
+  const outputs = frames.map((frame) => ({
+    frame: { uid: frame.uid },
+    canvas: frame.editedCanvas,
+  }));
+  fixture.state.liveCutoutOutputSteps = outputs.map((_, index) => outputs.slice(0, index + 1));
+  fixture.state.cutoutOutputs = outputs;
+
+  await fixture.controller.editBatchCutout();
+
+  assert.equal(fixture.calls.imageCanvases, frames.length);
+  assert.deepEqual(
+    frames.map((frame) => frame.assetRevision),
+    frames.map(() => 2),
+  );
+  assert.equal(fixture.calls.grids, frames.length + 1);
+  assert.equal(fixture.calls.status.at(-1), "cutoutReady");
 });
 
 test("organizer smart cutout directly processes included frames with the automatic removal profile", async () => {
@@ -276,27 +322,9 @@ test("organizer smart cutout directly processes included frames with the automat
   assert.equal(workset.items.length, 1);
   assert.equal(fixture.frame.hasEditedResult, true);
   assert.equal(fixture.state.viewMode, "edited");
-  assert.deepEqual(workset.processingParameters, {
-    backgroundColor: "#ffffff",
-    connected: false,
-    perceptual: false,
-    tolerance: -1,
-    feather: 0,
-    alphaThreshold: 0,
-    chromaFeather: 0,
-    edgeBoost: 10,
-    blendStrength: 100,
-    blendMode: "blend",
-    alphaLow: 0,
-    alphaHigh: 0,
-    despillStrength: 100,
-    despillMode: "general",
-    edgeDespillRadius: 0,
-    edgeRecoveryStrength: 0,
-    backgroundRadius: 0,
-    blurRadius: 0,
-    protectionTolerance: 0,
-  });
+  // Compare against the shared profile instead of restating it: a second copy
+  // of the table hides the case where the profile itself becomes a no-op.
+  assert.deepEqual(workset.processingParameters, { ...REGULAR_AUTO_BACKGROUND_PARAMETERS });
 });
 
 test("organizer cutout partitions decoded pixels without reordering frames", () => {

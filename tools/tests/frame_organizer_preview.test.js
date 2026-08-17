@@ -30,13 +30,14 @@ test("organizer preview clamps stale indexes and tolerates missing canvases", ()
   assert.equal(state.previewIndex, 0);
 });
 
-test("organizer preview draws the frame against the top of the canvas", () => {
+test("organizer preview matches the frame aspect ratio instead of letterboxing", () => {
   const draws = [];
   const previewCanvas = {
     clientWidth: 400,
     clientHeight: 400,
     width: 0,
     height: 0,
+    style: {},
     getContext: () => ({
       clearRect() {},
       drawImage(_source, x, y, width, height) {
@@ -60,9 +61,9 @@ test("organizer preview draws the frame against the top of the canvas", () => {
 
   controller.renderPreview();
 
+  assert.equal(previewCanvas.width, 400);
+  assert.equal(previewCanvas.height, 200);
+  assert.equal(previewCanvas.style.aspectRatio, "100 / 50");
   assert.equal(draws.length, 1);
-  assert.equal(draws[0].width, 400);
-  assert.equal(draws[0].height, 200);
-  assert.equal(draws[0].x, 0);
-  assert.ok(draws[0].y <= 12);
+  assert.deepEqual(draws[0], { x: 0, y: 0, width: 400, height: 200 });
 });

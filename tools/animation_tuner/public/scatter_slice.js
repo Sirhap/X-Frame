@@ -265,7 +265,9 @@
    * @returns {Array<{id:string,boxes:object[]}>} Selected groups.
    */
   function selectedGroups() {
-    return state.groups.filter((group) => group.enabled && Array.isArray(group.boxes) && group.boxes.length > 0);
+    return state.groups.filter(
+      (group) => group.enabled && Array.isArray(group.boxes) && group.boxes.length > 0,
+    );
   }
 
   /**
@@ -749,7 +751,8 @@
     if (elements.resultSummary) {
       const label = elements.resultSummary.querySelector("span");
       const detail = elements.resultSummary.querySelector("strong");
-      if (label) label.textContent = state.boxes.length ? "识别完成" : state.source ? "素材已就绪" : "等待素材";
+      if (label)
+        label.textContent = state.boxes.length ? "识别完成" : state.source ? "素材已就绪" : "等待素材";
       if (detail) {
         detail.textContent = state.boxes.length
           ? `已识别 ${state.boxes.length} 个区域 · 已建立 ${state.groups.length} 个分组`

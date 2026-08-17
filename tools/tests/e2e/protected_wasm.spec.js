@@ -1,6 +1,6 @@
 "use strict";
 
-const { expect, test } = require("@playwright/test");
+const { expect, test } = require("./fixtures");
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");

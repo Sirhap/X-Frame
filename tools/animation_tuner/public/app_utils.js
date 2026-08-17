@@ -76,8 +76,7 @@
     const text = String(name || "");
     const match = text.match(UUID_NAME_PATTERN);
     if (!match) return text;
-    const base =
-      typeof translate === "function" ? translate("unnamedAnimation") : "Unnamed animation";
+    const base = typeof translate === "function" ? translate("unnamedAnimation") : "Unnamed animation";
     const alias = `${base} ${text.slice(0, 4)}`;
     return match[1] ? `${alias}-${match[1]}` : alias;
   }

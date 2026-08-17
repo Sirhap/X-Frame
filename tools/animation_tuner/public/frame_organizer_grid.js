@@ -57,6 +57,7 @@
         state.showImportSetup = false;
       } else if (!hasFrames) {
         state.lastExpandedPanel = "";
+        if (state.mode === "import" && state.hadFrames) state.showImportSetup = true;
       }
       state.hadFrames = hasFrames;
       const workbench = elements.organizerImportSetup?.closest?.(".organizerWorkbench");

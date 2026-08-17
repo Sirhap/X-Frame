@@ -58,29 +58,20 @@
 
   /**
    * Applies the URL surface before workbench controllers finish loading.
+   * Only the tuner workspace is touched: pre-revealing a tool overlay would make
+   * its controller believe the workbench is already open and skip loading it.
    * @param {Document} documentRef Document to stamp.
    * @param {unknown} pathname Location pathname.
    * @returns {string} Applied surface.
    */
   function applyAppSurface(documentRef, pathname) {
     const surface = resolveAppSurface(pathname);
-    const overlay = resolveToolOverlay(pathname);
     documentRef?.documentElement?.setAttribute?.("data-app-surface", surface);
     documentRef?.body?.setAttribute?.("data-app-surface", surface);
     const workspace =
       documentRef?.querySelector?.("#mainWorkbench > .workspace") ||
       documentRef?.querySelector?.(".workspace");
     if (workspace) workspace.hidden = surface !== "workspace";
-    const organizerModal = documentRef?.getElementById?.("organizerModal");
-    const cutoutModal = documentRef?.getElementById?.("cutoutModal");
-    const liveOrganizer = Boolean(documentRef?.body?.classList?.contains?.("organizerOpen"));
-    const liveCutout = Boolean(documentRef?.body?.classList?.contains?.("cutoutOpen"));
-    if (organizerModal && (overlay === "organizer" || liveOrganizer)) organizerModal.hidden = false;
-    else if (organizerModal) organizerModal.hidden = true;
-    if (cutoutModal && (overlay === "cutout" || liveCutout)) cutoutModal.hidden = false;
-    else if (cutoutModal) cutoutModal.hidden = true;
-    if (overlay === "organizer") documentRef?.body?.classList?.add?.("organizerOpen");
-    if (overlay === "cutout") documentRef?.body?.classList?.add?.("cutoutOpen");
     return surface;
   }
 

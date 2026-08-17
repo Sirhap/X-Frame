@@ -33,6 +33,14 @@ test("organizer UI controller preserves baseline change detection", () => {
   assert.equal(controller.hasUnsavedChanges(), false);
   state.frames[0].tag = "hero";
   assert.equal(controller.hasUnsavedChanges(), true);
+  state.frames[0].tag = "";
+  const originalCanvas = {};
+  const editedCanvas = {};
+  state.frames[0].originalCanvas = originalCanvas;
+  state.frames[0].editedCanvas = originalCanvas;
+  assert.equal(controller.hasUnsavedChanges(), false);
+  state.frames[0].editedCanvas = editedCanvas;
+  assert.equal(controller.hasUnsavedChanges(), true);
 });
 
 test("organizer UI exposes normalized image order strategy selection", () => {
@@ -54,8 +62,10 @@ test("organizer exposes a dedicated confirmed workset clear action", () => {
 
   assert.match(html, /id="organizerClearWorkset"/);
   assert.match(script, /async function clearWorkset\(\)/);
+  assert.match(script, /async function resetCurrentAnimation\(\)/);
   assert.match(script, /requestConfirmation\(/);
   assert.match(script, /offerDeleteUndo\(snapshot\)/);
+  assert.match(script, /text\("resetConfirm"/);
 });
 
 test("loop finder lives in the analysis group and empty import keeps edit tools", () => {

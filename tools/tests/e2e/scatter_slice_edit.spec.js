@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { expect, test } = require("@playwright/test");
+const { expect, test } = require("./fixtures");
 
 /**
  * Converts source-image coordinates to browser client coordinates.

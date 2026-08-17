@@ -1590,7 +1590,7 @@ body:not(.theme-kunkun).organizerOpen .organizerPrimary {
   position: absolute;
   z-index: 40;
   right: 0;
-  bottom: calc(100% + 7px);
+  top: calc(100% + 7px);
   width: 210px;
   display: grid;
   gap: 6px;
@@ -1639,12 +1639,18 @@ body:is(.cutoutOpen, .organizerOpen)
   box-shadow: none;
 }
 
-body.cutoutOpen :is(.cutoutFooter, .cutoutBatchWorkspaceActions),
-body.organizerOpen .organizerFooterActions {
+body.cutoutOpen :is(.cutoutFooter, .cutoutBatchWorkspaceActions) {
   border-color: var(--line);
   border-width: 1px;
   background: var(--panel);
   box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.1);
+}
+
+body.organizerOpen .organizerFooterActions {
+  border-color: var(--line);
+  border-width: 1px;
+  background: var(--panel);
+  box-shadow: none;
 }
 
 @keyframes shellPanelIn {
@@ -1834,9 +1840,10 @@ body.organizerOpen .organizerFooterActions {
     bottom: 0;
   }
 
-  /* The organizer footer is a grid row after its preview, never an overlay. */
+  /* The organizer actions sit at the top of the preview column, never an overlay. */
   body.organizerOpen .organizerFooterActions {
     position: static;
+    z-index: auto;
   }
 
   .modeHub,

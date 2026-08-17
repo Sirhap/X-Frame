@@ -144,6 +144,26 @@
       renderImportOrderStrategy();
     }
 
+    /** Reloads the project animation after confirming that staged edits will be discarded. @returns {Promise<void>} */
+    async function resetCurrentAnimation() {
+      if (hasUnsavedChanges()) {
+        const accepted = await requestConfirmation(
+          text("resetConfirm", { name: state.animationName || "—", count: state.frames.length }),
+          [
+            [text("detailAnimation"), state.animationName || "—"],
+            [text("detailFrames"), state.frames.length],
+          ],
+          {
+            title: text("resetTitle"),
+            confirmLabel: text("reset"),
+            tone: "danger",
+          },
+        );
+        if (!accepted) return;
+      }
+      await loadCurrentAnimation();
+    }
+
     /** Clears every staged frame after confirmation while retaining one-step undo. @returns {Promise<void>} */
     async function clearWorkset() {
       const snapshot = state.frames.slice();
@@ -265,7 +285,8 @@
           frame.imported ||
           frame.flipped ||
           !frame.included ||
-          Boolean(frame.tag),
+          Boolean(frame.tag) ||
+          (frame.editedCanvas && frame.editedCanvas !== frame.originalCanvas),
       );
     }
 
@@ -563,7 +584,7 @@
           clearWorkset().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
           return;
         }
-        loadCurrentAnimation().catch((error) =>
+        resetCurrentAnimation().catch((error) =>
           setStatus(text("failed", { message: error.message }), "error"),
         );
       });

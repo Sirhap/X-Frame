@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { expect, test } = require("@playwright/test");
+const { expect, test } = require("./fixtures");
 const { readZipEntries } = require("./zip_test_utils");
 
 const E2E_ACTIVATION_CODE = "XSXB-E2E-ONLY";
@@ -53,12 +53,13 @@ async function activateExports(page) {
 test("Edge persists theme, panel, sidebar, filmstrip, and easter-egg preferences", async ({ page }) => {
   await page.goto("/workspace");
   await expect(page.locator("body")).toHaveClass(/theme-dark/);
-  await expect(page.locator(".toolbar .kunkunThemeButton")).toBeHidden();
+  const kunkunTheme = page.locator("#workspaceFlowHeader .kunkunThemeButton");
+  await expect(kunkunTheme).toBeHidden();
 
   for (let click = 0; click < 5; click += 1) await page.locator("#brandMark").click();
   await expect(page.locator("body")).toHaveClass(/kunkunUnlocked/);
-  await expect(page.locator(".toolbar .kunkunThemeButton")).toBeVisible();
-  await page.locator(".toolbar .kunkunThemeButton").click();
+  await expect(kunkunTheme).toBeVisible();
+  await kunkunTheme.click();
   await page.locator('[data-sidebar-tab="boxes"]').click();
   await page.locator('[data-filmstrip-layout="grid"]').click();
   await page.locator("#sidebarCollapse").click();

@@ -41,26 +41,41 @@
      * @param {HTMLCanvasElement} canvas Target canvas.
      * @returns {void}
      */
+    function applyPreviewAspect(canvas, width, height) {
+      const safeWidth = Math.max(1, width);
+      const safeHeight = Math.max(1, height);
+      const ratio = `${safeWidth} / ${safeHeight}`;
+      if (canvas.style) canvas.style.aspectRatio = ratio;
+      const stage = canvas.closest?.(".organizerPreviewStage");
+      if (!stage?.style) return;
+      stage.style.aspectRatio = ratio;
+      stage.style.setProperty("--organizer-preview-ratio", String(safeWidth / safeHeight));
+    }
+
     function drawFrameToCanvas(frame, canvas) {
       if (!canvas || typeof canvas.getContext !== "function") return;
       const context = canvas.getContext("2d");
       if (!context) return;
-      // clientWidth/clientHeight exclude borders. Feeding the border-box size back
-      // into a content-box canvas on every animation frame makes it grow forever.
-      canvas.width = Math.max(320, Math.round(canvas.clientWidth || 480));
-      canvas.height = Math.max(260, Math.round(canvas.clientHeight || 420));
+      const preferredSource = frame
+        ? state.viewMode === "original"
+          ? frame.originalCanvas
+          : frame.editedCanvas
+        : null;
+      const source = preferredSource || frame?.editedCanvas || frame?.originalCanvas || null;
+      const sourceWidth = Number(source?.width) || 0;
+      const sourceHeight = Number(source?.height) || 0;
+      const ratio = sourceWidth > 0 && sourceHeight > 0 ? sourceWidth / sourceHeight : 1;
+      // Size the bitmap from width only. Using clientHeight would re-feed the
+      // previous layout box and stretch empty checkerboard under the sprite.
+      const boxWidth = Math.max(1, Math.round(canvas.clientWidth || 320));
+      const boxHeight = Math.max(1, Math.round(boxWidth / ratio));
+      applyPreviewAspect(canvas, sourceWidth || 1, sourceHeight || 1);
+      canvas.width = boxWidth;
+      canvas.height = boxHeight;
       context.clearRect(0, 0, canvas.width, canvas.height);
-      if (!frame) return;
-      const preferredSource = state.viewMode === "original" ? frame.originalCanvas : frame.editedCanvas;
-      const source = preferredSource || frame.editedCanvas || frame.originalCanvas;
-      if (!source || !Number(source.width) || !Number(source.height)) return;
-      const scale = Math.min(canvas.width / source.width, canvas.height / source.height);
-      const width = source.width * scale;
-      const height = source.height * scale;
+      if (!source || !sourceWidth || !sourceHeight) return;
       context.imageSmoothingEnabled = false;
-      const x = (canvas.width - width) / 2;
-      const y = height >= canvas.height ? 0 : Math.min(12, canvas.height - height);
-      context.drawImage(source, x, y, width, height);
+      context.drawImage(source, 0, 0, boxWidth, boxHeight);
     }
 
     /** Draws the currently previewed organizer frame. @returns {void} */

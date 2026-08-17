@@ -62,7 +62,9 @@ test("workbench marks watermark as local-only and reveals hubs before app boot",
   assert.match(html, /cloudflare-local-only:start[\s\S]*tools\/watermark[\s\S]*cloudflare-local-only:end/u);
   assert.match(html, /function revealXsxbSurface\(\)/u);
   assert.match(html, /src="\/app_surface\.js"/u);
-  assert.match(html, /XSXBAppSurface\.applyAppSurface/u);
+  assert.match(html, /XSXBAppSurface\?\.applyAppSurface/u);
+  assert.match(html, /src="\/organizer_progress_overlay\.js"/u);
+  assert.match(html, /XSXBOrganizerProgressOverlay\?\.createOverlay/u);
   assert.match(html, /data-theme="dark"[\s\S]*aria-pressed="true"/u);
   assert.match(html, /data-theme="light"[\s\S]*aria-pressed="false"/u);
 });
