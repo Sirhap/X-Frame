@@ -84,6 +84,7 @@
     "typecheck": "tsc -p tsconfig.framepacker.json",
     "test": "npm run check:attachment-alignment && node tools/self_test.js && ALLOW_MISSING_PROTECTED_CORE=1 node --test tools/tests/*.test.js",
     "test:e2e": "playwright test",
+    "test:visual": "playwright test --project=edge tools/tests/e2e/zoom_visual.spec.js",
     "test:coverage": "c8 --reporter=text --reporter=html node tools/self_test.js",
     "perf:framepacker": "node tools/framepacker_perf_baseline.js",
     "perf:framepacker:check": "node tools/framepacker_perf_baseline.js --check",

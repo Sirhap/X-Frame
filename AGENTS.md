@@ -25,6 +25,7 @@
 ALLOW_MISSING_PROTECTED_CORE=1 node --test tools/tests/*.test.js   # 全量单元测试
 npm run check:frame-organizer-actions                              # 单模块门禁
 npx playwright test --project=edge                                 # 真实浏览器
+npm run test:visual                                                # 视觉基线（缩放截图对比）
 npm run check:e2e-fixture                                          # e2e 种子重置
 npx prettier --write <files>                                       # 提交前格式化
 ```
