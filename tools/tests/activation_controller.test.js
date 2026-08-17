@@ -63,9 +63,6 @@ function createFixture(fetchImpl) {
     "#activationManageLabel",
     "#activationManageStatus",
     "#administratorConsoleLink",
-    "#organizerActivationManage",
-    "#organizerActivationManageLabel",
-    "#organizerActivationManageStatus",
   ];
   const elements = Object.fromEntries(selectors.map((selector) => [selector, createElement()]));
   const documentRef = {

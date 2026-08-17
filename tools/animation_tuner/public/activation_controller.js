@@ -49,11 +49,6 @@
       manageStatus: documentRef?.querySelector?.("#activationManageStatus"),
       administratorConsoleLink: documentRef?.querySelector?.("#administratorConsoleLink"),
     };
-    const organizerLauncher = {
-      button: documentRef?.querySelector?.("#organizerActivationManage"),
-      label: documentRef?.querySelector?.("#organizerActivationManageLabel"),
-      status: documentRef?.querySelector?.("#organizerActivationManageStatus"),
-    };
     if (
       !documentRef?.createElement ||
       typeof fetchImpl !== "function" ||
@@ -136,7 +131,6 @@
       elements.administratorConsoleLink.hidden = !Boolean(accountStatus.administrator);
       for (const launcher of [
         { button: elements.manage, label: elements.manageLabel, status: elements.manageStatus },
-        organizerLauncher,
       ]) {
         if (!launcher.button || !launcher.label || !launcher.status) continue;
         launcher.label.textContent = authenticated
@@ -325,7 +319,6 @@
     });
     elements.cancel.addEventListener("click", () => close(false));
     elements.manage.addEventListener("click", openManager);
-    organizerLauncher.button?.addEventListener("click", openManager);
     elements.administratorConsoleLink.addEventListener("click", () => {
       windowRef.location.assign("/admin/licenses");
     });

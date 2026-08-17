@@ -17,7 +17,6 @@ function createFixture(options = {}) {
     sequenceAnalyzing: false,
     viewMode: "edited",
     showImportSetup: true,
-    showMoreTools: false,
     hadFrames: false,
     frames: [{ included: options.included !== false, selected: false, hasEditedResult: false }],
   };
@@ -60,7 +59,6 @@ function createFixture(options = {}) {
     organizerFindDuplicate: button(),
     organizerFindLoop: button(),
     organizerToggleImportSetup: button(),
-    organizerMoreTools: button(),
     organizerViewOriginal: button(),
     organizerViewEdited: button(),
     organizerImportSetup: {
@@ -73,9 +71,37 @@ function createFixture(options = {}) {
         },
       }),
     },
-    organizerGrid: { querySelectorAll: () => [] },
+    organizerGrid: {
+      children: [],
+      querySelectorAll: () => [],
+      querySelector: () => null,
+      replaceChildren() {
+        this.children = [];
+      },
+    },
   };
+  const fakeNode = () => ({
+    dataset: {},
+    className: "",
+    draggable: false,
+    innerHTML: "",
+    textContent: "",
+    hidden: false,
+    disabled: false,
+    src: "",
+    checked: false,
+    classList: { toggle() {}, add() {}, remove() {} },
+    addEventListener() {},
+    setAttribute() {},
+    querySelector() {
+      return fakeNode();
+    },
+  });
   const controller = createController({
+    document: {
+      createDocumentFragment: () => ({ appendChild() {} }),
+      createElement: () => fakeNode(),
+    },
     elements,
     state,
     text: (key) => key,
@@ -136,10 +162,8 @@ test("loaded worksets collapse low-frequency controls and disable missing edited
   fixture.controller.renderCounts();
 
   assert.equal(fixture.state.showImportSetup, false);
-  assert.equal(fixture.state.showMoreTools, false);
   assert.equal(fixture.elements.organizerToggleImportSetup.hidden, false);
   assert.equal(fixture.elements.organizerToggleImportSetup.attributes["aria-expanded"], "false");
-  assert.equal(fixture.elements.organizerMoreTools.attributes["aria-expanded"], "false");
   assert.equal(fixture.elements.organizerViewEdited.disabled, true);
   assert.equal(fixture.state.viewMode, "original");
   assert.equal(fixture.workbenchClasses.has("hasFrames"), true);
@@ -153,6 +177,38 @@ test("edited-result view activates after a real frame edit", () => {
 
   assert.equal(fixture.elements.organizerViewEdited.disabled, false);
   assert.equal(fixture.state.viewMode, "edited");
+});
+
+test("analysis hints sit on the matching buttons after a long hover instead of a permanent note", () => {
+  const fixture = createFixture({ mode: "import" });
+  fixture.state.frames = [
+    { included: true, selected: false, hasEditedResult: false },
+    { included: true, selected: false, hasEditedResult: false },
+    { included: true, selected: false, hasEditedResult: false },
+    { included: true, selected: false, hasEditedResult: false },
+  ];
+
+  fixture.controller.renderCounts();
+
+  assert.equal(fixture.elements.organizerFindJump.title, "jumpHint");
+  assert.equal(fixture.elements.organizerFindDuplicate.title, "duplicateHint");
+  assert.equal(fixture.elements.organizerFindLoop.title, "loopHint");
+});
+
+test("organizer grid reorders frames when one card is dropped onto another", () => {
+  const fixture = createFixture({ mode: "import" });
+  fixture.state.frames = [
+    { uid: "frame-1", included: true, selected: false, hasEditedResult: false, thumbnails: { edited: "data:1" } },
+    { uid: "frame-2", included: true, selected: false, hasEditedResult: false, thumbnails: { edited: "data:2" } },
+    { uid: "frame-3", included: true, selected: false, hasEditedResult: false, thumbnails: { edited: "data:3" } },
+  ];
+
+  fixture.controller.reorderFrame("frame-3", 0, false);
+
+  assert.deepEqual(
+    fixture.state.frames.map((frame) => frame.uid),
+    ["frame-3", "frame-1", "frame-2"],
+  );
 });
 
 test("secondary removal actions only occupy space when their selection state is actionable", () => {

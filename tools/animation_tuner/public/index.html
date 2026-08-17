@@ -127,7 +127,7 @@
     </nav>
     <header id="workspaceFlowHeader" class="workspaceFlowHeader" aria-label="项目制作流程">
       <div class="workspaceFlowContext">
-        <span>PROJECT WORKSPACE</span>
+        <span id="workspaceFlowEyebrow">PROJECT WORKSPACE</span>
         <strong id="workspaceFlowProject">当前项目</strong>
         <output id="workspaceSaveIndicator" role="status" aria-live="polite">已保存</output>
       </div>
@@ -200,7 +200,44 @@
           <a href="/workspace/delivery/codex-pet" data-workbench-route="codex-pet">Codex Pet</a>
         </span>
       </nav>
-      <button id="workspaceAccount" class="workspaceAccount" type="button" data-i18n="account">账户</button>
+      <div class="workspaceFlowChrome">
+        <div class="themeSwitch workbenchThemeSwitch" role="group" aria-label="界面主题">
+          <button
+            type="button"
+            class="themeButton active"
+            data-theme="dark"
+            data-i18n="themeDark"
+            data-i18n-title="darkTheme"
+            title="深色主题"
+            aria-pressed="true"
+          >
+            深色
+          </button>
+          <button
+            type="button"
+            class="themeButton"
+            data-theme="light"
+            data-i18n="themeLight"
+            data-i18n-title="lightTheme"
+            title="浅色主题"
+            aria-pressed="false"
+          >
+            浅色
+          </button>
+          <button
+            type="button"
+            class="themeButton kunkunThemeButton"
+            data-theme="kunkun"
+            title="坤坤彩蛋主题"
+            aria-pressed="false"
+            hidden
+          >
+            彩蛋
+          </button>
+        </div>
+        <button id="workspaceAccount" class="workspaceAccount" type="button" data-i18n="account">账户</button>
+        <button id="workspaceFlowBack" class="workbenchHome" type="button" hidden>← 返回动画调参</button>
+      </div>
     </header>
     <main id="mainWorkbench" class="app" tabindex="-1">
       <aside id="workbenchSidebar" class="sidebar">
@@ -981,12 +1018,6 @@
           <span>全民制作人 / STAGE 025</span>
         </div>
         <div class="toolbar">
-          <nav
-            id="workspaceBreadcrumb"
-            class="contextBreadcrumb"
-            aria-label="当前位置"
-            data-i18n-aria-label="currentLocation"
-          ></nav>
           <div class="toolbarMain">
             <strong id="canvasTitle" data-i18n="canvas">画布</strong>
             <span id="hint" data-i18n="hint"
@@ -1004,48 +1035,6 @@
           </div>
           <div class="toolbarActions">
             <div class="appearanceControls" aria-label="UI appearance">
-              <div
-                class="themeSwitch"
-                role="group"
-                aria-label="界面主题"
-                data-i18n-aria-label="interfaceTheme"
-              >
-                <button
-                  type="button"
-                  class="themeButton active"
-                  data-theme="dark"
-                  data-i18n="themeDark"
-                  data-i18n-title="darkTheme"
-                  title="深色主题"
-                  aria-label="深色主题"
-                  aria-pressed="true"
-                >
-                  深色
-                </button>
-                <button
-                  type="button"
-                  class="themeButton"
-                  data-theme="light"
-                  data-i18n="themeLight"
-                  data-i18n-title="lightTheme"
-                  title="浅色主题"
-                  aria-label="浅色主题"
-                  aria-pressed="false"
-                >
-                  浅色
-                </button>
-                <button
-                  type="button"
-                  class="themeButton kunkunThemeButton"
-                  data-theme="kunkun"
-                  title="坤坤彩蛋主题"
-                  aria-label="坤坤彩蛋主题"
-                  aria-pressed="false"
-                  hidden
-                >
-                  彩蛋
-                </button>
-              </div>
               <label class="canvasColorControl" title="画布颜色">
                 <input id="canvasColor" type="color" value="#000000" />
               </label>
@@ -1494,11 +1483,6 @@
       >
         <div class="scatterIntegratedWorkbench">
           <header class="scatterIntegratedHeader">
-            <div>
-              <span>SCATTER WORKSPACE / LOCAL</span>
-              <h1 data-i18n="scatterSliceTitle">零散切片</h1>
-              <p data-i18n="scatterIntro">识别散落元素、整理动画分组，再加入工作集或导出。</p>
-            </div>
             <div id="scatterResultSummary" class="scatterResultSummary" role="status" aria-live="polite">
               <span data-i18n="scatterWaiting">等待素材</span
               ><strong data-i18n="scatterChooseImage">先选择一张包含散落元素的图片</strong>
@@ -1743,57 +1727,12 @@
       id="cutoutModal"
       class="cutoutModal"
       data-preview-background="light"
-      aria-labelledby="cutoutTitle"
+      aria-labelledby="workspaceFlowProject"
       hidden
     >
       <div class="cutoutWorkbench">
-        <header class="cutoutHeader">
-          <div>
-            <nav
-              id="cutoutBreadcrumb"
-              class="contextBreadcrumb"
-              aria-label="当前位置"
-              data-i18n-aria-label="currentLocation"
-            ></nav>
-            <span class="cutoutEyebrow">ALPHA LAB / LOCAL</span>
-            <h2 id="cutoutTitle" data-cutout-i18n="title">批量抠图</h2>
-            <p data-cutout-i18n="subtitle">本地像素处理 · 图片不会上传</p>
-          </div>
+        <header class="cutoutHeader cutoutActionRow">
           <div class="workbenchHeaderActions">
-            <div class="themeSwitch workbenchThemeSwitch" role="group" aria-label="界面主题">
-              <button
-                type="button"
-                class="themeButton active"
-                data-theme="dark"
-                data-i18n="themeDark"
-                data-i18n-title="darkTheme"
-                title="深色主题"
-                aria-pressed="true"
-              >
-                深色
-              </button>
-              <button
-                type="button"
-                class="themeButton"
-                data-theme="light"
-                data-i18n="themeLight"
-                data-i18n-title="lightTheme"
-                title="浅色主题"
-                aria-pressed="false"
-              >
-                浅色
-              </button>
-              <button
-                type="button"
-                class="themeButton kunkunThemeButton"
-                data-theme="kunkun"
-                title="坤坤彩蛋主题"
-                aria-pressed="false"
-                hidden
-              >
-                彩蛋
-              </button>
-            </div>
             <button
               id="cutoutApplyGroup"
               type="button"
@@ -1811,9 +1750,6 @@
               title="将当前处理结果加入动画项目"
             >
               加入动画项目
-            </button>
-            <button id="cutoutHome" class="workbenchHome" type="button" data-cutout-i18n="home">
-              ← 首页
             </button>
             <button id="cutoutClose" class="cutoutClose" type="button" aria-label="关闭">×</button>
           </div>
@@ -3057,70 +2993,13 @@
         </section>
       </div>
     </section>
-    <section id="organizerModal" class="organizerModal" aria-labelledby="organizerTitle" hidden>
+    <section id="organizerModal" class="organizerModal" aria-labelledby="workspaceFlowProject" hidden>
       <div class="organizerWorkbench">
-        <header class="organizerHeader">
-          <div>
-            <nav
-              id="organizerBreadcrumb"
-              class="contextBreadcrumb"
-              aria-label="当前位置"
-              data-i18n-aria-label="currentLocation"
-            ></nav>
-            <span class="organizerEyebrow">SEQUENCE DESK / LOCAL</span>
-            <h2 id="organizerTitle" data-organizer-i18n="title">动画处理</h2>
-            <p id="organizerSubtitle" data-organizer-i18n="subtitle">排序、删帧、单帧抠图与序列分析</p>
-          </div>
-          <div class="workbenchHeaderActions">
-            <div class="themeSwitch workbenchThemeSwitch" role="group" aria-label="界面主题">
-              <button
-                type="button"
-                class="themeButton active"
-                data-theme="dark"
-                data-i18n="themeDark"
-                data-i18n-title="darkTheme"
-                title="深色主题"
-                aria-pressed="true"
-              >
-                深色
-              </button>
-              <button
-                type="button"
-                class="themeButton"
-                data-theme="light"
-                data-i18n="themeLight"
-                data-i18n-title="lightTheme"
-                title="浅色主题"
-                aria-pressed="false"
-              >
-                浅色
-              </button>
-              <button
-                type="button"
-                class="themeButton kunkunThemeButton"
-                data-theme="kunkun"
-                title="坤坤彩蛋主题"
-                aria-pressed="false"
-                hidden
-              >
-                彩蛋
-              </button>
-            </div>
-            <button
-              id="organizerActivationManage"
-              class="secondary activationManageLaunch organizerActivationLaunch"
-              type="button"
-            >
-              <span id="organizerActivationManageLabel">登录 / 注册</span>
-              <small id="organizerActivationManageStatus">正在检查授权…</small>
-            </button>
-            <button id="organizerHome" class="workbenchHome" type="button" data-organizer-i18n="home">
-              ← 首页
-            </button>
-            <button id="organizerClose" class="organizerClose" type="button" aria-label="关闭">×</button>
-          </div>
-        </header>
+        <button id="organizerClose" class="organizerClose" type="button" aria-label="关闭" hidden>×</button>
         <section id="organizerImportSetup" class="organizerImportSetup" hidden>
+          <p id="organizerSubtitle" class="organizerImportIntro" data-organizer-i18n="subtitle">
+            排序、删帧、单帧抠图与序列分析
+          </p>
           <label class="organizerProjectMetadata">
             <span data-organizer-i18n="importProject">保存到</span>
             <select id="organizerProjectSelect" name="project" autocomplete="off"></select>
@@ -3235,25 +3114,6 @@
                 />
                 <button id="organizerReduce" type="button" data-organizer-i18n="reduce">减帧</button>
               </label>
-              <div class="organizerOrderControl" role="group" aria-label="图片导入顺序">
-                <span data-organizer-i18n="orderBy">顺序</span>
-                <button
-                  id="organizerOrderFilename"
-                  type="button"
-                  aria-pressed="true"
-                  data-organizer-i18n="orderFilename"
-                >
-                  文件名
-                </button>
-                <button
-                  id="organizerOrderSelection"
-                  type="button"
-                  aria-pressed="false"
-                  data-organizer-i18n="orderSelection"
-                >
-                  选择顺序
-                </button>
-              </div>
               <button id="organizerAutoSort" type="button" data-organizer-i18n="autoSort">
                 恢复导入顺序
               </button>
@@ -3269,24 +3129,6 @@
                 hidden
               >
                 导入设置
-              </button>
-              <button
-                id="organizerMoreTools"
-                type="button"
-                class="secondary"
-                aria-expanded="false"
-                data-organizer-i18n="moreTools"
-                hidden
-              >
-                更多工具
-              </button>
-              <button
-                id="organizerFindLoop"
-                type="button"
-                class="secondary premiumOption"
-                data-organizer-i18n="findLoop"
-              >
-                寻找循环段
               </button>
             </div>
           </div>
@@ -3314,13 +3156,19 @@
               >
                 寻找重复帧
               </button>
+              <button
+                id="organizerFindLoop"
+                type="button"
+                class="secondary premiumOption"
+                data-organizer-i18n="findLoop"
+              >
+                寻找循环段
+              </button>
               <output
                 id="organizerAnalysisFeedback"
                 class="organizerAnalysisFeedback"
                 aria-live="polite"
-                data-organizer-i18n="analysisReady"
-                >跳变：孤立异常帧 · 重复：与保留锚帧高度相似</output
-              >
+              ></output>
             </div>
             <div class="organizerToolGroup organizerDangerTools" role="group" aria-label="删除操作">
               <span data-organizer-i18n="dangerTools">移除</span>
@@ -3703,7 +3551,7 @@
             <div class="organizerEmptyState" role="status">
               <strong data-organizer-i18n="emptyWorksetTitle">先导入动画素材</strong>
               <span data-organizer-i18n="emptyWorksetHint"
-                >从上方选择图片序列或视频；导入后才会显示整理、分析与删除工具。</span
+                >从上方选择图片或视频，也可按 Ctrl/⌘V 粘贴；编辑、分析和移除工具始终可用，导入后即可操作。</span
               >
             </div>
             <div id="organizerGrid" class="organizerGrid"></div>

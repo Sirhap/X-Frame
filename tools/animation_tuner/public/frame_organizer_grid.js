@@ -24,7 +24,7 @@
    *   onWorksetChanged?:(frames:object[])=>void,
    *   document?:Document
    * }} dependencies Organizer integration dependencies.
-   * @returns {{renderCounts:()=>void,renderGrid:()=>void,selectFrame:(index:number,event:MouseEvent|object)=>void,selectIndexes:(indexes:number[],analysisType?:"jump"|"duplicate"|"")=>void}}
+   * @returns {{renderCounts:()=>void,renderGrid:()=>void,selectFrame:(index:number,event:MouseEvent|object)=>void,selectIndexes:(indexes:number[],analysisType?:"jump"|"duplicate"|"")=>void,reorderFrame:(sourceUid:string,targetIndex:number,after:boolean)=>void}}
    */
   function createController(dependencies) {
     if (!dependencies?.elements || !dependencies.state || typeof dependencies.text !== "function") {
@@ -55,24 +55,19 @@
       const hasFrames = state.frames.length > 0;
       if (hasFrames && !state.hadFrames) {
         state.showImportSetup = false;
-        state.showMoreTools = false;
       } else if (!hasFrames) {
         state.showImportSetup = true;
-        state.showMoreTools = false;
         state.lastExpandedPanel = "";
       }
       state.hadFrames = hasFrames;
       const workbench = elements.organizerImportSetup?.closest?.(".organizerWorkbench");
       workbench?.classList?.toggle("hasFrames", hasFrames);
       workbench?.classList?.toggle("showImportSetup", Boolean(state.showImportSetup));
-      workbench?.classList?.toggle("showMoreTools", Boolean(state.showMoreTools));
       elements.organizerToggleImportSetup.hidden = state.mode !== "import" || !hasFrames;
       elements.organizerToggleImportSetup.setAttribute(
         "aria-expanded",
         String(state.mode === "import" && hasFrames && state.showImportSetup),
       );
-      elements.organizerMoreTools.hidden = !hasFrames;
-      elements.organizerMoreTools.setAttribute("aria-expanded", String(hasFrames && state.showMoreTools));
       const hasEditedResult = includedFrames().some((frame) => frame.hasEditedResult === true);
       elements.organizerViewEdited.disabled = !hasEditedResult || state.busy;
       if (!hasEditedResult && state.viewMode === "edited") state.viewMode = "original";
@@ -133,9 +128,9 @@
       elements.organizerViewEdited.title = hasEditedResult ? "" : text("editedUnavailable");
       elements.organizerAddAssets.title = included ? "" : text("needFrames");
       elements.organizerExport.title = included ? "" : text("needFrames");
-      elements.organizerFindJump.title = included >= 3 ? "" : text("needThreeFrames");
-      elements.organizerFindDuplicate.title = included >= 3 ? "" : text("needThreeFrames");
-      elements.organizerFindLoop.title = included >= 4 ? "" : text("needFourFrames");
+      elements.organizerFindJump.title = included >= 3 ? text("jumpHint") : text("needThreeFrames");
+      elements.organizerFindDuplicate.title = included >= 3 ? text("duplicateHint") : text("needThreeFrames");
+      elements.organizerFindLoop.title = included >= 4 ? text("loopHint") : text("needFourFrames");
     }
 
     /**
@@ -163,6 +158,24 @@
       state.previewIndex = index;
       renderGrid();
       dependencies.renderPreview();
+    }
+
+    /**
+     * Moves one organizer frame before or after another card.
+     * @param {string} sourceUid Dragged frame identifier.
+     * @param {number} targetIndex Drop-target index.
+     * @param {boolean} after Whether to insert after the target.
+     * @returns {void}
+     */
+    function reorderFrame(sourceUid, targetIndex, after) {
+      const sourceIndex = state.frames.findIndex((frame) => frame.uid === sourceUid);
+      if (sourceIndex < 0 || targetIndex < 0) return;
+      const [moved] = state.frames.splice(sourceIndex, 1);
+      let insertionIndex = targetIndex + (after ? 1 : 0);
+      if (sourceIndex < insertionIndex) insertionIndex -= 1;
+      state.frames.splice(Math.max(0, Math.min(state.frames.length, insertionIndex)), 0, moved);
+      renderGrid();
+      dependencies.restartPreview();
     }
 
     /**
@@ -229,6 +242,40 @@
         const index = state.frames.findIndex((entry) => entry.uid === card.dataset.frameUid);
         if (index >= 0) selectFrame(index, event);
       });
+      card.addEventListener("dragstart", (event) => {
+        if (state.busy || event.target.closest("input, .organizerFrameCutout, .organizerFrameInclude")) {
+          event.preventDefault();
+          return;
+        }
+        state.draggedFrameUid = card.dataset.frameUid;
+        card.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", card.dataset.frameUid);
+      });
+      card.addEventListener("dragover", (event) => {
+        if (!state.draggedFrameUid || state.draggedFrameUid === card.dataset.frameUid) return;
+        event.preventDefault();
+        const rect = card.getBoundingClientRect();
+        const after = event.clientX >= rect.left + rect.width / 2;
+        card.classList.toggle("dragBefore", !after);
+        card.classList.toggle("dragAfter", after);
+      });
+      card.addEventListener("dragleave", () => card.classList.remove("dragBefore", "dragAfter"));
+      card.addEventListener("drop", (event) => {
+        event.preventDefault();
+        const rect = card.getBoundingClientRect();
+        const after = event.clientX >= rect.left + rect.width / 2;
+        card.classList.remove("dragBefore", "dragAfter");
+        const index = state.frames.findIndex((entry) => entry.uid === card.dataset.frameUid);
+        reorderFrame(state.draggedFrameUid || event.dataTransfer.getData("text/plain"), index, after);
+        state.draggedFrameUid = "";
+      });
+      card.addEventListener("dragend", () => {
+        state.draggedFrameUid = "";
+        elements.organizerGrid
+          .querySelectorAll(".dragging,.dragBefore,.dragAfter")
+          .forEach((node) => node.classList.remove("dragging", "dragBefore", "dragAfter"));
+      });
       return card;
     }
 
@@ -240,6 +287,7 @@
       const fragment = documentApi.createDocumentFragment();
       state.frames.forEach((frame, index) => {
         const card = existingCards.get(frame.uid) || createFrameCard(frame);
+        card.draggable = !state.busy;
         card.className = `organizerFrame ${frame.selected ? "selected" : ""} ${frame.included ? "included" : "excluded"} ${frame.analysisMatch ? `analysisMatch analysis-${frame.analysisMatch}` : ""}`;
         card.querySelector(".organizerFrameNumber").textContent = String(index + 1).padStart(3, "0");
         card.querySelector(".organizerFrameName").textContent = frame.name;
@@ -268,7 +316,7 @@
       dependencies.onWorksetChanged?.(state.frames);
     }
 
-    return { renderCounts, renderGrid, selectFrame, selectIndexes };
+    return { renderCounts, renderGrid, selectFrame, selectIndexes, reorderFrame };
   }
 
   return { createController };

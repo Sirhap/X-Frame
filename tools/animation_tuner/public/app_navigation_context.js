@@ -7,104 +7,85 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
+  const RESOURCE_ROUTES = new Set(["import", "organizer", "cutout", "scatter"]);
+  const DELIVERY_ROUTES = new Set(["export", "godot", "codex-pet"]);
+
   /**
    * Creates breadcrumb and context-aware return-label coordination.
-   * @param {{documentRef?:Document,windowRef?:Window,getConfig?:()=>object|null,getCurrentGroup?:()=>object|null,getRoute?:()=>string,getContext?:()=>"project"|"standalone",projectLabel?:(project:object)=>string,groupLabel?:(group:object)=>string,translate?:(key:string,variables?:object)=>string}} dependencies Context dependencies.
+   * @param {{documentRef?:Document,windowRef?:Window,getConfig?:()=>object|null,getCurrentGroup?:()=>object|null,getRoute?:()=>string,getContext?:()=>"project"|"standalone",projectLabel?:(project:object)=>string,groupLabel?:(group:object)=>string,translate?:(key:string,variables?:object)=>string,toolTitle?:(route:string)=>string}} dependencies Context dependencies.
    * @returns {{bind:()=>void,destroy:()=>void,render:()=>void}} Context operations.
    */
   function createController(dependencies = {}) {
     const documentRef = dependencies.documentRef || root?.document;
     const windowRef = dependencies.windowRef || root?.window || root;
     const getConfig = dependencies.getConfig || (() => null);
-    const getCurrentGroup = dependencies.getCurrentGroup || (() => null);
     const getRoute = dependencies.getRoute || (() => "");
     const getContext = dependencies.getContext || (() => "project");
     const projectLabel =
       dependencies.projectLabel || ((project) => project?.label || project?.name || project?.id || "");
-    const groupLabel = dependencies.groupLabel || ((group) => group?.name || group?.animationId || "");
     const translate = dependencies.translate || ((key) => key);
+    const toolTitle = dependencies.toolTitle || (() => "");
     if (!documentRef?.querySelector || !documentRef?.createElement) {
       throw new TypeError("XSXB navigation context requires a document implementation.");
     }
 
     const elements = {
-      workspace: documentRef.querySelector("#workspaceBreadcrumb"),
-      cutout: documentRef.querySelector("#cutoutBreadcrumb"),
-      organizer: documentRef.querySelector("#organizerBreadcrumb"),
-      cutoutHome: documentRef.querySelector("#cutoutHome"),
-      organizerHome: documentRef.querySelector("#organizerHome"),
+      eyebrow: documentRef.querySelector("#workspaceFlowEyebrow"),
+      title: documentRef.querySelector("#workspaceFlowProject"),
+      save: documentRef.querySelector("#workspaceSaveIndicator"),
+      back: documentRef.querySelector("#workspaceFlowBack"),
     };
     let observer = null;
     let bound = false;
 
-    /** Creates one breadcrumb node. */
-    function breadcrumbItem(item) {
-      const node = documentRef.createElement(item.href ? "a" : "span");
-      node.textContent = item.label;
-      if (item.href) node.href = item.href;
-      return node;
-    }
-
-    /** Replaces one breadcrumb with ordered accessible items. */
-    function renderBreadcrumb(element, items) {
-      if (!element) return;
-      element.replaceChildren(...items.filter((item) => item.label).map(breadcrumbItem));
-    }
-
-    /** Returns project-owned breadcrumb items for the active animation. */
-    function projectItems() {
+    /** Returns the localized project label for animation and delivery pages. */
+    function activeProjectTitle() {
       const config = getConfig() || {};
-      const group = getCurrentGroup();
       const activeProjectId = config.activeProject?.id || config.activeProjectId || "";
-      const activeProjectLabel =
-        activeProjectId === "browser-session"
-          ? translate("browserSessionProject")
-          : projectLabel(config.activeProject) || activeProjectId || translate("currentProject");
-      return [
-        { label: translate("projectHubTitle"), href: "/projects" },
-        { label: activeProjectLabel, href: "/workspace" },
-        { label: group?.profileLabel || group?.profileId || "" },
-        { label: group ? groupLabel(group) : "" },
-      ];
+      if (activeProjectId === "browser-session") return translate("browserSessionProject");
+      return projectLabel(config.activeProject) || activeProjectId || translate("currentProject");
+    }
+
+    /** Returns the stage eyebrow key for one route. */
+    function stageKey(route) {
+      if (RESOURCE_ROUTES.has(route)) return "stageResources";
+      if (DELIVERY_ROUTES.has(route)) return "stageDelivery";
+      return "stageAnimation";
+    }
+
+    /** Returns the visible flow-header title for one route. */
+    function titleForRoute(route) {
+      if (RESOURCE_ROUTES.has(route)) {
+        return (
+          toolTitle(route) ||
+          (route === "cutout" ? translate("batchCutout") : "") ||
+          (route === "scatter" ? translate("scatterSliceTitle") : "") ||
+          activeProjectTitle()
+        );
+      }
+      return activeProjectTitle();
+    }
+
+    /** Returns the back-button label for the current tool stack. */
+    function backLabel(route) {
+      const body = documentRef.body;
+      const organizerVisible = body?.classList?.contains("organizerOpen");
+      const cutoutVisible = body?.classList?.contains("cutoutOpen");
+      if (route === "cutout" && organizerVisible && cutoutVisible) return translate("returnOrganizer");
+      if (getContext() === "standalone") return translate("returnQuickTools");
+      return translate("returnTuning");
     }
 
     /** Renders all visible navigation context from canonical route and modal state. */
     function render() {
-      const context = getContext();
       const route = getRoute();
-      const body = documentRef.body;
-      const organizerVisible = body?.classList?.contains("organizerOpen");
-      const cutoutVisible = body?.classList?.contains("cutoutOpen");
-      const baseItems =
-        context === "project" ? projectItems() : [{ label: translate("quickToolsTitle"), href: "/tools" }];
-      renderBreadcrumb(elements.workspace, projectItems());
-      renderBreadcrumb(elements.organizer, [
-        ...baseItems,
-        {
-          label:
-            route === "import" || context === "standalone"
-              ? translate("sequenceTool")
-              : translate("frameOrganizer"),
-        },
-      ]);
-      renderBreadcrumb(elements.cutout, [
-        ...baseItems,
-        ...(organizerVisible
-          ? [{ label: route === "import" ? translate("sequenceTool") : translate("frameOrganizer") }]
-          : []),
-        { label: translate("batchCutout") },
-      ]);
-      if (elements.organizerHome) {
-        elements.organizerHome.textContent =
-          context === "standalone" ? translate("returnQuickTools") : translate("returnTuning");
-      }
-      if (elements.cutoutHome) {
-        elements.cutoutHome.textContent =
-          organizerVisible && cutoutVisible
-            ? translate("returnOrganizer")
-            : context === "standalone"
-              ? translate("returnQuickTools")
-              : translate("returnTuning");
+      const resourcePage = RESOURCE_ROUTES.has(route);
+      if (elements.eyebrow) elements.eyebrow.textContent = translate(stageKey(route));
+      if (elements.title) elements.title.textContent = titleForRoute(route);
+      if (elements.save) elements.save.hidden = resourcePage;
+      if (elements.back) {
+        elements.back.hidden = !resourcePage;
+        elements.back.textContent = backLabel(route);
       }
     }
 

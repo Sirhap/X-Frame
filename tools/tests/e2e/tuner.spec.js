@@ -150,7 +150,7 @@ test("the website home, import flow, and tuning workbench use separate URLs", as
   await expect(page.locator("#factoryTitle")).toBeVisible();
   await page.goto("/tools/import");
   await expect(page.locator("#organizerModal")).toBeVisible();
-  await page.locator("#organizerHome").click();
+  await page.locator("#workspaceFlowBack").click();
   await expect(page).toHaveURL(/\/tools$/);
   await expect(page.locator("#quickToolsHub")).toBeVisible();
   await page.getByRole("link", { name: "转到动画项目" }).click();
@@ -222,7 +222,7 @@ test("workbench controls expose specific accessible names without nested actions
   await expect(page.getByRole("button", { name: "Increase Scale", exact: true })).toBeVisible();
   await expect(page.locator("#save")).toHaveCSS("color", "rgb(6, 18, 15)");
 
-  await page.locator('.toolbar .themeButton[data-theme="light"]').click();
+  await page.locator('#workspaceFlowHeader .themeButton[data-theme="light"]').click();
   await page.locator('[data-sidebar-tab="project"]').click();
   await expect(page.locator("#projectContext")).toBeHidden();
   await expect(page.locator("#groupSelect")).toBeVisible();
@@ -250,7 +250,7 @@ test("tool paths refresh, update titles, and return to the quick tools hub", asy
   await expect(page.locator("#organizerModal")).toBeVisible();
   await page.reload();
   await expect(page.locator("#organizerModal")).toBeVisible();
-  await page.locator("#organizerHome").click();
+  await page.locator("#workspaceFlowBack").click();
   await expect(page).toHaveURL(/\/tools$/);
   await expect(page.locator("#homeHub")).toHaveCount(0);
   await expect(page.locator("#quickToolsHub")).toBeVisible();
@@ -298,8 +298,13 @@ test("native image import accepts valid files and reports unsupported input", as
   await expect(page.locator("#organizerStatusDismiss")).toBeHidden();
 });
 
-test("loaded organizer progressively reveals import settings and secondary tools", async ({ page }) => {
+test("loaded organizer keeps tools visible and can restore import settings", async ({ page }) => {
   await page.goto("/tools/import");
+  await expect(page.locator(".organizerEditTools")).toBeVisible();
+  await expect(page.locator(".organizerToolbarSecondary")).toBeVisible();
+  await expect(page.locator("#organizerFindLoop")).toBeVisible();
+  await expect(page.locator("#organizerFindLoop")).toBeDisabled();
+
   await page.locator("#organizerFileInput").setInputFiles({
     name: "frame.png",
     mimeType: "image/png",
@@ -307,18 +312,9 @@ test("loaded organizer progressively reveals import settings and secondary tools
   });
 
   await expect(page.locator("#organizerImportSetup")).toBeHidden();
-  await expect(page.locator(".organizerToolbarSecondary")).toBeHidden();
-  await expect(page.locator("#organizerToggleImportSetup")).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator("#organizerMoreTools")).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator("#organizerViewEdited")).toBeDisabled();
-
-  await page.locator("#organizerMoreTools").click();
   await expect(page.locator(".organizerToolbarSecondary")).toBeVisible();
-  await expect(page.locator("#organizerMoreTools")).toHaveAttribute("aria-expanded", "true");
-
-  await page.keyboard.press("Escape");
-  await expect(page.locator(".organizerToolbarSecondary")).toBeHidden();
-  await expect(page.locator("#organizerMoreTools")).toBeFocused();
+  await expect(page.locator("#organizerToggleImportSetup")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#organizerViewEdited")).toBeDisabled();
 
   await page.locator(".organizerDownstreamMenu").evaluate((element) => {
     element.open = true;
@@ -684,7 +680,7 @@ test("organizer confirms before discarding an imported workset", async ({ page }
     buffer: ONE_PIXEL_PNG,
   });
 
-  await page.locator("#organizerHome").click();
+  await page.locator("#workspaceFlowBack").click();
   await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
   await expect(page.locator("#organizerConfirmTitle")).toHaveText("尚未加入项目");
   await expect(page.locator(".organizerConfirmCard")).toHaveAttribute("data-tone", "danger");
@@ -692,9 +688,9 @@ test("organizer confirms before discarding an imported workset", async ({ page }
   await page.locator("#organizerConfirmPanel").click({ position: { x: 5, y: 5 } });
   await expect(page.locator("#organizerModal")).toBeVisible();
   await expect(page).toHaveURL(/\/tools\/import/);
-  await expect(page.locator("#organizerHome")).toBeFocused();
+  await expect(page.locator("#workspaceFlowBack")).toBeFocused();
 
-  await page.locator("#organizerHome").click();
+  await page.locator("#workspaceFlowBack").click();
   await page.locator("#organizerConfirmAccept").click();
   await expect(page.locator("#organizerModal")).toBeHidden();
   await expect(page).toHaveURL(/\/tools$/);
@@ -709,7 +705,6 @@ test("compact organizer keeps undo clear of preview controls", async ({ page }) 
     { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
   ]);
   await page.locator(".organizerFrameSelect").nth(1).click();
-  await page.locator("#organizerMoreTools").click();
   await page.locator("#organizerDeleteSelected").click();
   await expect(page.locator("#organizerUndoDelete")).toBeVisible();
 
@@ -784,7 +779,6 @@ test("200% organizer keeps footer actions reachable after scrolling", async ({ p
   await page.locator(".organizerDownstreamMenu").evaluate((element) => {
     element.open = false;
   });
-  await page.locator("#organizerMoreTools").click();
   await page.locator("#organizerFlip").click();
   await expect(page.locator("#organizerViewEdited")).toBeEnabled();
   await page.locator("#organizerViewEdited").click();
@@ -840,7 +834,7 @@ test("cutout restores a batch after leaving its URL and starts a new batch expli
   });
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
 
-  await page.locator("#cutoutHome").click();
+  await page.locator("#workspaceFlowBack").click();
   await expect(page.locator("#cutoutModal")).toBeHidden();
   await expect(page).toHaveURL(/\/tools$/);
   await page.getByRole("link", { name: /批量抠图/ }).click();
@@ -1238,7 +1232,7 @@ test("organizer migrates unconfirmed legacy English state back to Chinese", asyn
     localStorage.removeItem("xsxbFrameTuner.languageExplicit");
   });
   await page.goto("/tools/organizer");
-  await expect(page.locator("#organizerTitle")).toHaveText("导入与处理动画");
+  await expect(page.locator("#workspaceFlowProject")).toHaveText("导入与处理动画");
 });
 
 test("compact desktop cutout keeps batch actions and readable previews in the sidebar", async ({ page }) => {

@@ -390,7 +390,10 @@
       elements.organizerOrderFilename
         ?.closest(".organizerOrderControl")
         ?.setAttribute("aria-label", text("orderBy"));
-      elements.organizerTitle.textContent = text(state.mode === "import" ? "importTitle" : "title");
+      if (elements.organizerTitle) {
+        elements.organizerTitle.textContent = text(state.mode === "import" ? "importTitle" : "title");
+      }
+      documentApi.defaultView?.dispatchEvent?.(new Event("xsxb:routechange"));
       const browserExportOnly = hooks.browserExportOnly === true && state.mode === "import";
       const importSetupHint = documentApi.querySelector('[data-organizer-i18n="importSetupHint"]');
       if (browserExportOnly && importSetupHint) {
@@ -426,7 +429,9 @@
           setStatus(text("failed", { message: error.message }), "error"),
         ),
       );
-      elements.organizerHome.addEventListener("click", () => {
+      elements.organizerHome?.addEventListener("click", () => {
+        if (elements.organizerModal.hidden) return;
+        if (documentApi.body?.classList?.contains("cutoutOpen")) return;
         requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
       });
       elements.organizerClose.addEventListener("click", () => {
@@ -587,15 +592,6 @@
             : state.lastExpandedPanel;
         renderCounts();
       });
-      elements.organizerMoreTools.addEventListener("click", () => {
-        state.showMoreTools = !state.showMoreTools;
-        state.lastExpandedPanel = state.showMoreTools
-          ? "more"
-          : state.lastExpandedPanel === "more"
-            ? ""
-            : state.lastExpandedPanel;
-        renderCounts();
-      });
       elements.organizerStatusDismiss.addEventListener("click", () => {
         setStatus(text("ready"), "idle");
         elements.organizerBatchCutout.focus({ preventScroll: true });
@@ -666,13 +662,7 @@
         if (!elements.organizerConfirmPanel.hidden) resolveConfirmation(false);
         else if (loopFinder.isOpen()) loopFinder.close();
         else if (!elements.organizerVideoPanel.hidden) videoImporter.close();
-        else if (state.lastExpandedPanel === "more" && state.showMoreTools) {
-          event.preventDefault();
-          state.showMoreTools = false;
-          state.lastExpandedPanel = state.showImportSetup ? "import" : "";
-          renderCounts();
-          elements.organizerMoreTools.focus({ preventScroll: true });
-        } else if (state.lastExpandedPanel === "import" && state.showImportSetup && state.frames.length) {
+        else if (state.lastExpandedPanel === "import" && state.showImportSetup && state.frames.length) {
           event.preventDefault();
           state.showImportSetup = false;
           state.lastExpandedPanel = "";

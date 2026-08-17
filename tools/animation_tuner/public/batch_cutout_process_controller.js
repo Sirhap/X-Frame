@@ -369,6 +369,10 @@
                 },
               }),
             );
+            const liveApply = state.worksetResolver?.liveApply;
+            if (options.applyProgress && typeof liveApply === "function") {
+              await liveApply(outputs.slice());
+            }
           } catch (error) {
             failures.push({ index, name: item.name, message: error.message });
           }

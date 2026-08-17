@@ -58,16 +58,36 @@ test("organizer exposes a dedicated confirmed workset clear action", () => {
   assert.match(script, /offerDeleteUndo\(snapshot\)/);
 });
 
-test("loop finder stays in the visible primary toolbar actions", () => {
+test("loop finder lives in the analysis group and empty import keeps edit tools", () => {
   const html = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/index.html"), "utf8");
-  const primaryActionsStart = html.indexOf('class="organizerToolbarActions"');
-  const secondaryToolbarStart = html.indexOf('class="organizerToolbarRow organizerToolbarSecondary"');
+  const analysisStart = html.indexOf('class="organizerToolGroup organizerAnalysisTools"');
+  const analysisEnd = html.indexOf('class="organizerToolGroup organizerDangerTools"');
   const loopFinderPosition = html.indexOf('id="organizerFindLoop"');
+  const editTools = html.indexOf('class="organizerToolGroup organizerEditTools"');
 
-  assert.ok(primaryActionsStart >= 0);
-  assert.ok(secondaryToolbarStart > primaryActionsStart);
-  assert.ok(loopFinderPosition > primaryActionsStart);
-  assert.ok(loopFinderPosition < secondaryToolbarStart);
+  assert.ok(analysisStart >= 0);
+  assert.ok(analysisEnd > analysisStart);
+  assert.ok(loopFinderPosition > analysisStart);
+  assert.ok(loopFinderPosition < analysisEnd);
+  assert.ok(editTools >= 0);
+  assert.ok(!html.includes('id="organizerMoreTools"'));
+  assert.ok(html.includes('id="workspaceFlowBack"'));
+  assert.ok(!html.includes('class="organizerHeader"'));
+});
+
+test("import settings reveal project fields and frames are reordered by drag instead of order buttons", () => {
+  const html = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const css = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/organizer_shell.css"), "utf8");
+  const feedbackBlock = html.slice(
+    html.indexOf('id="organizerAnalysisFeedback"'),
+    html.indexOf("</output>", html.indexOf('id="organizerAnalysisFeedback"')),
+  );
+
+  assert.match(css, /\.organizerWorkbench\.importMode\.hasFrames\.showImportSetup \.organizerProjectMetadata/);
+  assert.ok(!html.includes('id="organizerOrderFilename"'));
+  assert.ok(!html.includes('id="organizerOrderSelection"'));
+  assert.ok(html.includes('id="organizerAutoSort"'));
+  assert.ok(!feedbackBlock.includes('data-organizer-i18n="analysisReady"'));
 });
 
 /** Creates the import fields needed to verify project-intent defaults. */

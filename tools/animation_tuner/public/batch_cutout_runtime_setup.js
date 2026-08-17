@@ -9,7 +9,7 @@
     "cutoutOpen",
     "cutoutModal",
     "cutoutTitle",
-    "cutoutHome",
+    "workspaceFlowBack",
     "cutoutClose",
     "cutoutDropzone",
     "cutoutSidebar",
@@ -209,7 +209,9 @@
     if (!documentRef || typeof documentRef.querySelector !== "function") {
       throw new TypeError("Batch cutout runtime setup requires a document.");
     }
-    return Object.fromEntries(ELEMENT_IDS.map((id) => [id, documentRef.querySelector(`#${id}`)]));
+    const elements = Object.fromEntries(ELEMENT_IDS.map((id) => [id, documentRef.querySelector(`#${id}`)]));
+    elements.cutoutHome = elements.workspaceFlowBack;
+    return elements;
   }
 
   /**

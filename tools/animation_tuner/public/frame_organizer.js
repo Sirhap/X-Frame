@@ -60,13 +60,12 @@
     const ids = [
       "organizerOpen",
       "organizerModal",
-      "organizerHome",
+      "workspaceFlowBack",
       "organizerClose",
       "organizerTitle",
       "organizerSubtitle",
       "organizerImportSetup",
       "organizerToggleImportSetup",
-      "organizerMoreTools",
       "organizerProjectSelect",
       "organizerProjectNameField",
       "organizerProjectName",
@@ -264,6 +263,7 @@
       "mediaExportSubmit",
     ];
     const elements = Object.fromEntries(ids.map((id) => [id, document.querySelector(`#${id}`)]));
+    elements.organizerHome = elements.workspaceFlowBack;
     const state = {
       language: hooks.getLanguage?.() === "en" ? "en" : "zh",
       mode: "edit",
@@ -275,7 +275,6 @@
       previewTimer: 0,
       viewMode: "edited",
       showImportSetup: true,
-      showMoreTools: false,
       lastExpandedPanel: "",
       hadFrames: false,
       busy: false,
@@ -756,6 +755,7 @@
       imageCanvas,
       renderGrid,
       renderCounts,
+      renderPreview,
       restartPreview,
       setStatus,
       loadCurrentAnimation,

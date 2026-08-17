@@ -128,6 +128,7 @@
       workflowTools: Array.from(documentRef.querySelectorAll("[data-stage-tools]")),
       workflowRouteItems: Array.from(documentRef.querySelectorAll(".workspaceSecondaryTabs a")),
       workspaceAccount: documentRef.querySelector("#workspaceAccount"),
+      workspaceFlowBack: documentRef.querySelector("#workspaceFlowBack"),
     };
     const disposers = [];
     let bound = false;
@@ -497,6 +498,10 @@
       listen(elements.workspaceAccount, "click", () =>
         documentRef.querySelector("#activationManage")?.click(),
       );
+      listen(elements.workspaceFlowBack, "click", () => {
+        if (elements.body?.dataset.workspaceTool !== "scatter") return;
+        navigate(elements.body?.dataset.appMode === "projects" ? "animation" : "tools");
+      });
       listen(documentRef, "keydown", (event) => {
         if (event.key === "Escape") hideContextToolMenu();
       });

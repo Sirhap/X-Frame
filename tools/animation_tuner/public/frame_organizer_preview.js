@@ -58,7 +58,9 @@
       const width = source.width * scale;
       const height = source.height * scale;
       context.imageSmoothingEnabled = false;
-      context.drawImage(source, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+      const x = (canvas.width - width) / 2;
+      const y = height >= canvas.height ? 0 : Math.min(12, canvas.height - height);
+      context.drawImage(source, x, y, width, height);
     }
 
     /** Draws the currently previewed organizer frame. @returns {void} */

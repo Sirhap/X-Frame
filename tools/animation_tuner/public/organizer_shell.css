@@ -63,11 +63,17 @@ body.organizerOpen .organizerClose {
   grid-template-columns: 180px repeat(2, minmax(118px, 1fr));
 }
 
+.organizerImportSetup .organizerImportIntro {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .organizerWorkbench.importMode .organizerProjectMetadata {
   display: none;
 }
 
-.organizerWorkbench.importMode.createProjectMode .organizerProjectMetadata {
+.organizerWorkbench.importMode.createProjectMode .organizerProjectMetadata,
+.organizerWorkbench.importMode.hasFrames.showImportSetup .organizerProjectMetadata {
   display: grid;
 }
 
@@ -245,8 +251,7 @@ body.organizerOpen .organizerClose {
   font-size: 10px;
 }
 
-.organizerWorkbench.hasFrames:not(.showImportSetup) .organizerImportSetup,
-.organizerWorkbench.hasFrames:not(.showMoreTools) .organizerToolbarSecondary {
+.organizerWorkbench.hasFrames:not(.showImportSetup) .organizerImportSetup {
   display: none;
 }
 

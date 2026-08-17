@@ -356,7 +356,6 @@ test("organizer reorders data through the server and reloads the reduced animati
   await importProject(request, "reorganize", 4);
   await page.goto("/workspace/tools/organizer");
   await expect(page.locator(".organizerFrame")).toHaveCount(4);
-  await page.locator("#organizerMoreTools").click();
   await page.locator("#organizerReduceStep").fill("2");
   await page.locator("#organizerReduce").click();
   await page.locator("#organizerApply").click();

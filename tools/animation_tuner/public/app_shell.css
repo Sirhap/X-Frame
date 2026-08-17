@@ -258,6 +258,24 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
   color: var(--accent-2);
 }
 
+.workspaceFlowChrome {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workspaceFlowChrome .themeSwitch {
+  flex: 0 0 auto;
+}
+
+.workspaceFlowChrome .workbenchHome {
+  min-height: 34px;
+  padding: 0 10px;
+  font: 720 11px/1 var(--ui-font);
+}
+
 .workspaceAccount {
   min-height: 34px;
   padding: 0 12px;
@@ -1529,11 +1547,6 @@ body:not(.theme-kunkun).organizerOpen .organizerPrimary {
   white-space: nowrap;
 }
 
-.organizerWorkbench.hasFrames:not(.showMoreTools)
-  :is(#organizerInvert, .organizerReduceControl, #organizerAutoSort, #organizerFlip) {
-  display: none;
-}
-
 .organizerFooterActions {
   position: relative;
   grid-template-columns: minmax(118px, auto) minmax(170px, 1fr) !important;
@@ -1725,19 +1738,6 @@ body.organizerOpen .organizerFooterActions {
 @media (max-width: 900px) {
   body:is(.cutoutOpen, .organizerOpen) :is(.cutoutModal, .organizerModal) {
     inset: calc(64px + var(--shell-flow-height)) 0 0 0;
-  }
-}
-
-/* Extremely short viewports (browser zoom ≥175%): a focused tool session owns
-   the screen, so the stage navigation steps aside and the modal keeps only the
-   rail top bar above it. */
-@media (max-width: 900px) and (max-height: 760px) {
-  body:is(.cutoutOpen, .organizerOpen) .workspaceFlowHeader {
-    display: none;
-  }
-
-  body:is(.cutoutOpen, .organizerOpen) :is(.cutoutModal, .organizerModal) {
-    inset: 64px 0 0 0;
   }
 }
 

@@ -182,6 +182,57 @@ test("process controller previews staged recolor but commits only stored repairs
   assert.equal(item.resultVariant, "committed");
 });
 
+test("processAll publishes live outputs after each successful frame", async () => {
+  const liveApplies = [];
+  const { controller } = createFixture({
+    state: {
+      worksetResolver: {
+        liveApply: async (outputs) => {
+          liveApplies.push(outputs.length);
+        },
+      },
+      items: [
+        {
+          id: "a",
+          name: "a.png",
+          frame: { uid: "a" },
+          excluded: false,
+          resultCanvas: { id: "ca" },
+          statistics: {},
+        },
+        {
+          id: "b",
+          name: "b.png",
+          frame: { uid: "b" },
+          excluded: false,
+          resultCanvas: { id: "cb" },
+          statistics: {},
+        },
+      ],
+    },
+    dependencies: {
+      resultArtifacts: {
+        get: () => "data:image/png;base64,x",
+        put() {},
+      },
+      outputCore: {
+        uniquePngName: (name) => name,
+        createOutput: (output) => output,
+      },
+      windowRef: {
+        setTimeout(callback) {
+          callback();
+          return 1;
+        },
+      },
+    },
+  });
+
+  await controller.processAll({ applyProgress: true });
+
+  assert.deepEqual(liveApplies, [1, 2]);
+});
+
 test("cutout results can be handed to a project while retaining frame mapping", async () => {
   const sourceFrame = { name: "idle.png" };
   let projectRequest = null;

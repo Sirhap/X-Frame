@@ -66,6 +66,7 @@ function createFixture() {
       },
       autoCutout: async (workset) => {
         calls.autoCutoutWorksets.push(workset);
+        if (state.liveCutoutOutputs) await workset.onLiveApply?.(state.liveCutoutOutputs);
         return state.cutoutOutputsByCall?.shift?.() || state.cutoutOutputs || null;
       },
       getCurrentAnimation: () => ({
@@ -233,6 +234,32 @@ test("organizer actions reject an unknown cutout target without side effects", a
   await fixture.controller.editImportCutout({ uid: "missing" });
   assert.deepEqual(fixture.calls.status, ["cutoutNeedFrames"]);
   assert.equal(fixture.calls.reloads, 0);
+});
+
+test("direct batch cutout applies live partial outputs before the batch finishes", async () => {
+  const fixture = createFixture();
+  const second = {
+    ...fixture.frame,
+    uid: "frame-2",
+    name: "frame-2.png",
+    hasEditedResult: false,
+    thumbnails: { edited: "" },
+  };
+  fixture.frame.hasEditedResult = false;
+  fixture.state.frames = [fixture.frame, second];
+  fixture.state.viewMode = "original";
+  fixture.state.liveCutoutOutputs = [{ frame: { uid: fixture.frame.uid }, canvas: fixture.frame.editedCanvas }];
+  fixture.state.cutoutOutputs = [
+    { frame: { uid: fixture.frame.uid }, canvas: fixture.frame.editedCanvas },
+    { frame: { uid: second.uid }, canvas: second.editedCanvas },
+  ];
+
+  await fixture.controller.editBatchCutout();
+
+  assert.equal(fixture.frame.hasEditedResult, true);
+  assert.equal(second.hasEditedResult, true);
+  assert.equal(fixture.state.viewMode, "edited");
+  assert.ok(fixture.calls.status.some((message) => message === "cutoutFrameProgress"));
 });
 
 test("organizer smart cutout directly processes included frames with the automatic removal profile", async () => {

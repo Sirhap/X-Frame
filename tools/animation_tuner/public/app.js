@@ -3957,6 +3957,20 @@ navigationContext = navigationContextModule.createController({
   projectLabel,
   groupLabel,
   translate: t,
+  toolTitle(route) {
+    const organizerText = globalThis.FrameOrganizerText?.createTranslator?.(() => language);
+    const cutoutText = globalThis.BatchCutoutText?.TEXT?.[language === "en" ? "en" : "zh"] || {};
+    if (route === "import" || (route === "organizer" && frameOrganizer?.getMode?.() === "import")) {
+      return organizerText?.("importTitle") || "";
+    }
+    if (route === "organizer") return organizerText?.("title") || "";
+    if (route === "cutout") {
+      const single = document.querySelector("#cutoutModal")?.classList.contains("singleEditSession");
+      return (single ? cutoutText.singleTitle : cutoutText.title) || "";
+    }
+    if (route === "scatter") return t("scatterSliceTitle");
+    return "";
+  },
 });
 navigationContext.bind();
 const handoffRuntimeModule = globalThis.XSXBWorksetHandoffRuntime;

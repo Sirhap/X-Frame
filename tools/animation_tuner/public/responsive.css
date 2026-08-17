@@ -784,11 +784,6 @@
   }
 }
 
-.organizerWorkbench.importMode:not(:has(.organizerFrame)) .organizerEditTools,
-.organizerWorkbench.importMode:not(:has(.organizerFrame)) .organizerToolbarSecondary {
-  display: none;
-}
-
 .organizerWorkbench.importMode:not(:has(.organizerFrame)) .organizerToolbarPrimary,
 .organizerWorkbench.importMode:not(:has(.organizerFrame)) .organizerBody {
   grid-template-columns: minmax(0, 1fr);

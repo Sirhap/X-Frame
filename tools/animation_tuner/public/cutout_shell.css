@@ -67,6 +67,13 @@ body.cutoutOpen .cutoutClose {
   background: linear-gradient(105deg, var(--accent-2) 0 16px, transparent 16px), var(--panel);
 }
 
+.cutoutHeader.cutoutActionRow {
+  min-height: 48px;
+  justify-content: flex-end;
+  padding: 8px 14px;
+  background: var(--panel);
+}
+
 .workbenchHeaderActions {
   margin-left: auto;
   flex: 0 0 auto;

@@ -89,6 +89,7 @@
       imageCanvas,
       renderCounts,
       renderGrid,
+      renderPreview = () => {},
       restartPreview,
       loadCurrentAnimation,
       importMetadata,
@@ -152,18 +153,26 @@
       /**
        * Copies live or final cutout outputs into the organizer workset.
        * @param {Array<object>} outputs Processed workset outputs.
-       * @returns {void}
+       * @param {object[]} batchFrames Frames belonging to the current pixel-safe batch.
+       * @param {{partial?:boolean}} [applyOptions] Whether a prefix of the batch is allowed.
+       * @returns {number} Number of frames written in this call.
        */
-      const applyCutoutOutputs = (outputs, batchFrames) => {
-        if (outputs.length !== batchFrames.length) {
-          throw new Error(`Expected ${batchFrames.length} cutout frames, received ${outputs.length}.`);
+      const applyCutoutOutputs = (outputs, batchFrames, applyOptions = {}) => {
+        const list = Array.from(outputs || []);
+        const allowPartial = applyOptions.partial === true;
+        if (!allowPartial && list.length !== batchFrames.length) {
+          throw new Error(`Expected ${batchFrames.length} cutout frames, received ${list.length}.`);
         }
         const outputByUid = new Map(
-          outputs.filter((output) => output?.frame?.uid).map((output) => [output.frame.uid, output]),
+          list.filter((output) => output?.frame?.uid).map((output) => [output.frame.uid, output]),
         );
+        let applied = 0;
         batchFrames.forEach((frame, index) => {
-          const output = outputByUid.get(frame.uid) || outputs[index];
-          if (!output?.canvas) throw new Error(`Missing cutout canvas for frame ${index + 1}.`);
+          const output = outputByUid.get(frame.uid) || (list.length === batchFrames.length ? list[index] : null);
+          if (!output?.canvas) {
+            if (allowPartial) return;
+            throw new Error(`Missing cutout canvas for frame ${index + 1}.`);
+          }
           frame.editedCanvas = imageCanvas(output.canvas);
           frame.hasEditedResult = true;
           frame.assetRevision = Math.max(0, Number(frame.assetRevision) || 0) + 1;
@@ -173,15 +182,22 @@
           frame.analysisRevision = Number(frame.analysisRevision || 0) + 1;
           frame.thumbnails.edited = "";
           if (output.cutoutState) frame.cutoutState = output.cutoutState;
+          applied += 1;
         });
-        for (const featureId of premiumFeatures?.normalizeFeatureIds?.(outputs.premiumFeatures) || []) {
+        for (const featureId of premiumFeatures?.normalizeFeatureIds?.(list.premiumFeatures) || []) {
           state.premiumFeatures.add(featureId);
         }
-        renderGrid();
+        if (applied) {
+          if (options.direct || options.mode === "single") state.viewMode = "edited";
+          renderGrid();
+          renderPreview();
+        }
+        return applied;
       };
       state.busy = true;
       renderCounts();
       windowApi.clearTimeout(state.previewTimer);
+      setStatus(text("cutoutFrameProgress", { current: 0, total: sourceFrames.length }), "busy");
       if (!options.direct) {
         elements.organizerModal.inert = true;
         elements.organizerModal.setAttribute("aria-hidden", "true");
@@ -207,7 +223,16 @@
             selectedIndex: batchIndex === 0 ? Number(options.selectedIndex) || 0 : 0,
             autoDetectBackground: Boolean(options.autoDetectBackground),
             processingParameters: options.processingParameters,
-            onLiveApply: (liveOutputs) => applyCutoutOutputs(liveOutputs, batchFrames),
+            onLiveApply: (liveOutputs) => {
+              const applied = applyCutoutOutputs(liveOutputs, batchFrames, { partial: true });
+              setStatus(
+                text("cutoutFrameProgress", {
+                  current: appliedCount + applied,
+                  total: sourceFrames.length,
+                }),
+                "busy",
+              );
+            },
             items: batchFrames.map((frame) => ({
               name: frame.name,
               image: frame.editedCanvas,

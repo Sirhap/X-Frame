@@ -5,36 +5,30 @@ const test = require("node:test");
 
 const { createController } = require("../animation_tuner/public/app_navigation_context");
 
-/** Creates a breadcrumb host that records rendered children. */
-function breadcrumbHost() {
-  return {
-    children: [],
-    replaceChildren(...children) {
-      this.children = children;
-    },
-  };
+/** @returns {{hidden:boolean,textContent:string}} Mutable header node. */
+function headerNode(text = "") {
+  return { hidden: false, textContent: text };
 }
 
-test("navigation context localizes system breadcrumbs and return actions", () => {
-  const workspace = breadcrumbHost();
-  const organizer = breadcrumbHost();
-  const cutout = breadcrumbHost();
-  const organizerHome = { textContent: "" };
-  const cutoutHome = { textContent: "" };
-  const elements = {
-    "#workspaceBreadcrumb": workspace,
-    "#organizerBreadcrumb": organizer,
-    "#cutoutBreadcrumb": cutout,
-    "#organizerHome": organizerHome,
-    "#cutoutHome": cutoutHome,
-  };
+/**
+ * @param {{route?:string,context?:"project"|"standalone",organizerOpen?:boolean,cutoutOpen?:boolean,toolTitle?:function}} [options]
+ * @returns {{controller:object,eyebrow:object,title:object,save:object,back:object}}
+ */
+function createFixture(options = {}) {
+  const eyebrow = headerNode("PROJECT WORKSPACE");
+  const title = headerNode("当前项目");
+  const save = headerNode("已保存");
+  const back = headerNode("");
+  const bodyClasses = new Set();
+  if (options.organizerOpen) bodyClasses.add("organizerOpen");
+  if (options.cutoutOpen) bodyClasses.add("cutoutOpen");
   const labels = {
-    projectHubTitle: "Animation Projects",
+    stageResources: "Resources",
+    stageAnimation: "Animation",
+    stageDelivery: "Delivery",
     browserSessionProject: "Browser Temporary Workspace",
     currentProject: "Current Project",
-    quickToolsTitle: "Quick Tools",
-    sequenceTool: "Sequence Processing",
-    frameOrganizer: "Frame Organizer",
+    scatterSliceTitle: "Scatter Slice",
     batchCutout: "Batch Cutout",
     returnQuickTools: "← Back to Quick Tools",
     returnTuning: "← Back to Animation Tuning",
@@ -42,8 +36,14 @@ test("navigation context localizes system breadcrumbs and return actions", () =>
   };
   const controller = createController({
     documentRef: {
-      body: { classList: { contains: () => false } },
-      querySelector: (selector) => elements[selector] || null,
+      body: { classList: { contains: (name) => bodyClasses.has(name) } },
+      querySelector: (selector) =>
+        ({
+          "#workspaceFlowEyebrow": eyebrow,
+          "#workspaceFlowProject": title,
+          "#workspaceSaveIndicator": save,
+          "#workspaceFlowBack": back,
+        })[selector] || null,
       createElement: () => ({ textContent: "", href: "" }),
     },
     getConfig: () => ({
@@ -51,21 +51,80 @@ test("navigation context localizes system breadcrumbs and return actions", () =>
       activeProject: { id: "browser-session", label: "浏览器临时工作区" },
     }),
     getCurrentGroup: () => null,
-    getRoute: () => "import",
-    getContext: () => "project",
+    getRoute: () => options.route || "import",
+    getContext: () => options.context || "project",
     translate: (key) => labels[key] || key,
+    toolTitle: options.toolTitle,
+  });
+  return { controller, eyebrow, title, save, back };
+}
+
+test("import route shows the tool title, hides save, and offers a tuning return", () => {
+  const fixture = createFixture({
+    route: "import",
+    toolTitle: (route) => (route === "import" ? "导入与处理动画" : ""),
   });
 
-  controller.render();
+  fixture.controller.render();
 
-  assert.deepEqual(
-    workspace.children.map((child) => child.textContent),
-    ["Animation Projects", "Browser Temporary Workspace"],
-  );
-  assert.deepEqual(
-    organizer.children.map((child) => child.textContent),
-    ["Animation Projects", "Browser Temporary Workspace", "Sequence Processing"],
-  );
-  assert.equal(organizerHome.textContent, "← Back to Animation Tuning");
-  assert.equal(cutoutHome.textContent, "← Back to Animation Tuning");
+  assert.equal(fixture.eyebrow.textContent, "Resources");
+  assert.equal(fixture.title.textContent, "导入与处理动画");
+  assert.equal(fixture.save.hidden, true);
+  assert.equal(fixture.back.hidden, false);
+  assert.equal(fixture.back.textContent, "← Back to Animation Tuning");
+});
+
+test("cutout opened from organizer uses the organizer return label", () => {
+  const fixture = createFixture({
+    route: "cutout",
+    organizerOpen: true,
+    cutoutOpen: true,
+    toolTitle: (route) => (route === "cutout" ? "批量抠图" : ""),
+  });
+
+  fixture.controller.render();
+
+  assert.equal(fixture.eyebrow.textContent, "Resources");
+  assert.equal(fixture.title.textContent, "批量抠图");
+  assert.equal(fixture.save.hidden, true);
+  assert.equal(fixture.back.hidden, false);
+  assert.equal(fixture.back.textContent, "← Back to Frame Organizer");
+});
+
+test("animation route shows the project name and save state", () => {
+  const fixture = createFixture({ route: "animation" });
+
+  fixture.controller.render();
+
+  assert.equal(fixture.eyebrow.textContent, "Animation");
+  assert.equal(fixture.title.textContent, "Browser Temporary Workspace");
+  assert.equal(fixture.save.hidden, false);
+  assert.equal(fixture.back.hidden, true);
+});
+
+test("delivery route keeps the project name and save state", () => {
+  const fixture = createFixture({ route: "export" });
+
+  fixture.controller.render();
+
+  assert.equal(fixture.eyebrow.textContent, "Delivery");
+  assert.equal(fixture.title.textContent, "Browser Temporary Workspace");
+  assert.equal(fixture.save.hidden, false);
+  assert.equal(fixture.back.hidden, true);
+});
+
+test("standalone scatter returns to quick tools", () => {
+  const fixture = createFixture({
+    route: "scatter",
+    context: "standalone",
+    toolTitle: (route) => (route === "scatter" ? "零散切片" : ""),
+  });
+
+  fixture.controller.render();
+
+  assert.equal(fixture.eyebrow.textContent, "Resources");
+  assert.equal(fixture.title.textContent, "零散切片");
+  assert.equal(fixture.save.hidden, true);
+  assert.equal(fixture.back.hidden, false);
+  assert.equal(fixture.back.textContent, "← Back to Quick Tools");
 });
