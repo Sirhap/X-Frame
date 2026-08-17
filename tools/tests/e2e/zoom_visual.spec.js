@@ -13,19 +13,20 @@ const ZOOM_CASES = Object.freeze([
   { label: "150", scale: 1.5 },
   { label: "200", scale: 2 },
 ]);
+/* /tools/organizer intentionally shares the import workbench ("整理 = 导入台"),
+   so import-populated is its single visual baseline. */
 const VISUAL_PAGES = Object.freeze([
   { name: "landing", path: "/", shell: "body" },
   { name: "workspace", path: "/workspace", shell: ".app" },
   { name: "import-empty", path: "/tools/import", shell: "#organizerModal" },
   { name: "import-populated", path: "/tools/import", shell: "#organizerModal" },
-  { name: "organizer", path: "/tools/organizer", shell: "#organizerModal" },
   { name: "cutout", path: "/tools/cutout", shell: "#cutoutModal" },
   { name: "scatter-slice", path: "/tools/scatter-slice", shell: "#scatterSliceSurface" },
   { name: "watermark", path: "/tools/watermark", shell: "#watermarkWorkspace" },
 ]);
 const ENGLISH_LAYOUT_PAGES = Object.freeze(
   VISUAL_PAGES.filter(({ name }) =>
-    ["workspace", "import-empty", "import-populated", "organizer", "cutout"].includes(name),
+    ["workspace", "import-empty", "import-populated", "cutout"].includes(name),
   ),
 );
 
@@ -77,11 +78,6 @@ async function populateVisualPage(page, pageName) {
   }));
 
   if (pageName === "import-populated") {
-    await page.locator("#organizerFileInput").setInputFiles(files);
-    await expect(page.locator(".organizerFrame")).toHaveCount(files.length);
-  }
-
-  if (pageName === "organizer") {
     await page.locator("#organizerFileInput").setInputFiles(files);
     await expect(page.locator(".organizerFrame")).toHaveCount(files.length);
   }
