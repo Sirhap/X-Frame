@@ -49,6 +49,12 @@
       selectFilmstripFrame = () => {},
       fitView = () => {},
       centerStageContent = () => {},
+      setStageZoom = () => {},
+      getStageZoom = () => 1,
+      setStageSpacePan = () => {},
+      getStageSpacePan = () => false,
+      getStageSpacePanConsumed = () => false,
+      setStageSpacePanConsumed = () => {},
       playPauseElement = null,
       clearHeldAttachmentTransformKeys = () => {},
       getCurrentWorkbenchRoute = () => "",
@@ -210,9 +216,27 @@
         draw();
         return;
       }
-      if (!interactiveTarget && event.key === " " && playPauseElement) {
+      if (canHandleApplicationShortcut && command && (key === "=" || key === "+" || event.key === "+")) {
         event.preventDefault?.();
-        playPauseElement.click?.();
+        setStageZoom(getStageZoom() * 1.08);
+        return;
+      }
+      if (canHandleApplicationShortcut && command && key === "-") {
+        event.preventDefault?.();
+        setStageZoom(getStageZoom() * 0.92);
+        return;
+      }
+      if (
+        !interactiveTarget &&
+        !command &&
+        !event.altKey &&
+        !event.repeat &&
+        event.code === "Space"
+      ) {
+        event.preventDefault?.();
+        setStageSpacePan(true);
+        setStageSpacePanConsumed(false);
+        return;
       }
     }
 
@@ -231,6 +255,17 @@
     /** Releases temporary attachment and reference-frame key state. */
     function handleKeyup(event) {
       trackAttachmentTransformKey(event, false);
+      if (event.code === "Space") {
+        const wasArmed = getStageSpacePan();
+        const consumed = getStageSpacePanConsumed();
+        setStageSpacePan(false);
+        setStageSpacePanConsumed(false);
+        // Only Space that we armed on keydown may toggle play (tap without pan).
+        if (wasArmed && !consumed && !isModalOpen() && playPauseElement) {
+          playPauseElement.click?.();
+        }
+        return;
+      }
       if (String(event.key || "").toLowerCase() !== "h") return;
       if (!getReferenceFrameHiddenByKey()) return;
       setReferenceFrameHiddenByKey(false);
@@ -240,6 +275,8 @@
     /** Releases all temporary key state when the browser window loses focus. */
     function handleBlur() {
       clearHeldAttachmentTransformKeys();
+      setStageSpacePan(false);
+      setStageSpacePanConsumed(false);
       if (!getReferenceFrameHiddenByKey()) return;
       setReferenceFrameHiddenByKey(false);
       draw();

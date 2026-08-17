@@ -166,6 +166,8 @@
       playbackSwitching: false,
       view: { zoom: 1, x: 0, y: 0 },
       stageViewMode: "fit",
+      stageSpacePan: false,
+      stageSpacePanConsumed: false,
       drag: null,
       undoStack: [],
       redoStack: [],

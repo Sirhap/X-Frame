@@ -7,6 +7,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
+  const PAN_MOVE_THRESHOLD_SQ = 16;
+
   /**
    * Creates the stage pointer, drag, and wheel listeners used by the workbench.
    * The controller owns no application state; all mutable values and domain
@@ -34,7 +36,7 @@
       boxResizeDeltaFromScreenDelta,
       collisionOffsetYForHeight,
       cloneVector,
-      draw,
+      draw = () => {},
       frameBox,
       hitTestBoxes,
       hitTestDirectManipulationAttachment,
@@ -66,7 +68,39 @@
      * Binds stage listeners in the same order as the original event controller.
      * @returns {void}
      */
+    /**
+     * Starts a pan drag from the current pointer position.
+     * @param {PointerEvent} event Pointer that began the pan.
+     * @param {(nextDrag:object)=>void} beginDrag Drag starter from pointerdown.
+     * @returns {void}
+     */
+    function beginPanDrag(event, beginDrag) {
+      beginDrag({
+        mode: "pan",
+        x: event.clientX,
+        y: event.clientY,
+        viewX: state.view.x,
+        viewY: state.view.y,
+      });
+    }
+
+    /**
+     * Returns whether this pointerdown should pan instead of editing.
+     * Middle mouse always pans; primary + held Space pans like cutout preview.
+     * @param {PointerEvent} event Pointerdown event.
+     * @returns {boolean} True when navigation should own the gesture.
+     */
+    function shouldPanFromPointer(event) {
+      if (event.button === 1) return true;
+      return event.button === 0 && Boolean(state.stageSpacePan);
+    }
+
     function bind() {
+      // Middle-click paste/autoscroll would steal stage navigation.
+      stage.addEventListener("auxclick", (event) => {
+        if (event.button === 1) event.preventDefault();
+      });
+
       stage.addEventListener("pointerdown", (event) => {
         state.pointerStagePoint = stagePoint(event);
         updateCoordHud();
@@ -75,8 +109,14 @@
           stage.classList.add("dragging");
           state.drag = nextDrag;
         };
+        if (shouldPanFromPointer(event)) {
+          event.preventDefault?.();
+          beginPanDrag(event, beginDrag);
+          return;
+        }
         // The Transform sidebar is dedicated to moving the visible animation frame.
-        // Give that direct manipulation precedence over collision-box hit targets.
+        // Give that direct manipulation precedence over collision-box hit targets,
+        // but only when the pointer is on the sprite (empty canvas still pans).
         const frameTransform = hitTestDirectManipulationFrame(event);
         if (frameTransform) {
           pushUndo("drag frame transform");
@@ -135,13 +175,7 @@
           draw();
           return;
         }
-        beginDrag({
-          mode: "pan",
-          x: event.clientX,
-          y: event.clientY,
-          viewX: state.view.x,
-          viewY: state.view.y,
-        });
+        beginPanDrag(event, beginDrag);
       });
 
       stage.addEventListener("pointermove", (event) => {
@@ -151,8 +185,15 @@
           return;
         }
         if (state.drag.mode === "pan") {
-          state.view.x = state.drag.viewX + (event.clientX - state.drag.x) * devicePixelRatio;
-          state.view.y = state.drag.viewY + (event.clientY - state.drag.y) * devicePixelRatio;
+          const dx = event.clientX - state.drag.x;
+          const dy = event.clientY - state.drag.y;
+          const moved = dx * dx + dy * dy >= PAN_MOVE_THRESHOLD_SQ;
+          // Space tap (no movement) still toggles play/pause; only a real pan
+          // drag consumes Space and leaves fit/actual for a custom view.
+          if (state.stageSpacePan && moved) state.stageSpacePanConsumed = true;
+          if (moved) state.stageViewMode = "custom";
+          state.view.x = state.drag.viewX + dx * devicePixelRatio;
+          state.view.y = state.drag.viewY + dy * devicePixelRatio;
           draw();
           return;
         }

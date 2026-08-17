@@ -322,3 +322,92 @@ test("Ctrl or Cmd Y redoes an editor action outside text inputs", () => {
   assert.equal(event.prevented, true);
   assert.equal(redoCount, 1);
 });
+
+test("Space tap arms pan then toggles play on keyup when unused", () => {
+  let spacePan = false;
+  let spaceConsumed = false;
+  const { controller, state } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      setStageSpacePan: (value) => {
+        spacePan = Boolean(value);
+      },
+      getStageSpacePan: () => spacePan,
+      getStageSpacePanConsumed: () => spaceConsumed,
+      setStageSpacePanConsumed: (value) => {
+        spaceConsumed = Boolean(value);
+      },
+    },
+  });
+
+  controller.handleEditorKeydown({
+    key: " ",
+    code: "Space",
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    repeat: false,
+    target: { tagName: "DIV" },
+    preventDefault() {},
+  });
+  assert.equal(spacePan, true);
+  assert.equal(state.playCalls, 0);
+
+  controller.handleKeyup({ code: "Space" });
+  assert.equal(spacePan, false);
+  assert.equal(state.playCalls, 1);
+});
+
+test("Space drag consumption skips play toggle on keyup", () => {
+  let spacePan = true;
+  let spaceConsumed = true;
+  const { controller, state } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      setStageSpacePan: (value) => {
+        spacePan = Boolean(value);
+      },
+      getStageSpacePan: () => spacePan,
+      getStageSpacePanConsumed: () => spaceConsumed,
+      setStageSpacePanConsumed: (value) => {
+        spaceConsumed = Boolean(value);
+      },
+    },
+  });
+
+  controller.handleKeyup({ code: "Space" });
+  assert.equal(state.playCalls, 0);
+  assert.equal(spacePan, false);
+});
+
+test("Ctrl+/- zooms the stage around the center", () => {
+  let zoom = 1;
+  const zooms = [];
+  const { controller } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      getStageZoom: () => zoom,
+      setStageZoom: (nextZoom) => {
+        zooms.push(nextZoom);
+        zoom = nextZoom;
+      },
+    },
+  });
+
+  controller.handleEditorKeydown({
+    key: "=",
+    ctrlKey: true,
+    metaKey: false,
+    target: { tagName: "DIV" },
+    preventDefault() {},
+  });
+  controller.handleEditorKeydown({
+    key: "-",
+    ctrlKey: true,
+    metaKey: false,
+    target: { tagName: "DIV" },
+    preventDefault() {},
+  });
+
+  assert.deepEqual(zooms, [1.08, 1.08 * 0.92]);
+});

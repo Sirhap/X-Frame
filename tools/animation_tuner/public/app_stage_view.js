@@ -169,11 +169,29 @@
 
     /** Resizes the backing canvas and restores the selected view mode. @returns {void} */
     function resizeCanvas() {
+      const previousWidth = stage.width;
+      const previousHeight = stage.height;
       const bounds = stage.getBoundingClientRect();
       const pixelRatio = getDevicePixelRatio();
       stage.width = Math.max(640, Math.floor(bounds.width * pixelRatio));
       stage.height = Math.max(420, Math.floor(bounds.height * pixelRatio));
-      if (getStageViewMode() === "actual") centerStageContent(1, "actual");
+      const mode = getStageViewMode();
+      // Custom zoom/pan is user intent — keep zoom and the world point under
+      // the previous canvas center so the framing does not jump.
+      if (mode === "custom") {
+        const view = getView();
+        const worldX = (previousWidth / 2 - view.x) / view.zoom;
+        const worldY = (previousHeight / 2 - view.y) / view.zoom;
+        setView({
+          zoom: view.zoom,
+          x: stage.width / 2 - worldX * view.zoom,
+          y: stage.height / 2 - worldY * view.zoom,
+        });
+        syncStageZoomControls();
+        draw();
+        return;
+      }
+      if (mode === "actual") centerStageContent(1, "actual");
       else fitView();
       draw();
     }

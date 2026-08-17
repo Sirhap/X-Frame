@@ -296,6 +296,8 @@ let {
   playbackSwitching,
   view,
   stageViewMode,
+  stageSpacePan,
+  stageSpacePanConsumed,
   drag,
   undoStack,
   redoStack,
@@ -1337,6 +1339,12 @@ const eventState = lifecycleState;
   ["lastSavedAt", () => lastSavedAt, (value) => (lastSavedAt = value)],
   ["showBoxes", () => showBoxes, (value) => (showBoxes = value)],
   ["stageViewMode", () => stageViewMode, (value) => (stageViewMode = value)],
+  ["stageSpacePan", () => stageSpacePan, (value) => (stageSpacePan = value)],
+  [
+    "stageSpacePanConsumed",
+    () => stageSpacePanConsumed,
+    (value) => (stageSpacePanConsumed = value),
+  ],
   ["uiTheme", () => uiTheme, (value) => (uiTheme = value)],
   ["view", () => view, (value) => (view = value)],
 ].forEach(([key, getter, setter]) => bindLifecycleState(eventState, key, getter, setter));
@@ -3034,6 +3042,16 @@ const keyboardController = keyboardModule.createController({
   selectFilmstripFrame,
   fitView,
   centerStageContent,
+  setStageZoom,
+  getStageZoom: () => view.zoom,
+  setStageSpacePan: (value) => {
+    stageSpacePan = Boolean(value);
+  },
+  getStageSpacePan: () => stageSpacePan,
+  getStageSpacePanConsumed: () => stageSpacePanConsumed,
+  setStageSpacePanConsumed: (value) => {
+    stageSpacePanConsumed = Boolean(value);
+  },
   playPauseElement: els.playPause,
   clearHeldAttachmentTransformKeys: () => heldAttachmentTransformKeys.clear(),
   getCurrentWorkbenchRoute: currentWorkbenchRoute,
@@ -3163,10 +3181,12 @@ function updateAdjustmentFromInputs() {
 }
 
 /**
- * Returns the editable main-frame transform when the Transform sidebar is active.
- * @returns {object|null} Transform snapshot for a direct drag, or null outside the Transform sidebar.
+ * Returns the editable main-frame transform when the Transform sidebar is active
+ * and the pointer is over the visible sprite.
+ * @param {PointerEvent} [event] Pointer event used for sprite hit-testing.
+ * @returns {object|null} Transform snapshot for a direct drag, or null.
  */
-function hitTestDirectManipulationFrame() {
+function hitTestDirectManipulationFrame(event) {
   if (
     document.body.dataset.sidebarTab !== "transform" ||
     !currentGroup ||
@@ -3174,6 +3194,9 @@ function hitTestDirectManipulationFrame() {
   ) {
     return null;
   }
+  // Empty-canvas drags must pan the view; only a hit on the sprite starts a
+  // frame transform so Transform-tab editing no longer steals navigation.
+  if (event && !isPointInsideFrame(event)) return null;
   return transformFromAdjustmentInputs();
 }
 
@@ -3494,31 +3517,6 @@ const appEvents = appEventsModule.createController({
   },
 });
 appEvents.bind();
-
-els.stage.addEventListener("lostpointercapture", () => {
-  drag = null;
-  els.stage.classList.remove("dragging");
-  updateCoordHud();
-});
-
-els.stage.addEventListener("pointerleave", () => {
-  if (drag) return;
-  pointerStagePoint = null;
-  updateCoordHud();
-});
-
-els.stage.addEventListener(
-  "wheel",
-  (event) => {
-    event.preventDefault();
-    pointerStagePoint = stagePoint(event);
-    if (applySelectedAttachmentWheel(event)) return;
-    zoomViewAt(event);
-  },
-  { passive: false },
-);
-
-keyboardController.bind();
 
 window.addEventListener("resize", resizeCanvas);
 const navigationGuardModule = globalThis.XSXBAppNavigationGuard;
