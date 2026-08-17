@@ -74,6 +74,31 @@ On narrow widths, shrink stage-tool padding first, then ellipsis the context tit
 
 Projects and quick-tools surfaces continue to hide the flow header, as they do today.
 
+## Organizer Toolbar on Empty Import
+
+Empty import currently hides `.organizerEditTools` and `.organizerToolbarSecondary` with `:not(:has(.organizerFrame))`, and parks `#organizerFindLoop` in the right-hand actions column. That leaves only 来源 + 寻找循环段, which looks like the other tools were removed.
+
+On import, always show the full tool strip:
+
+- 来源 — image / video pickers
+- 编辑 — invert, invert selection, reduce, order, restore order, flip
+- 分析 — threshold, 寻找跳变帧, 寻找重复帧, 寻找循环段
+- 移除 — delete selected, delete excluded, clear workset
+
+Move `#organizerFindLoop` into `.organizerAnalysisTools`. Do not leave it in `.organizerToolbarActions`.
+
+Frame-dependent buttons stay in the DOM and use the existing disable rules (`needFrames`, `needThreeFrames`, `needFourFrames`). Do not hide edit/analysis/remove when the workset is empty.
+
+`#organizerMoreTools` is no longer needed to reveal analysis/remove. Remove that toggle and the `showMoreTools` workbench class. Keep `#organizerToggleImportSetup` as the only overflow control, and only after frames exist (current behavior).
+
+Delete these hide rules so the tool strip stays visible before and after import:
+
+- `.organizerWorkbench.importMode:not(:has(.organizerFrame)) .organizerEditTools`
+- `.organizerWorkbench.importMode:not(:has(.organizerFrame)) .organizerToolbarSecondary`
+- `.organizerWorkbench.hasFrames:not(.showMoreTools) .organizerToolbarSecondary`
+
+Keep the empty-import body rules that collapse the preview column and show the empty frame grid.
+
 ## Error Handling and Edge Cases
 
 - Standalone / quick-tools context keeps the existing return labels (`returnQuickTools`) when a tool page is reached from `/tools`.
@@ -81,10 +106,12 @@ Projects and quick-tools surfaces continue to hide the flow header, as they do t
 - Missing project label falls back to `currentProject`, same as today’s breadcrumb logic.
 - Save-indicator status values (`saving`, `error`, `conflict`) are unchanged; only visibility is route-based.
 - Scatter remains a resource-stage tool. Its progress steps are body chrome, not flow-header tabs.
+- Empty-import analysis and edit buttons stay visible and disabled. Their click handlers must not run while disabled; existing `needThreeFrames` / `needFourFrames` titles remain the explanation.
 
 ## Verification
 
 - Rewrite `app_navigation_context.test.js` to assert eyebrow, title, save visibility, and back label for import, cutout-from-organizer, animation, delivery, and standalone/quick-tools.
 - Update the organizer e2e that expects `#organizerTitle` to assert `#workspaceFlowProject` instead.
 - Add or extend a focused UI assertion that the organizer/cutout/scatter identity header is gone and that theme buttons exist only in the flow header.
+- Assert empty import shows edit, analysis, and remove groups, with `#organizerFindLoop` inside analysis, and that those frame-dependent buttons are disabled at 0 frames.
 - Run the navigation-context unit tests, the updated e2e selector, formatting/static checks, and the project test suite.
