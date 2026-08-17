@@ -67,7 +67,13 @@
           </svg>
           <span data-factory-copy="adminConsole">后台管理</span>
         </a>
-        <a class="header-button" href="/projects" aria-label="动画项目" title="动画项目" data-factory-aria="projects">
+        <a
+          class="header-button"
+          href="/projects"
+          aria-label="动画项目"
+          title="动画项目"
+          data-factory-aria="projects"
+        >
           <span data-factory-copy="projects">动画项目</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
         </a>
@@ -124,7 +130,9 @@
           <ol class="console-pipeline" aria-label="动画处理流程" data-factory-aria="consolePipelineAria">
             <li><span>01</span> <span data-factory-copy="stepImport">导入</span></li>
             <li><span>02</span> <span data-factory-copy="stepCutout">抠图</span></li>
-            <li class="active" aria-current="step"><span>03</span> <span data-factory-copy="stepTune">调优</span></li>
+            <li class="active" aria-current="step">
+              <span>03</span> <span data-factory-copy="stepTune">调优</span>
+            </li>
             <li><span>04</span> <span data-factory-copy="stepExport">导出</span></li>
           </ol>
           <div class="console-workspace">
@@ -170,8 +178,14 @@
               </dl>
               <div class="inspector-layers">
                 <p data-factory-copy="collisionLayers">碰撞层</p>
-                <span><i class="layer-mint" aria-hidden="true"></i> <span data-factory-copy="layerHurt">受击框</span> <b>ON</b></span>
-                <span><i class="layer-coral" aria-hidden="true"></i> <span data-factory-copy="layerHit">攻击框</span> <b>ON</b></span>
+                <span
+                  ><i class="layer-mint" aria-hidden="true"></i>
+                  <span data-factory-copy="layerHurt">受击框</span> <b>ON</b></span
+                >
+                <span
+                  ><i class="layer-coral" aria-hidden="true"></i>
+                  <span data-factory-copy="layerHit">攻击框</span> <b>ON</b></span
+                >
               </div>
             </aside>
           </div>
@@ -206,14 +220,18 @@
             </p>
             <h2 id="toolsTitle" data-factory-copy="toolsTitle">今天，从哪道工序开始？</h2>
           </div>
-          <p data-factory-copy="toolsLede">已有素材时直接进入对应工具；需要完整调参和项目管理时，打开核心工作台。</p>
+          <p data-factory-copy="toolsLede">
+            已有素材时直接进入对应工具；需要完整调参和项目管理时，打开核心工作台。
+          </p>
         </header>
 
         <div class="tool-grid">
           <a class="tool-card tool-card-featured" href="/workspace?guide=character">
             <div class="tool-card-topline">
               <span class="tool-number">01 / CORE</span>
-              <span class="tool-state"><i aria-hidden="true"></i> <span data-factory-copy="coreState">核心工作台</span></span>
+              <span class="tool-state"
+                ><i aria-hidden="true"></i> <span data-factory-copy="coreState">核心工作台</span></span
+              >
             </div>
             <div class="featured-visual" aria-hidden="true">
               <span class="visual-crosshair"></span>
@@ -226,7 +244,9 @@
             <div class="tool-copy">
               <p>CHARACTER + TUNING</p>
               <h3 data-factory-copy="coreTitle">角色起稿与动画调优</h3>
-              <span data-factory-copy="coreBody">统一管理角色、动画组与逐帧参数，调整位置、碰撞框、附件、拖尾、音效和播放节奏。</span>
+              <span data-factory-copy="coreBody"
+                >统一管理角色、动画组与逐帧参数，调整位置、碰撞框、附件、拖尾、音效和播放节奏。</span
+              >
             </div>
             <ul class="featured-features" aria-label="核心能力" data-factory-aria="coreFeaturesAria">
               <li data-factory-copy="coreFeature1">逐帧变换</li>
@@ -316,7 +336,9 @@
             <div class="tool-copy">
               <p data-factory-copy="connectedComponents">连通组件</p>
               <h3 data-factory-copy="scatterTitle">零散切图</h3>
-              <span data-factory-copy="scatterBody">识别散落在图片中的独立元素，预览、筛选并重新拼接为规则精灵表。</span>
+              <span data-factory-copy="scatterBody"
+                >识别散落在图片中的独立元素，预览、筛选并重新拼接为规则精灵表。</span
+              >
             </div>
             <span class="tool-open">
               <span data-factory-copy="scatterOpen">进入切片</span>
@@ -338,7 +360,9 @@
             <div class="tool-copy">
               <p data-factory-copy="ffmpegLocal">FFmpeg + 本地</p>
               <h3 data-factory-copy="watermarkTitle">视频去水印</h3>
-              <span data-factory-copy="watermarkBody">框选带时间范围的水印区域，使用快速矩形或智能白印修复并导出视频。</span>
+              <span data-factory-copy="watermarkBody"
+                >框选带时间范围的水印区域，使用快速矩形或智能白印修复并导出视频。</span
+              >
             </div>
             <span class="tool-open">
               <span data-factory-copy="watermarkOpen">进入视频修复</span>
@@ -401,7 +425,9 @@
             <span data-factory-copy="assetsStayYours">素材留在你的设备</span>
           </p>
           <h2 id="localTitle" data-factory-html="localTitle">素材留在本机，<br />创作路径更短。</h2>
-          <p data-factory-copy="localLede">网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理结果直接下载。</p>
+          <p data-factory-copy="localLede">
+            网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理结果直接下载。
+          </p>
           <ul>
             <li>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
@@ -587,7 +613,8 @@
             enterWorkbench: "进入工作台",
             signOut: "退出登录",
             documentTitle: "动画工厂 · XSXB Frame Tuner",
-            metaDescription: "XSXB 动画工厂：在本地完成帧动画素材导入、批量抠图、序列整理、动画调优与多格式导出。",
+            metaDescription:
+              "XSXB 动画工厂：在本地完成帧动画素材导入、批量抠图、序列整理、动画调优与多格式导出。",
             homeAria: "XSXB 动画工厂首页",
             navAria: "主导航",
             actionsAria: "辅助导航",
@@ -762,29 +789,36 @@
             coreFeature3: "Attachments & SFX",
             coreOpen: "Open the core workbench",
             importTitle: "Import & preprocess",
-            importBody: "Import image sequences or extract video frames, check the canvas, and build animation groups.",
+            importBody:
+              "Import image sequences or extract video frames, check the canvas, and build animation groups.",
             importOpen: "Open import",
             cutoutTitle: "Batch cutout",
-            cutoutBody: "Remove backgrounds, repair edges and local regions, then propagate parameters to the whole group.",
+            cutoutBody:
+              "Remove backgrounds, repair edges and local regions, then propagate parameters to the whole group.",
             cutoutOpen: "Open cutout",
             organizerTitle: "Organize & export",
-            organizerBody: "Sort, drop frames, analyze loops, and output multiple reusable animation formats.",
+            organizerBody:
+              "Sort, drop frames, analyze loops, and output multiple reusable animation formats.",
             organizerOpen: "Open organizer",
             scatterTitle: "Scatter slicing",
-            scatterBody: "Detect independent elements scattered across an image, preview, filter, and repack them into a clean sprite sheet.",
+            scatterBody:
+              "Detect independent elements scattered across an image, preview, filter, and repack them into a clean sprite sheet.",
             scatterOpen: "Open slicing",
             watermarkTitle: "Video watermark repair",
-            watermarkBody: "Box-select watermark regions with time ranges, repair with fast rectangle or smart fill, and export the video.",
+            watermarkBody:
+              "Box-select watermark regions with time ranges, repair with fast rectangle or smart fill, and export the video.",
             watermarkOpen: "Open video repair",
             workflowTitle: "One pipeline,<br />four clear deliveries.",
             step1Title: "Asset intake",
-            step1Body: "Keep source order, naming, and canvas info while building independent animation groups.",
+            step1Body:
+              "Keep source order, naming, and canvas info while building independent animation groups.",
             step2Title: "Transparency",
             step2Body: "Chroma-key the background color, then repair edges and local regions.",
             step3Title: "Frame-by-frame tuning",
             step3Body: "Tune transform, boxes, timing, attachments, SFX, and attack trails in one place.",
             step4Title: "Packaged delivery",
-            step4Body: "Organize loops and frame order, then export animation assets ready for the next step.",
+            step4Body:
+              "Organize loops and frame order, then export animation assets ready for the next step.",
             localTitle: "Assets stay on this device.<br />The creative path gets shorter.",
             localLede:
               "The web app only processes images or video you choose. Source media stays in this browser session, and results download directly.",
@@ -808,7 +842,8 @@
           const table = copy[language] || copy.zh;
           if (table.documentTitle) document.title = table.documentTitle;
           const metaDescription = document.querySelector('meta[name="description"]');
-          if (metaDescription && table.metaDescription) metaDescription.setAttribute("content", table.metaDescription);
+          if (metaDescription && table.metaDescription)
+            metaDescription.setAttribute("content", table.metaDescription);
           for (const node of document.querySelectorAll("[data-factory-copy]")) {
             const value = table[node.dataset.factoryCopy];
             if (value) node.textContent = value;
