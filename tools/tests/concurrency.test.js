@@ -126,3 +126,33 @@ test("concurrent saves and destructive project lifecycle remain revision-safe", 
   assert.equal(fs.existsSync(store.projectPaths(project).dataDir), false);
   assert.equal(fs.existsSync(store.projectPaths(project).workspaceDir), false);
 });
+
+test("save and attack-trail texture require the requested project id", async (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-required-project-"));
+  const port = 30000 + Math.floor(Math.random() * 10000);
+  createProjectStore(root).addProject({ id: "alpha", label: "Alpha" });
+  const child = await startServer(root, port);
+  context.after(() => {
+    child.kill("SIGTERM");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const missingSave = await fetch(`${baseUrl}/api/save`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ values: {} }),
+  });
+  assert.equal(missingSave.status, 400);
+  const unknownSave = await fetch(`${baseUrl}/api/save`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: "missing", values: {} }),
+  });
+  assert.equal(unknownSave.status, 404);
+  const unknownTrail = await fetch(`${baseUrl}/api/attack-trail-texture`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: "missing", data: "data:image/png;base64,AAAA" }),
+  });
+  assert.equal(unknownTrail.status, 404);
+});

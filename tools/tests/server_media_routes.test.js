@@ -6,6 +6,8 @@ const { createMediaRoutes } = require("../animation_tuner/server_media_routes");
 
 function createHarness(overrides = {}) {
   const responses = [];
+  const requiredProjectCalls = [];
+  const fallbackProjectCalls = [];
   const project = { id: "project-a", projectRoot: "/tmp/project-a" };
   const projectStore = {
     projectPaths: () => ({
@@ -38,8 +40,16 @@ function createHarness(overrides = {}) {
       (async () => ({ projectId: project.id, frameAudioBindings: [{ key: "walk:0" }] })),
     withProjectWrite: async (_projectId, operation) => operation(),
     projectStore,
-    projectFromRequest: () => ({ project }),
-    requiredProjectFromRequest: () => ({ project }),
+    projectFromRequest: (projectId) => {
+      fallbackProjectCalls.push(projectId);
+      return { project };
+    },
+    requiredProjectFromRequest:
+      overrides.requiredProjectFromRequest ||
+      ((projectId) => {
+        requiredProjectCalls.push(projectId);
+        return { project };
+      }),
     projectDataRevision: overrides.projectDataRevision || (() => "revision-a"),
     createFilesystemSnapshot:
       overrides.createFilesystemSnapshot ||
@@ -76,7 +86,7 @@ function createHarness(overrides = {}) {
       status: () => ({ state: "synced" }),
     },
   });
-  return { routes, responses, project };
+  return { routes, responses, project, requiredProjectCalls, fallbackProjectCalls };
 }
 
 test("animation import snapshots local state before Godot sync and rolls it back on failure", async () => {
@@ -437,4 +447,53 @@ test("workset apply never rolls back a disposed snapshot when response delivery 
     /response socket closed/,
   );
   assert.deepEqual(events, ["dispose", "send"]);
+});
+
+test("attachment and replace routes require an explicit project instead of falling back", async () => {
+  const pathnames = [
+    "/api/frame-attachment-image",
+    "/api/attachment-assets",
+    "/api/replace-frame",
+    "/api/replace-animation",
+  ];
+  for (const pathname of pathnames) {
+    const { routes, requiredProjectCalls } = createHarness({
+      readJsonBody: async () => ({
+        projectId: "project-a",
+        frames: [],
+        files: [],
+      }),
+    });
+    const handled = await routes.handleMediaRoute(
+      { method: "POST" },
+      {},
+      new URL(`http://127.0.0.1${pathname}`),
+    );
+    assert.equal(handled, true, pathname);
+    assert.deepEqual(requiredProjectCalls, ["project-a"], pathname);
+  }
+});
+
+test("replace-animation does not sync Godot for an unknown project id", async () => {
+  const missing = Object.assign(new Error("Project not found: other"), { status: 404 });
+  let synced = false;
+  const { routes } = createHarness({
+    readJsonBody: async () => ({
+      projectId: "other",
+      frames: [{ path: "workspace/projects/demo/frames/idle.png" }],
+      files: [{ data: "data:image/png;base64,AAAA" }],
+    }),
+    requiredProjectFromRequest: () => {
+      throw missing;
+    },
+    syncGodotProjectAsync: async () => {
+      synced = true;
+      return { ok: true };
+    },
+  });
+  await assert.rejects(
+    () => routes.handleMediaRoute({ method: "POST" }, {}, new URL("http://127.0.0.1/api/replace-animation")),
+    (error) => error === missing,
+  );
+  assert.equal(synced, false);
 });

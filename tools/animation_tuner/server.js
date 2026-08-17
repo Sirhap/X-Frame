@@ -967,16 +967,19 @@ const server = http.createServer(async (req, res) => {
     if (await handleProjectRoute(req, res, parsed)) return;
     if (req.method === "POST" && parsed.pathname === "/api/codex-pets/import") {
       const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      const imported = importCodexPet(project, payload);
-      syncCodexPetProject(ROOT, projectStore, project);
-      return send(res, 200, { ok: true, imported });
+      const { project } = requiredProjectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+      await withProjectWrite(project.id, () => {
+        const imported = importCodexPet(project, payload);
+        syncCodexPetProject(ROOT, projectStore, project);
+        return send(res, 200, { ok: true, imported });
+      });
+      return undefined;
     }
     if (await handleCodexPetLifecycleRoute(req, res, parsed)) return;
     if (req.method === "POST" && parsed.pathname === "/api/attack-trail-texture") {
       const payload = await readJsonBody(req, parsed.pathname);
-      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
-      if (project?.kind === "codex_pets")
+      const { project } = requiredProjectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+      if (project.kind === "codex_pets")
         throw new HttpError(400, "Codex Pets projects do not support attack trails.");
       return send(res, 200, {
         ok: true,
@@ -992,14 +995,15 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (req.method === "GET" && parsed.pathname === "/api/config") {
-      return withProjectWrite("__registry__", () =>
+      await withProjectWrite("__registry__", () =>
         send(res, 200, configResponse(parsed.searchParams.get("project"))),
       );
+      return undefined;
     }
     if (req.method === "POST" && parsed.pathname === "/api/save") {
       const payload = await readJsonBody(req, parsed.pathname);
       premiumAuthorizer.assertAuthorized(req, parsed.pathname, payload);
-      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+      const { project } = requiredProjectFromRequest(payload.projectId || parsed.searchParams.get("project"));
       const result = await projectSaveTransaction.save(project, payload);
       if (result.kind === "revision_conflict") {
         return send(res, 409, {

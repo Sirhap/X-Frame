@@ -49,6 +49,18 @@ function animationMap(manifest) {
   return map;
 }
 
+/**
+ * Checks whether a filesystem path stays inside a parent directory.
+ * @param {string} childPath Candidate child path.
+ * @param {string} parentPath Expected parent path.
+ * @returns {boolean} True when the child stays inside the parent.
+ */
+function isInside(childPath, parentPath) {
+  if (!childPath || !parentPath) return false;
+  const relative = path.relative(path.resolve(parentPath), path.resolve(childPath));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function validBox(box) {
   return Boolean(
     box &&
@@ -147,9 +159,16 @@ function validateImport(args, options = {}) {
     const attackLike = animationLooksAttack(animation.id, animation.name);
     frames.forEach((frame, index) => {
       frameCount += 1;
-      const sourcePath = String(frame.path || "").replace(/^res:\/\//, "");
-      const absolute = path.resolve(validationRoot, sourcePath);
-      if (!sourcePath || !absolute.startsWith(validationRoot) || !fs.existsSync(absolute)) {
+      const sourcePath = String(frame.path || "").trim();
+      let absolute = "";
+      if (sourcePath.startsWith("res://")) {
+        absolute = projectRoot ? path.resolve(projectRoot, sourcePath.slice("res://".length)) : "";
+        if (!absolute || !isInside(absolute, projectRoot)) absolute = "";
+      } else if (sourcePath) {
+        absolute = path.resolve(validationRoot, sourcePath);
+        if (!isInside(absolute, validationRoot)) absolute = "";
+      }
+      if (!sourcePath || !absolute || !fs.existsSync(absolute)) {
         errors.push(`${key}:${index}: standalone frame path is missing: ${sourcePath || "(empty)"}`);
       }
       if (!actorLike) return;
@@ -215,7 +234,8 @@ function validateImport(args, options = {}) {
       const relative = String(frame.path || "")
         .replace(/^res:\/\//, "")
         .replace(/^\/+/, "");
-      if (!relative || !fs.existsSync(path.join(projectRoot, relative)))
+      const diskPath = relative && projectRoot ? path.resolve(projectRoot, relative) : "";
+      if (!relative || !isInside(diskPath, projectRoot) || !fs.existsSync(diskPath))
         errors.push(`${key}:${index}: game-local frame is missing: ${relative}`);
     });
   }
@@ -240,9 +260,9 @@ function validateImport(args, options = {}) {
     if (!assetPath.startsWith("res://"))
       errors.push(`${key}: game-local binding path is not res://: ${assetPath || "(empty)"}`);
     const diskPath = assetPath.startsWith("res://")
-      ? path.join(projectRoot, assetPath.slice("res://".length))
+      ? path.resolve(projectRoot, assetPath.slice("res://".length))
       : "";
-    if (diskPath && !fs.existsSync(diskPath))
+    if (diskPath && (!isInside(diskPath, projectRoot) || !fs.existsSync(diskPath)))
       errors.push(`${key}: bound game asset is missing: ${assetPath}`);
   }
 
@@ -281,8 +301,8 @@ function validateImport(args, options = {}) {
         errors.push(`${key}/${segment.id}: game-local attack trail texture is not a res:// path.`);
         return;
       }
-      const diskPath = path.join(projectRoot, gameTexture.slice("res://".length));
-      if (!fs.existsSync(diskPath)) {
+      const diskPath = path.resolve(projectRoot, gameTexture.slice("res://".length));
+      if (!isInside(diskPath, projectRoot) || !fs.existsSync(diskPath)) {
         errors.push(`${key}/${segment.id}: game-local attack trail texture is missing: ${gameTexture}`);
         return;
       }

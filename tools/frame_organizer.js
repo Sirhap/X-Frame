@@ -483,19 +483,30 @@ function reorganizeAnimation(options) {
   fs.rmSync(stagingDir, { recursive: true, force: true });
   fs.mkdirSync(stagingDir, { recursive: true });
 
+  const usedFrameIds = new Set();
   const nextFrames = buffers.map((buffer, index) => {
     const size = pngSize(buffer);
     const frameName = `frame_${String(index + 1).padStart(4, "0")}.png`;
     fs.writeFileSync(path.join(stagingDir, frameName), buffer);
+    const preferred = String(
+      items[index].frameId ||
+        items[index].id ||
+        (Number.isInteger(items[index].sourceIndex)
+          ? animation.frames?.[items[index].sourceIndex]?.id
+          : "") ||
+        "",
+    );
+    let frameId = preferred;
+    if (!frameId || usedFrameIds.has(frameId)) {
+      let serial = index + 1;
+      do {
+        frameId = `frame_${String(serial).padStart(4, "0")}`;
+        serial += 1;
+      } while (usedFrameIds.has(frameId));
+    }
+    usedFrameIds.add(frameId);
     return {
-      id: String(
-        items[index].frameId ||
-          items[index].id ||
-          (Number.isInteger(items[index].sourceIndex)
-            ? animation.frames?.[items[index].sourceIndex]?.id
-            : "") ||
-          `frame_${String(index + 1).padStart(4, "0")}`,
-      ),
+      id: frameId,
       name: frameName,
       path: reslash(path.relative(root, path.join(targetDir, frameName))),
       assetRevision: Math.max(

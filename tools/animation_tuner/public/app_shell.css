@@ -69,6 +69,32 @@ body:not(.theme-kunkun) {
     var(--bg);
 }
 
+.desktopRecommendedBanner {
+  display: none;
+}
+
+@media (max-width: 759px) {
+  .desktopRecommendedBanner {
+    display: flex;
+    position: fixed;
+    inset: 0 0 auto 0;
+    z-index: 80;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--accent-3) 18%, var(--panel));
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  body {
+    padding-top: 52px;
+  }
+}
+
 body:not(.theme-kunkun) :focus-visible {
   outline: 2px solid var(--accent-2);
   outline-offset: 2px;
@@ -1249,7 +1275,7 @@ body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
 }
 
 .singleFrameAnimation .filmstripPanel {
-  max-height: 132px;
+  max-height: 228px;
 }
 
 .singleFrameAnimation .filmstrip {

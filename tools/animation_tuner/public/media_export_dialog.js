@@ -86,8 +86,11 @@
     /** Formats a conservative RGBA-based output estimate without implying an exact encoded size. */
     function estimatedFileSize(width, height, pages = 1) {
       const bytes = Math.max(1, width * height * 4 * pages * 0.35);
-      if (bytes >= 1024 * 1024) return `约 ${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-      return `约 ${Math.max(1, Math.round(bytes / 1024))} KB`;
+      const size =
+        bytes >= 1024 * 1024
+          ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+          : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+      return english() ? `about ${size}` : `约 ${size}`;
     }
 
     /** Renders frame, animation, or atlas preview through the actual export recipe. */
@@ -135,7 +138,9 @@
           elements.mediaExportPreviewMeta.textContent = english()
             ? `${page.count} frames · ${plan.gap}px gap · ${fileSize}`
             : `本页 ${page.count} 帧 · 间距 ${plan.gap}px · ${fileSize}`;
-          elements.mediaExportEstimate.textContent = `◩ 预估：${page.width} × ${page.height} px · ${plan.pages.length} 张 · ${rendered.length} 帧 · ${fileSize}`;
+          elements.mediaExportEstimate.textContent = english()
+            ? `Estimate: ${page.width} × ${page.height} px · ${plan.pages.length} pages · ${rendered.length} frames · ${fileSize}`
+            : `预估：${page.width} × ${page.height} px · ${plan.pages.length} 张 · ${rendered.length} 帧 · ${fileSize}`;
           if (elements.mediaExportColumnsAuto.checked)
             elements.mediaExportColumns.value = String(page.columns);
           elements.mediaExportColumnsTotal.textContent = `/ ${page.columns}`;

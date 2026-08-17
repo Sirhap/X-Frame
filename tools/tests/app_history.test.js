@@ -66,23 +66,61 @@ test("history undo and redo restore snapshots and mark the editor dirty", async 
   controller.pushUndo("edit");
   state.value = 10;
 
-  controller.undo();
-  await new Promise((resolve) => setImmediate(resolve));
+  await controller.undo();
   assert.equal(state.value, 0);
   assert.ok(statuses.includes("dirty"));
   assert.ok(statuses.includes("undone:edit"));
 
   state.value = 20;
-  controller.redo();
-  await new Promise((resolve) => setImmediate(resolve));
+  await controller.redo();
   assert.equal(state.value, 10);
   assert.ok(statuses.includes("redone:edit"));
 });
 
+test("history serializes undo so a second press keeps the intermediate snapshot", async () => {
+  const states = [];
+  let current = { name: "C" };
+  let undoStack = [
+    { label: "A", state: { name: "A" } },
+    { label: "B", state: { name: "B" } },
+  ];
+  let redoStack = [];
+  const controller = createController({
+    getUndoStack: () => undoStack,
+    setUndoStack: (value) => {
+      undoStack = value;
+    },
+    getRedoStack: () => redoStack,
+    setRedoStack: (value) => {
+      redoStack = value;
+    },
+    getSnapshot: () => ({ ...current }),
+    restoreSnapshot: async (snapshot) => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      current = { ...snapshot };
+      states.push(current.name);
+    },
+    markDirty: () => {},
+    status: () => {},
+    translate: (key) => key,
+  });
+
+  const first = controller.undo();
+  const second = controller.undo();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(states, ["B", "A"]);
+  assert.deepEqual(
+    redoStack.map((item) => item.state.name),
+    ["C", "B"],
+  );
+  assert.equal(current.name, "A");
+});
+
 test("history reports empty-stack actions and restore errors", async () => {
   const { controller, statuses } = createFixture();
-  controller.undo();
-  controller.redo();
+  await controller.undo();
+  await controller.redo();
   assert.ok(statuses.includes("undoNothing:"));
   assert.ok(statuses.includes("redoNothing:"));
 
@@ -96,7 +134,6 @@ test("history reports empty-stack actions and restore errors", async () => {
     status: (message) => statuses.push(message),
     translate: (key, variables = {}) => `${key}:${variables.message || ""}`,
   });
-  failing.undo();
-  await new Promise((resolve) => setImmediate(resolve));
+  await failing.undo();
   assert.ok(statuses.includes("loadFailed:restore failed"));
 });

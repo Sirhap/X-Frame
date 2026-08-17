@@ -127,6 +127,8 @@
       status,
       stepAdjustmentInput,
       stepOffsetByArrowKey,
+      normalizeAdjustmentInputDisplay = (input) => input,
+      isIncompleteNumberInput = () => false,
       stagePoint,
       syncAdjustmentInputs,
       syncAdjustmentModeInputs,
@@ -413,6 +415,7 @@
         });
       }
       els.baseScale.addEventListener("input", () => {
+        if (isIncompleteNumberInput(els.baseScale.value)) return;
         syncBaseAxisScaleToUniform();
         updateAdjustmentFromInputs();
       });
@@ -444,28 +447,24 @@
           }
         });
         input.addEventListener("blur", () => {
+          normalizeAdjustmentInputDisplay(input);
+          updateAdjustmentFromInputs();
           state.baseEditSnapshot = null;
           state.boxEditSnapshot = null;
         });
         input.addEventListener("change", () => {
+          normalizeAdjustmentInputDisplay(input);
           state.baseEditSnapshot = null;
           state.boxEditSnapshot = null;
         });
         input.addEventListener("keydown", (event) => {
-          if (event.ctrlKey || event.metaKey) return;
-          if (
-            (input === els.baseX || input === els.baseY) &&
-            stepOffsetByArrowKey(event.key, event.shiftKey ? 10 : 1)
-          ) {
-            event.preventDefault();
-            return;
-          }
-          if (event.key === "ArrowUp" || event.key === "ArrowRight") {
+          if (event.ctrlKey || event.metaKey || event.altKey) return;
+          if (event.key === "ArrowUp") {
             event.preventDefault();
             stepAdjustmentInput(input, 1, event.shiftKey ? 10 : 1);
             return;
           }
-          if (event.key === "ArrowDown" || event.key === "ArrowLeft") {
+          if (event.key === "ArrowDown") {
             event.preventDefault();
             stepAdjustmentInput(input, -1, event.shiftKey ? 10 : 1);
             return;
@@ -480,12 +479,37 @@
             stepAdjustmentInput(input, -1, 10);
             return;
           }
-          if (["Tab", "Escape", "Enter"].includes(event.key)) return;
+          if (event.key.length === 1 && /[0-9eE+\-.,]/.test(event.key)) {
+            return;
+          }
+          if (
+            [
+              "Backspace",
+              "Delete",
+              "Home",
+              "End",
+              "Tab",
+              "Escape",
+              "Enter",
+              "ArrowLeft",
+              "ArrowRight",
+            ].includes(event.key)
+          ) {
+            return;
+          }
           event.preventDefault();
         });
-        input.addEventListener("paste", (event) => event.preventDefault());
+        input.addEventListener("paste", (event) => {
+          const text = String(event.clipboardData?.getData("text") || "").trim();
+          if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(text)) event.preventDefault();
+        });
         input.addEventListener("drop", (event) => event.preventDefault());
-        if (input !== els.baseScale) input.addEventListener("input", updateAdjustmentFromInputs);
+        if (input !== els.baseScale) {
+          input.addEventListener("input", () => {
+            if (isIncompleteNumberInput(input.value)) return;
+            updateAdjustmentFromInputs();
+          });
+        }
       }
 
       els.showBoxes.addEventListener("change", () => {
@@ -658,7 +682,7 @@
                 : state.selectedFrame,
               state.currentGroup,
             );
-            state.lastPlay = 0;
+            state.lastPlay = -1;
             playFrameAudio(state.selectedFrame, state.currentGroup);
             schedulePlaybackAnimation();
           } else {

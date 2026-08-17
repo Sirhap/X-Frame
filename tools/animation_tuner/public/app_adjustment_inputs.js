@@ -136,15 +136,32 @@
       return baseTransform();
     }
 
+    /** Returns whether a number field is still being typed and is not a complete value. */
+    function isIncompleteNumberInput(value) {
+      const text = String(value ?? "").trim();
+      return text === "" || text === "-" || text === "+" || text === "." || text === "-." || text === "+.";
+    }
+
+    /** Parses one adjustment number and falls back when the field is empty or invalid. */
+    function parseAdjustmentNumber(value, fallback) {
+      if (isIncompleteNumberInput(value)) return Number(fallback) || 0;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : Number(fallback) || 0;
+    }
+
     /** Reads the base transform fields from the adjustment panel. */
     function transformFromAdjustmentInputs() {
-      const uniformScale = Number(elements.baseScale.value);
+      const last = adjustmentTransform();
+      const uniformScale = parseAdjustmentNumber(elements.baseScale.value, last.scale);
       return {
         scale: uniformScale,
-        scaleX: Number(elements.baseScaleX.value || uniformScale),
-        scaleY: Number(elements.baseScaleY.value || uniformScale),
-        offset: { x: Number(elements.baseX.value || 0), y: Number(elements.baseY.value || 0) },
-        rotation: Number(elements.baseRotation.value || 0),
+        scaleX: parseAdjustmentNumber(elements.baseScaleX.value, last.scaleX ?? uniformScale),
+        scaleY: parseAdjustmentNumber(elements.baseScaleY.value, last.scaleY ?? uniformScale),
+        offset: {
+          x: parseAdjustmentNumber(elements.baseX.value, last.offset?.x ?? 0),
+          y: parseAdjustmentNumber(elements.baseY.value, last.offset?.y ?? 0),
+        },
+        rotation: parseAdjustmentNumber(elements.baseRotation.value, last.rotation ?? 0),
       };
     }
 
@@ -207,6 +224,21 @@
       endStepAdjustmentEdit();
     }
 
+    /** Writes a normalized number back into one focused adjustment field. */
+    function normalizeAdjustmentInputDisplay(input, transform = transformFromAdjustmentInputs()) {
+      if (!input) return transform;
+      const values = {
+        [elements.baseScale?.id]: round(transform.scale),
+        [elements.baseScaleX?.id]: round(transform.scaleX),
+        [elements.baseScaleY?.id]: round(transform.scaleY),
+        [elements.baseX?.id]: round(transform.offset.x),
+        [elements.baseY?.id]: round(transform.offset.y),
+        [elements.baseRotation?.id]: round(transform.rotation || 0),
+      };
+      if (input.id && values[input.id] !== undefined) input.value = values[input.id];
+      return transform;
+    }
+
     /** Applies one arrow-key offset step. @returns {boolean} Whether the key was consumed. */
     function stepOffsetByArrowKey(key, multiplier = 1) {
       if (key === "ArrowLeft") {
@@ -244,12 +276,17 @@
       localStorageRef?.setItem(adjustmentModeKey, mode);
       syncAdjustmentModeInputs();
       const transform = adjustmentTransform(mode);
-      elements.baseScale.value = round(transform.scale);
-      elements.baseScaleX.value = round(transform.scaleX);
-      elements.baseScaleY.value = round(transform.scaleY);
-      elements.baseX.value = round(transform.offset.x);
-      elements.baseY.value = round(transform.offset.y);
-      elements.baseRotation.value = round(transform.rotation || 0);
+      const active = documentRef?.activeElement;
+      const writeValue = (input, value) => {
+        if (!input || input === active) return;
+        input.value = value;
+      };
+      writeValue(elements.baseScale, round(transform.scale));
+      writeValue(elements.baseScaleX, round(transform.scaleX));
+      writeValue(elements.baseScaleY, round(transform.scaleY));
+      writeValue(elements.baseX, round(transform.offset.x));
+      writeValue(elements.baseY, round(transform.offset.y));
+      writeValue(elements.baseRotation, round(transform.rotation || 0));
       const enabled = canEditAdjustmentMode(mode);
       for (const input of adjustmentNumberInputs()) {
         input.disabled = !enabled;
@@ -356,6 +393,9 @@
       normalizeAdjustmentMode,
       adjustmentTransform,
       transformFromAdjustmentInputs,
+      isIncompleteNumberInput,
+      parseAdjustmentNumber,
+      normalizeAdjustmentInputDisplay,
       adjustmentNumberInputs,
       adjustmentStepButtonsForInput,
       beginStepAdjustmentEdit,

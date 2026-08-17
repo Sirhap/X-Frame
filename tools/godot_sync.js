@@ -41,9 +41,9 @@ function godotDataDir(projectRoot, project) {
   return path.join(projectRoot, GODOT_SYNC_ROOT, "data", "projects", project.id);
 }
 
-function copyFileIfChanged(source, target) {
+function copyFileIfChanged(source, target, force = false) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  if (fs.existsSync(target)) {
+  if (!force && fs.existsSync(target)) {
     const sourceStat = fs.statSync(source);
     const targetStat = fs.statSync(target);
     if (sourceStat.size === targetStat.size) {
@@ -104,7 +104,7 @@ function localFrameRelPath(framePath, fallbackName = "frame.png") {
   return godotProjectRelPath(path.posix.basename(raw || fallbackName));
 }
 
-function syncManifest(root, projectStore, project, manifestInput = null) {
+function syncManifest(root, projectStore, project, manifestInput = null, options = {}) {
   const projectRoot = validGodotProjectRoot(project);
   if (!projectRoot) return { manifest: manifestInput || EMPTY_MANIFEST, copiedFrames: 0, frameCount: 0 };
 
@@ -125,7 +125,7 @@ function syncManifest(root, projectStore, project, manifestInput = null) {
         frameCount += 1;
         if (!isInside(target, path.join(projectRoot, GODOT_SYNC_ROOT))) continue;
         if (!source || path.extname(source).toLowerCase() !== ".png") continue;
-        if (copyFileIfChanged(source, target)) copiedFrames += 1;
+        if (copyFileIfChanged(source, target, options.force === true)) copiedFrames += 1;
       }
     }
   }
@@ -168,7 +168,7 @@ function audioExtension(binding) {
 }
 
 function decodeDataUrl(dataUrl) {
-  const match = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/i.exec(String(dataUrl || ""));
+  const match = /^data:([^;,]+)?(?:;[\w.-]+=[^;,]+)*(;base64)?,([\s\S]*)$/i.exec(String(dataUrl || ""));
   if (!match) return null;
   let decodedText = "";
   if (!match[2]) {
@@ -235,6 +235,8 @@ function syncFrameAudio(projectStore, project, bindingsInput = null) {
       }));
   const localBindings = [];
   let copiedAudio = 0;
+  const audioRoot = path.join(projectRoot, GODOT_SYNC_ROOT, "audio", "projects", project.id);
+  const retainedAudio = new Set();
 
   bindings.forEach((binding, index) => {
     if (!binding || typeof binding !== "object") return;
@@ -244,21 +246,29 @@ function syncFrameAudio(projectStore, project, bindingsInput = null) {
     if (data?.buffer?.length) {
       const key = sanitizeSegment(frameAudioKey(binding, index), `audio_${index + 1}`);
       const ext = audioExtension(binding);
-      const audioRel = godotProjectRelPath("audio", "projects", project.id, `${key}${ext}`);
+      const hash = crypto.createHash("sha256").update(data.buffer).digest("hex").slice(0, 12);
+      const idPart = sanitizeSegment(binding.id || binding.name || `sfx_${index + 1}`, `sfx_${index + 1}`);
+      const audioRel = godotProjectRelPath("audio", "projects", project.id, `${key}_${idPart}_${hash}${ext}`);
       const target = path.join(projectRoot, audioRel);
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.writeFileSync(target, data.buffer);
       copiedAudio += 1;
       next.path = `res://${audioRel}`;
       next.type = next.type || data.mime;
+      retainedAudio.add(path.resolve(target));
     } else if (binding.path) {
       next.path = String(binding.path);
     } else if (binding.file) {
       next.path = String(binding.file);
     }
-    if (next.path) localBindings.push(assignStableFrameBindingKey(next, binding, index));
+    if (next.path) {
+      const existing = sourcePathForFrame("", projectRoot, next.path);
+      if (existing && isInside(existing, audioRoot)) retainedAudio.add(path.resolve(existing));
+      localBindings.push(assignStableFrameBindingKey(next, binding, index));
+    }
   });
 
+  pruneGeneratedDirectory(audioRoot, retainedAudio);
   const targetAudio = path.join(godotDataDir(projectRoot, project), "frame_audio_bindings.json");
   writeJson(targetAudio, localBindings);
   return { audioCount: localBindings.length, copiedAudio };
@@ -356,7 +366,8 @@ function syncGodotProject(root, projectStore, project, options = {}) {
   }
   const paths = projectStore.projectPaths(project);
   const manifestInput = options.manifest || projectStore.readJson(paths.manifest, EMPTY_MANIFEST);
-  const manifestResult = syncManifest(root, projectStore, project, manifestInput);
+  const copyOptions = { force: options.force === true };
+  const manifestResult = syncManifest(root, projectStore, project, manifestInput, copyOptions);
   const tuningResult = syncTuning(projectStore, project, options.tuning);
   const audioResult = syncFrameAudio(projectStore, project, options.frameAudioBindings);
   const imageAttachmentResult = syncFrameImageAttachments(

@@ -61,7 +61,12 @@ test("attack trail reports Canvas fallback once and disables the failed GPU rend
   const AttackTrailEditor = loadAttackTrailEditor();
   const statuses = [];
   const editor = Object.create(AttackTrailEditor.prototype);
-  editor.hooks = { status: (message) => statuses.push(message) };
+  editor.hooks = {
+    status: (message) => statuses.push(message),
+    translate: (key) =>
+      key === "trailWebglFallback" ? "WebGL 预览不可用，已自动切换到兼容的 Canvas 渲染。" : key,
+  };
+  editor._t = (key, vars) => editor.hooks.translate(key, vars);
   editor.gpuFallbackNotified = false;
   editor.gpuRenderer = { gl: {} };
   editor.gpuTextures = new WeakMap();

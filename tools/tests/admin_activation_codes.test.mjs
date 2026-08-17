@@ -459,6 +459,48 @@ test("administrator creates custom-format long-duration activation codes", async
   assert.equal(created.license.durationDays, 12_000);
 });
 
+test("unauthenticated grant mutations are rejected like trial mutations", async () => {
+  const env = {
+    XSXB_ACTIVATION_SECRET: activationSecret,
+    XSXB_ADMIN_TOTP_SECRET: adminTotpSecret,
+    XSXB_ADMIN_USERNAME: adminUsername,
+    PASSWORD: adminPassword,
+    LICENSE_DB: {
+      prepare() {
+        throw new Error("Administrator D1 must not run before session checks.");
+      },
+    },
+  };
+  const trial = await handleAdminRequest(
+    new Request("https://example.com/api/admin/trials/trial-123/revocation", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ revoked: false }),
+    }),
+    env,
+  );
+  const grantRevocation = await handleAdminRequest(
+    new Request("https://example.com/api/admin/grants/grant-123/revocation", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ revoked: false }),
+    }),
+    env,
+  );
+  const grantUpdate = await handleAdminRequest(
+    new Request("https://example.com/api/admin/grants/grant-123", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ expiresAt: "2099-01-01T00:00:00.000Z" }),
+    }),
+    env,
+  );
+  assert.equal(trial.status, 401);
+  assert.equal(grantRevocation.status, 401);
+  assert.equal(grantUpdate.status, 401);
+  assert.deepEqual(await grantRevocation.json(), { error: "Administrator session is required." });
+});
+
 test("administrator API fails closed and rejects cross-origin login", async () => {
   const unconfigured = await handleAdminRequest(adminRequest("/api/admin/session"), {});
   assert.deepEqual(await unconfigured.json(), {

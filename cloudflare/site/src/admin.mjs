@@ -614,8 +614,7 @@ export async function handleAdminRequest(request, env) {
     }
     if (
       pathname.startsWith("/api/admin/accounts") ||
-      pathname === "/api/admin/grants" ||
-      pathname === "/api/admin/grants/batch" ||
+      pathname.startsWith("/api/admin/grants") ||
       pathname.startsWith("/api/admin/trials/") ||
       pathname === "/api/admin/email-licenses/revocation" ||
       pathname === "/api/admin/settings/authorization" ||

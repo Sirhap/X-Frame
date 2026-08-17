@@ -382,16 +382,24 @@
    * @returns {SliceBox[]} Sorted copies.
    */
   function sortBoxes(boxes, order = "row-major") {
-    return boxes
-      .map((box) => ({ ...box }))
-      .sort((first, second) => {
-        if (order === "column-major") {
-          if (Math.abs(first.x - second.x) > 8) return first.x - second.x;
-          return first.y - second.y;
-        }
-        if (Math.abs(first.y - second.y) > 8) return first.y - second.y;
-        return first.x - second.x;
-      });
+    const copies = boxes.map((box) => ({ ...box }));
+    const primary = order === "column-major" ? "x" : "y";
+    const secondary = order === "column-major" ? "y" : "x";
+    copies.sort((first, second) => first[primary] - second[primary] || first[secondary] - second[secondary]);
+    const bands = [];
+    for (const box of copies) {
+      const last = bands[bands.length - 1];
+      if (last && Math.abs(last.anchor - box[primary]) <= 8) last.items.push(box);
+      else bands.push({ anchor: box[primary], items: [box] });
+    }
+    const sorted = [];
+    for (const band of bands) {
+      band.items.sort(
+        (first, second) => first[secondary] - second[secondary] || first[primary] - second[primary],
+      );
+      sorted.push(...band.items);
+    }
+    return sorted;
   }
 
   /**

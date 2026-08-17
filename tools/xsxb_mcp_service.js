@@ -51,6 +51,52 @@ const BOX_NAMES = Object.freeze(["hurtbox", "collisionbox", "hitbox"]);
 const PNG_NAME = /\.png$/i;
 
 /**
+ * Parses MCP JSON flags. Hosts often send the strings "true"/"false".
+ * @param {unknown} value Raw argument.
+ * @param {boolean} [fallback=false] Default when the value is omitted.
+ * @returns {boolean} Resolved flag.
+ */
+function booleanFlag(value, fallback = false) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (value === true || value === 1 || value === "1") return true;
+  if (value === false || value === 0 || value === "0") return false;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "yes") return true;
+    if (normalized === "false" || normalized === "no") return false;
+  }
+  return fallback;
+}
+
+/**
+ * Parses a 0-based frame index or throws.
+ * @param {unknown} value Raw frame argument.
+ * @param {number} last Inclusive last valid index.
+ * @returns {number} Integer frame index.
+ */
+function requireFrameIndex(value, last) {
+  const frame = Number(value);
+  if (!Number.isInteger(frame) || frame < 0 || frame > last) {
+    throw new Error(`Frame must be an integer between 0 and ${Math.max(0, last)}.`);
+  }
+  return frame;
+}
+
+/**
+ * Parses animation FPS in the inclusive 1–120 range.
+ * @param {unknown} value Raw FPS.
+ * @param {number} [fallback=12] Default FPS.
+ * @returns {number} Sanitized FPS.
+ */
+function requireFps(value, fallback = 12) {
+  const fps = Number(value === undefined || value === null || value === "" ? fallback : value);
+  if (!Number.isFinite(fps) || fps < 1 || fps > 120) {
+    throw new Error("fps must be a finite number between 1 and 120.");
+  }
+  return fps;
+}
+
+/**
  * Extracts every source video frame without changing the source frame rate.
  * @param {string} videoPath Absolute input video path.
  * @param {string} outputDirectory Temporary output directory.
@@ -237,6 +283,18 @@ function requireExistingFile(filePath, label) {
     throw new Error(`${label} not found: ${filePath || "(empty)"}`);
   }
   return absolute;
+}
+
+/**
+ * Checks whether a filesystem path stays inside a parent directory.
+ * @param {string} childPath Candidate child path.
+ * @param {string} parentPath Expected parent path.
+ * @returns {boolean} True when the child stays inside the parent.
+ */
+function isInsideDirectory(childPath, parentPath) {
+  if (!parentPath) return false;
+  const relativePath = path.relative(path.resolve(parentPath), path.resolve(childPath));
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
 }
 
 /**
@@ -525,6 +583,7 @@ function toolDefinitions() {
           rotation: { type: "number", default: 0 },
           sync: { type: "boolean", default: true },
         },
+        required: ["file_path"],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
@@ -542,6 +601,7 @@ function toolDefinitions() {
           name: { type: "string" },
           sync: { type: "boolean", default: true },
         },
+        required: ["file_path"],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
@@ -705,8 +765,11 @@ function createXsxbMcpService(options = {}) {
   function copyIntoWorkspace(project, subdir, absolutePath) {
     const destDir = path.join(projectStore.projectWorkspaceDir(project), subdir);
     fs.mkdirSync(destDir, { recursive: true });
-    const destPath = path.join(destDir, path.basename(absolutePath));
-    fs.copyFileSync(absolutePath, destPath);
+    const buffer = fs.readFileSync(absolutePath);
+    const hash = crypto.createHash("sha256").update(buffer).digest("hex").slice(0, 16);
+    const extension = path.extname(absolutePath) || "";
+    const destPath = path.join(destDir, `${hash}${extension}`);
+    if (!fs.existsSync(destPath)) fs.writeFileSync(destPath, buffer);
     return reslash(path.relative(root, destPath));
   }
 
@@ -752,18 +815,40 @@ function createXsxbMcpService(options = {}) {
     return { project, manifest, profile, animation };
   }
 
+  /**
+   * Resolves a manifest frame path only when it stays inside the project workspace
+   * or the bound Godot root. Rejects repo-wide, absolute, and res://../ escapes.
+   * @param {object} project Project record.
+   * @param {unknown} rawPath Stored frame path.
+   * @returns {string} Absolute path, or empty when the path is missing or unsafe.
+   */
+  function resolveAnimationFramePath(project, rawPath) {
+    const raw = String(rawPath || "").trim();
+    if (!raw) return "";
+    if (raw.startsWith("res://")) {
+      const projectRoot = String(project.projectRoot || "").trim();
+      if (!projectRoot) return "";
+      const resolved = path.resolve(projectRoot, raw.slice("res://".length));
+      return isInsideDirectory(resolved, projectRoot) ? resolved : "";
+    }
+    const resolved = path.resolve(root, raw);
+    const workspaceDir = projectStore.projectWorkspaceDir(project);
+    if (isInsideDirectory(resolved, workspaceDir)) return resolved;
+    const projectRoot = String(project.projectRoot || "").trim();
+    if (projectRoot && isInsideDirectory(resolved, projectRoot)) return resolved;
+    return "";
+  }
+
   function animationResult(selection) {
     const { project, profile, animation } = selection;
     const frames = Array.from(animation.frames || []).map((frame, index) => {
       const rawPath = String(frame.path || "");
-      const absolutePath = rawPath.startsWith("res://")
-        ? path.join(project.projectRoot || "", rawPath.slice(6))
-        : path.resolve(root, rawPath);
+      const absolutePath = resolveAnimationFramePath(project, rawPath);
       return {
         index,
         ...frame,
         absolutePath,
-        exists: Boolean(rawPath && fs.existsSync(absolutePath)),
+        exists: Boolean(absolutePath && fs.existsSync(absolutePath)),
       };
     });
     return {
@@ -776,9 +861,9 @@ function createXsxbMcpService(options = {}) {
     };
   }
 
-  function synchronize(project, enabled) {
+  function synchronize(project, enabled, options = {}) {
     if (enabled === false) return { requested: false, ok: null };
-    const result = syncGodotProject(root, projectStore, project);
+    const result = syncGodotProject(root, projectStore, project, options);
     return { requested: true, ...result };
   }
 
@@ -808,7 +893,7 @@ function createXsxbMcpService(options = {}) {
     if (!fs.existsSync(videoPath) || !fs.statSync(videoPath).isFile()) {
       throw new Error(`Video file not found: ${videoPath}`);
     }
-    const syncRequested = args.sync === true;
+    const syncRequested = booleanFlag(args.sync);
     const project = registryProject(args.project_id || args.project, syncRequested);
     const profileId = slug(args.profile_id || args.profile || DEFAULT_PROFILE_ID, DEFAULT_PROFILE_ID);
     const manifest = manifestFor(project);
@@ -818,11 +903,9 @@ function createXsxbMcpService(options = {}) {
       "video_import",
     );
     const used = new Set((profile?.animations || []).map((entry) => String(entry.id || entry.name)));
-    const replaced = args.replace === true && used.has(baseAnimationId);
+    const replaced = booleanFlag(args.replace) && used.has(baseAnimationId);
     let animationId = baseAnimationId;
-    if (replaced) {
-      deleteAnimation({ root, projectStore, project, profileId, animationId: baseAnimationId });
-    } else {
+    if (!replaced) {
       let suffix = 2;
       while (used.has(animationId)) {
         animationId = `${baseAnimationId}_${suffix}`;
@@ -836,6 +919,9 @@ function createXsxbMcpService(options = {}) {
         args,
       );
       if (!extracted.paths.length) throw new Error("Video extraction produced no PNG frames.");
+      if (replaced) {
+        deleteAnimation({ root, projectStore, project, profileId, animationId: baseAnimationId });
+      }
       const items = extracted.paths.map((framePath) => ({
         name: path.basename(framePath),
         data: `data:image/png;base64,${fs.readFileSync(framePath).toString("base64")}`,
@@ -849,23 +935,22 @@ function createXsxbMcpService(options = {}) {
         animationId,
         animationName: animationId,
         animationType: "actor",
-        fps: Number(args.fps || 12),
+        fps: requireFps(args.fps),
         items,
       });
       context.projectId = project.id;
       context.profileId = profileId;
       context.animationId = animationId;
       const sync = synchronize(project, syncRequested);
-      const validation =
-        args.validate === true
-          ? validateImport({ project: project.id }, { root, projectStore })
-          : { requested: false, ok: null, errors: [], warnings: [], summary: {} };
+      const validation = booleanFlag(args.validate)
+        ? validateImport({ project: project.id }, { root, projectStore })
+        : { requested: false, ok: null, errors: [], warnings: [], summary: {} };
       return {
         projectId: project.id,
         profileId,
         animationId,
         sourceVideo: videoPath,
-        fps: Math.max(1, Math.min(120, Number(args.fps || 12))),
+        fps: requireFps(args.fps),
         extractedFrameCount: extracted.extractedCount,
         importedFrameCount: imported.frameCount,
         startFrame: extracted.startFrame,
@@ -873,7 +958,7 @@ function createXsxbMcpService(options = {}) {
         replaced,
         targetDirectory: imported.targetDir,
         sync,
-        validation: args.validate === true ? { requested: true, ...validation } : validation,
+        validation: booleanFlag(args.validate) ? { requested: true, ...validation } : validation,
       };
     } finally {
       fs.rmSync(temporaryDirectory, { recursive: true, force: true });
@@ -885,10 +970,7 @@ function createXsxbMcpService(options = {}) {
     const profile = (manifest.profiles || []).find((entry) => entry.id === profileId);
     const used = new Set((profile?.animations || []).map((entry) => String(entry.id || entry.name)));
     const base = slug(requestedId || fallback, fallback);
-    if (replace && used.has(base)) {
-      deleteAnimation({ root, projectStore, project, profileId, animationId: base });
-      return base;
-    }
+    if (replace && used.has(base)) return base;
     let animationId = base;
     let suffix = 2;
     while (used.has(animationId)) {
@@ -900,7 +982,7 @@ function createXsxbMcpService(options = {}) {
 
   function importPngItems(args, items, sourceLabel) {
     if (!items.length) throw new Error(`No PNG frames provided for ${sourceLabel} import.`);
-    const syncRequested = args.sync === true;
+    const syncRequested = booleanFlag(args.sync);
     const project = registryProject(args.project_id || args.project, syncRequested);
     const profileId = slug(args.profile_id || args.profile || DEFAULT_PROFILE_ID, DEFAULT_PROFILE_ID);
     const requestedId = slug(
@@ -908,7 +990,7 @@ function createXsxbMcpService(options = {}) {
       sourceLabel === "png_sequence" ? "png_sequence" : "imported",
     );
     const replaced =
-      args.replace === true &&
+      booleanFlag(args.replace) &&
       (manifestFor(project).profiles || [])
         .find((entry) => entry.id === profileId)
         ?.animations?.some((entry) => String(entry.id || entry.name) === requestedId);
@@ -917,8 +999,11 @@ function createXsxbMcpService(options = {}) {
       profileId,
       args.animation_id || args.animation,
       sourceLabel === "png_sequence" ? "png_sequence" : "imported",
-      args.replace === true,
+      booleanFlag(args.replace),
     );
+    if (replaced) {
+      deleteAnimation({ root, projectStore, project, profileId, animationId });
+    }
     const imported = importAnimation({
       root,
       projectStore,
@@ -928,23 +1013,22 @@ function createXsxbMcpService(options = {}) {
       animationId,
       animationName: String(args.animation_name || animationId),
       animationType: "actor",
-      fps: Number(args.fps || 12),
+      fps: requireFps(args.fps),
       items,
     });
     context.projectId = project.id;
     context.profileId = profileId;
     context.animationId = animationId;
     const sync = synchronize(project, syncRequested);
-    const validation =
-      args.validate === true
-        ? { requested: true, ...validateImport({ project: project.id }, { root, projectStore }) }
-        : { requested: false, ok: null, errors: [], warnings: [], summary: {} };
+    const validation = booleanFlag(args.validate)
+      ? { requested: true, ...validateImport({ project: project.id }, { root, projectStore }) }
+      : { requested: false, ok: null, errors: [], warnings: [], summary: {} };
     return {
       source: sourceLabel,
       projectId: project.id,
       profileId,
       animationId,
-      fps: Math.max(1, Math.min(120, Number(args.fps || 12))),
+      fps: requireFps(args.fps),
       importedFrameCount: imported.frameCount,
       replaced: Boolean(replaced),
       targetDirectory: imported.targetDir,
@@ -991,7 +1075,7 @@ function createXsxbMcpService(options = {}) {
       if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
         throw new Error(`SpriteFrames file not found: ${filePath}`);
       }
-      const syncRequested = args.sync === true;
+      const syncRequested = booleanFlag(args.sync);
       const project = registryProject(args.project_id || args.project, syncRequested);
       const projectRoot = validGodotProjectRoot(project) || path.dirname(filePath);
       const animations = parseSpriteFrames(filePath, projectRoot);
@@ -1022,10 +1106,9 @@ function createXsxbMcpService(options = {}) {
       }
       const last = imported[imported.length - 1];
       const sync = synchronize(project, syncRequested);
-      const validation =
-        args.validate === true
-          ? { requested: true, ...validateImport({ project: project.id }, { root, projectStore }) }
-          : { requested: false, ok: null, errors: [], warnings: [], summary: {} };
+      const validation = booleanFlag(args.validate)
+        ? { requested: true, ...validateImport({ project: project.id }, { root, projectStore }) }
+        : { requested: false, ok: null, errors: [], warnings: [], summary: {} };
       return {
         source: "spriteframes",
         projectId: project.id,
@@ -1088,7 +1171,7 @@ function createXsxbMcpService(options = {}) {
     const { project, profile, animation } = animationFor(args);
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot update boxes on an animation without frames.");
-    const frame = Math.min(frames.length - 1, Math.max(0, Number(args.frame || 0)));
+    const frame = requireFrameIndex(args.frame || 0, frames.length - 1);
     const patches = BOX_NAMES.filter((name) => args[name] && typeof args[name] === "object");
     if (!patches.length) throw new Error("Provide at least one of hurtbox, collisionbox, or hitbox.");
     const paths = projectStore.projectPaths(project);
@@ -1115,7 +1198,7 @@ function createXsxbMcpService(options = {}) {
       frame,
       key,
       boxes,
-      sync: synchronize(project, args.sync === true),
+      sync: synchronize(project, booleanFlag(args.sync)),
     };
   }
 
@@ -1130,7 +1213,7 @@ function createXsxbMcpService(options = {}) {
         (entry) => String(entry.id || entry.name) === String(animation.id || animation.name),
       );
     if (!target) throw new Error(`Animation not found: ${profile.id}/${animation.id || animation.name}`);
-    const fps = Math.max(1, Math.min(120, Number(args.fps || target.fps || 12)));
+    const fps = requireFps(args.fps === undefined ? target.fps : args.fps, Number(target.fps || 12));
     target.fps = fps;
     projectStore.writeJson(paths.manifest, manifest);
     let playback = null;
@@ -1141,7 +1224,7 @@ function createXsxbMcpService(options = {}) {
       args.disabled !== undefined
     ) {
       if (!frames.length) throw new Error("Cannot update frame timing on an animation without frames.");
-      const frame = Math.min(frames.length - 1, Math.max(0, Number(args.frame || 0)));
+      const frame = requireFrameIndex(args.frame || 0, frames.length - 1);
       const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
       tuning.frame_playback_overrides =
         tuning.frame_playback_overrides && typeof tuning.frame_playback_overrides === "object"
@@ -1171,7 +1254,7 @@ function createXsxbMcpService(options = {}) {
       animationId: String(animation.id || animation.name),
       fps,
       playback,
-      sync: synchronize(project, args.sync === true),
+      sync: synchronize(project, booleanFlag(args.sync)),
     };
   }
 
@@ -1185,7 +1268,7 @@ function createXsxbMcpService(options = {}) {
       removedFrames: frames.length,
       removedDirectory: String(animation.source || ""),
     };
-    if (args.dry_run === true) {
+    if (booleanFlag(args.dry_run)) {
       return { ...preview, dryRun: true, deleted: false };
     }
     const result = deleteAnimation({
@@ -1202,7 +1285,7 @@ function createXsxbMcpService(options = {}) {
       deleted: true,
       removedFrames: result.removedFrames,
       removedDirectory: result.removedDirectory,
-      sync: synchronize(project, args.sync === true),
+      sync: synchronize(project, booleanFlag(args.sync)),
     };
   }
 
@@ -1210,7 +1293,8 @@ function createXsxbMcpService(options = {}) {
     const project = registryProject(args.project_id || args.project, true);
     return {
       projectId: project.id,
-      ...synchronize(project, true),
+      force: booleanFlag(args.force),
+      ...synchronize(project, true, { force: booleanFlag(args.force) }),
     };
   }
 
@@ -1313,13 +1397,22 @@ function createXsxbMcpService(options = {}) {
     const frames = Array.from(animation.frames || []);
     if (!frames.length) throw new Error("Cannot cut out an animation without frames.");
     const jobs = [];
+    const unsafePaths = [];
     for (const [index, frame] of frames.entries()) {
       const rawPath = String(frame.path || "");
-      const absolutePath = rawPath.startsWith("res://")
-        ? path.join(project.projectRoot || "", rawPath.slice(6))
-        : path.resolve(root, rawPath);
+      if (!rawPath) continue;
+      const absolutePath = resolveAnimationFramePath(project, rawPath);
+      if (!absolutePath) {
+        unsafePaths.push(rawPath);
+        continue;
+      }
       if (!fs.existsSync(absolutePath)) continue;
       jobs.push({ index, absolutePath });
+    }
+    if (unsafePaths.length) {
+      throw new Error(
+        `Cutout refused frame paths outside the project workspace or Godot root: ${unsafePaths.join(", ")}`,
+      );
     }
     if (!jobs.length) throw new Error("Cutout found no on-disk frames to process.");
     const paths = projectStore.projectPaths(project);
@@ -1364,7 +1457,7 @@ function createXsxbMcpService(options = {}) {
           outputHeight,
           protectedColors: args.protected_colors || args.protectedColors,
           protectionTolerance: args.protection_tolerance,
-          force: args.force === true,
+          force: booleanFlag(args.force),
         },
       );
       processedFrameCount = receipt.processedFrameCount;
@@ -1390,7 +1483,7 @@ function createXsxbMcpService(options = {}) {
       frameCount: frames.length,
       processedFrameCount,
       skippedFrameCount: Number(receipt.skippedFrameCount || 0),
-      sync: synchronize(project, args.sync === true),
+      sync: synchronize(project, booleanFlag(args.sync)),
     };
   }
 
@@ -1448,12 +1541,15 @@ function createXsxbMcpService(options = {}) {
     const trails = normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
     const bindingKey = `${profile.id}/${animation.id || animation.name}`;
     const frames = animation.frames || [];
-    const lastFrame = Math.max(1, frames.length - 1);
+    if (!frames.length) throw new Error("Cannot add an attack trail to an animation without frames.");
+    const lastFrame = frames.length - 1;
     const width = Number(frames[0]?.width || 320);
     const height = Number(frames[0]?.height || 320);
-    const startFrame = Number.isInteger(Number(args.start_frame)) ? Math.max(0, Number(args.start_frame)) : 0;
+    const startFrame = Number.isInteger(Number(args.start_frame))
+      ? Math.min(lastFrame, Math.max(0, Number(args.start_frame)))
+      : 0;
     const endFrame = Number.isInteger(Number(args.end_frame))
-      ? Math.max(startFrame, Number(args.end_frame))
+      ? Math.min(lastFrame, Math.max(startFrame, Number(args.end_frame)))
       : lastFrame;
     let texture = DEFAULT_ATTACK_TRAIL_PRESET_TEXTURE;
     if (args.texture_path) {
@@ -1520,7 +1616,7 @@ function createXsxbMcpService(options = {}) {
       bindingKey,
       segment: normalized.bindings[bindingKey].find((entry) => entry.id === segment.id),
       warnings,
-      sync: synchronize(project, args.sync !== false),
+      sync: synchronize(project, booleanFlag(args.sync, true)),
     };
   }
 
@@ -1528,26 +1624,27 @@ function createXsxbMcpService(options = {}) {
     const { project, profile, animation } = animationFor(args);
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot attach an image to an animation without frames.");
-    const frame = Math.min(frames.length - 1, Math.max(0, Number(args.frame || 0)));
+    const frame = requireFrameIndex(args.frame || 0, frames.length - 1);
+    const absolute = requireExistingFile(args.file_path, "Attachment image");
+    if (!/\.png$/i.test(absolute)) throw new Error("Attachment image must be a PNG.");
     const paths = projectStore.projectPaths(project);
     const bindings = projectStore.readJson(paths.frameImageAttachments, []);
     const key = `${profile.id}/${animation.id || animation.name}:${frame}`;
-    const source = frames[0];
-    let relativePath = source.path;
-    let name = String(args.name || "MCP Test Attachment");
-    let id = slug(args.id || "mcp_test_attachment", "mcp_test_attachment");
-    if (args.file_path) {
-      const absolute = requireExistingFile(args.file_path, "Attachment image");
-      if (!/\.png$/i.test(absolute)) throw new Error("Attachment image must be a PNG.");
-      relativePath = copyIntoWorkspace(
-        project,
-        path.join("attachments", profile.id, String(animation.id || animation.name)),
-        absolute,
-      );
-      name = String(args.name || path.basename(absolute));
-      id = slug(args.id || path.basename(absolute, path.extname(absolute)), "attachment");
-    }
+    const source = frames[frame] || frames[0];
+    const relativePath = copyIntoWorkspace(
+      project,
+      path.join("attachments", profile.id, String(animation.id || animation.name)),
+      absolute,
+    );
+    const name = String(args.name || path.basename(absolute));
+    const id = slug(args.id || path.basename(absolute, path.extname(absolute)), "attachment");
     const scale = Number(args.scale ?? 1);
+    const requestedOrder = args.layer_order ?? args.layerOrder;
+    const layerOrder =
+      requestedOrder === undefined || requestedOrder === null || requestedOrder === ""
+        ? 1
+        : Number(requestedOrder);
+    if (!Number.isFinite(layerOrder)) throw new Error("layer_order must be a finite number.");
     const attachment = {
       id,
       key,
@@ -1556,7 +1653,7 @@ function createXsxbMcpService(options = {}) {
       path: relativePath,
       type: "image/png",
       layer: String(args.layer || "above") === "below" ? "below" : "above",
-      layerOrder: Number(args.layer_order || args.layerOrder || 1),
+      layerOrder,
       transform: {
         offset: {
           x: Number(args.offset_x || 0),
@@ -1580,7 +1677,7 @@ function createXsxbMcpService(options = {}) {
       projectId: project.id,
       binding: attachment,
       bindingCount: next.length,
-      sync: synchronize(project, args.sync !== false),
+      sync: synchronize(project, booleanFlag(args.sync, true)),
     };
   }
 
@@ -1588,26 +1685,19 @@ function createXsxbMcpService(options = {}) {
     const { project, profile, animation } = animationFor(args);
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot bind SFX to an animation without frames.");
-    const frame = Math.min(frames.length - 1, Math.max(0, Number(args.frame || 0)));
+    const frame = requireFrameIndex(args.frame || 0, frames.length - 1);
     const paths = projectStore.projectPaths(project);
     const raw = projectStore.readJson(paths.frameAudio, []);
     const bindings = Array.isArray(raw)
       ? raw
       : Object.entries(raw || {}).map(([key, value]) => ({ key, ...(value || {}) }));
     const key = `${profile.id}/${animation.id || animation.name}:${frame}`;
-    let buffer = createTestWav();
-    let mime = "audio/wav";
-    let name = "mcp_test_sfx.wav";
-    let id = slug(args.id || "mcp_test_sfx", "mcp_test_sfx");
-    let relativePath = "";
-    if (args.file_path) {
-      const absolute = requireExistingFile(args.file_path, "SFX file");
-      mime = audioMimeType(absolute);
-      buffer = fs.readFileSync(absolute);
-      name = String(args.name || path.basename(absolute));
-      id = slug(args.id || path.basename(absolute, path.extname(absolute)), "sfx");
-      relativePath = copyIntoWorkspace(project, path.join("audio", profile.id), absolute);
-    }
+    const absolute = requireExistingFile(args.file_path, "SFX file");
+    const mime = audioMimeType(absolute);
+    const buffer = fs.readFileSync(absolute);
+    const name = String(args.name || path.basename(absolute));
+    const id = slug(args.id || path.basename(absolute, path.extname(absolute)), "sfx");
+    const relativePath = copyIntoWorkspace(project, path.join("audio", profile.id), absolute);
     const binding = {
       id,
       key,
@@ -1628,7 +1718,7 @@ function createXsxbMcpService(options = {}) {
       projectId: project.id,
       binding: { ...binding, data: `[${mime} omitted]` },
       bindingCount: next.length,
-      sync: synchronize(project, args.sync !== false),
+      sync: synchronize(project, booleanFlag(args.sync, true)),
     };
   }
 
@@ -1666,7 +1756,7 @@ function createXsxbMcpService(options = {}) {
       identityOrder: order.every((sourceIndex, index) => sourceIndex === index),
       fps: Number(animation.fps || 0),
       targetDirectory: result.targetDir,
-      sync: synchronize(project, args.sync !== false),
+      sync: synchronize(project, booleanFlag(args.sync, true)),
     };
   }
 
@@ -1703,9 +1793,12 @@ function createXsxbMcpService(options = {}) {
 
 module.exports = {
   MCP_TOOL_NAMES,
+  booleanFlag,
   classifyValidationMessage,
   createTestWav,
   createXsxbMcpService,
   extractVideoFrames,
+  requireFps,
+  requireFrameIndex,
   toolDefinitions,
 };

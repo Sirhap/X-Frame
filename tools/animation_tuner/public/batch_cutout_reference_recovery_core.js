@@ -53,7 +53,8 @@
     function applyReferenceAlphaThresholds(data, operationMask, high, low) {
       const highThreshold = Math.trunc(high || 0) & 255;
       const lowThreshold = Math.trunc(low || 0) & 255;
-      if ((!highThreshold && !lowThreshold) || highThreshold < lowThreshold) return;
+      if (!highThreshold && !lowThreshold) return;
+      if (highThreshold && lowThreshold && highThreshold < lowThreshold) return;
       if (!lowThreshold && highThreshold === 255) return;
       for (let pixel = 0; pixel < data.length / 4; pixel += 1) {
         if (operationMask && operationMask[pixel] !== 255) continue;

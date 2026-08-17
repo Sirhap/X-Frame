@@ -29,11 +29,19 @@ const slug = (value, fallback = "project") => {
 };
 
 function readJson(filePath, fallback) {
+  if (!fs.existsSync(filePath)) return clone(fallback);
+  let text = "";
   try {
-    if (!fs.existsSync(filePath)) return clone(fallback);
-    return JSON.parse(fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, ""));
-  } catch {
-    return clone(fallback);
+    text = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+    return JSON.parse(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      const digest = require("node:crypto").createHash("sha256").update(text).digest("hex").slice(0, 12);
+      const backupPath = `${filePath}.corrupt-${digest}`;
+      if (!fs.existsSync(backupPath)) fs.writeFileSync(backupPath, text);
+      throw new Error(`Invalid JSON in ${filePath}. Preserved the original at ${backupPath}.`);
+    }
+    throw error;
   }
 }
 

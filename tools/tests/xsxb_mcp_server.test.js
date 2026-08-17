@@ -10,9 +10,12 @@ const { createProjectStore } = require("../project_store");
 const { INSTRUCTIONS, handleMessage, startServer } = require("../xsxb_mcp_server");
 const {
   MCP_TOOL_NAMES,
+  booleanFlag,
   classifyValidationMessage,
   createTestWav,
   createXsxbMcpService,
+  requireFps,
+  requireFrameIndex,
   toolDefinitions,
 } = require("../xsxb_mcp_service");
 const { decodePngRgba, encodePngRgba, subjectAnchor } = require("../xsxb_mcp_cutout");
@@ -139,11 +142,15 @@ test("XSXB MCP service executes the complete mutation workflow", async () => {
     assert.equal(trail.segment.sticks.length, 2);
     assert.equal(trail.sync.ok, true);
 
-    const attachment = await current.service.call("xsxb_add_attachment");
+    const spark = path.join(current.root, "spark.png");
+    fs.writeFileSync(spark, ONE_PIXEL_PNG);
+    const attachment = await current.service.call("xsxb_add_attachment", { file_path: spark });
     assert.equal(attachment.binding.key, "mcp_imports/source:0");
     assert.equal(attachment.sync.imageAttachmentCount, 1);
 
-    const sfx = await current.service.call("xsxb_add_sfx");
+    const hit = path.join(current.root, "hit.wav");
+    fs.writeFileSync(hit, createTestWav());
+    const sfx = await current.service.call("xsxb_add_sfx", { file_path: hit });
     assert.equal(sfx.binding.type, "audio/wav");
     assert.equal(sfx.sync.audioCount, 1);
 
@@ -373,6 +380,73 @@ test("set_active_project and get_animation summary keep MCP context explicit", a
   }
 });
 
+test("string dry_run and failed video replace do not destroy data", async () => {
+  assert.equal(booleanFlag("true"), true);
+  assert.equal(booleanFlag("false"), false);
+  assert.equal(requireFps(24), 24);
+  assert.throws(() => requireFps("abc"), /fps must be a finite number/);
+  assert.throws(() => requireFrameIndex(1.5, 3), /Frame must be an integer/);
+
+  const current = fixture();
+  try {
+    await current.service.call("xsxb_import_video", {
+      file_path: current.video,
+      animation_id: "keep",
+      fps: 12,
+    });
+    const preview = await current.service.call("xsxb_delete_animation", {
+      animation_id: "keep",
+      dry_run: "true",
+    });
+    assert.equal(preview.dryRun, true);
+    assert.equal(preview.deleted, false);
+    const stillThere = await current.service.call("xsxb_get_animation", { animation_id: "keep" });
+    assert.equal(stillThere.frameCount, 3);
+
+    const failing = createXsxbMcpService({
+      root: current.root,
+      extractVideoFramesImpl: async () => {
+        throw new Error("FFmpeg video extraction failed: spawn ffmpeg ENOENT");
+      },
+    });
+    await assert.rejects(
+      () =>
+        failing.call("xsxb_import_video", {
+          file_path: current.video,
+          animation_id: "keep",
+          replace: true,
+        }),
+      /FFmpeg video extraction failed/,
+    );
+    const afterFailure = await current.service.call("xsxb_get_animation", { animation_id: "keep" });
+    assert.equal(afterFailure.frameCount, 3);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("reorganize duplicated frames receive unique ids", async () => {
+  const current = fixture();
+  try {
+    await current.service.call("xsxb_import_video", {
+      file_path: current.video,
+      animation_id: "walk",
+      fps: 12,
+    });
+    const reorganized = await current.service.call("xsxb_reorganize_frames", {
+      animation_id: "walk",
+      order: [0, 0, 1],
+      sync: false,
+    });
+    assert.equal(reorganized.outputFrameCount, 3);
+    const animation = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    const ids = animation.animation.frames.map((frame) => frame.id);
+    assert.equal(new Set(ids).size, ids.length);
+  } finally {
+    current.cleanup();
+  }
+});
+
 test("import can slice frames, replace the same id, and cutout updates the files", async () => {
   const current = fixture();
   try {
@@ -532,6 +606,55 @@ test("add tools accept real files and open_tuner can launch", async () => {
     assert.equal(opened.launched, true);
     assert.equal(opened.pid, 99);
     assert.match(opened.url, /animation=walk/);
+
+    await assert.rejects(
+      () => service.call("xsxb_add_attachment", { animation_id: "walk", sync: false }),
+      /Attachment image not found/,
+    );
+    await assert.rejects(
+      () => service.call("xsxb_add_sfx", { animation_id: "walk", sync: false }),
+      /SFX file not found/,
+    );
+    const ordered = await service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      file_path: spark,
+      layer_order: 0,
+      sync: false,
+    });
+    assert.equal(ordered.binding.layerOrder, 0);
+    await assert.rejects(
+      () => service.call("xsxb_update_timing", { animation_id: "walk", fps: "abc" }),
+      /fps must be a finite number/,
+    );
+    const stillWalk = await service.call("xsxb_get_animation", { animation_id: "walk" });
+    assert.equal(stillWalk.animation.fps, 12);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("attack trail defaults stay inside a one-frame animation", async () => {
+  const current = fixture();
+  try {
+    const sequenceDir = path.join(current.root, "one");
+    fs.mkdirSync(sequenceDir, { recursive: true });
+    fs.writeFileSync(path.join(sequenceDir, "only.png"), ONE_PIXEL_PNG);
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "idle",
+      fps: 12,
+    });
+    const trail = await current.service.call("xsxb_add_attack_trail", {
+      animation_id: "idle",
+      sync: false,
+    });
+    const frames = trail.segment.sticks.map((stick) => stick.frame);
+    assert.deepEqual(frames, [0, 0]);
+    assert.equal(
+      frames.some((frame) => frame < 0 || frame > 0),
+      false,
+    );
   } finally {
     current.cleanup();
   }
@@ -643,4 +766,55 @@ test("bind validation layer keeps standalone/game-local mismatch errors", () => 
 test("cutout is marked destructive because it overwrites source frames", () => {
   const cutout = toolDefinitions().find((tool) => tool.name === "xsxb_cutout");
   assert.equal(cutout.annotations.destructiveHint, true);
+});
+
+test("cutout accepts workspace-absolute imported frames and refuses escaped paths", async () => {
+  const current = fixture();
+  try {
+    const sequenceDir = path.join(current.root, "seq-cutout-path");
+    fs.mkdirSync(sequenceDir, { recursive: true });
+    fs.writeFileSync(path.join(sequenceDir, "a.png"), ONE_PIXEL_PNG);
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "idle",
+    });
+    const store = createProjectStore(current.root);
+    const project = store.resolveProject(store.readRegistry());
+    const paths = store.projectPaths(project);
+    const manifest = store.readJson(paths.manifest, { schemaVersion: 1, profiles: [] });
+    const animation = manifest.profiles[0].animations.find((entry) => entry.id === "idle");
+    const relativePath = String(animation.frames[0].path);
+    const workspaceAbsolute = path.resolve(current.root, relativePath);
+    const outside = path.join(current.root, "outside-cutout.png");
+    fs.writeFileSync(outside, ONE_PIXEL_PNG);
+    const originalOutside = fs.readFileSync(outside);
+
+    animation.frames[0].path = workspaceAbsolute;
+    store.writeJson(paths.manifest, manifest);
+    const cut = await current.service.call("xsxb_cutout", { animation_id: "idle" });
+    assert.ok(cut.processedFrameCount >= 1);
+
+    animation.frames[0].path = outside;
+    store.writeJson(paths.manifest, manifest);
+    await assert.rejects(
+      () => current.service.call("xsxb_cutout", { animation_id: "idle" }),
+      /outside the project workspace or Godot root/,
+    );
+    assert.deepEqual(fs.readFileSync(outside), originalOutside);
+
+    animation.frames[0].path = "res://../outside-cutout.png";
+    store.writeJson(paths.manifest, manifest);
+    await assert.rejects(
+      () => current.service.call("xsxb_cutout", { animation_id: "idle" }),
+      /outside the project workspace or Godot root/,
+    );
+    assert.deepEqual(fs.readFileSync(outside), originalOutside);
+
+    const view = await current.service.call("xsxb_get_animation", { animation_id: "idle" });
+    assert.equal(view.animation.frames[0].exists, false);
+    assert.equal(view.animation.frames[0].absolutePath, "");
+  } finally {
+    current.cleanup();
+  }
 });

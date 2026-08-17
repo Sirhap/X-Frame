@@ -10,6 +10,7 @@ const {
   escapeHtml,
   groupLabel,
   mapWithConcurrency,
+  readableGroupName,
   nearlyEqual,
   round,
   scaleVectorFromTransform,
@@ -38,6 +39,23 @@ test("app utility functions escape HTML and label groups", () => {
       previewOwner: "body",
     }),
     "Hero VFX - idle (idle_fx) -> body",
+  );
+});
+
+test("group labels replace legacy UUID names with a readable alias", () => {
+  assert.equal(readableGroupName("idle"), "idle");
+  assert.equal(readableGroupName("91edf15f-ac7f-4af0-8ac0-bc55ddcbad61"), "Unnamed animation 91ed");
+  assert.equal(
+    readableGroupName("91edf15f-ac7f-4af0-8ac0-bc55ddcbad61_2", (key) =>
+      key === "unnamedAnimation" ? "未命名动画" : key,
+    ),
+    "未命名动画 91ed-2",
+  );
+  assert.equal(
+    groupLabel({ name: "91edf15f-ac7f-4af0-8ac0-bc55ddcbad61", type: "actor", profileLabel: "Hero" }, (key) =>
+      key === "unnamedAnimation" ? "未命名动画" : key,
+    ),
+    "Hero - 未命名动画 91ed",
   );
 });
 

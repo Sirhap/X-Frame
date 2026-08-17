@@ -205,7 +205,7 @@ const {
   cloneVector,
   escapeHtml,
   groupBindingLabel,
-  groupLabel,
+  groupLabel: groupLabelBase,
   isNumberInputTarget,
   isTypingTarget,
   mapWithConcurrency,
@@ -214,6 +214,8 @@ const {
   round,
   scaleVectorFromTransform,
 } = globalThis.XSXBAppUtils;
+/** Renders a group label with localized fallback for legacy UUID-named animations. */
+const groupLabel = (group) => groupLabelBase(group, t);
 const {
   collisionOffsetYForHeight,
   isCollisionBox,
@@ -1641,6 +1643,8 @@ function t(...args) {
 }
 function applyLanguage(...args) {
   const result = projectStateCall("applyLanguage", ...args);
+  updateDeliverySummary();
+  attackTrailEditor?.render();
   activationController.renderStatus();
   modeHubs?.renderProjects(config);
   navigationContext?.render();
@@ -2069,6 +2073,14 @@ function stepAdjustmentInput(...args) {
 
 function stepOffsetByArrowKey(...args) {
   return adjustmentInputsCall("stepOffsetByArrowKey", ...args);
+}
+
+function normalizeAdjustmentInputDisplay(...args) {
+  return adjustmentInputsCall("normalizeAdjustmentInputDisplay", ...args);
+}
+
+function isIncompleteNumberInput(...args) {
+  return adjustmentInputsCall("isIncompleteNumberInput", ...args);
 }
 
 function syncAdjustmentModeInputs(...args) {
@@ -3100,13 +3112,14 @@ function updateBaseFromInputs(transform = transformFromAdjustmentInputs()) {
     if (!key.startsWith(`${animationName}:`)) continue;
     const override = structuredClone(sourceOverrides[key]);
     if (!override) continue;
-    if (Number.isFinite(Number(override.visual_size))) {
-      override.visual_size = Number(override.visual_size) * scaleRatio;
-    }
+    const originalSize = Number(override.visual_size);
     const overrideScale = cloneScaleVector(
       override.visual_scale,
-      Number(override.visual_size || nextBase.scale),
+      Number.isFinite(originalSize) ? originalSize : nextBase.scale,
     );
+    if (Number.isFinite(originalSize)) {
+      override.visual_size = originalSize * scaleRatio;
+    }
     override.visual_scale = {
       x: overrideScale.x * scaleXRatio,
       y: overrideScale.y * scaleYRatio,
@@ -3452,6 +3465,8 @@ const appEvents = appEventsModule.createController({
     status,
     stepAdjustmentInput,
     stepOffsetByArrowKey,
+    normalizeAdjustmentInputDisplay,
+    isIncompleteNumberInput,
     stagePoint,
     syncAdjustmentInputs,
     syncAdjustmentModeInputs,
@@ -3771,6 +3786,7 @@ attackTrailEditor = new window.AttackTrailEditor({
   pushUndo,
   draw,
   status,
+  translate: t,
 });
 
 for (const eventName of ["pointerdown", "pointermove"]) {
@@ -4028,12 +4044,14 @@ function updateDeliverySummary() {
   const readiness = modeHubsModule.summarizeDeliveryReadiness(config, { browserOnly: browserOnlyMode });
   const values = {
     "#deliveryAnimationName": summary.currentAnimationName,
-    "#deliveryFrameCount": `${summary.currentFrameCount} 帧`,
-    "#deliveryAssetRevision": summary.currentAssetRevision ? `r${summary.currentAssetRevision}` : "原始资源",
-    "#deliveryGodotAnimationCount": `${summary.projectAnimationCount} 个`,
-    "#deliveryGodotFrameCount": `${summary.projectFrameCount} 帧`,
-    "#deliveryPetAnimationCount": `${summary.projectAnimationCount} 个`,
-    "#deliveryPetBoundCount": `${readiness.codexPet.boundAnimationCount} 个`,
+    "#deliveryFrameCount": t("deliveryCountFrames", { count: summary.currentFrameCount }),
+    "#deliveryAssetRevision": summary.currentAssetRevision
+      ? `r${summary.currentAssetRevision}`
+      : t("deliveryOriginalAsset"),
+    "#deliveryGodotAnimationCount": t("deliveryCountItems", { count: summary.projectAnimationCount }),
+    "#deliveryGodotFrameCount": t("deliveryCountFrames", { count: summary.projectFrameCount }),
+    "#deliveryPetAnimationCount": t("deliveryCountItems", { count: summary.projectAnimationCount }),
+    "#deliveryPetBoundCount": t("deliveryCountItems", { count: readiness.codexPet.boundAnimationCount }),
     "#deliveryPetCurrentAnimation": summary.currentAnimationName,
   };
   Object.entries(values).forEach(([selector, value]) => {
@@ -4043,7 +4061,7 @@ function updateDeliverySummary() {
   const exportButton = document.querySelector("#deliveryOpenExport");
   if (exportButton) {
     exportButton.disabled = summary.currentFrameCount === 0;
-    exportButton.title = summary.currentFrameCount ? "" : "请先选择包含帧的动画";
+    exportButton.title = summary.currentFrameCount ? "" : t("deliverySelectAnimation");
   }
 
   const setDeliveryStatus = (selector, result) => {
@@ -4064,29 +4082,54 @@ function updateDeliverySummary() {
       }),
     );
   };
-  setDeliveryStatus("#deliveryGodotStatus", readiness.godot);
-  setDeliveryStatus("#deliveryPetStatus", readiness.codexPet);
+  const godotStatusLabels = {
+    local_only: browserOnlyMode ? "deliveryGodotNeedsLocal" : "deliveryGodotUnbound",
+    invalid_root: "deliveryGodotInvalidRoot",
+    sync_required: "deliveryGodotSyncRequired",
+    sync_failed: "deliveryGodotSyncFailed",
+    synced: "deliveryGodotSyncedLabel",
+    gameplay_ready: "deliveryGodotGameplayReady",
+  };
+  const petStatusLabels = {
+    ready: "deliveryPetIdentityReady",
+    incomplete: "deliveryPetIdentityIncomplete",
+    unsupported: "deliveryPetNotProject",
+  };
+  setDeliveryStatus("#deliveryGodotStatus", {
+    ...readiness.godot,
+    label: t(godotStatusLabels[readiness.godot.state] || "deliveryGodotUnbound"),
+  });
+  setDeliveryStatus("#deliveryPetStatus", {
+    ...readiness.codexPet,
+    label: t(petStatusLabels[readiness.codexPet.state] || "deliveryPetNotProject"),
+  });
   const godotChecks = readiness.godot.blockers.length
     ? readiness.godot.blockers.map((label) => ({ label, tone: "danger" }))
     : [
         {
           label:
             readiness.godot.state === "synced" || readiness.godot.state === "gameplay_ready"
-              ? "项目资源已同步到绑定工程"
-              : readiness.godot.label,
+              ? t("deliveryGodotSynced")
+              : t(godotStatusLabels[readiness.godot.state] || "deliveryGodotUnbound"),
           tone: readiness.godot.tone,
         },
       ];
   if (readiness.godot.warningCount) {
-    godotChecks.push({ label: `${readiness.godot.warningCount} 条交付提醒`, tone: "warning" });
+    godotChecks.push({
+      label: t("deliveryGodotWarnings", { count: readiness.godot.warningCount }),
+      tone: "warning",
+    });
   }
   renderChecks("#deliveryGodotChecks", godotChecks);
   renderChecks("#deliveryPetChecks", [
     readiness.codexPet.state === "unsupported"
-      ? { label: "当前项目不是 Codex Pet 项目", tone: "warning" }
+      ? { label: t("deliveryPetUnsupported"), tone: "warning" }
       : readiness.codexPet.missingAnimationCount
-        ? { label: `${readiness.codexPet.missingAnimationCount} 个动画缺少 Pet 身份`, tone: "warning" }
-        : { label: "所有动画均已绑定 Pet 身份", tone: "success" },
+        ? {
+            label: t("deliveryPetMissing", { count: readiness.codexPet.missingAnimationCount }),
+            tone: "warning",
+          }
+        : { label: t("deliveryPetReady"), tone: "success" },
   ]);
 }
 
@@ -4106,7 +4149,7 @@ document.querySelector("#deliveryOpenExport")?.addEventListener("click", async (
   try {
     await frameOrganizer?.openCurrentExport();
   } catch (error) {
-    status(`打开导出失败：${error.message}`);
+    status(t("openExportFailed", { message: error.message }));
   }
 });
 

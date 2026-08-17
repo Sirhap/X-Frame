@@ -62,6 +62,13 @@
      * @param {string} [label="edit"] Human-readable edit label.
      * @returns {void}
      */
+    let pending = Promise.resolve();
+
+    function enqueueHistory(task) {
+      pending = pending.catch(() => undefined).then(task);
+      return pending;
+    }
+
     function pushUndo(label = "edit") {
       const undoStack = getUndoStack();
       undoStack.push({ label, state: getSnapshot() });
@@ -73,52 +80,58 @@
 
     /**
      * Restores the most recent undo snapshot.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
     function undo() {
-      const undoStack = getUndoStack();
-      const item = undoStack.pop();
-      if (!item) {
-        status(translate("undoNothing"));
+      return enqueueHistory(async () => {
+        const undoStack = getUndoStack();
+        const item = undoStack.pop();
+        if (!item) {
+          status(translate("undoNothing"));
+          updateHistoryControls();
+          return;
+        }
+        const redoStack = getRedoStack();
+        redoStack.push({ label: item.label, state: getSnapshot() });
+        if (redoStack.length > maxDepth) redoStack.shift();
         updateHistoryControls();
-        return;
-      }
-      const redoStack = getRedoStack();
-      redoStack.push({ label: item.label, state: getSnapshot() });
-      if (redoStack.length > maxDepth) redoStack.shift();
-      updateHistoryControls();
-      void Promise.resolve(restoreSnapshot(item.state))
-        .then(() => {
+        try {
+          await restoreSnapshot(item.state);
           markDirty();
           updateHistoryControls();
           status(translate("undone", { label: item.label }));
-        })
-        .catch((error) => status(translate("loadFailed", { message: error.message })));
+        } catch (error) {
+          status(translate("loadFailed", { message: error.message }));
+        }
+      });
     }
 
     /**
      * Restores the most recent redo snapshot.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
     function redo() {
-      const redoStack = getRedoStack();
-      const item = redoStack.pop();
-      if (!item) {
-        status(translate("redoNothing"));
+      return enqueueHistory(async () => {
+        const redoStack = getRedoStack();
+        const item = redoStack.pop();
+        if (!item) {
+          status(translate("redoNothing"));
+          updateHistoryControls();
+          return;
+        }
+        const undoStack = getUndoStack();
+        undoStack.push({ label: item.label, state: getSnapshot() });
+        if (undoStack.length > maxDepth) undoStack.shift();
         updateHistoryControls();
-        return;
-      }
-      const undoStack = getUndoStack();
-      undoStack.push({ label: item.label, state: getSnapshot() });
-      if (undoStack.length > maxDepth) undoStack.shift();
-      updateHistoryControls();
-      void Promise.resolve(restoreSnapshot(item.state))
-        .then(() => {
+        try {
+          await restoreSnapshot(item.state);
           markDirty();
           updateHistoryControls();
           status(translate("redone", { label: item.label }));
-        })
-        .catch((error) => status(translate("loadFailed", { message: error.message })));
+        } catch (error) {
+          status(translate("loadFailed", { message: error.message }));
+        }
+      });
     }
 
     return { pushUndo, redo, undo, updateHistoryControls };

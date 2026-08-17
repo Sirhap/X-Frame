@@ -68,17 +68,43 @@ test("HTTP utilities enforce JSON content type and local origins", () => {
   );
   assert.doesNotThrow(() =>
     validateWriteRequest(
-      createRequest({ "content-type": "application/json; charset=utf-8", origin: "http://127.0.0.1:5179" }),
+      createRequest({
+        "content-type": "application/json; charset=utf-8",
+        host: "127.0.0.1:5179",
+        origin: "http://127.0.0.1:5179",
+      }),
     ),
   );
   assert.doesNotThrow(() =>
     validateWriteRequest(
       createRequest({
         "content-type": "application/json",
-        host: "tuner.example.com",
-        origin: "https://tuner.example.com",
+        host: "localhost:5179",
+        origin: "http://localhost:5179",
       }),
     ),
+  );
+  assert.throws(
+    () =>
+      validateWriteRequest(
+        createRequest({
+          "content-type": "application/json",
+          host: "evil.example",
+          origin: "http://evil.example",
+        }),
+      ),
+    (error) => error instanceof HttpError && error.status === 403,
+  );
+  assert.throws(
+    () =>
+      validateWriteRequest(
+        createRequest({
+          "content-type": "application/json",
+          host: "tuner.example.com",
+          origin: "https://tuner.example.com",
+        }),
+      ),
+    (error) => error instanceof HttpError && error.status === 403,
   );
 });
 

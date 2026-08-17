@@ -75,6 +75,102 @@ function normalizeBindings(value) {
 }
 
 /**
+ * Builds the persisted keys owned by one animation, including an unambiguous legacy name.
+ * @param {object} profile Profile record that currently contains the animation.
+ * @param {object} animation Animation record being replaced or deleted.
+ * @returns {{animationId:string,animationKeys:Set<string>,legacyAnimationId:string,legacyKeyIsUnambiguous:boolean}}
+ * Ownership keys.
+ */
+function animationOwnership(profile, animation) {
+  const profileId = String(profile?.id || "");
+  const animationId = String(animation?.id || animation?.name || "");
+  const animationKey = `${profileId}/${animationId}`;
+  const legacyAnimationId = String(animation?.name || "");
+  const remaining = Array.isArray(profile?.animations) ? profile.animations : [];
+  const legacyKeyIsUnambiguous =
+    Boolean(legacyAnimationId) &&
+    legacyAnimationId !== animationId &&
+    !remaining.some(
+      (entry) => entry !== animation && String(entry?.id || entry?.name || "") === legacyAnimationId,
+    );
+  return {
+    animationId,
+    animationKeys: new Set([
+      animationKey,
+      ...(legacyKeyIsUnambiguous ? [`${profileId}/${legacyAnimationId}`] : []),
+    ]),
+    legacyAnimationId,
+    legacyKeyIsUnambiguous,
+  };
+}
+
+/**
+ * Removes frame overrides and bindings owned by one animation without writing files.
+ * @param {{
+ *   tuning?:object,
+ *   audioBindings?:unknown,
+ *   imageAttachments?:unknown,
+ *   attachmentAssets?:unknown,
+ *   attackTrails?:object,
+ *   profile:object,
+ *   animation:object,
+ * }} options In-memory records and the animation being replaced.
+ * @returns {{
+ *   tuning:object,
+ *   frameAudioBindings:object[],
+ *   frameImageAttachments:object[],
+ *   attachmentAssets:object[],
+ *   attackTrails:object,
+ *   ownedAnimationKeys:string[],
+ * }} Cleaned copies.
+ */
+function stripAnimationOwnedData(options) {
+  const profile = options.profile;
+  const animation = options.animation;
+  const { animationId, animationKeys, legacyAnimationId, legacyKeyIsUnambiguous } = animationOwnership(
+    profile,
+    animation,
+  );
+  const ownedAnimationKeys = Array.from(animationKeys);
+  const tuning = clone(options.tuning && typeof options.tuning === "object" ? options.tuning : EMPTY_TUNING);
+  for (const field of ["frame_visual_overrides", "frame_playback_overrides", "frame_box_overrides"]) {
+    tuning[field] = ownedAnimationKeys.reduce(
+      (record, key) => withoutAnimationKeys(record, `${key}:`),
+      tuning[field],
+    );
+  }
+  const groupValuePrefixes = [animationId, ...(legacyKeyIsUnambiguous ? [legacyAnimationId] : [])].map(
+    (id) => `profiles.${profile.id}.groups.${id}.`,
+  );
+  tuning.values = groupValuePrefixes.reduce(
+    (record, prefix) => withoutAnimationKeys(record, prefix),
+    tuning.values,
+  );
+  const attackTrails = clone(
+    options.attackTrails && typeof options.attackTrails === "object"
+      ? options.attackTrails
+      : EMPTY_ATTACK_TRAILS,
+  );
+  attackTrails.bindings =
+    attackTrails.bindings && typeof attackTrails.bindings === "object" ? attackTrails.bindings : {};
+  for (const key of ownedAnimationKeys) delete attackTrails.bindings[key];
+  return {
+    tuning,
+    frameAudioBindings: normalizeBindings(options.audioBindings).filter(
+      (binding) => !ownedAnimationKeys.some((key) => bindingBelongsToAnimation(binding, key)),
+    ),
+    frameImageAttachments: normalizeBindings(options.imageAttachments).filter(
+      (binding) => !ownedAnimationKeys.some((key) => bindingBelongsToAnimation(binding, key)),
+    ),
+    attachmentAssets: normalizeBindings(options.attachmentAssets).filter(
+      (asset) => !animationKeys.has(String(asset.groupKey || "")),
+    ),
+    attackTrails,
+    ownedAnimationKeys,
+  };
+}
+
+/**
  * Deletes an animation, its frame directory, overrides, and frame bindings.
  * The caller owns the surrounding filesystem transaction and Godot sync.
  * @param {{root:string,projectStore:object,project:object,profileId:string,animationId:string}} options Mutation options.
@@ -206,5 +302,6 @@ module.exports = {
   bindingBelongsToAnimation,
   deleteAnimation,
   normalizeBindings,
+  stripAnimationOwnedData,
   withoutAnimationKeys,
 };

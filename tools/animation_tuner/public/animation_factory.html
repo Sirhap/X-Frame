@@ -20,7 +20,7 @@
     <a class="skip-link" href="#factoryTools" data-factory-copy="skipTools">跳到工具入口</a>
 
     <header class="factory-header">
-      <a class="brand" href="/" aria-label="XSXB 动画工厂首页">
+      <a class="brand" href="/" aria-label="XSXB 动画工厂首页" data-factory-aria="homeAria">
         <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
           <path d="M8 13.5 24 5l16 8.5v21L24 43 8 34.5z" />
           <path d="m16 18 8-4 8 4v12l-8 4-8-4z" />
@@ -32,13 +32,13 @@
         </span>
       </a>
 
-      <nav class="primary-nav" aria-label="主导航">
+      <nav class="primary-nav" aria-label="主导航" data-factory-aria="navAria">
         <a href="#factoryTools" data-factory-copy="toolsNav">工作台</a>
         <a href="#workflow" data-factory-copy="workflowNav">生产流程</a>
         <a href="#localFirst" data-factory-copy="localNav">本地处理</a>
       </nav>
 
-      <nav class="header-actions" aria-label="辅助导航">
+      <nav class="header-actions" aria-label="辅助导航" data-factory-aria="actionsAria">
         <span class="local-status"
           ><i aria-hidden="true"></i> <span data-factory-copy="local">LOCAL</span></span
         >
@@ -58,15 +58,16 @@
           href="/admin/licenses"
           data-administrator-console-link
           aria-label="后台管理"
+          data-factory-aria="adminConsole"
           hidden
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 3 4.5 6v5.5c0 4.7 3.1 8.6 7.5 9.5 4.4-.9 7.5-4.8 7.5-9.5V6z" />
             <path d="M9 12h6M12 9v6" />
           </svg>
-          <span>后台管理</span>
+          <span data-factory-copy="adminConsole">后台管理</span>
         </a>
-        <a class="header-button" href="/projects" aria-label="动画项目" title="动画项目">
+        <a class="header-button" href="/projects" aria-label="动画项目" title="动画项目" data-factory-aria="projects">
           <span data-factory-copy="projects">动画项目</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
         </a>
@@ -80,30 +81,30 @@
             <span data-factory-copy="heroEyebrow">帧动画流程 / 01</span>
             <span data-factory-copy="localConsole">本地制作控制台</span>
           </p>
-          <h1 id="factoryTitle">从原始素材，<br />到<span>可用动画。</span></h1>
-          <p class="hero-description">
+          <h1 id="factoryTitle" data-factory-html="heroTitle">从原始素材，<br />到<span>可用动画。</span></h1>
+          <p class="hero-description" data-factory-copy="heroDescription">
             继续一个动画项目，或先用快速工具单独处理素材。两种方式共享同一套本地处理能力，结果可以随时加入项目。
           </p>
           <div class="hero-actions">
             <a class="primary-action mode-entry-action mode-entry-project" href="/projects">
-              <span>进入动画项目</span>
+              <span data-factory-copy="enterProjects">进入动画项目</span>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
             </a>
             <a class="secondary-action mode-entry-action mode-entry-tools" href="/tools">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 5h16v14H4zM8 9h8M8 13h5" />
               </svg>
-              打开快速工具
+              <span data-factory-copy="openTools">打开快速工具</span>
             </a>
           </div>
           <dl class="hero-facts">
             <div>
               <dt data-factory-copy="input">输入</dt>
-              <dd>图片序列 / 视频</dd>
+              <dd data-factory-copy="inputValue">图片序列 / 视频</dd>
             </div>
             <div>
               <dt data-factory-copy="processing">处理</dt>
-              <dd>浏览器本地完成</dd>
+              <dd data-factory-copy="processingValue">浏览器本地完成</dd>
             </div>
             <div>
               <dt data-factory-copy="output">输出</dt>
@@ -112,7 +113,7 @@
           </dl>
         </div>
 
-        <div class="product-console" aria-label="帧动画调优工作台预览">
+        <div class="product-console" aria-label="帧动画调优工作台预览" data-factory-aria="consoleAria">
           <div class="console-titlebar">
             <span class="window-controls" aria-hidden="true"><i></i><i></i><i></i></span>
             <code>PLAYER / SWORD_ATTACK / FRAME_05</code>
@@ -120,11 +121,11 @@
               ><i aria-hidden="true"></i> <span data-factory-copy="live">实时</span></span
             >
           </div>
-          <ol class="console-pipeline" aria-label="动画处理流程">
-            <li><span>01</span> 导入</li>
-            <li><span>02</span> 抠图</li>
-            <li class="active" aria-current="step"><span>03</span> 调优</li>
-            <li><span>04</span> 导出</li>
+          <ol class="console-pipeline" aria-label="动画处理流程" data-factory-aria="consolePipelineAria">
+            <li><span>01</span> <span data-factory-copy="stepImport">导入</span></li>
+            <li><span>02</span> <span data-factory-copy="stepCutout">抠图</span></li>
+            <li class="active" aria-current="step"><span>03</span> <span data-factory-copy="stepTune">调优</span></li>
+            <li><span>04</span> <span data-factory-copy="stepExport">导出</span></li>
           </ol>
           <div class="console-workspace">
             <div class="stage-preview">
@@ -136,6 +137,7 @@
               <img
                 src="/assets/landing/hero-fighter-v2.webp"
                 alt="剑士攻击动画的第 5 帧预览"
+                data-factory-alt="heroFrameAlt"
                 width="1152"
                 height="768"
                 decoding="async"
@@ -143,37 +145,37 @@
               />
               <code>X 364&nbsp;&nbsp;Y 004</code>
             </div>
-            <aside class="console-inspector" aria-label="当前帧参数">
+            <aside class="console-inspector" aria-label="当前帧参数" data-factory-aria="consoleInspectorAria">
               <header>
                 <span data-factory-copy="transform">变换</span>
                 <b>FRAME 05</b>
               </header>
               <dl>
                 <div>
-                  <dt>缩放</dt>
+                  <dt data-factory-copy="consoleScale">缩放</dt>
                   <dd>0.876</dd>
                 </div>
                 <div>
-                  <dt>旋转</dt>
+                  <dt data-factory-copy="consoleRotate">旋转</dt>
                   <dd>0.0°</dd>
                 </div>
                 <div>
-                  <dt>偏移 X</dt>
+                  <dt data-factory-copy="consoleOffsetX">偏移 X</dt>
                   <dd>364</dd>
                 </div>
                 <div>
-                  <dt>偏移 Y</dt>
+                  <dt data-factory-copy="consoleOffsetY">偏移 Y</dt>
                   <dd>004</dd>
                 </div>
               </dl>
               <div class="inspector-layers">
                 <p data-factory-copy="collisionLayers">碰撞层</p>
-                <span><i class="layer-mint" aria-hidden="true"></i> 受击框 <b>ON</b></span>
-                <span><i class="layer-coral" aria-hidden="true"></i> 攻击框 <b>ON</b></span>
+                <span><i class="layer-mint" aria-hidden="true"></i> <span data-factory-copy="layerHurt">受击框</span> <b>ON</b></span>
+                <span><i class="layer-coral" aria-hidden="true"></i> <span data-factory-copy="layerHit">攻击框</span> <b>ON</b></span>
               </div>
             </aside>
           </div>
-          <ol class="console-timeline" aria-label="攻击动画帧序列">
+          <ol class="console-timeline" aria-label="攻击动画帧序列" data-factory-aria="consoleTimelineAria">
             <li><span>01</span><i></i></li>
             <li><span>02</span><i></i></li>
             <li><span>03</span><i></i></li>
@@ -187,11 +189,11 @@
         </div>
       </section>
 
-      <section class="trust-rail" aria-label="产品能力概览">
-        <p><span>01</span> 原始素材留在当前设备</p>
-        <p><span>02</span> 工序可独立进入</p>
-        <p><span>03</span> 参数贯穿同一动画组</p>
-        <p><span>04</span> 导出即可复用的动画包</p>
+      <section class="trust-rail" aria-label="产品能力概览" data-factory-aria="trustAria">
+        <p><span>01</span> <span data-factory-copy="trust1">原始素材留在当前设备</span></p>
+        <p><span>02</span> <span data-factory-copy="trust2">工序可独立进入</span></p>
+        <p><span>03</span> <span data-factory-copy="trust3">参数贯穿同一动画组</span></p>
+        <p><span>04</span> <span data-factory-copy="trust4">导出即可复用的动画包</span></p>
       </section>
 
       <p id="factoryNotice" class="factory-notice" hidden role="status"></p>
@@ -202,16 +204,16 @@
               <span data-factory-copy="factoryFloor">工厂工作台 / 02</span>
               <span data-workstation-count>SIX</span> <span data-factory-copy="workstations">个工作站</span>
             </p>
-            <h2 id="toolsTitle">今天，从哪道工序开始？</h2>
+            <h2 id="toolsTitle" data-factory-copy="toolsTitle">今天，从哪道工序开始？</h2>
           </div>
-          <p>已有素材时直接进入对应工具；需要完整调参和项目管理时，打开核心工作台。</p>
+          <p data-factory-copy="toolsLede">已有素材时直接进入对应工具；需要完整调参和项目管理时，打开核心工作台。</p>
         </header>
 
         <div class="tool-grid">
           <a class="tool-card tool-card-featured" href="/workspace?guide=character">
             <div class="tool-card-topline">
               <span class="tool-number">01 / CORE</span>
-              <span class="tool-state"><i aria-hidden="true"></i> 核心工作台</span>
+              <span class="tool-state"><i aria-hidden="true"></i> <span data-factory-copy="coreState">核心工作台</span></span>
             </div>
             <div class="featured-visual" aria-hidden="true">
               <span class="visual-crosshair"></span>
@@ -223,17 +225,17 @@
             </div>
             <div class="tool-copy">
               <p>CHARACTER + TUNING</p>
-              <h3>角色起稿与动画调优</h3>
-              <span>统一管理角色、动画组与逐帧参数，调整位置、碰撞框、附件、拖尾、音效和播放节奏。</span>
+              <h3 data-factory-copy="coreTitle">角色起稿与动画调优</h3>
+              <span data-factory-copy="coreBody">统一管理角色、动画组与逐帧参数，调整位置、碰撞框、附件、拖尾、音效和播放节奏。</span>
             </div>
-            <ul class="featured-features" aria-label="核心能力">
-              <li>逐帧变换</li>
-              <li>三类碰撞框</li>
-              <li>附件与音效</li>
+            <ul class="featured-features" aria-label="核心能力" data-factory-aria="coreFeaturesAria">
+              <li data-factory-copy="coreFeature1">逐帧变换</li>
+              <li data-factory-copy="coreFeature2">三类碰撞框</li>
+              <li data-factory-copy="coreFeature3">附件与音效</li>
               <li>Godot 同步</li>
             </ul>
             <span class="tool-open">
-              <span>打开核心工作台</span>
+              <span data-factory-copy="coreOpen">打开核心工作台</span>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
             </span>
           </a>
@@ -248,11 +250,11 @@
             </div>
             <div class="tool-copy">
               <p data-factory-copy="imageVideo">图片 + 视频</p>
-              <h3>导入与预处理</h3>
-              <span>导入图片序列或提取视频帧，检查画布并建立动画组。</span>
+              <h3 data-factory-copy="importTitle">导入与预处理</h3>
+              <span data-factory-copy="importBody">导入图片序列或提取视频帧，检查画布并建立动画组。</span>
             </div>
             <span class="tool-open">
-              <span>进入导入</span>
+              <span data-factory-copy="importOpen">进入导入</span>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
             </span>
           </a>
@@ -270,11 +272,11 @@
             </div>
             <div class="tool-copy">
               <p data-factory-copy="chromaLuma">色键 + 明度</p>
-              <h3>批量抠图</h3>
-              <span>移除背景、修复边缘和局部区域，再把参数传播到整组。</span>
+              <h3 data-factory-copy="cutoutTitle">批量抠图</h3>
+              <span data-factory-copy="cutoutBody">移除背景、修复边缘和局部区域，再把参数传播到整组。</span>
             </div>
             <span class="tool-open">
-              <span>进入抠图</span>
+              <span data-factory-copy="cutoutOpen">进入抠图</span>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
             </span>
           </a>
@@ -292,11 +294,11 @@
             </div>
             <div class="tool-copy">
               <p data-factory-copy="sequenceExport">序列 + 导出</p>
-              <h3>整理与导出</h3>
-              <span>排序、删帧、循环分析，并输出多种可复用动画格式。</span>
+              <h3 data-factory-copy="organizerTitle">整理与导出</h3>
+              <span data-factory-copy="organizerBody">排序、删帧、循环分析，并输出多种可复用动画格式。</span>
             </div>
             <span class="tool-open">
-              <span>进入动画处理</span>
+              <span data-factory-copy="organizerOpen">进入动画处理</span>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
             </span>
           </a>
@@ -313,11 +315,11 @@
             </div>
             <div class="tool-copy">
               <p data-factory-copy="connectedComponents">连通组件</p>
-              <h3>零散切图</h3>
-              <span>识别散落在图片中的独立元素，预览、筛选并重新拼接为规则精灵表。</span>
+              <h3 data-factory-copy="scatterTitle">零散切图</h3>
+              <span data-factory-copy="scatterBody">识别散落在图片中的独立元素，预览、筛选并重新拼接为规则精灵表。</span>
             </div>
             <span class="tool-open">
-              <span>进入切片</span>
+              <span data-factory-copy="scatterOpen">进入切片</span>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
             </span>
           </a>
@@ -335,11 +337,11 @@
             </div>
             <div class="tool-copy">
               <p data-factory-copy="ffmpegLocal">FFmpeg + 本地</p>
-              <h3>视频去水印</h3>
-              <span>框选带时间范围的水印区域，使用快速矩形或智能白印修复并导出视频。</span>
+              <h3 data-factory-copy="watermarkTitle">视频去水印</h3>
+              <span data-factory-copy="watermarkBody">框选带时间范围的水印区域，使用快速矩形或智能白印修复并导出视频。</span>
             </div>
             <span class="tool-open">
-              <span>进入视频修复</span>
+              <span data-factory-copy="watermarkOpen">进入视频修复</span>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
             </span>
           </a>
@@ -353,35 +355,35 @@
             <span data-factory-copy="pipeline">流程 / 03</span>
             <span data-factory-copy="continuousWorkflow">连续工作流</span>
           </p>
-          <h2 id="workflowTitle">一条流水线，<br />四次明确交付。</h2>
+          <h2 id="workflowTitle" data-factory-html="workflowTitle">一条流水线，<br />四次明确交付。</h2>
         </header>
         <ol class="workflow-list">
           <li>
             <span>01</span>
             <div>
-              <h3>素材入库</h3>
-              <p>保留源顺序、命名和画布信息，建立独立动画组。</p>
+              <h3 data-factory-copy="step1Title">素材入库</h3>
+              <p data-factory-copy="step1Body">保留源顺序、命名和画布信息，建立独立动画组。</p>
             </div>
           </li>
           <li>
             <span>02</span>
             <div>
-              <h3>透明化</h3>
-              <p>按背景颜色完成色键抠图，再修复边缘与局部区域。</p>
+              <h3 data-factory-copy="step2Title">透明化</h3>
+              <p data-factory-copy="step2Body">按背景颜色完成色键抠图，再修复边缘与局部区域。</p>
             </div>
           </li>
           <li>
             <span>03</span>
             <div>
-              <h3>逐帧调优</h3>
-              <p>统一处理变换、框体、节奏、附件、音效和攻击拖尾。</p>
+              <h3 data-factory-copy="step3Title">逐帧调优</h3>
+              <p data-factory-copy="step3Body">统一处理变换、框体、节奏、附件、音效和攻击拖尾。</p>
             </div>
           </li>
           <li>
             <span>04</span>
             <div>
-              <h3>打包交付</h3>
-              <p>整理循环与帧序，导出适合下一步制作的动画资产。</p>
+              <h3 data-factory-copy="step4Title">打包交付</h3>
+              <p data-factory-copy="step4Body">整理循环与帧序，导出适合下一步制作的动画资产。</p>
             </div>
           </li>
         </ol>
@@ -398,24 +400,24 @@
             <span data-factory-copy="localFirstEyebrow">本地优先 / 04</span>
             <span data-factory-copy="assetsStayYours">素材留在你的设备</span>
           </p>
-          <h2 id="localTitle">素材留在本机，<br />创作路径更短。</h2>
-          <p>网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理结果直接下载。</p>
+          <h2 id="localTitle" data-factory-html="localTitle">素材留在本机，<br />创作路径更短。</h2>
+          <p data-factory-copy="localLede">网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理结果直接下载。</p>
           <ul>
             <li>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
-              批量处理在浏览器内完成
+              <span data-factory-copy="localPoint1">批量处理在浏览器内完成</span>
             </li>
             <li>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
-              工序之间复用同一动画组
+              <span data-factory-copy="localPoint2">工序之间复用同一动画组</span>
             </li>
             <li>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
-              完成后直接导出动画包
+              <span data-factory-copy="localPoint3">完成后直接导出动画包</span>
             </li>
           </ul>
           <a class="primary-action" href="/tools/import">
-            <span>开始制作动画</span>
+            <span data-factory-copy="localCta">开始制作动画</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
           </a>
         </div>
@@ -424,9 +426,9 @@
 
     <footer class="factory-footer">
       <p><strong>XSXB</strong> FRAME TUNER <span>/</span> ANIMATION FACTORY</p>
-      <nav aria-label="页脚导航">
-        <a href="#factoryTools">工作台</a>
-        <a href="#workflow">流程</a>
+      <nav aria-label="页脚导航" data-factory-aria="footerNav">
+        <a href="#factoryTools" data-factory-copy="toolsNav">工作台</a>
+        <a href="#workflow" data-factory-copy="workflowNavShort">流程</a>
         <button type="button" data-account-open><span data-account-label>登录 / 注册</span></button>
       </nav>
       <p data-factory-copy="footerTagline">本地优先 · 开放工作流</p>
@@ -584,6 +586,81 @@
             back: "返回修改账号",
             enterWorkbench: "进入工作台",
             signOut: "退出登录",
+            documentTitle: "动画工厂 · XSXB Frame Tuner",
+            metaDescription: "XSXB 动画工厂：在本地完成帧动画素材导入、批量抠图、序列整理、动画调优与多格式导出。",
+            homeAria: "XSXB 动画工厂首页",
+            navAria: "主导航",
+            actionsAria: "辅助导航",
+            footerNav: "页脚导航",
+            adminConsole: "后台管理",
+            heroTitle: "从原始素材，<br />到<span>可用动画。</span>",
+            heroDescription:
+              "继续一个动画项目，或先用快速工具单独处理素材。两种方式共享同一套本地处理能力，结果可以随时加入项目。",
+            enterProjects: "进入动画项目",
+            openTools: "打开快速工具",
+            inputValue: "图片序列 / 视频",
+            processingValue: "浏览器本地完成",
+            consoleAria: "帧动画调优工作台预览",
+            consolePipelineAria: "动画处理流程",
+            consoleInspectorAria: "当前帧参数",
+            consoleTimelineAria: "攻击动画帧序列",
+            heroFrameAlt: "剑士攻击动画的第 5 帧预览",
+            stepImport: "导入",
+            stepCutout: "抠图",
+            stepTune: "调优",
+            stepExport: "导出",
+            consoleScale: "缩放",
+            consoleRotate: "旋转",
+            consoleOffsetX: "偏移 X",
+            consoleOffsetY: "偏移 Y",
+            layerHurt: "受击框",
+            layerHit: "攻击框",
+            trustAria: "产品能力概览",
+            trust1: "原始素材留在当前设备",
+            trust2: "工序可独立进入",
+            trust3: "参数贯穿同一动画组",
+            trust4: "导出即可复用的动画包",
+            toolsTitle: "今天，从哪道工序开始？",
+            toolsLede: "已有素材时直接进入对应工具；需要完整调参和项目管理时，打开核心工作台。",
+            coreState: "核心工作台",
+            coreTitle: "角色起稿与动画调优",
+            coreBody: "统一管理角色、动画组与逐帧参数，调整位置、碰撞框、附件、拖尾、音效和播放节奏。",
+            coreFeaturesAria: "核心能力",
+            coreFeature1: "逐帧变换",
+            coreFeature2: "三类碰撞框",
+            coreFeature3: "附件与音效",
+            coreOpen: "打开核心工作台",
+            importTitle: "导入与预处理",
+            importBody: "导入图片序列或提取视频帧，检查画布并建立动画组。",
+            importOpen: "进入导入",
+            cutoutTitle: "批量抠图",
+            cutoutBody: "移除背景、修复边缘和局部区域，再把参数传播到整组。",
+            cutoutOpen: "进入抠图",
+            organizerTitle: "整理与导出",
+            organizerBody: "排序、删帧、循环分析，并输出多种可复用动画格式。",
+            organizerOpen: "进入动画处理",
+            scatterTitle: "零散切图",
+            scatterBody: "识别散落在图片中的独立元素，预览、筛选并重新拼接为规则精灵表。",
+            scatterOpen: "进入切片",
+            watermarkTitle: "视频去水印",
+            watermarkBody: "框选带时间范围的水印区域，使用快速矩形或智能白印修复并导出视频。",
+            watermarkOpen: "进入视频修复",
+            workflowTitle: "一条流水线，<br />四次明确交付。",
+            step1Title: "素材入库",
+            step1Body: "保留源顺序、命名和画布信息，建立独立动画组。",
+            step2Title: "透明化",
+            step2Body: "按背景颜色完成色键抠图，再修复边缘与局部区域。",
+            step3Title: "逐帧调优",
+            step3Body: "统一处理变换、框体、节奏、附件、音效和攻击拖尾。",
+            step4Title: "打包交付",
+            step4Body: "整理循环与帧序，导出适合下一步制作的动画资产。",
+            localTitle: "素材留在本机，<br />创作路径更短。",
+            localLede: "网页版只处理你主动选择的图片或视频。原始素材停留在当前浏览器会话，处理结果直接下载。",
+            localPoint1: "批量处理在浏览器内完成",
+            localPoint2: "工序之间复用同一动画组",
+            localPoint3: "完成后直接导出动画包",
+            localCta: "开始制作动画",
+            workflowNavShort: "流程",
           },
           en: {
             skipTools: "Skip to tools",
@@ -637,6 +714,85 @@
             back: "Edit account details",
             enterWorkbench: "Open workbench",
             signOut: "Sign out",
+            documentTitle: "Animation Factory · XSXB Frame Tuner",
+            metaDescription:
+              "XSXB Animation Factory: import frame assets, batch cutout, sequence organizing, animation tuning, and multi-format export — all locally.",
+            homeAria: "XSXB Animation Factory home",
+            navAria: "Primary navigation",
+            actionsAria: "Secondary navigation",
+            footerNav: "Footer navigation",
+            adminConsole: "Admin console",
+            heroTitle: "From raw assets,<br />to <span>usable animation.</span>",
+            heroDescription:
+              "Continue an animation project, or process assets with the quick tools first. Both paths share the same local pipeline, and results can join a project at any time.",
+            enterProjects: "Open animation projects",
+            openTools: "Open quick tools",
+            inputValue: "Image sequences / video",
+            processingValue: "Processed locally in the browser",
+            consoleAria: "Frame animation tuning workbench preview",
+            consolePipelineAria: "Animation processing pipeline",
+            consoleInspectorAria: "Current frame parameters",
+            consoleTimelineAria: "Attack animation frame sequence",
+            heroFrameAlt: "Frame 5 preview of a swordsman attack animation",
+            stepImport: "Import",
+            stepCutout: "Cutout",
+            stepTune: "Tune",
+            stepExport: "Export",
+            consoleScale: "Scale",
+            consoleRotate: "Rotate",
+            consoleOffsetX: "Offset X",
+            consoleOffsetY: "Offset Y",
+            layerHurt: "Hurtbox",
+            layerHit: "Hitbox",
+            trustAria: "Product capability overview",
+            trust1: "Source assets stay on this device",
+            trust2: "Every step opens independently",
+            trust3: "Parameters follow the same animation group",
+            trust4: "Exports are reusable animation packs",
+            toolsTitle: "Which step do you start from today?",
+            toolsLede:
+              "Jump straight into a tool when you have assets; open the core workbench for full tuning and project management.",
+            coreState: "CORE WORKBENCH",
+            coreTitle: "Character seed & animation tuning",
+            coreBody:
+              "Manage characters, animation groups, and per-frame parameters: position, collision boxes, attachments, trails, SFX, and playback timing.",
+            coreFeaturesAria: "Core capabilities",
+            coreFeature1: "Per-frame transform",
+            coreFeature2: "Three collision boxes",
+            coreFeature3: "Attachments & SFX",
+            coreOpen: "Open the core workbench",
+            importTitle: "Import & preprocess",
+            importBody: "Import image sequences or extract video frames, check the canvas, and build animation groups.",
+            importOpen: "Open import",
+            cutoutTitle: "Batch cutout",
+            cutoutBody: "Remove backgrounds, repair edges and local regions, then propagate parameters to the whole group.",
+            cutoutOpen: "Open cutout",
+            organizerTitle: "Organize & export",
+            organizerBody: "Sort, drop frames, analyze loops, and output multiple reusable animation formats.",
+            organizerOpen: "Open organizer",
+            scatterTitle: "Scatter slicing",
+            scatterBody: "Detect independent elements scattered across an image, preview, filter, and repack them into a clean sprite sheet.",
+            scatterOpen: "Open slicing",
+            watermarkTitle: "Video watermark repair",
+            watermarkBody: "Box-select watermark regions with time ranges, repair with fast rectangle or smart fill, and export the video.",
+            watermarkOpen: "Open video repair",
+            workflowTitle: "One pipeline,<br />four clear deliveries.",
+            step1Title: "Asset intake",
+            step1Body: "Keep source order, naming, and canvas info while building independent animation groups.",
+            step2Title: "Transparency",
+            step2Body: "Chroma-key the background color, then repair edges and local regions.",
+            step3Title: "Frame-by-frame tuning",
+            step3Body: "Tune transform, boxes, timing, attachments, SFX, and attack trails in one place.",
+            step4Title: "Packaged delivery",
+            step4Body: "Organize loops and frame order, then export animation assets ready for the next step.",
+            localTitle: "Assets stay on this device.<br />The creative path gets shorter.",
+            localLede:
+              "The web app only processes images or video you choose. Source media stays in this browser session, and results download directly.",
+            localPoint1: "Batch processing runs in the browser",
+            localPoint2: "Steps reuse the same animation group",
+            localPoint3: "Download the animation pack when done",
+            localCta: "Start making animation",
+            workflowNavShort: "Workflow",
           },
         };
         const readLanguage = () => {
@@ -650,9 +806,20 @@
         const sync = (language) => {
           document.documentElement.lang = language === "en" ? "en" : "zh-CN";
           const table = copy[language] || copy.zh;
+          if (table.documentTitle) document.title = table.documentTitle;
+          const metaDescription = document.querySelector('meta[name="description"]');
+          if (metaDescription && table.metaDescription) metaDescription.setAttribute("content", table.metaDescription);
           for (const node of document.querySelectorAll("[data-factory-copy]")) {
             const value = table[node.dataset.factoryCopy];
             if (value) node.textContent = value;
+          }
+          for (const node of document.querySelectorAll("[data-factory-html]")) {
+            const value = table[node.dataset.factoryHtml];
+            if (value) node.innerHTML = value;
+          }
+          for (const node of document.querySelectorAll("[data-factory-alt]")) {
+            const value = table[node.dataset.factoryAlt];
+            if (value) node.setAttribute("alt", value);
           }
           for (const node of document.querySelectorAll("[data-factory-placeholder]")) {
             const value = table[node.dataset.factoryPlaceholder];
@@ -685,6 +852,12 @@
               // The selection remains available for this page when storage is restricted.
             }
             sync(language);
+            // Account labels live in factory_account.js with its own copy table.
+            try {
+              factoryAccountController?.refreshSession?.({ silent: true });
+            } catch (_error) {
+              // Account UI keeps its previous language until the next session refresh.
+            }
           });
         }
       })();

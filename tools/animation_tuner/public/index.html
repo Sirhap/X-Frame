@@ -37,6 +37,10 @@
   </head>
   <body class="theme-dark" data-sidebar-tab="transform">
     <a class="skipLink" href="#mainWorkbench" data-i18n="skipToMain">跳到主要内容</a>
+    <aside class="desktopRecommendedBanner" role="status">
+      <strong data-i18n="desktopRecommended">建议在桌面端使用</strong>
+      <span data-i18n="desktopRecommendedHint">当前窗口较窄，部分控件会被压缩，画布可用空间也会变小。</span>
+    </aside>
     <nav class="toolRail" aria-label="创作工具" data-i18n-aria-label="creativeTools">
       <a
         class="toolRailBrand"
@@ -80,18 +84,32 @@
           id="toolRailContextMenu"
           class="toolRailContextMenu"
           aria-label="当前动画工具"
+          data-i18n-aria-label="currentAnimationTools"
           aria-live="polite"
           hidden
         >
-          <p class="toolRailContextEyebrow">当前动画</p>
-          <strong id="toolRailContextTitle">将当前帧带入工具</strong>
-          <p id="toolRailContextHint" class="toolRailContextHint">在项目内处理，结果会回写到当前动画。</p>
-          <div class="toolRailContextActions" role="group" aria-label="处理工具">
-            <button type="button" data-context-tool="current-frame-cutout">抠当前帧</button>
-            <button type="button" data-context-tool="batch-cutout">批量抠图</button>
-            <button type="button" data-context-tool="organizer">整理 / 反选 / 翻转</button>
+          <p class="toolRailContextEyebrow" data-i18n="currentAnimation">当前动画</p>
+          <strong id="toolRailContextTitle" data-i18n="bringCurrentFrame">将当前帧带入工具</strong>
+          <p id="toolRailContextHint" class="toolRailContextHint" data-i18n="processInProjectHint">
+            在项目内处理，结果会回写到当前动画。
+          </p>
+          <div
+            class="toolRailContextActions"
+            role="group"
+            aria-label="处理工具"
+            data-i18n-aria-label="processTools"
+          >
+            <button type="button" data-context-tool="current-frame-cutout" data-i18n="cutoutCurrentFrame">
+              抠当前帧
+            </button>
+            <button type="button" data-context-tool="batch-cutout" data-i18n="batchCutout">批量抠图</button>
+            <button type="button" data-context-tool="organizer" data-i18n="organizeInvertFlip">
+              整理 / 反选 / 翻转
+            </button>
           </div>
-          <p class="toolRailContextFootnote">切片仅适合单图；多帧动画不会在这里提供切片入口。</p>
+          <p class="toolRailContextFootnote" data-i18n="scatterSingleImageOnly">
+            切片仅适合单图；多帧动画不会在这里提供切片入口。
+          </p>
         </section>
       </div>
       <button
@@ -113,11 +131,12 @@
         <strong id="workspaceFlowProject">当前项目</strong>
         <output id="workspaceSaveIndicator" role="status" aria-live="polite">已保存</output>
       </div>
-      <nav class="workspacePrimaryTabs" aria-label="工作阶段">
+      <nav class="workspacePrimaryTabs" aria-label="工作阶段" data-i18n-aria-label="workStages">
         <a
           href="/workspace/resources/import"
           data-workbench-route="organizer"
           data-workspace-stage="resources"
+          data-i18n="stageResources"
         >
           资源处理
         </a>
@@ -125,33 +144,63 @@
           href="/workspace/animation/transform"
           data-workbench-route="animation"
           data-workspace-stage="animation"
+          data-i18n="stageAnimation"
         >
           动画编辑
         </a>
-        <a href="/workspace/delivery/export" data-workbench-route="export" data-workspace-stage="delivery">
+        <a
+          href="/workspace/delivery/export"
+          data-workbench-route="export"
+          data-workspace-stage="delivery"
+          data-i18n="stageDelivery"
+        >
           交付与导出
         </a>
       </nav>
-      <nav class="workspaceSecondaryTabs" aria-label="当前阶段工具">
+      <nav class="workspaceSecondaryTabs" aria-label="当前阶段工具" data-i18n-aria-label="stageTools">
         <span data-stage-tools="resources">
-          <a href="/workspace/resources/import" data-workbench-route="organizer">导入与整理</a>
-          <a href="/workspace/resources/cutout" data-workbench-route="cutout">智能抠图</a>
-          <a href="/workspace/resources/scatter" data-workbench-route="scatter">零散切片</a>
+          <a href="/workspace/resources/import" data-workbench-route="organizer" data-i18n="stageToolImport"
+            >导入与整理</a
+          >
+          <a href="/workspace/resources/cutout" data-workbench-route="cutout" data-i18n="stageToolCutout"
+            >智能抠图</a
+          >
+          <a href="/workspace/resources/scatter" data-workbench-route="scatter" data-i18n="stageToolScatter"
+            >零散切片</a
+          >
         </span>
         <span data-stage-tools="animation">
-          <a href="/workspace/animation/transform" data-workbench-route="animation">变换</a>
-          <a href="/workspace/animation/boxes" data-workbench-route="boxes">框体</a>
-          <a href="/workspace/animation/trails" data-workbench-route="trails">拖尾</a>
-          <a href="/workspace/animation/audio" data-workbench-route="audio">音频</a>
-          <a href="/workspace/animation/attachments" data-workbench-route="attachments">挂件</a>
+          <a
+            href="/workspace/animation/transform"
+            data-workbench-route="animation"
+            data-i18n="stageToolTransform"
+            >变换</a
+          >
+          <a href="/workspace/animation/boxes" data-workbench-route="boxes" data-i18n="stageToolBoxes"
+            >框体</a
+          >
+          <a href="/workspace/animation/trails" data-workbench-route="trails" data-i18n="stageToolTrails"
+            >拖尾</a
+          >
+          <a href="/workspace/animation/audio" data-workbench-route="audio" data-i18n="stageToolAudio"
+            >音频</a
+          >
+          <a
+            href="/workspace/animation/attachments"
+            data-workbench-route="attachments"
+            data-i18n="stageToolAttachments"
+            >挂件</a
+          >
         </span>
         <span data-stage-tools="delivery">
-          <a href="/workspace/delivery/export" data-workbench-route="export">文件导出</a>
+          <a href="/workspace/delivery/export" data-workbench-route="export" data-i18n="stageToolExport"
+            >文件导出</a
+          >
           <a href="/workspace/delivery/godot" data-workbench-route="godot">Godot</a>
           <a href="/workspace/delivery/codex-pet" data-workbench-route="codex-pet">Codex Pet</a>
         </span>
       </nav>
-      <button id="workspaceAccount" class="workspaceAccount" type="button">账户</button>
+      <button id="workspaceAccount" class="workspaceAccount" type="button" data-i18n="account">账户</button>
     </header>
     <main id="mainWorkbench" class="app" tabindex="-1">
       <aside id="workbenchSidebar" class="sidebar">
@@ -351,10 +400,12 @@
           <header class="sidebarSectionHeader">
             <div>
               <span class="sectionEyebrow">PROCESS ASSETS</span>
-              <h2>处理当前动画</h2>
+              <h2 data-i18n="processCurrentAnimation">处理当前动画</h2>
             </div>
           </header>
-          <p class="sidebarHint">带着当前项目和动画组进入，完成后可明确应用并返回。</p>
+          <p class="sidebarHint" data-i18n="processCurrentHint">
+            带着当前项目和动画组进入，完成后可明确应用并返回。
+          </p>
           <div class="projectProcessingActions"></div>
         </section>
         <details class="panel" data-panel="scene-reference">
@@ -437,7 +488,7 @@
                   id="baseScale"
                   type="number"
                   step="0.001"
-                  readonly
+                  inputmode="decimal"
                   data-i18n-aria-label="scale"
                 /><button
                   type="button"
@@ -467,7 +518,7 @@
                   id="baseRotation"
                   type="number"
                   step="1"
-                  readonly
+                  inputmode="decimal"
                   data-i18n-aria-label="rotate"
                 /><button
                   type="button"
@@ -493,7 +544,13 @@
                   data-i18n-value="offsetX"
                 >
                   &lsaquo;</button
-                ><input id="baseX" type="number" step="1" readonly data-i18n-aria-label="offsetX" /><button
+                ><input
+                  id="baseX"
+                  type="number"
+                  step="1"
+                  inputmode="decimal"
+                  data-i18n-aria-label="offsetX"
+                /><button
                   type="button"
                   class="numberStep"
                   data-step-target="baseX"
@@ -517,7 +574,13 @@
                   data-i18n-value="offsetY"
                 >
                   &lsaquo;</button
-                ><input id="baseY" type="number" step="1" readonly data-i18n-aria-label="offsetY" /><button
+                ><input
+                  id="baseY"
+                  type="number"
+                  step="1"
+                  inputmode="decimal"
+                  data-i18n-aria-label="offsetY"
+                /><button
                   type="button"
                   class="numberStep"
                   data-step-target="baseY"
@@ -554,7 +617,7 @@
                     id="baseScaleX"
                     type="number"
                     step="0.001"
-                    readonly
+                    inputmode="decimal"
                     data-i18n-aria-label="scaleX"
                   /><button
                     type="button"
@@ -584,7 +647,7 @@
                     id="baseScaleY"
                     type="number"
                     step="0.001"
-                    readonly
+                    inputmode="decimal"
                     data-i18n-aria-label="scaleY"
                   /><button
                     type="button"
@@ -648,34 +711,47 @@
           <div id="attachmentAssetTrayHost" class="attachmentAssetTrayHost"></div>
         </details>
         <details id="attackTrailPanel" class="panel attackTrailPanel" data-panel="attack-trails" hidden>
-          <summary><h2>攻击拖尾</h2></summary>
+          <summary><h2 data-i18n="attackTrails">攻击拖尾</h2></summary>
           <div class="attackTrailQuickStart">
             <div>
-              <strong>第一次做拖尾？</strong>
-              <span>按 5 步完成：开启 → 放棍 → 贴武器 → 调外观 → 预览。</span>
+              <strong data-i18n="trailQuickStartTitle">第一次做拖尾？</strong>
+              <span data-i18n="trailQuickStartSteps"
+                >按 5 步完成：开启 → 放棍 → 贴武器 → 调外观 → 预览。</span
+              >
             </div>
-            <button id="attackTrailHelpOpen" type="button" class="secondary">打开新手引导</button>
+            <button id="attackTrailHelpOpen" type="button" class="secondary" data-i18n="trailQuickStartOpen">
+              打开新手引导
+            </button>
           </div>
           <label class="toggle"
-            ><input id="attackTrailMode" type="checkbox" /><span>攻击拖尾模式</span></label
+            ><input id="attackTrailMode" type="checkbox" /><span data-i18n="trailMode"
+              >攻击拖尾模式</span
+            ></label
           >
           <div id="attackTrailBody" class="attackTrailBody" hidden>
             <section class="trailControlSection" aria-labelledby="trailPresetHeading">
               <header class="trailControlHeading">
                 <span>01</span>
                 <div>
-                  <h3 id="trailPresetHeading">选择拖尾方案</h3>
-                  <p>直接用默认拖尾即可开始；满意后再保存成自己的预设。</p>
+                  <h3 id="trailPresetHeading" data-i18n="trailPresetTitle">选择拖尾方案</h3>
+                  <p data-i18n="trailPresetHint">直接用默认拖尾即可开始；满意后再保存成自己的预设。</p>
                 </div>
               </header>
               <div class="attackTrailRow trailSegmentRow">
-                <select id="attackTrailSegment" aria-label="拖尾预设"></select>
-                <button id="attackTrailNew" type="button" class="secondary">保存为预设</button>
+                <select
+                  id="attackTrailSegment"
+                  aria-label="拖尾预设"
+                  data-i18n-aria-label="trailPreset"
+                ></select>
+                <button id="attackTrailNew" type="button" class="secondary" data-i18n="trailSavePreset">
+                  保存为预设
+                </button>
                 <button
                   id="attackTrailDelete"
                   type="button"
                   class="dangerMini"
                   aria-describedby="attackTrailDeleteHint"
+                  data-i18n="trailDelete"
                 >
                   删除拖尾
                 </button>
@@ -686,17 +762,33 @@
               <header class="trailControlHeading">
                 <span>02</span>
                 <div>
-                  <h3 id="trailStickHeading">在关键帧放置棍子</h3>
-                  <p>在挥刀开始帧和结束帧各放一根，拖尾会自动连接。</p>
+                  <h3 id="trailStickHeading" data-i18n="trailStickTitle">在关键帧放置棍子</h3>
+                  <p data-i18n="trailStickHint">在挥刀开始帧和结束帧各放一根，拖尾会自动连接。</p>
                 </div>
               </header>
               <div class="attackTrailRow trailStickActionRow">
-                <button id="attackTrailAddStick" type="button" class="secondary">当前帧加棍子</button>
-                <button id="attackTrailDeleteStick" type="button" class="dangerMini">删除当前棍子</button>
+                <button id="attackTrailAddStick" type="button" class="secondary" data-i18n="trailAddStick">
+                  当前帧加棍子
+                </button>
+                <button
+                  id="attackTrailDeleteStick"
+                  type="button"
+                  class="dangerMini"
+                  data-i18n="trailDeleteStick"
+                >
+                  删除当前棍子
+                </button>
                 <button id="attackTrailLayerToggle" type="button" class="secondary trailLayerToggle">
                   角色后
                 </button>
-                <button id="attackTrailReverse" type="button" class="secondary" title="贴图方向反了时使用">
+                <button
+                  id="attackTrailReverse"
+                  type="button"
+                  class="secondary"
+                  title="贴图方向反了时使用"
+                  data-i18n="trailReverse"
+                  data-i18n-title="trailReverseHint"
+                >
                   翻转贴图方向
                 </button>
               </div>
@@ -705,17 +797,29 @@
               <header class="trailControlHeading">
                 <span>03</span>
                 <div>
-                  <h3 id="trailTextureHeading">设置拖尾形状</h3>
-                  <p>白色区域决定形状；先用默认 PNG，只需按武器调整弧度。</p>
+                  <h3 id="trailTextureHeading" data-i18n="trailTextureTitle">设置拖尾形状</h3>
+                  <p data-i18n="trailTextureHint">白色区域决定形状；先用默认 PNG，只需按武器调整弧度。</p>
                 </div>
               </header>
               <div class="trailTextureBox">
                 <input id="attackTrailTextureFile" type="file" accept="image/png,.png" hidden />
                 <div class="trailTextureActions">
-                  <button id="attackTrailTextureBrowse" type="button" class="secondary">
+                  <button
+                    id="attackTrailTextureBrowse"
+                    type="button"
+                    class="secondary"
+                    data-i18n="trailTextureBrowse"
+                  >
                     选择 / 替换拖尾 PNG
                   </button>
-                  <button id="attackTrailTextureReset" type="button" class="secondary">恢复默认 PNG</button>
+                  <button
+                    id="attackTrailTextureReset"
+                    type="button"
+                    class="secondary"
+                    data-i18n="trailTextureReset"
+                  >
+                    恢复默认 PNG
+                  </button>
                 </div>
                 <span id="attackTrailTextureName" class="trailTextureName">尚未导入 PNG</span>
                 <canvas
@@ -725,7 +829,7 @@
                   height="116"
                 ></canvas>
                 <label class="range trailCurvatureRange"
-                  ><span>头部弧度</span
+                  ><span data-i18n="trailHeadCurvature">头部弧度</span
                   ><input
                     id="attackTrailHeadCurvature"
                     type="range"
@@ -741,23 +845,26 @@
               <header class="trailControlHeading">
                 <span>04</span>
                 <div>
-                  <h3 id="trailAppearanceHeading">设置颜色</h3>
-                  <p>新手建议先用单色；需要多色过渡时再切换为渐变。</p>
+                  <h3 id="trailAppearanceHeading" data-i18n="trailColorTitle">设置颜色</h3>
+                  <p data-i18n="trailColorHint">新手建议先用单色；需要多色过渡时再切换为渐变。</p>
                 </div>
               </header>
               <div class="attackTrailGrid trailAppearanceGrid">
                 <label class="field"
-                  ><span>颜色模式</span
+                  ><span data-i18n="trailColorMode">颜色模式</span
                   ><select id="attackTrailColorMode">
-                    <option value="solid">单色</option>
-                    <option value="gradient">渐变</option>
-                    <option value="original">贴图原色</option>
+                    <option value="solid" data-i18n="trailColorSolid">单色</option>
+                    <option value="gradient" data-i18n="trailColorGradient">渐变</option>
+                    <option value="original" data-i18n="trailColorOriginal">贴图原色</option>
                   </select></label
                 >
                 <label class="field"
-                  ><span>拖尾颜色</span><input id="attackTrailColor" type="color" value="#d9364a"
+                  ><span data-i18n="trailColor">拖尾颜色</span
+                  ><input id="attackTrailColor" type="color" value="#d9364a"
                 /></label>
-                <button id="attackTrailPickColor" type="button" class="secondary">从角色吸色</button>
+                <button id="attackTrailPickColor" type="button" class="secondary" data-i18n="trailPickColor">
+                  从角色吸色
+                </button>
               </div>
               <div id="attackTrailGradientEditor" class="trailGradientEditor" hidden>
                 <div
@@ -765,40 +872,49 @@
                   class="trailGradientBar"
                   tabindex="0"
                   aria-label="拖尾渐变节点"
+                  data-i18n-aria-label="trailGradientBar"
                 ></div>
                 <label class="field"
-                  ><span>节点颜色</span><input id="attackTrailGradientColor" type="color" value="#d9364a"
+                  ><span data-i18n="trailNodeColor">节点颜色</span
+                  ><input id="attackTrailGradientColor" type="color" value="#d9364a"
                 /></label>
                 <div class="trailGradientActions">
                   <output id="attackTrailGradientPosition">0%</output>
-                  <button id="attackTrailGradientDelete" type="button" class="secondary">移除当前节点</button>
+                  <button
+                    id="attackTrailGradientDelete"
+                    type="button"
+                    class="secondary"
+                    data-i18n="trailNodeDelete"
+                  >
+                    移除当前节点
+                  </button>
                 </div>
               </div>
             </section>
             <details class="trailAdvanced">
               <summary>
-                <span><b>05</b> 时间与质量</span>
-                <small>高级设置 · 默认值通常够用</small>
+                <span><b>05</b> <span data-i18n="trailTimingTitle">时间与质量</span></span>
+                <small data-i18n="trailTimingHint">高级设置 · 默认值通常够用</small>
               </summary>
               <div class="attackTrailGrid trailMotionGrid">
                 <label class="number"
-                  ><span>终点前拖后 ms</span
+                  ><span data-i18n="trailBeforeTime">终点前拖后 ms</span
                   ><input id="attackTrailBeforeTimeMs" type="number" min="0" max="60000" step="1"
                 /></label>
                 <label class="number"
-                  ><span>终点后收拢 ms</span
+                  ><span data-i18n="trailAfterTime">终点后收拢 ms</span
                   ><input id="attackTrailAfterTimeMs" type="number" min="1" max="60000" step="1"
                 /></label>
                 <label class="number"
-                  ><span>尾端采样点</span
+                  ><span data-i18n="trailTailSamples">尾端采样点</span
                   ><input id="attackTrailTailSamples" type="number" min="4" max="8" step="1"
                 /></label>
                 <label class="number"
-                  ><span>拖尾细腻度</span
+                  ><span data-i18n="trailPathColumns">拖尾细腻度</span
                   ><input id="attackTrailPathColumns" type="number" min="8" max="96" step="1"
                 /></label>
                 <label class="number"
-                  ><span>渐隐起点 %</span
+                  ><span data-i18n="trailFadeStart">渐隐起点 %</span
                   ><input id="attackTrailTailFadeStart" type="number" min="0" max="95" step="1"
                 /></label>
               </div>
@@ -807,13 +923,15 @@
           </div>
           <dialog id="attackTrailPresetDialog" class="trailPresetDialog">
             <form id="attackTrailPresetForm" class="trailPresetForm">
-              <h3>保存拖尾预设</h3>
+              <h3 data-i18n="trailPresetDialogTitle">保存拖尾预设</h3>
               <label class="field"
-                ><span>预设名称</span><input id="attackTrailPresetName" type="text" maxlength="60"
+                ><span data-i18n="trailPresetName">预设名称</span
+                ><input id="attackTrailPresetName" type="text" maxlength="60"
               /></label>
               <div class="trailPresetActions">
-                <button id="attackTrailPresetCancel" type="button" class="secondary">取消</button
-                ><button type="submit">保存</button>
+                <button id="attackTrailPresetCancel" type="button" class="secondary" data-i18n="cancel">
+                  取消</button
+                ><button type="submit" data-i18n="save">保存</button>
               </div>
             </form>
           </dialog>
@@ -1253,71 +1371,115 @@
         <header class="modeHubHeader">
           <div>
             <span>DELIVERY DESK / PROJECT</span>
-            <h1 id="deliveryTitle">交付与导出</h1>
-            <p>先确认交付目标，再进入对应设置；通用调整和格式参数仍复用现有导出引擎。</p>
+            <h1 id="deliveryTitle" data-i18n="deliveryTitle">交付与导出</h1>
+            <p data-i18n="deliveryIntro">
+              先确认交付目标，再进入对应设置；通用调整和格式参数仍复用现有导出引擎。
+            </p>
           </div>
-          <a class="modeHubSecondary" href="/workspace/animation/transform" data-workbench-route="animation"
+          <a
+            class="modeHubSecondary"
+            href="/workspace/animation/transform"
+            data-workbench-route="animation"
+            data-i18n="returnAnimationEdit"
             >返回动画编辑</a
           >
         </header>
         <div id="deliveryExportMount" class="deliveryExportMount" data-delivery-panel="export">
           <div class="deliveryExportLoading">
             <span>01 / FILES</span>
-            <strong>正在载入当前动画的导出工作区…</strong>
+            <strong data-i18n="deliveryExportLoading">正在载入当前动画的导出工作区…</strong>
           </div>
         </div>
         <div class="deliveryGrid deliveryIntegrationGrid">
           <article class="deliveryCard" data-delivery-panel="godot">
             <div class="deliveryCardKicker">
               <span>02 / ENGINE</span>
-              <strong id="deliveryGodotStatus" class="deliveryStatus" data-tone="neutral">检查中</strong>
+              <strong
+                id="deliveryGodotStatus"
+                class="deliveryStatus"
+                data-tone="neutral"
+                data-i18n="deliveryChecking"
+                >检查中</strong
+              >
             </div>
-            <h2>Godot 交付</h2>
-            <p>按整个项目检查绑定路径、资源变更和同步阻塞项，再交付到 Godot。</p>
+            <h2 data-i18n="deliveryGodotTitle">Godot 交付</h2>
+            <p data-i18n="deliveryGodotHint">
+              按整个项目检查绑定路径、资源变更和同步阻塞项，再交付到 Godot。
+            </p>
             <dl>
               <div>
-                <dt>交付范围</dt>
-                <dd>整个项目</dd>
+                <dt data-i18n="deliveryScope">交付范围</dt>
+                <dd data-i18n="deliveryWholeProject">整个项目</dd>
               </div>
               <div>
-                <dt>动画数量</dt>
+                <dt data-i18n="deliveryAnimationCount">动画数量</dt>
                 <dd id="deliveryGodotAnimationCount">0 个</dd>
               </div>
               <div>
-                <dt>合计帧数</dt>
+                <dt data-i18n="deliveryTotalFrames">合计帧数</dt>
                 <dd id="deliveryGodotFrameCount">0 帧</dd>
               </div>
             </dl>
-            <ul id="deliveryGodotChecks" class="deliveryChecks" aria-label="Godot 交付检查"></ul>
-            <button id="deliveryOpenGodot" class="modeHubSecondary" type="button">配置项目 Godot 交付</button>
+            <ul
+              id="deliveryGodotChecks"
+              class="deliveryChecks"
+              aria-label="Godot 交付检查"
+              data-i18n-aria-label="deliveryGodotChecks"
+            ></ul>
+            <button
+              id="deliveryOpenGodot"
+              class="modeHubSecondary"
+              type="button"
+              data-i18n="deliveryConfigureGodot"
+            >
+              配置项目 Godot 交付
+            </button>
           </article>
           <article class="deliveryCard" data-delivery-panel="codex-pet">
             <div class="deliveryCardKicker">
               <span>03 / PET</span>
-              <strong id="deliveryPetStatus" class="deliveryStatus" data-tone="neutral">检查中</strong>
+              <strong
+                id="deliveryPetStatus"
+                class="deliveryStatus"
+                data-tone="neutral"
+                data-i18n="deliveryChecking"
+                >检查中</strong
+              >
             </div>
             <h2>Codex Pet</h2>
-            <p>按整个项目检查标准动作覆盖与 Pet 兼容状态，当前动画仅作为预览上下文。</p>
+            <p data-i18n="deliveryPetHint">
+              按整个项目检查标准动作覆盖与 Pet 兼容状态，当前动画仅作为预览上下文。
+            </p>
             <dl>
               <div>
-                <dt>检查范围</dt>
-                <dd>整个项目</dd>
+                <dt data-i18n="deliveryCheckScope">检查范围</dt>
+                <dd data-i18n="deliveryWholeProject">整个项目</dd>
               </div>
               <div>
-                <dt>动画数量</dt>
+                <dt data-i18n="deliveryAnimationCount">动画数量</dt>
                 <dd id="deliveryPetAnimationCount">0 个</dd>
               </div>
               <div>
-                <dt>已绑定身份</dt>
+                <dt data-i18n="deliveryBoundIdentity">已绑定身份</dt>
                 <dd id="deliveryPetBoundCount">0 个</dd>
               </div>
               <div>
-                <dt>当前预览</dt>
+                <dt data-i18n="deliveryCurrentPreview">当前预览</dt>
                 <dd id="deliveryPetCurrentAnimation">—</dd>
               </div>
             </dl>
-            <ul id="deliveryPetChecks" class="deliveryChecks" aria-label="Codex Pet 兼容检查"></ul>
-            <button id="deliveryOpenCodexPet" class="modeHubSecondary" type="button">
+            <ul
+              id="deliveryPetChecks"
+              class="deliveryChecks"
+              aria-label="Codex Pet 兼容检查"
+              data-i18n-aria-label="deliveryPetChecks"
+            ></ul>
+            <button
+              id="deliveryOpenCodexPet"
+              class="modeHubSecondary"
+              type="button"
+              data-i18n="deliveryCheckPet"
+            >
               检查项目 Pet 兼容性
             </button>
           </article>
@@ -1327,80 +1489,167 @@
         id="scatterSliceSurface"
         class="modeHub scatterSliceSurface"
         aria-label="零散切片工作台"
+        data-i18n-aria-label="scatterWorkbench"
         hidden
       >
         <div class="scatterIntegratedWorkbench">
           <header class="scatterIntegratedHeader">
             <div>
               <span>SCATTER WORKSPACE / LOCAL</span>
-              <h1>零散切片</h1>
-              <p>识别散落元素、整理动画分组，再加入工作集或导出。</p>
+              <h1 data-i18n="scatterSliceTitle">零散切片</h1>
+              <p data-i18n="scatterIntro">识别散落元素、整理动画分组，再加入工作集或导出。</p>
             </div>
             <div id="scatterResultSummary" class="scatterResultSummary" role="status" aria-live="polite">
-              <span>等待素材</span><strong>先选择一张包含散落元素的图片</strong>
+              <span data-i18n="scatterWaiting">等待素材</span
+              ><strong data-i18n="scatterChooseImage">先选择一张包含散落元素的图片</strong>
             </div>
           </header>
-          <nav class="scatterProgress" aria-label="切片流程">
-            <span class="active" data-scatter-step="source"><b>01</b>载入素材</span>
-            <span data-scatter-step="detect"><b>02</b>识别区域</span>
-            <span data-scatter-step="organize"><b>03</b>整理分组</span>
-            <span data-scatter-step="deliver"><b>04</b>拼接导出</span>
+          <nav class="scatterProgress" aria-label="切片流程" data-i18n-aria-label="scatterFlow">
+            <span class="active" data-scatter-step="source"
+              ><b>01</b><span data-i18n="scatterStepSource">载入素材</span></span
+            >
+            <span data-scatter-step="detect"
+              ><b>02</b><span data-i18n="scatterStepDetect">识别区域</span></span
+            >
+            <span data-scatter-step="organize"
+              ><b>03</b><span data-i18n="scatterStepOrganize">整理分组</span></span
+            >
+            <span data-scatter-step="deliver"
+              ><b>04</b><span data-i18n="scatterStepDeliver">拼接导出</span></span
+            >
           </nav>
           <div class="scatterIntegratedBody">
-            <aside class="scatterControlStack" aria-label="切片参数">
+            <aside class="scatterControlStack" aria-label="切片参数" data-i18n-aria-label="scatterParams">
               <details class="scatterStepPanel" open>
-                <summary><span>01</span><strong>导入与智能识别</strong></summary>
+                <summary>
+                  <span>01</span><strong data-i18n="scatterImportDetect">导入与智能识别</strong>
+                </summary>
                 <div class="scatterStepPanelBody">
                   <input id="scatterFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
                   <div class="sourceActions">
-                    <button id="scatterUpload" class="actionButton primary" type="button">
+                    <button
+                      id="scatterUpload"
+                      class="actionButton primary"
+                      type="button"
+                      data-i18n="scatterChooseOrPaste"
+                    >
                       选择或粘贴图片
                     </button>
-                    <button id="scatterClearSource" class="actionButton danger" type="button" disabled>
+                    <button
+                      id="scatterClearSource"
+                      class="actionButton danger"
+                      type="button"
+                      disabled
+                      data-i18n="scatterClear"
+                    >
                       清空
                     </button>
                   </div>
-                  <p id="scatterSourceMeta" class="sourceMeta">未加载图片</p>
-                  <label class="fieldLabel" for="scatterMode">检测模式</label>
+                  <p id="scatterSourceMeta" class="sourceMeta" data-i18n="scatterNoImage">未加载图片</p>
+                  <label class="fieldLabel" for="scatterMode" data-i18n="scatterDetectMode">检测模式</label>
                   <select id="scatterMode">
-                    <option value="auto">智能主体识别</option>
-                    <option value="alpha">Alpha 透明度</option>
-                    <option value="colorkey">背景色键</option>
+                    <option value="auto" data-i18n="scatterModeAuto">智能主体识别</option>
+                    <option value="alpha" data-i18n="scatterModeAlpha">Alpha 透明度</option>
+                    <option value="colorkey" data-i18n="scatterModeColorKey">背景色键</option>
                   </select>
-                  <label class="fieldLabel" for="scatterColor">背景色 · 也可在画布取色</label>
+                  <label class="fieldLabel" for="scatterColor" data-i18n="scatterBackgroundColor"
+                    >背景色 · 也可在画布取色</label
+                  >
                   <div class="colorField">
                     <input id="scatterColor" type="color" value="#98d79b" />
                     <output id="scatterColorValue" for="scatterColor">#98D79B</output>
                   </div>
-                  <button id="scatterDetect" class="actionButton detect" type="button" disabled>
+                  <button
+                    id="scatterDetect"
+                    class="actionButton detect"
+                    type="button"
+                    disabled
+                    data-i18n="scatterDetectSubjects"
+                  >
                     智能识别主体
                   </button>
-                  <p class="automaticDetectionHint">自动过滤背景、网格线与微小噪点。</p>
+                  <p class="automaticDetectionHint" data-i18n="scatterAutoFilterHint">
+                    自动过滤背景、网格线与微小噪点。
+                  </p>
                 </div>
               </details>
               <details class="scatterStepPanel" data-requires-detection>
-                <summary><span>02</span><strong>区域整理与分组</strong></summary>
+                <summary>
+                  <span>02</span><strong data-i18n="scatterOrganizeGroups">区域整理与分组</strong>
+                </summary>
                 <div class="scatterStepPanelBody sliceEditorControls">
-                  <div class="sliceToolModes" role="group" aria-label="画布工具">
-                    <button id="scatterEditMode" type="button" aria-pressed="false" disabled>编辑</button>
-                    <button id="scatterAddMode" type="button" aria-pressed="false" disabled>添加</button>
-                    <button id="scatterSampleMode" type="button" aria-pressed="true" disabled>取色</button>
+                  <div
+                    class="sliceToolModes"
+                    role="group"
+                    aria-label="画布工具"
+                    data-i18n-aria-label="scatterCanvasTools"
+                  >
+                    <button
+                      id="scatterEditMode"
+                      type="button"
+                      aria-pressed="false"
+                      disabled
+                      data-i18n="scatterEdit"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      id="scatterAddMode"
+                      type="button"
+                      aria-pressed="false"
+                      disabled
+                      data-i18n="scatterAdd"
+                    >
+                      添加
+                    </button>
+                    <button
+                      id="scatterSampleMode"
+                      type="button"
+                      aria-pressed="true"
+                      disabled
+                      data-i18n="scatterSample"
+                    >
+                      取色
+                    </button>
                   </div>
                   <code id="scatterActiveBox">NO SELECTION</code>
-                  <div class="sliceEditActions" role="group" aria-label="编辑历史">
-                    <button id="scatterUndo" type="button" disabled>撤销</button>
-                    <button id="scatterRedo" type="button" disabled>重做</button>
-                    <button id="scatterRegroup" type="button" disabled>按位置分组</button>
-                    <button id="scatterNormalizeBoxes" type="button" disabled>统一裁剪框</button>
+                  <div
+                    class="sliceEditActions"
+                    role="group"
+                    aria-label="编辑历史"
+                    data-i18n-aria-label="scatterEditHistory"
+                  >
+                    <button id="scatterUndo" type="button" disabled data-i18n="scatterUndo">撤销</button>
+                    <button id="scatterRedo" type="button" disabled data-i18n="scatterRedo">重做</button>
+                    <button id="scatterRegroup" type="button" disabled data-i18n="scatterGroupByPosition">
+                      按位置分组
+                    </button>
+                    <button
+                      id="scatterNormalizeBoxes"
+                      type="button"
+                      disabled
+                      data-i18n="scatterNormalizeBoxes"
+                    >
+                      统一裁剪框
+                    </button>
                   </div>
                   <div class="sliceNoiseActions">
-                    <label for="scatterSmallSliceRatio">小切片阈值</label>
+                    <label for="scatterSmallSliceRatio" data-i18n="scatterSmallSliceThreshold"
+                      >小切片阈值</label
+                    >
                     <select id="scatterSmallSliceRatio">
                       <option value="0.15">≤ 最大面积 15%</option>
                       <option value="0.3" selected>≤ 最大面积 30%</option>
                       <option value="0.5">≤ 最大面积 50%</option>
                     </select>
-                    <button id="scatterSelectSmallSlices" type="button" disabled>选择小切片</button>
+                    <button
+                      id="scatterSelectSmallSlices"
+                      type="button"
+                      disabled
+                      data-i18n="scatterSelectSmallSlices"
+                    >
+                      选择小切片
+                    </button>
                   </div>
                 </div>
               </details>
@@ -3586,7 +3835,7 @@
       <div class="mediaExportCard">
         <header class="mediaExportHeader">
           <div class="mediaExportStep">3</div>
-          <h2 id="mediaExportTitle">导出</h2>
+          <h2 id="mediaExportTitle" data-i18n="mediaExportName">导出</h2>
           <button
             id="mediaExportClose"
             class="secondary mediaExportClose"
@@ -3599,17 +3848,29 @@
           </button>
         </header>
         <div class="mediaExportNameRow">
-          <label>文件名：<input id="mediaExportFilename" type="text" maxlength="96" /></label>
+          <label
+            ><span data-i18n="mediaExportFilename">文件名</span>：<input
+              id="mediaExportFilename"
+              type="text"
+              maxlength="96"
+          /></label>
           <label class="mediaExportUseSourceName"
-            ><input id="mediaExportUseSourceName" type="checkbox" />使用视频名</label
+            ><input id="mediaExportUseSourceName" type="checkbox" /><span data-i18n="mediaExportUseVideoName"
+              >使用视频名</span
+            ></label
           >
           <span id="mediaExportFrameCount" hidden>0</span><span id="mediaExportCanvas" hidden>—</span>
         </div>
         <div class="mediaExportWorkspace">
           <div class="mediaExportControls">
             <section class="mediaExportFormatSection">
-              <h3>导出格式</h3>
-              <div class="mediaExportFormats" role="radiogroup" aria-label="导出格式">
+              <h3 data-i18n="mediaExportFormat">导出格式</h3>
+              <div
+                class="mediaExportFormats"
+                role="radiogroup"
+                aria-label="导出格式"
+                data-i18n-aria-label="mediaExportFormat"
+              >
                 <label class="mediaExportFormat">
                   <input id="mediaExportFrames" name="mediaExportFormat" type="radio" value="frames" />
                   <b>ZIP</b>
@@ -3635,13 +3896,19 @@
                 <input id="mediaExportMov" type="checkbox" hidden disabled />
               </div>
             </section>
-            <section class="mediaExportRecipe" aria-label="导出配方">
+            <section class="mediaExportRecipe" aria-label="导出配方" data-i18n-aria-label="mediaExportRecipe">
               <fieldset class="mediaExportReferenceSection mediaExportResolutionSection">
-                <legend>导出分辨率</legend>
-                <div class="mediaExportPills" role="radiogroup" aria-label="导出分辨率">
+                <legend data-i18n="mediaExportResolution">导出分辨率</legend>
+                <div
+                  class="mediaExportPills"
+                  role="radiogroup"
+                  aria-label="导出分辨率"
+                  data-i18n-aria-label="mediaExportResolution"
+                >
                   <label
                     ><input name="mediaExportResolution" type="radio" value="original" /><span
                       id="mediaExportOriginalResolution"
+                      data-i18n="mediaExportOriginal"
                       >原始</span
                     ></label
                   >
@@ -3665,6 +3932,7 @@
                   >
                   <label
                     ><input name="mediaExportResolution" type="radio" value="custom" /><span
+                      data-i18n="mediaExportCustom"
                       >自定义</span
                     ></label
                   >
@@ -3675,8 +3943,13 @@
                 </div>
               </fieldset>
               <fieldset class="mediaExportReferenceSection">
-                <legend>缩放算法</legend>
-                <div class="mediaExportSegments" role="radiogroup" aria-label="缩放算法">
+                <legend data-i18n="mediaExportScaleAlgorithm">缩放算法</legend>
+                <div
+                  class="mediaExportSegments"
+                  role="radiogroup"
+                  aria-label="缩放算法"
+                  data-i18n-aria-label="mediaExportScaleAlgorithm"
+                >
                   <label
                     ><input
                       id="mediaExportInterpolation"
@@ -3684,18 +3957,24 @@
                       type="radio"
                       value="smooth"
                       checked
-                    /><span>平滑缩放</span></label
+                    /><span data-i18n="mediaExportSmoothScale">平滑缩放</span></label
                   >
                   <label
                     ><input name="mediaExportInterpolation" type="radio" value="nearest" /><span
+                      data-i18n="mediaExportPixelScale"
                       >像素风格</span
                     ></label
                   >
                 </div>
               </fieldset>
               <fieldset class="mediaExportReferenceSection">
-                <legend>画面适配</legend>
-                <div class="mediaExportSegments" role="radiogroup" aria-label="画面适配">
+                <legend data-i18n="mediaExportFitMode">画面适配</legend>
+                <div
+                  class="mediaExportSegments"
+                  role="radiogroup"
+                  aria-label="画面适配"
+                  data-i18n-aria-label="mediaExportFitMode"
+                >
                   <label
                     ><input
                       id="mediaExportFit"
@@ -3703,19 +3982,31 @@
                       type="radio"
                       value="contain"
                       checked
-                    /><span>等比缩放</span></label
+                    /><span data-i18n="mediaExportContain">等比缩放</span></label
                   >
-                  <label><input name="mediaExportFit" type="radio" value="stretch" /><span>拉伸</span></label>
+                  <label
+                    ><input name="mediaExportFit" type="radio" value="stretch" /><span
+                      data-i18n="mediaExportStretch"
+                      >拉伸</span
+                    ></label
+                  >
                 </div>
               </fieldset>
               <fieldset class="mediaExportReferenceSection mediaExportTransformFields">
-                <legend>缩放</legend>
+                <legend data-i18n="mediaExportScale">缩放</legend>
                 <div class="mediaExportQuickActions">
-                  快捷：<button id="mediaExportFitComplete" type="button">完整显示</button
-                  ><button id="mediaExportFillCanvas" type="button">铺满画面</button>
+                  <span data-i18n="mediaExportQuick">快捷</span>：<button
+                    id="mediaExportFitComplete"
+                    type="button"
+                    data-i18n="mediaExportFitComplete"
+                  >
+                    完整显示</button
+                  ><button id="mediaExportFillCanvas" type="button" data-i18n="mediaExportFillCanvas">
+                    铺满画面
+                  </button>
                 </div>
                 <label
-                  ><span>水平</span><small>1%</small
+                  ><span data-i18n="mediaExportHorizontal">水平</span><small>1%</small
                   ><input id="mediaExportScaleXRange" type="range" min="1" max="300" value="100" /><small
                     >300%</small
                   ><input id="mediaExportScaleX" type="number" min="1" max="300" value="100" /><span
@@ -3731,7 +4022,8 @@
                   ></label
                 >
                 <label class="mediaExportScaleLock"
-                  ><input id="mediaExportScaleLinked" type="checkbox" checked /> 同步缩放</label
+                  ><input id="mediaExportScaleLinked" type="checkbox" checked />
+                  <span data-i18n="mediaExportSyncScale">同步缩放</span></label
                 >
               </fieldset>
               <fieldset class="mediaExportReferenceSection mediaExportTransformFields">
@@ -3746,7 +4038,8 @@
                   ></label
                 >
                 <label
-                  ><span>垂直</span><small id="mediaExportOffsetYMin">−512</small
+                  ><span data-i18n="mediaExportVertical">垂直</span
+                  ><small id="mediaExportOffsetYMin">−512</small
                   ><input id="mediaExportOffsetYRange" type="range" min="-8192" max="8192" value="0" /><small
                     id="mediaExportOffsetYMax"
                     >512</small
@@ -3756,23 +4049,33 @@
                 >
               </fieldset>
               <fieldset class="mediaExportReferenceSection mediaExportFillSection">
-                <legend>填充方式 <abbr title="用于补齐缩放后画布的空白区域">?</abbr></legend>
-                <div class="mediaExportPills" role="radiogroup" aria-label="填充方式">
+                <legend>
+                  <span data-i18n="mediaExportFill">填充方式</span>
+                  <abbr title="用于补齐缩放后画布的空白区域">?</abbr>
+                </legend>
+                <div
+                  class="mediaExportPills"
+                  role="radiogroup"
+                  aria-label="填充方式"
+                  data-i18n-aria-label="mediaExportFill"
+                >
                   <label
                     ><input
                       id="mediaExportBackground"
                       name="mediaExportBackground"
                       type="radio"
                       value="color"
-                    /><span>纯色</span></label
+                    /><span data-i18n="mediaExportFillColor">纯色</span></label
                   >
                   <label
                     ><input name="mediaExportBackground" type="radio" value="transparent" /><span
+                      data-i18n="mediaExportTransparent"
                       >透明</span
                     ></label
                   >
                   <label
                     ><input name="mediaExportBackground" type="radio" value="edge" checked /><span
+                      data-i18n="mediaExportEdgeFill"
                       >边缘延伸</span
                     ></label
                   >
@@ -3784,7 +4087,8 @@
                   />
                 </div>
                 <label id="mediaExportFillColorRow" class="mediaExportFillColorRow" hidden
-                  ><b>填充颜色</b><input id="mediaExportFillColor" type="color" value="#f0f0f0" /><output
+                  ><b data-i18n="mediaExportFillColor">填充颜色</b
+                  ><input id="mediaExportFillColor" type="color" value="#f0f0f0" /><output
                     id="mediaExportFillColorValue"
                     >#F0F0F0</output
                   ><button id="mediaExportFillColorReset" type="button" aria-label="恢复默认填充颜色">
@@ -3795,8 +4099,13 @@
               <fieldset id="mediaExportSheetSettings" class="mediaExportSheetSettings">
                 <legend>Sprite Sheet 导出设置</legend>
                 <div class="mediaExportSettingRow mediaExportTextureSizes">
-                  <b>图集尺寸</b>
-                  <div class="mediaExportPills" role="radiogroup" aria-label="图集尺寸">
+                  <b data-i18n="mediaExportAtlasSize">图集尺寸</b>
+                  <div
+                    class="mediaExportPills"
+                    role="radiogroup"
+                    aria-label="图集尺寸"
+                    data-i18n-aria-label="mediaExportAtlasSize"
+                  >
                     <label
                       ><input name="mediaExportTextureSize" type="radio" value="512" /><span>512</span></label
                     >
@@ -4350,8 +4659,8 @@
         <aside class="activationRail" aria-hidden="true"><b>PRO</b><span>OUTPUT LICENSE / XSXB</span></aside>
         <div class="activationBody">
           <span class="activationKicker">EMAIL ACCOUNT / PRO ACCESS</span>
-          <h2 id="activationTitle">登录 / 注册</h2>
-          <p id="activationMessage">邮箱验证后，当前浏览器将保持登录 7 天。</p>
+          <h2 id="activationTitle" data-i18n="signInTitle">登录 / 注册</h2>
+          <p id="activationMessage" data-i18n="signInMessage">邮箱验证后，当前浏览器将保持登录 7 天。</p>
           <section id="activationOverview" class="activationOverview" aria-live="polite">
             <div class="activationOverviewHeader">
               <span id="activationPlanBadge" class="activationPlanBadge">授权状态</span>
@@ -4363,16 +4672,17 @@
           <ul id="activationFeatures" class="activationFeatures"></ul>
           <form id="accountLoginForm" class="activationForm">
             <div id="accountCredentialStep">
-              <label class="srOnly" for="accountEmail">邮箱/用户名</label>
+              <label class="srOnly" for="accountEmail" data-i18n="emailOrUsername">邮箱/用户名</label>
               <input
                 id="accountEmail"
                 type="text"
                 autocomplete="username"
                 maxlength="254"
                 placeholder="邮箱/用户名"
+                data-i18n-placeholder="emailOrUsername"
                 required
               />
-              <label class="srOnly" for="accountPassword">密码</label>
+              <label class="srOnly" for="accountPassword" data-i18n="password">密码</label>
               <input
                 id="accountPassword"
                 type="password"
@@ -4380,12 +4690,15 @@
                 minlength="8"
                 maxlength="256"
                 placeholder="密码"
+                data-i18n-placeholder="password"
                 required
               />
-              <button id="accountLogin" class="activationSubmit" type="submit">继续</button>
+              <button id="accountLogin" class="activationSubmit" type="submit" data-i18n="continueAction">
+                继续
+              </button>
             </div>
             <div id="accountChallengeStep" hidden>
-              <label class="srOnly" for="accountVerificationCode">验证码</label>
+              <label class="srOnly" for="accountVerificationCode" data-i18n="verificationCode">验证码</label>
               <input
                 id="accountVerificationCode"
                 type="text"
@@ -4394,13 +4707,16 @@
                 maxlength="6"
                 pattern="[0-9]{6}"
                 placeholder="6 位验证码"
+                data-i18n-placeholder="verificationCodePlaceholder"
               />
-              <button id="accountVerify" class="activationSubmit" type="submit">验证并登录</button>
-              <button id="accountChallengeBack" class="secondary" type="button">返回</button>
+              <button id="accountVerify" class="activationSubmit" type="submit" data-i18n="verifyAndSignIn">
+                验证并登录
+              </button>
+              <button id="accountChallengeBack" class="secondary" type="button" data-i18n="back">返回</button>
             </div>
           </form>
           <form id="activationForm" class="activationForm">
-            <label class="srOnly" for="activationCode">激活码</label>
+            <label class="srOnly" for="activationCode" data-i18n="activationCode">激活码</label>
             <input
               id="activationCode"
               name="activationCode"
@@ -4409,10 +4725,18 @@
               spellcheck="false"
               maxlength="512"
               placeholder="输入激活码"
+              data-i18n-placeholder="activationCodePlaceholder"
             />
-            <button id="activationSubmit" class="activationSubmit" type="submit">绑定激活码</button>
+            <button
+              id="activationSubmit"
+              class="activationSubmit"
+              type="submit"
+              data-i18n="bindActivationCode"
+            >
+              绑定激活码
+            </button>
           </form>
-          <button id="activationTrial" class="secondary activationTrial" type="button">
+          <button id="activationTrial" class="secondary activationTrial" type="button" data-i18n="trialClaim">
             领取 3 天邮箱试用
           </button>
           <p id="activationStatus" class="activationStatus" aria-live="polite"></p>
@@ -4422,10 +4746,19 @@
               href="https://pay.ldxp.cn/shop/sirhao"
               target="_blank"
               rel="noopener noreferrer"
-              >获取激活码 <span aria-hidden="true">↗</span></a
+              ><span data-i18n="buyActivationCode">获取激活码</span> <span aria-hidden="true">↗</span></a
             >
-            <button id="accountLogout" class="secondary" type="button" hidden>退出邮箱账户</button>
-            <button id="activationCancel" class="secondary activationCancel" type="button">暂不激活</button>
+            <button id="accountLogout" class="secondary" type="button" hidden data-i18n="signOutAccount">
+              退出邮箱账户
+            </button>
+            <button
+              id="activationCancel"
+              class="secondary activationCancel"
+              type="button"
+              data-i18n="skipActivation"
+            >
+              暂不激活
+            </button>
           </div>
         </div>
       </div>

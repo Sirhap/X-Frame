@@ -13,6 +13,10 @@ test("main workbench translations expose both supported languages", () => {
   assert.equal(messages.zh.browserModeLocalProcessing, "网页模式 / 本地处理");
   assert.equal(messages.zh.currentProjectEyebrow, "当前项目");
   assert.equal(messages.zh.rootX, "根 X");
+  assert.equal(messages.zh.desktopRecommended, "建议在桌面端使用");
+  assert.equal(messages.en.desktopRecommended, "Best used on a desktop");
+  assert.equal(messages.zh.deliveryTitle, "交付与导出");
+  assert.equal(messages.en.mediaExportFilename, "File name");
 });
 
 test("main workbench translations retain the shared key set", () => {

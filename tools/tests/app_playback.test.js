@@ -86,9 +86,14 @@ test("playback animation advances on interval and schedules the next tick", () =
   assert.deepEqual(events, ["request-frame"]);
 
   state.callback(101);
-  assert.equal(state.selectedFrame, 2);
+  assert.equal(state.selectedFrame, 0);
   assert.equal(state.lastPlay, 101);
+  state.animationFrame = 0;
+  state.callback(201);
+  assert.equal(state.selectedFrame, 2);
+  assert.equal(state.lastPlay, 201);
   assert.deepEqual(events, [
+    "request-frame",
     "request-frame",
     "select:2",
     "sync-inputs",

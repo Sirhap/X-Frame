@@ -53,6 +53,19 @@ test("the frame editor is visible before application initialization", () => {
   assert.doesNotMatch(html, /homeHub|data-home-tool/);
   assert.match(html, /<canvas\s+id="stage"/);
   assert.doesNotMatch(html, /class="languageButton"/);
+  assert.match(html, /class="desktopRecommendedBanner"/);
+  const scaleInput = html.match(/<input[\s\S]*?id="baseScale"[\s\S]*?>/);
+  const offsetInput = html.match(/<input[\s\S]*?id="baseX"[\s\S]*?>/);
+  assert.ok(scaleInput);
+  assert.ok(offsetInput);
+  assert.doesNotMatch(scaleInput[0], /\breadonly\b/);
+  assert.doesNotMatch(offsetInput[0], /\breadonly\b/);
+});
+
+test("single-frame filmstrip keeps room for the thumbnail", () => {
+  const css = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app_shell.css"), "utf8");
+  assert.match(css, /\.singleFrameAnimation \.filmstripPanel\s*\{\s*max-height:\s*228px;/);
+  assert.match(css, /@media \(max-width: 759px\)/);
 });
 
 test("the Codex Pets project exposes custom-pet recovery controls", () => {

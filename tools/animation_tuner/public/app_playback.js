@@ -204,9 +204,12 @@
         (1000 / getGroupPlaybackFps(currentGroup)) *
         Math.max(0.001, getEffectiveFrameDurationMultiplier(getSelectedFrame(), currentGroup));
       let advanced = false;
-      if (getPlaying() && time - getLastPlay() > interval) {
-        advancePlayback();
+      if (getLastPlay() <= 0) {
         setLastPlay(time);
+      } else if (getPlaying() && time - getLastPlay() >= interval) {
+        advancePlayback();
+        const nextPlay = getLastPlay() + interval;
+        setLastPlay(time - nextPlay > interval * 3 ? time : nextPlay);
         advanced = true;
       }
       if (!advanced && playbackNeedsContinuousDraw()) draw();

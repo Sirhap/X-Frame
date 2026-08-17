@@ -7,6 +7,7 @@ const {
   normalizeOptions,
   removeColorKey,
   samplePixelHex,
+  sortBoxes,
 } = require("../animation_tuner/public/scatter_slice_core");
 
 /**
@@ -59,6 +60,30 @@ test("scatter detector finds and sorts disconnected color-key regions", () => {
     { x: 1, y: 4, w: 2, h: 1, pixels: 2 },
     { x: 5, y: 1, w: 2, h: 2, pixels: 3 },
   ]);
+});
+
+test("scatter box sort remains transitive for staircase layouts", () => {
+  const staircase = [
+    { x: 50, y: 40, w: 8, h: 8 },
+    { x: 10, y: 0, w: 8, h: 8 },
+    { x: 30, y: 20, w: 8, h: 8 },
+    { x: 40, y: 30, w: 8, h: 8 },
+    { x: 20, y: 10, w: 8, h: 8 },
+    { x: 60, y: 50, w: 8, h: 8 },
+  ];
+  const first = sortBoxes(staircase).map((box) => box.y);
+  const second = sortBoxes([...staircase].reverse()).map((box) => box.y);
+  const third = sortBoxes([
+    staircase[2],
+    staircase[5],
+    staircase[0],
+    staircase[3],
+    staircase[1],
+    staircase[4],
+  ]).map((box) => box.y);
+  assert.deepEqual(first, [0, 10, 20, 30, 40, 50]);
+  assert.deepEqual(second, first);
+  assert.deepEqual(third, first);
 });
 
 test("automatic detection uses alpha and filters small noise", () => {

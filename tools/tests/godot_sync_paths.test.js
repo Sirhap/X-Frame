@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { GODOT_SYNC_ROOT, localFrameRelPath, syncManifest } = require("../godot_sync");
+const { GODOT_SYNC_ROOT, localFrameRelPath, syncFrameAudio, syncManifest } = require("../godot_sync");
 const { createProjectStore } = require("../project_store");
 
 test("localFrameRelPath keeps Godot copies inside xsxb_frame_tuner/", () => {
@@ -49,6 +49,80 @@ test("syncManifest does not write escaped frame paths outside the sandbox", () =
   try {
     syncManifest(root, store, project);
     assert.equal(fs.readFileSync(victim, "utf8"), "original");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("frame audio sync keeps two same-frame bindings as distinct files", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-sync-audio-"));
+  try {
+    const godotRoot = path.join(root, "godot");
+    fs.mkdirSync(godotRoot, { recursive: true });
+    fs.writeFileSync(path.join(godotRoot, "project.godot"), '[application]\nconfig/name="Audio"\n');
+    const store = createProjectStore(root);
+    store.addProject({ id: "audio", label: "Audio", projectRoot: godotRoot });
+    const project = store.resolveProject(store.readRegistry(), "audio");
+    const wavA = Buffer.from("RIFF____WAVEfmt a");
+    const wavB = Buffer.from("RIFF____WAVEfmt b");
+    const result = syncFrameAudio(store, project, [
+      {
+        id: "hit-a",
+        key: "hero/attack:0",
+        type: "audio/wav",
+        data: `data:audio/wav;base64,${wavA.toString("base64")}`,
+      },
+      {
+        id: "hit-b",
+        key: "hero/attack:0",
+        type: "audio/wav",
+        data: `data:audio/webm;codecs=opus;base64,${wavB.toString("base64")}`,
+      },
+    ]);
+    assert.equal(result.copiedAudio, 2);
+    const audioDir = path.join(godotRoot, "xsxb_frame_tuner", "audio", "projects", "audio");
+    const files = fs.readdirSync(audioDir);
+    assert.equal(files.length, 2);
+    assert.notEqual(files[0], files[1]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("frame audio sync removes Godot copies that are no longer referenced", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-sync-audio-prune-"));
+  try {
+    const godotRoot = path.join(root, "godot");
+    fs.mkdirSync(godotRoot, { recursive: true });
+    fs.writeFileSync(path.join(godotRoot, "project.godot"), '[application]\nconfig/name="Audio"\n');
+    const store = createProjectStore(root);
+    store.addProject({ id: "audio", label: "Audio", projectRoot: godotRoot });
+    const project = store.resolveProject(store.readRegistry(), "audio");
+    const first = Buffer.from("RIFF____WAVEfmt old");
+    const second = Buffer.from("RIFF____WAVEfmt new");
+    syncFrameAudio(store, project, [
+      {
+        id: "hit",
+        key: "hero/attack:0",
+        type: "audio/wav",
+        data: `data:audio/wav;base64,${first.toString("base64")}`,
+      },
+    ]);
+    const audioDir = path.join(godotRoot, "xsxb_frame_tuner", "audio", "projects", "audio");
+    const firstFiles = fs.readdirSync(audioDir);
+    assert.equal(firstFiles.length, 1);
+    syncFrameAudio(store, project, [
+      {
+        id: "hit",
+        key: "hero/attack:0",
+        type: "audio/wav",
+        data: `data:audio/wav;base64,${second.toString("base64")}`,
+      },
+    ]);
+    const secondFiles = fs.readdirSync(audioDir);
+    assert.equal(secondFiles.length, 1);
+    assert.notEqual(secondFiles[0], firstFiles[0]);
+    assert.equal(fs.existsSync(path.join(audioDir, firstFiles[0])), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

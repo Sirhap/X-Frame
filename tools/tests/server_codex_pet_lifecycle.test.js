@@ -7,6 +7,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const test = require("node:test");
 const { ATLAS_HEIGHT, ATLAS_WIDTH } = require("../codex_pets");
+const { createProjectStore } = require("../project_store");
 
 /** @param {number} marker Distinguishing VP8X flag byte. @returns {Buffer} Minimal valid Codex pet atlas. */
 function createAtlas(marker) {
@@ -123,4 +124,30 @@ test("Codex pet lifecycle HTTP routes remove, restore, recover backups, and prot
   assert.equal(deletion.response.status, 409);
   assert.equal(deletion.payload.code, "protected_system_project");
   assert.equal(fs.existsSync(petDirectory), true);
+});
+
+test("codex pet import errors stay inside the HTTP handler and do not exit the process", async (context) => {
+  const source = fs.readFileSync(path.join(__dirname, "../animation_tuner/server.js"), "utf8");
+  assert.match(source, /await withProjectWrite\(project\.id, \(\) => \{\s*const imported = importCodexPet/);
+  assert.match(source, /await withProjectWrite\("__registry__"/);
+  assert.doesNotMatch(source, /return withProjectWrite\(/);
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-codex-import-alive-"));
+  createProjectStore(root).addProject({ id: "demo", label: "Demo" });
+  const port = 30000 + Math.floor(Math.random() * 10000);
+  const child = await startServer(root, path.join(root, "codex-home"), port);
+  context.after(() => {
+    child.kill("SIGTERM");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const failed = await postJson(`${baseUrl}/api/codex-pets/import`, {
+    projectId: "demo",
+    data: "data:image/webp;base64,AAAA",
+  });
+  assert.equal(failed.response.status, 500);
+  assert.match(String(failed.payload.error || ""), /not the Codex Pets project/u);
+  assert.equal(child.exitCode, null);
+  const configResponse = await fetch(`${baseUrl}/api/config?project=demo`);
+  assert.equal(configResponse.status, 200);
 });

@@ -121,3 +121,35 @@ test("group timing conflict waits for warning confirmation before clearing frame
   assert.equal(controller.groupTimeMs(group), 300);
   assert.deepEqual(playbackStore, { "idle:0": { duration: 2, disabled: false } });
 });
+
+test("group time input does not push a second undo entry when arming already recorded one", async () => {
+  const group = { uiId: "idle", speed: 10, frames: [{}, {}] };
+  const events = [];
+  const playbackStore = {};
+  const groupTimeMs = { value: "400", dataset: { undoUsed: "1" } };
+  const controller = createController({
+    minFrameDurationMs: 1,
+    getCurrentGroup: () => group,
+    getConfig: () => ({ groups: [group] }),
+    getPlaybackStore: () => playbackStore,
+    getTuningFrameKey: (index) => `idle:${index}`,
+    getGroupPlaybackKey: () => "idle:__group",
+    groupOwnsFrameKey: (_group, key) => key.startsWith("idle:") && key !== "idle:__group",
+    getClampInteger: (value, min, max) => Math.min(Math.max(Number(value) || 0, min), max),
+    cloneVector: (value) => ({ x: Number(value?.x || 0), y: Number(value?.y || 0) }),
+    nearlyEqual: (left, right) => left === right,
+    elements: { groupTimeMs },
+    canEditFramePlayback: () => true,
+    pushUndo: (label) => events.push(`undo:${label}`),
+    syncFrameInputs: () => {},
+    renderFilmstrip: () => {},
+    updateGroupMeta: () => {},
+    updateWorkbenchHud: () => {},
+    draw: () => {},
+  });
+
+  await controller.applyGroupTimeFromInput();
+
+  assert.deepEqual(events, []);
+  assert.equal(controller.groupTimeMs(group), 400);
+});

@@ -37,6 +37,19 @@
       unbinding: "正在解除绑定…",
       confirmRebind: "确认改绑到新工程？旧工程内 xsxb_frame_tuner 将保留。",
       confirmUnbind: "确认解除 Godot 绑定？外部文件不会删除。",
+      serverText: {
+        "Project is not bound to a Godot project.": "尚未绑定 Godot 工程。",
+        "Godot project has not been synchronized.": "该工程尚未同步过 Godot 数据。",
+        "Local project data changed after the last Godot synchronization.":
+          "上次 Godot 同步之后，本地项目数据又发生了变化。",
+        "Missing synchronized outputs": "缺少已同步的产物",
+        "Godot synchronization is required.": "需要执行 Godot 同步。",
+        "Godot synchronization failed.": "Godot 同步失败。",
+        "No animation is available for gameplay validation.": "没有可用于 Gameplay 验证的动画。",
+        "Godot data is synchronized; gameplay integration still needs attention.":
+          "Godot 数据已同步；Gameplay 接入仍有待处理项。",
+        "Godot gameplay integration is ready.": "Godot Gameplay 接入已就绪。",
+      },
     },
     en: {
       local_only: "Local only",
@@ -59,6 +72,7 @@
       unbinding: "Unbinding…",
       confirmRebind: "Rebind to the new project? xsxb_frame_tuner remains in the old project.",
       confirmUnbind: "Unbind this Godot project? External files will not be deleted.",
+      serverText: {},
     },
   });
 
@@ -113,6 +127,18 @@
       return getLanguage() === "en" ? COPY.en : COPY.zh;
     }
 
+    /** Localizes known server-provided status strings; unknown text passes through. */
+    function localizeServerText(value) {
+      const text = String(value || "");
+      if (!text) return "";
+      const table = copy().serverText || {};
+      if (table[text]) return table[text];
+      for (const [source, localized] of Object.entries(table)) {
+        if (text.startsWith(`${source}: `)) return `${localized}: ${text.slice(source.length + 2)}`;
+      }
+      return text;
+    }
+
     /** Returns current normalized handoff. */
     function handoff() {
       const value = getConfig()?.godotHandoff;
@@ -147,14 +173,14 @@
           ? text.hostedMessage
           : value.state === "local_only"
             ? text.localOnlyMessage
-            : String(value.message || text.localOnlyMessage));
+            : localizeServerText(value.message || text.localOnlyMessage));
       elements.message.dataset.tone = inlineError ? "error" : value.state;
       elements.blockers.replaceChildren();
       const blockers = Array.isArray(value.blockers) ? value.blockers.filter(Boolean) : [];
       elements.blockers.hidden = blockers.length === 0;
       blockers.forEach((blocker) => {
         const item = root.document.createElement("li");
-        item.textContent = String(blocker);
+        item.textContent = localizeServerText(blocker);
         elements.blockers.append(item);
       });
     }

@@ -75,6 +75,7 @@
   class AttackTrailEditor {
     constructor(hooks) {
       this.hooks = hooks;
+      this._t = (key, vars) => (typeof hooks?.translate === "function" ? hooks.translate(key, vars) : key);
       this.data = { schemaVersion: ATTACK_TRAIL_SCHEMA_VERSION, bindings: {} };
       this.segmentId = "";
       this.stickId = "";
@@ -265,10 +266,10 @@
         ? segments
             .map(
               (segment, index) =>
-                `<option value="${this._escape(segment.id)}">${segment.presetOnly ? "预设 · " : `${index + 1}. `}${this._escape(segment.name || `Trail ${index + 1}`)}</option>`,
+                `<option value="${this._escape(segment.id)}">${segment.presetOnly ? this._t("trailPresetPrefix") : `${index + 1}. `}${this._escape(segment.name || `Trail ${index + 1}`)}</option>`,
             )
             .join("")
-        : '<option value="">暂无拖尾段</option>';
+        : `<option value="">${this._t("trailNone")}</option>`;
       e.attackTrailSegment.value = this.segmentId;
       const segment = this._segment();
       const presetPreview = this._isPresetSegment(segment);
@@ -296,39 +297,39 @@
       if (e.attackTrailDelete) {
         e.attackTrailDelete.disabled = !segment || presetPreview;
         e.attackTrailDelete.textContent = presetPreview
-          ? "内置预设"
+          ? this._t("trailBuiltinPreset")
           : segment?.presetOnly
-            ? "删除预设"
-            : "删除整段拖尾";
+            ? this._t("trailDeletePreset")
+            : this._t("trailDeleteSegment");
         e.attackTrailDelete.title = presetPreview
-          ? "内置默认预设不可删除；添加棍子后会生成当前动画的拖尾。"
+          ? this._t("trailBuiltinProtected")
           : segment?.presetOnly
-            ? "删除这个已保存的预设"
-            : "删除整段拖尾及其全部棍子";
+            ? this._t("trailDeleteThisPreset")
+            : this._t("trailDeleteSegmentHint");
       }
       if (e.attackTrailDeleteHint) {
         e.attackTrailDeleteHint.textContent = !segment
-          ? "当前没有可删除的拖尾。"
+          ? this._t("trailNothingToDelete")
           : presetPreview
-            ? "内置默认预设受保护；添加棍子后会生成可删除的当前拖尾。"
+            ? this._t("trailBuiltinProtectedHint")
             : segment.presetOnly
-              ? "删除只移除这个预设，不会影响已经放置的拖尾。"
-              : "这里会删除整段拖尾及其中的全部棍子。";
+              ? this._t("trailDeletePresetOnly")
+              : this._t("trailDeleteAllSticks");
       }
       if (!segment) {
-        e.attackTrailTextureName.textContent = "先新增一段拖尾";
+        e.attackTrailTextureName.textContent = this._t("trailAddSegmentFirst");
         e.attackTrailTexturePreview.hidden = true;
         e.attackTrailGradientEditor.hidden = true;
         e.attackTrailTimingSummary.textContent = "";
         return;
       }
       e.attackTrailTextureName.textContent = segment.texture?.name
-        ? `${presetPreview ? "默认预设 · " : ""}${segment.texture.name}`
-        : "尚未导入 PNG";
+        ? `${presetPreview ? this._t("trailDefaultPresetPrefix") : ""}${segment.texture.name}`
+        : this._t("trailPngMissing");
       e.attackTrailTextureReset.disabled = this._usesDefaultTexture(segment);
       e.attackTrailTextureReset.title = e.attackTrailTextureReset.disabled
-        ? "当前正在使用默认拖尾 PNG"
-        : "移除自定义 PNG，恢复内置默认拖尾形状";
+        ? this._t("trailUsingDefaultPng")
+        : this._t("trailResetCustomPng");
       this._renderTexturePreview(segment);
       e.attackTrailColorMode.value = segment.colorMode;
       e.attackTrailColor.value = segment.color.slice(0, 7);
@@ -351,24 +352,32 @@
       if (!frameSticks.some((entry) => entry.id === this.stickId)) this.stickId = frameSticks[0]?.id || "";
       const stick = this._stick();
       e.attackTrailDeleteStick.disabled = !stick;
-      e.attackTrailDeleteStick.textContent = stick ? "删除当前棍子" : "当前帧无棍子";
-      e.attackTrailDeleteStick.title = stick ? "删除当前帧选中的棍子" : "先在当前帧添加或选中一根棍子";
+      e.attackTrailDeleteStick.textContent = stick
+        ? this._t("trailDeleteStick")
+        : this._t("trailNoStickOnFrame");
+      e.attackTrailDeleteStick.title = stick
+        ? this._t("trailDeleteCurrentStick")
+        : this._t("trailAddOrSelectStick");
       e.attackTrailLayerToggle.disabled = !stick;
       e.attackTrailReverse.disabled = !stick;
       e.attackTrailLayerToggle.classList.toggle("behind", stick?.layer === "behind");
       e.attackTrailLayerToggle.classList.toggle("front", stick?.layer === "front");
       e.attackTrailLayerToggle.textContent = stick
         ? stick.layer === "front"
-          ? "角色前"
-          : "角色后"
-        : "角色层";
+          ? this._t("trailInFront")
+          : this._t("trailBehind")
+        : this._t("trailLayer");
       e.attackTrailReverse.classList.toggle("active", stick?.reverseDirection === true);
       e.attackTrailReverse.setAttribute("aria-pressed", stick?.reverseDirection === true ? "true" : "false");
       const timing = this._timing(segment);
       e.attackTrailTimingSummary.textContent =
         timing.times.length >= 2
-          ? `路径：第 ${segment.sticks[0].frame + 1} 帧 → 第 ${segment.sticks.at(-1).frame + 1} 帧 · ${Math.round(timing.times.at(-1) * 1000)} ms`
-          : "至少需要两根棍子才能生成拖尾。";
+          ? this._t("trailPathSummary", {
+              start: segment.sticks[0].frame + 1,
+              end: segment.sticks.at(-1).frame + 1,
+              ms: Math.round(timing.times.at(-1) * 1000),
+            })
+          : this._t("trailNeedTwoSticks");
     }
 
     drawLayer(layer, frameIndex, alpha = 1) {
@@ -989,7 +998,12 @@
       if (
         !segment ||
         this._isPresetSegment(segment) ||
-        !window.confirm(`删除${segment.presetOnly ? "预设" : "拖尾段"}“${segment.name}”？`)
+        !window.confirm(
+          this._t("trailConfirmDelete", {
+            kind: segment.presetOnly ? this._t("trailKindPreset") : this._t("trailKindSegment"),
+            name: segment.name,
+          }),
+        )
       )
         return;
       this.hooks.pushUndo("delete attack trail segment");
@@ -1105,7 +1119,7 @@
         this.gradientDrag = { pointerId: event.pointerId, undoPushed: false };
       } else {
         if (segment.gradientStops.length >= 16)
-          return this.hooks.status("渐变最多支持 16 个颜色节点。", true);
+          return this.hooks.status(this._t("trailGradientMaxStops"), true);
         this._beginPresetEdit(segment);
         this.hooks.pushUndo("add attack trail gradient stop");
         const position = this._gradientPosition(event);
@@ -1171,7 +1185,7 @@
       const segment = this._segment();
       const stop = this._gradientStop(segment);
       if (!segment || !stop) return;
-      if (segment.gradientStops.length <= 2) return this.hooks.status("渐变至少保留两个颜色节点。", true);
+      if (segment.gradientStops.length <= 2) return this.hooks.status(this._t("trailGradientKeepTwo"), true);
       this.hooks.pushUndo("delete attack trail gradient stop");
       this._beginPresetEdit(segment);
       const oldIndex = segment.gradientStops.indexOf(stop);
@@ -1347,7 +1361,7 @@
     async _uploadTexture(file) {
       if (!file || !this._segment()) return;
       if (file.type !== "image/png" && !file.name.toLowerCase().endsWith(".png")) {
-        this.hooks.status("攻击拖尾纹理目前仅支持 PNG。", true);
+        this.hooks.status(this._t("trailTexturePngOnly"), true);
         return;
       }
       try {
@@ -1375,9 +1389,9 @@
         this.hooks.markDirty();
         this.render();
         this.hooks.draw();
-        this.hooks.status(`拖尾纹理已复制到稳定项目路径：${result.texture.path}`);
+        this.hooks.status(this._t("trailTextureCopied", { path: result.texture.path }));
       } catch (error) {
-        this.hooks.status(`拖尾纹理导入失败：${error.message}`, true);
+        this.hooks.status(this._t("trailTextureImportFailed", { message: error.message }), true);
       } finally {
         this.els.attackTrailTextureFile.value = "";
       }
@@ -1400,7 +1414,7 @@
       this.hooks.markDirty();
       this.render();
       this.hooks.draw();
-      this.hooks.status("已恢复默认拖尾 PNG，可撤销。");
+      this.hooks.status(this._t("trailDefaultPngRestored"));
     }
 
     _updateGenerated(segment) {
@@ -2014,7 +2028,7 @@
       this.gpuTextures = new WeakMap();
       if (this.gpuFallbackNotified) return;
       this.gpuFallbackNotified = true;
-      this.hooks?.status?.("WebGL 预览不可用，已自动切换到兼容的 Canvas 渲染。");
+      this.hooks?.status?.(this._t("trailWebglFallback"));
     }
 
     /**

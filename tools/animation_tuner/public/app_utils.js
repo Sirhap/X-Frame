@@ -63,12 +63,32 @@
     return boundTarget ? ` -> ${boundTarget}` : "";
   }
 
+  /** Matches legacy groups whose import generated a raw UUID instead of a readable name. */
+  const UUID_NAME_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:_(\d+))?$/i;
+
+  /**
+   * Returns a readable display name; legacy UUID names collapse to a short alias.
+   * @param {unknown} name Stored animation name.
+   * @param {(key:string,vars?:object)=>string} [translate] Optional translator.
+   * @returns {string} Display name.
+   */
+  function readableGroupName(name, translate) {
+    const text = String(name || "");
+    const match = text.match(UUID_NAME_PATTERN);
+    if (!match) return text;
+    const base =
+      typeof translate === "function" ? translate("unnamedAnimation") : "Unnamed animation";
+    const alias = `${base} ${text.slice(0, 4)}`;
+    return match[1] ? `${alias}-${match[1]}` : alias;
+  }
+
   /**
    * Builds the display label used by group selectors and status text.
    * @param {object} group Animation group descriptor.
+   * @param {(key:string,vars?:object)=>string} [translate] Optional translator for fallback names.
    * @returns {string} Display label.
    */
-  function groupLabel(group) {
+  function groupLabel(group, translate) {
     const fallbackTypeLabel =
       group.tuningTarget === "act2_statue_boss"
         ? "Act2 Statue"
@@ -93,7 +113,7 @@
     if (group.profileLabel && group.type === "scene_prop_attachment")
       typeLabel = `${group.profileLabel} Layer`;
     const runtimeLabel = group.skillName && group.runtimeAnimation ? ` (${group.runtimeAnimation})` : "";
-    return `${typeLabel} - ${group.name}${runtimeLabel}${groupBindingLabel(group)}`;
+    return `${typeLabel} - ${readableGroupName(group.name, translate)}${runtimeLabel}${groupBindingLabel(group)}`;
   }
 
   /**
@@ -242,6 +262,7 @@
     mapWithConcurrency,
     nearlyEqual,
     projectLabel,
+    readableGroupName,
     round,
     scaleVectorFromTransform,
   };

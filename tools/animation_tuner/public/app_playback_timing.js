@@ -409,7 +409,8 @@
         syncGroupTimeInputs();
         return;
       }
-      pushUndo("group time");
+      if (!elements.groupTimeMs?.dataset?.undoUsed) pushUndo("group time");
+      if (elements.groupTimeMs?.dataset) elements.groupTimeMs.dataset.undoUsed = "1";
       if (hasFrameTiming) clearFrameDurationOverrides(currentGroup);
       setGroupTimeMs(targetMs, currentGroup);
       syncFrameInputs();

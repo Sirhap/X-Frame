@@ -10,6 +10,7 @@ const {
   validateAttackTrails,
 } = require("../attack_trails");
 const { EMPTY_MANIFEST, EMPTY_SETTINGS, EMPTY_TUNING, createLiteStore, reslash, slug } = require("./store");
+const { isServableAsset } = require("../animation_tuner/server_validation");
 const { withUtf8Charset } = require("../http_content_type");
 
 const ROOT = path.resolve(__dirname, "..", "..");
@@ -68,6 +69,22 @@ function audioBindingsArray(payload) {
       }));
 }
 
+/**
+ * Restricts Lite /asset to built-in public media and registered Lite workspaces.
+ * Matches the main tuner allowlist, plus Lite's own public folder.
+ * @param {string} candidatePath Absolute candidate path.
+ * @returns {boolean} True when Lite may stream the file.
+ */
+function canServeLiteAsset(candidatePath) {
+  const projects = store.readRegistry().projects.map((project) => ({
+    workspaceDir: store.projectWorkspaceDir(project),
+  }));
+  return (
+    isServableAsset(candidatePath, { publicRoot: FULL_PUBLIC, projects }) ||
+    isServableAsset(candidatePath, { publicRoot: LITE_PUBLIC, projects: [] })
+  );
+}
+
 function audioExtension(binding, mime = "") {
   const named = path.extname(String(binding?.name || binding?.path || binding?.file || "")).toLowerCase();
   if (AUDIO_MIME_BY_EXTENSION[named]) return named;
@@ -115,6 +132,36 @@ function saveFrameAudioBindings(project, payload) {
   }
   store.writeJson(target.frameAudio, bindings);
   return bindings;
+}
+
+/**
+ * Rejects cross-origin browser writes while preserving Origin-less CLI calls.
+ * Mirrors tools/animation_tuner/server_http.js validateWriteRequest.
+ * @param {import("node:http").IncomingMessage} request Incoming request.
+ * @returns {void}
+ */
+function validateWriteRequest(request) {
+  const contentType = String(request.headers["content-type"] || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (contentType !== "application/json") {
+    const error = new Error("Expected Content-Type: application/json.");
+    error.status = 415;
+    throw error;
+  }
+  const origin = String(request.headers.origin || "").trim();
+  if (!origin) return;
+  const requestHost = String(request.headers.host || "")
+    .trim()
+    .toLowerCase();
+  const localHosts = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+  const localOrigins = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
+  if (!localHosts.has(requestHost) || !localOrigins.has(origin)) {
+    const error = new Error("Cross-origin API writes are not allowed.");
+    error.status = 403;
+    throw error;
+  }
 }
 
 function send(res, status, body, contentType = "application/json") {
@@ -450,6 +497,20 @@ function replaceFrame(project, payload) {
 
 function savePayload(project, payload) {
   const target = store.paths(project);
+  const trails = normalizeAttackTrails(payload.attack_trails || EMPTY_ATTACK_TRAILS);
+  for (const segments of Object.values(trails.bindings)) {
+    for (const segment of segments) {
+      const texture = safeResolve(ROOT, segment.texture?.path || "");
+      if (texture && fs.existsSync(texture)) {
+        const info = pngInfo(fs.readFileSync(texture));
+        segment.texture.width = info.width;
+        segment.texture.height = info.height;
+        segment.texture.hasEffectiveAlpha = info.hasEffectiveAlpha;
+      }
+      if (segment.colorMode === "original" && !segment.texture?.hasEffectiveAlpha)
+        throw new Error(`${segment.name}: 原色模式需要带有效 Alpha 的 RGBA PNG。`);
+    }
+  }
   const tuning = {
     schemaVersion: 1,
     values: payload.values && typeof payload.values === "object" ? payload.values : {},
@@ -475,20 +536,6 @@ function savePayload(project, payload) {
   );
   const attachments = Array.isArray(payload.frame_image_attachments) ? payload.frame_image_attachments : [];
   store.writeJson(target.frameImageAttachments, attachments);
-  const trails = normalizeAttackTrails(payload.attack_trails || EMPTY_ATTACK_TRAILS);
-  for (const segments of Object.values(trails.bindings)) {
-    for (const segment of segments) {
-      const texture = safeResolve(ROOT, segment.texture?.path || "");
-      if (texture && fs.existsSync(texture)) {
-        const info = pngInfo(fs.readFileSync(texture));
-        segment.texture.width = info.width;
-        segment.texture.height = info.height;
-        segment.texture.hasEffectiveAlpha = info.hasEffectiveAlpha;
-      }
-      if (segment.colorMode === "original" && !segment.texture?.hasEffectiveAlpha)
-        throw new Error(`${segment.name}: 原色模式需要带有效 Alpha 的 RGBA PNG。`);
-    }
-  }
   store.writeJson(target.attackTrails, trails);
   return { tuning, audio, attachments, trails };
 }
@@ -525,6 +572,7 @@ function serveStatic(res, pathname) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://127.0.0.1");
+    if (req.method === "POST") validateWriteRequest(req);
     if (req.method === "GET" && url.pathname === "/api/update-status")
       return send(res, 200, { updateAvailable: false, lite: true });
     if (req.method === "GET" && url.pathname === "/api/projects") {
@@ -634,7 +682,9 @@ const server = http.createServer(async (req, res) => {
         ...AUDIO_MIME_BY_EXTENSION,
       };
       const type = types[path.extname(full || "").toLowerCase()];
-      if (!full || !fs.existsSync(full) || !type) return send(res, 404, "Not found", "text/plain");
+      if (!full || !type || !canServeLiteAsset(full) || !fs.existsSync(full)) {
+        return send(res, 404, "Not found", "text/plain");
+      }
       const stream = fs.createReadStream(full);
       stream.on("error", (error) => {
         console.error("Lite asset stream failed:", error);
@@ -646,8 +696,9 @@ const server = http.createServer(async (req, res) => {
     }
     return serveStatic(res, url.pathname);
   } catch (error) {
-    console.error(error);
-    return send(res, 500, { error: String(error.message || error) });
+    const status = Number(error.status || 500);
+    if (status >= 500) console.error(error);
+    return send(res, status, { error: String(error.message || error) });
   }
 });
 
@@ -661,8 +712,10 @@ if (require.main === module) {
 module.exports = {
   AUDIO_MIME_BY_EXTENSION,
   buildGroups,
+  canServeLiteAsset,
   configResponse,
   saveFrameAudioBindings,
   server,
   validateLiteProject,
+  validateWriteRequest,
 };

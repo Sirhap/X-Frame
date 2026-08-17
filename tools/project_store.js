@@ -34,6 +34,38 @@ function slug(value, fallback = "project") {
   return text && !/^\.+$/.test(text) ? text : fallback;
 }
 
+/**
+ * Parses animation FPS in the inclusive 1–120 range.
+ * @param {unknown} value Raw FPS.
+ * @param {number} [fallback=12] Default when the value is omitted.
+ * @returns {number} Sanitized FPS.
+ */
+function requireFps(value, fallback = 12) {
+  const fps = Number(value === undefined || value === null || value === "" ? fallback : value);
+  if (!Number.isFinite(fps) || fps < 1 || fps > 120) {
+    throw new Error("fps must be a finite number between 1 and 120.");
+  }
+  return fps;
+}
+
+/**
+ * Coerces animation FPS into the inclusive 1–120 range without throwing.
+ * @param {unknown} value Raw FPS.
+ * @param {number} [fallback=12] Default when the value is omitted or invalid.
+ * @returns {number} Sanitized FPS.
+ */
+function sanitizeFps(value, fallback = 12) {
+  try {
+    return requireFps(value, fallback);
+  } catch {
+    try {
+      return requireFps(fallback, 12);
+    } catch {
+      return 12;
+    }
+  }
+}
+
 function safeResolve(base, requested) {
   const full = path.resolve(base, String(requested || ""));
   return full === base || full.startsWith(`${base}${path.sep}`) ? full : null;
@@ -201,9 +233,6 @@ function normalizeRegistry(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const usedIds = new Set();
   let projects = Array.isArray(source.projects) ? source.projects : [];
-  if (projects.some((project) => slug(project?.id || project?.label || "") !== DEFAULT_PROJECT_ID)) {
-    projects = projects.filter((project) => slug(project?.id || project?.label || "") !== DEFAULT_PROJECT_ID);
-  }
   if (!projects.length) projects = [];
   const normalizedProjects = projects.map((project, index) =>
     normalizeProject(project, usedIds, index === 0 ? DEFAULT_PROJECT_ID : `project_${index + 1}`),
@@ -376,7 +405,10 @@ module.exports = {
   EMPTY_TUNING,
   createProjectStore,
   godotProjectName,
+  normalizeRegistry,
+  requireFps,
   reslash,
+  sanitizeFps,
   slug,
   writeJson,
 };

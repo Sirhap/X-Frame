@@ -1,11 +1,14 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { EMPTY_ATTACK_TRAILS, normalizeAttackTrails } = require("./attack_trails");
+const { stripAnimationOwnedData } = require("./animation_mutations");
 const {
   EMPTY_MANIFEST,
   EMPTY_TUNING,
   createProjectStore,
   godotProjectName,
+  sanitizeFps,
   slug,
 } = require("./project_store");
 const { syncGodotProject } = require("./godot_sync");
@@ -67,9 +70,13 @@ function shouldInclude(filePath, projectRoot, includeAll) {
 
 function resolveGodotPath(rawPath, projectRoot, ownerFile) {
   if (!rawPath) return null;
-  if (rawPath.startsWith("res://")) return path.join(projectRoot, rawPath.slice("res://".length));
-  if (path.isAbsolute(rawPath)) return rawPath;
-  return path.resolve(path.dirname(ownerFile), rawPath);
+  const root = path.resolve(projectRoot);
+  let resolved;
+  if (rawPath.startsWith("res://")) resolved = path.resolve(root, rawPath.slice("res://".length));
+  else if (path.isAbsolute(rawPath)) resolved = path.resolve(rawPath);
+  else resolved = path.resolve(path.dirname(ownerFile), rawPath);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
+  return resolved;
 }
 
 function getPngSize(filePath) {
@@ -119,7 +126,7 @@ function parseSpriteFrames(filePath, projectRoot) {
       });
     }
     if (frames.length) {
-      animations.push({ id: slug(name), name, fps: Number(speed || 12), frames });
+      animations.push({ id: slug(name), name, fps: sanitizeFps(speed), frames });
     }
   }
   return animations;
@@ -223,8 +230,26 @@ function importSpriteFrames(filePath, projectRoot, project, manifest, tuning, tr
       frames,
     };
     const existingIndex = profile.animations.findIndex((entry) => entry.id === animation.id);
-    if (existingIndex >= 0) profile.animations[existingIndex] = nextAnimation;
-    else profile.animations.push(nextAnimation);
+    if (existingIndex >= 0) {
+      const stripped = stripAnimationOwnedData({
+        tuning,
+        audioBindings: transaction.frameAudio,
+        imageAttachments: transaction.frameImageAttachments,
+        attachmentAssets: transaction.attachmentAssets,
+        attackTrails: transaction.attackTrails,
+        profile,
+        animation: profile.animations[existingIndex],
+      });
+      tuning.frame_visual_overrides = stripped.tuning.frame_visual_overrides;
+      tuning.frame_playback_overrides = stripped.tuning.frame_playback_overrides;
+      tuning.frame_box_overrides = stripped.tuning.frame_box_overrides;
+      tuning.values = stripped.tuning.values;
+      transaction.frameAudio = stripped.frameAudioBindings;
+      transaction.frameImageAttachments = stripped.frameImageAttachments;
+      transaction.attachmentAssets = stripped.attachmentAssets;
+      transaction.attackTrails = stripped.attackTrails;
+      profile.animations[existingIndex] = nextAnimation;
+    } else profile.animations.push(nextAnimation);
     upsertEstimatedFrameBoxes(tuning, profileId, nextAnimation, frameFiles, { replace: true });
   }
 
@@ -256,6 +281,13 @@ function commitImportTransaction(transaction, paths, manifest, tuning, originals
     }
     projectStore.writeJson(paths.manifest, manifest);
     projectStore.writeJson(paths.tuning, tuning);
+    if (originals.frameAudio !== undefined) projectStore.writeJson(paths.frameAudio, transaction.frameAudio);
+    if (originals.frameImageAttachments !== undefined)
+      projectStore.writeJson(paths.frameImageAttachments, transaction.frameImageAttachments);
+    if (originals.attachmentAssets !== undefined)
+      projectStore.writeJson(paths.attachmentAssets, transaction.attachmentAssets);
+    if (originals.attackTrails !== undefined)
+      projectStore.writeJson(paths.attackTrails, transaction.attackTrails);
   } catch (error) {
     for (const entry of installed.reverse()) {
       if (entry.directoryInstalled && fs.existsSync(entry.targetDir)) {
@@ -269,6 +301,13 @@ function commitImportTransaction(transaction, paths, manifest, tuning, originals
     }
     projectStore.writeJson(paths.manifest, originals.manifest);
     projectStore.writeJson(paths.tuning, originals.tuning);
+    if (originals.frameAudio !== undefined) projectStore.writeJson(paths.frameAudio, originals.frameAudio);
+    if (originals.frameImageAttachments !== undefined)
+      projectStore.writeJson(paths.frameImageAttachments, originals.frameImageAttachments);
+    if (originals.attachmentAssets !== undefined)
+      projectStore.writeJson(paths.attachmentAssets, originals.attachmentAssets);
+    if (originals.attackTrails !== undefined)
+      projectStore.writeJson(paths.attackTrails, originals.attackTrails);
     throw error;
   }
   for (const entry of installed) {
@@ -302,14 +341,26 @@ function main() {
   const paths = projectStore.projectPaths(project);
   const manifest = projectStore.readJson(paths.manifest, EMPTY_MANIFEST);
   const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+  const audioBindings = projectStore.readJson(paths.frameAudio, []);
+  const imageAttachments = projectStore.readJson(paths.frameImageAttachments, []);
+  const attachmentAssets = projectStore.readJson(paths.attachmentAssets, []);
+  const attackTrails = normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
   const originals = {
     manifest: clone(manifest),
     tuning: clone(tuning),
+    frameAudio: clone(audioBindings),
+    frameImageAttachments: clone(imageAttachments),
+    attachmentAssets: clone(attachmentAssets),
+    attackTrails: clone(attackTrails),
   };
   const transaction = {
     operationId: crypto.randomBytes(8).toString("hex"),
     installs: [],
     targets: new Set(),
+    frameAudio: audioBindings,
+    frameImageAttachments: imageAttachments,
+    attachmentAssets,
+    attackTrails,
   };
   let results;
   try {
@@ -349,4 +400,5 @@ module.exports = {
   parseSpriteFrames,
   importSpriteFrames,
   commitImportTransaction,
+  resolveGodotPath,
 };

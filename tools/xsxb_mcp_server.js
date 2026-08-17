@@ -80,17 +80,24 @@ function startServer(options = {}) {
   const output = options.output || process.stdout;
   const service = options.service || createXsxbMcpService();
   const lines = readline.createInterface({ input, crlfDelay: Infinity });
-  lines.on("line", async (line) => {
-    if (!line.trim()) return;
-    let message;
-    try {
-      message = JSON.parse(line);
-    } catch (error) {
-      output.write(`${JSON.stringify(failure(null, -32700, `Parse error: ${error.message}`))}\n`);
-      return;
-    }
-    const response = await handleMessage(message, service);
-    if (response) output.write(`${JSON.stringify(response)}\n`);
+  let queue = Promise.resolve();
+  lines.on("line", (line) => {
+    queue = queue
+      .then(async () => {
+        if (!line.trim()) return;
+        let message;
+        try {
+          message = JSON.parse(line);
+        } catch (error) {
+          output.write(`${JSON.stringify(failure(null, -32700, `Parse error: ${error.message}`))}\n`);
+          return;
+        }
+        const response = await handleMessage(message, service);
+        if (response) output.write(`${JSON.stringify(response)}\n`);
+      })
+      .catch((error) => {
+        output.write(`${JSON.stringify(failure(null, -32603, error.message || "Internal MCP error."))}\n`);
+      });
   });
   return lines;
 }

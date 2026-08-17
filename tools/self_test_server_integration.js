@@ -107,10 +107,15 @@ function createIntegrationTests(options) {
         request.end();
       });
       assert.equal(oversizedMediaStatus, 413);
+      const projectsResponse = await fetchImpl(`${baseUrl}/api/projects`);
+      const projects = await projectsResponse.json();
       const premiumSaveWithoutActivation = await fetchImpl(`${baseUrl}/api/save`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ frame_audio_bindings: [{ key: "walk:0" }] }),
+        body: JSON.stringify({
+          projectId: projects.activeProjectId,
+          frame_audio_bindings: [{ key: "walk:0" }],
+        }),
       });
       assert.equal(premiumSaveWithoutActivation.status, 200);
       const premiumReplacementWithoutActivation = await fetchImpl(`${baseUrl}/api/replace-animation`, {

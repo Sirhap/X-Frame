@@ -126,8 +126,23 @@ test("processing parameter normalization clamps persisted and candidate values",
   assert.equal(parameters.feather, 0);
   assert.equal(parameters.alphaLow, 30);
   assert.equal(parameters.alphaHigh, 240);
+
+  const lowOnly = sessionCore.normalizeProcessingParameters({ alphaLow: 40, alphaHigh: 0 }, fallback);
+  assert.equal(lowOnly.alphaLow, 40);
+  assert.equal(lowOnly.alphaHigh, 0);
   assert.equal(parameters.connected, true);
   assert.equal(parameters.blendMode, fallback.blendMode);
+});
+
+test("createProcessingOptions keeps a disabled alphaHigh instead of swapping the window", () => {
+  const fallback = sessionCore.captureProcessingParameters(createControls());
+  const parameters = sessionCore.normalizeProcessingParameters({ alphaLow: 40, alphaHigh: 0 }, fallback);
+  const options = sessionCore.createProcessingOptions(
+    { processingParameters: parameters, seedPoints: [] },
+    { backgroundColor: {}, backgroundColors: [], protectedColors: [] },
+  );
+  assert.equal(options.alphaLow, 40);
+  assert.equal(options.alphaHigh, 0);
 });
 
 test("blend recovery and edge restoration modes remain independent", () => {

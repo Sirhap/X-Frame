@@ -140,6 +140,22 @@ test("Lite store isolates registry, manifest, tuning, and settings", () => {
   }
 });
 
+test("Lite store preserves a corrupt registry instead of wiping it", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-lite-corrupt-"));
+  try {
+    const store = createLiteStore(root);
+    store.ensureProject("p1", "One");
+    store.ensureProject("p2", "Two");
+    fs.writeFileSync(store.path, "{not-json", "utf8");
+    assert.throws(() => store.ensureProject("p3", "Three"), /Invalid JSON/);
+    const backup = fs.readdirSync(path.dirname(store.path)).find((name) => name.includes(".corrupt-"));
+    assert.ok(backup);
+    assert.equal(fs.readFileSync(path.join(path.dirname(store.path), backup), "utf8"), "{not-json");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("scene profiles match relevant actor resource aliases", () => {
   const matches = profileIdsForSceneText(
     '[ext_resource type="Script" path="res://characters/hero_controller.gd" id="1"]',

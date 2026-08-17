@@ -102,7 +102,7 @@
           : limits.fallback;
       parameters[parameterKey] = Math.max(limits.minimum, Math.min(limits.maximum, Math.round(resolved)));
     }
-    if (parameters.alphaLow > parameters.alphaHigh) {
+    if (parameters.alphaHigh > 0 && parameters.alphaLow > parameters.alphaHigh) {
       [parameters.alphaLow, parameters.alphaHigh] = [parameters.alphaHigh, parameters.alphaLow];
     }
     return parameters;
@@ -342,8 +342,10 @@
       edgeBoost: parameters.edgeBoost,
       blendStrength: parameters.blendStrength,
       blendMode: normalizeReferenceMode(parameters.blendMode, "blend"),
-      alphaLow: Math.min(parameters.alphaLow, parameters.alphaHigh),
-      alphaHigh: Math.max(parameters.alphaLow, parameters.alphaHigh),
+      alphaLow:
+        parameters.alphaHigh > 0 ? Math.min(parameters.alphaLow, parameters.alphaHigh) : parameters.alphaLow,
+      alphaHigh:
+        parameters.alphaHigh > 0 ? Math.max(parameters.alphaLow, parameters.alphaHigh) : parameters.alphaHigh,
       despillStrength: parameters.despillStrength,
       despillMode: normalizeReferenceMode(parameters.despillMode, "general"),
       edgeDespillRadius: parameters.edgeDespillRadius,
