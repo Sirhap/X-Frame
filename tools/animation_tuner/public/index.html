@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0b0d0c" />
     <title>XSXB Frame Tuner</title>
+    <script src="/app_surface.js"></script>
+    <script>
+      document.documentElement.setAttribute(
+        "data-app-surface",
+        window.XSXBAppSurface.resolveAppSurface(location.pathname),
+      );
+    </script>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/layout.css" />
@@ -4885,20 +4892,7 @@
     </script>
     <script>
       (function revealXsxbSurface() {
-        var path = location.pathname.replace(/\/$/, "") || "/";
-        var surface =
-          path === "/projects"
-            ? "projects"
-            : path === "/tools"
-              ? "tools"
-              : path === "/tools/scatter-slice" || path === "/workspace/resources/scatter"
-                ? "scatter"
-                : path.indexOf("/workspace/delivery") === 0 || path === "/tools/export"
-                  ? "delivery"
-                  : path.indexOf("/tools/") === 0
-                    ? "tool"
-                    : "workspace";
-        document.body.setAttribute("data-app-surface", surface);
+        var surface = window.XSXBAppSurface.applyAppSurface(document, location.pathname);
         var hubs = {
           projects: "projectHub",
           tools: "quickToolsHub",
@@ -4907,8 +4901,6 @@
         };
         var hub = hubs[surface] && document.getElementById(hubs[surface]);
         if (hub) hub.hidden = false;
-        var workspace = document.querySelector("#mainWorkbench > .workspace");
-        if (workspace && surface !== "workspace") workspace.hidden = true;
       })();
     </script>
   </body>

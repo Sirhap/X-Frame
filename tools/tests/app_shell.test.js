@@ -339,6 +339,16 @@ test("top-level routes expose exactly one primary surface", () => {
       surface: "tool",
       visible: null,
     },
+    {
+      pathname: "/workspace/resources/import",
+      surface: "tool",
+      visible: null,
+    },
+    {
+      pathname: "/workspace/resources/cutout",
+      surface: "tool",
+      visible: null,
+    },
   ];
 
   for (const routeCase of cases) {

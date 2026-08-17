@@ -353,9 +353,9 @@
         if (active) item.setAttribute("aria-current", "page");
         else item.removeAttribute("aria-current");
       }
-      elements.body?.setAttribute(
-        "data-app-surface",
-        path === "/projects"
+      const surface =
+        root.XSXBAppSurface?.resolveAppSurface?.(path) ||
+        (path === "/projects"
           ? "projects"
           : path === "/tools"
             ? "tools"
@@ -367,8 +367,10 @@
                   ? "workspace"
                   : route
                     ? "tool"
-                    : "workspace",
-      );
+                    : "workspace");
+      documentRef.documentElement?.setAttribute?.("data-app-surface", surface);
+      elements.body?.setAttribute("data-app-surface", surface);
+      root.XSXBAppSurface?.applyAppSurface?.(documentRef, path);
       if (elements.body?.dataset.appSurface !== "workspace") hideContextToolMenu();
       syncHiddenWorkbenchAccessibility();
     }

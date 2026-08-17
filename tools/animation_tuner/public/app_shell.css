@@ -285,6 +285,11 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
   font: 720 11px/1 var(--ui-font);
 }
 
+html:not([data-app-surface="workspace"]) .workspace,
+html:not([data-app-surface="workspace"]) #workbenchSidebar {
+  display: none !important;
+}
+
 body[data-app-surface="projects"] .workspaceFlowHeader,
 body[data-app-surface="tools"] .workspaceFlowHeader {
   display: none;
