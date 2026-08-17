@@ -15,7 +15,7 @@ const {
   validateAttackTrails,
 } = require("./attack_trails");
 const { deleteAnimation } = require("./animation_mutations");
-const { frameBoxKey } = require("./box_estimator");
+const { frameBoxKey, upsertEstimatedFrameBoxes } = require("./box_estimator");
 const { importAnimation, reorganizeAnimation } = require("./frame_organizer");
 const { syncGodotProject, validGodotProjectRoot } = require("./godot_sync");
 const { parseSpriteFrames } = require("./import_spriteframes");
@@ -34,17 +34,22 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_import_animation",
   "xsxb_get_animation",
   "xsxb_update_frame_boxes",
+  "xsxb_estimate_boxes",
   "xsxb_update_timing",
+  "xsxb_set_visual_transform",
   "xsxb_reorganize_frames",
+  "xsxb_replace_frame",
   "xsxb_add_attack_trail",
   "xsxb_add_attachment",
   "xsxb_add_sfx",
+  "xsxb_remove_binding",
   "xsxb_delete_animation",
   "xsxb_sync_godot",
   "xsxb_validate_project",
   "xsxb_set_active_project",
   "xsxb_bind_godot",
   "xsxb_cutout",
+  "xsxb_export_gif",
   "xsxb_open_tuner",
 ]);
 const BOX_NAMES = Object.freeze(["hurtbox", "collisionbox", "hitbox"]);
@@ -119,6 +124,57 @@ async function extractVideoFrames(videoPath, outputDirectory, options = {}) {
     .filter((name) => /^frame_\d+\.png$/i.test(name))
     .sort((left, right) => left.localeCompare(right, "en", { numeric: true }))
     .map((name) => path.join(outputDirectory, name));
+}
+
+/**
+ * Encodes an animated GIF from PNG frames with per-frame durations via FFmpeg.
+ * @param {{framePaths:string[],durations:number[],outputPath:string,ffmpegBinary?:string}} job Encode job.
+ * @returns {Promise<void>}
+ */
+async function encodeGifWithFfmpeg(job) {
+  const escapePath = (filePath) => filePath.replace(/'/g, "'\\''");
+  const lines = ["ffconcat version 1.0"];
+  job.framePaths.forEach((framePath, index) => {
+    lines.push(`file '${escapePath(framePath)}'`);
+    // A 1/100s image timebase matches GIF delay resolution; the default 1/25 rounds delays to 40ms.
+    lines.push("option framerate 100");
+    lines.push(`duration ${Math.max(0.001, job.durations[index]).toFixed(6)}`);
+  });
+  // The concat demuxer ignores the trailing duration unless the last frame repeats.
+  lines.push(`file '${escapePath(job.framePaths[job.framePaths.length - 1])}'`);
+  lines.push("option framerate 100");
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-gif-"));
+  const concatPath = path.join(tempDir, "frames.ffconcat");
+  try {
+    fs.writeFileSync(concatPath, `${lines.join("\n")}\n`);
+    await execFileAsync(
+      job.ffmpegBinary || process.env.XSXB_FFMPEG || "ffmpeg",
+      [
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        concatPath,
+        "-filter_complex",
+        "[0:v]split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse=alpha_threshold=128",
+        "-loop",
+        "0",
+        job.outputPath,
+      ],
+      { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 },
+    );
+  } catch (error) {
+    throw new Error(
+      `FFmpeg GIF export failed (install ffmpeg or set XSXB_FFMPEG): ${error.stderr || error.message}`,
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -465,12 +521,20 @@ function toolDefinitions() {
     {
       name: "xsxb_get_animation",
       description:
-        "Return animation metadata and frames. Pass frames=summary for a compact sample without animation.frames.",
+        "Return animation metadata and frames. Pass frames=summary for a compact sample without animation.frames. Pass include to also read back current boxes, timing, sfx, attachments, or trails.",
       inputSchema: {
         type: "object",
         properties: {
           ...animationProperties,
           frames: { type: "string", enum: ["summary", "full"], default: "full" },
+          include: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: ["boxes", "timing", "visual", "sfx", "attachments", "trails"],
+            },
+            description: "Extra sections to return: box overrides, playback timing, visual transforms, and bindings.",
+          },
         },
         additionalProperties: false,
       },
@@ -478,7 +542,8 @@ function toolDefinitions() {
     },
     {
       name: "xsxb_update_frame_boxes",
-      description: "Update hurtbox, collisionbox, and hitbox for one animation frame. Does not sync Godot.",
+      description:
+        "Update hurtbox, collisionbox, and hitbox for one animation frame, or many frames at once via frames. Does not sync Godot.",
       inputSchema: {
         type: "object",
         properties: {
@@ -487,6 +552,32 @@ function toolDefinitions() {
           hurtbox: { type: "object" },
           collisionbox: { type: "object" },
           hitbox: { type: "object" },
+          frames: {
+            type: "array",
+            items: { type: "object" },
+            description:
+              "Batch mode: [{frame, hurtbox?, collisionbox?, hitbox?}, ...] applied in one write. Overrides the single-frame parameters.",
+          },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_estimate_boxes",
+      description:
+        "Auto-estimate hurtbox, collisionbox, and hitbox overrides for every animation frame from opaque pixel bounds. Keeps existing overrides unless replace=true. Use dry_run to preview.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          replace: {
+            type: "boolean",
+            default: false,
+            description: "Recompute frames that already have box overrides.",
+          },
+          dry_run: { type: "boolean", default: false },
           sync: { type: "boolean", default: false },
         },
         additionalProperties: false,
@@ -496,7 +587,7 @@ function toolDefinitions() {
     {
       name: "xsxb_update_timing",
       description:
-        "Update animation FPS and optional per-frame duration or disabled playback. Does not sync Godot.",
+        "Update animation FPS and optional per-frame duration or disabled playback, or many frames at once via frames. Does not sync Godot.",
       inputSchema: {
         type: "object",
         properties: {
@@ -510,6 +601,46 @@ function toolDefinitions() {
             description: "Frame duration multiplier. 1 equals one FPS tick.",
           },
           disabled: { type: "boolean" },
+          frames: {
+            type: "array",
+            items: { type: "object" },
+            description:
+              "Batch mode: [{frame, duration_ms?, duration?, disabled?}, ...] applied in one write. Overrides the single-frame parameters.",
+          },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_set_visual_transform",
+      description:
+        "Set visual size, offset, and rotation at the character (profile), animation group, or single-frame level. Pass clear=true to remove overrides at that level. Does not sync Godot.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          level: {
+            type: "string",
+            enum: ["character", "group", "frame"],
+            default: "group",
+            description: "character applies to the whole profile; group to one animation; frame to one frame.",
+          },
+          frame: { type: "integer", minimum: 0, description: "Required when level=frame." },
+          visual_size: {
+            type: "number",
+            exclusiveMinimum: 0,
+            description: "Uniform visual scale multiplier.",
+          },
+          offset_x: { type: "number" },
+          offset_y: { type: "number" },
+          rotation: { type: "number", description: "Rotation in radians." },
+          clear: {
+            type: "boolean",
+            default: false,
+            description: "Remove all visual overrides at the selected level.",
+          },
           sync: { type: "boolean", default: false },
         },
         additionalProperties: false,
@@ -534,6 +665,23 @@ function toolDefinitions() {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_replace_frame",
+      description:
+        "Replace one workspace frame PNG with a new local PNG while keeping boxes, timing, and bindings. Updates the stored frame size when it changes.",
+      inputSchema: {
+        type: "object",
+        required: ["frame", "file_path"],
+        properties: {
+          ...animationProperties,
+          frame: { type: "integer", minimum: 0 },
+          file_path: { type: "string", description: "Absolute replacement PNG path." },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
     {
       name: "xsxb_add_attack_trail",
@@ -605,6 +753,29 @@ function toolDefinitions() {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_remove_binding",
+      description:
+        "Remove one SFX, attachment, or attack-trail binding by id from one animation. Use frame to disambiguate sfx/attachment bindings that share an id. Supports dry_run.",
+      inputSchema: {
+        type: "object",
+        required: ["kind", "id"],
+        properties: {
+          ...animationProperties,
+          kind: { type: "string", enum: ["sfx", "attachment", "trail"] },
+          id: { type: "string", description: "Binding or trail segment id." },
+          frame: {
+            type: "integer",
+            minimum: 0,
+            description: "Only remove the binding on this frame. Not applicable to trails.",
+          },
+          dry_run: { type: "boolean", default: false },
+          sync: { type: "boolean", default: true },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     },
     {
       name: "xsxb_delete_animation",
@@ -720,6 +891,31 @@ function toolDefinitions() {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     },
     {
+      name: "xsxb_export_gif",
+      description:
+        "Export one animation as an animated GIF preview via FFmpeg, honoring per-frame durations and skipping disabled frames. Returns the absolute output path.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          output_path: {
+            type: "string",
+            description: "Absolute .gif destination. Defaults to <workspace>/exports/<profile>_<animation>.gif.",
+          },
+          fps: { type: "number", minimum: 1, maximum: 120, description: "Defaults to the animation FPS." },
+          start_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
+          end_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
+          include_disabled: {
+            type: "boolean",
+            default: false,
+            description: "Also render frames whose playback is disabled.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
       name: "xsxb_open_tuner",
       description:
         "Start the local Tuner if needed and return a workspace URL focused on one project, profile, and animation.",
@@ -750,6 +946,7 @@ function createXsxbMcpService(options = {}) {
   const root = path.resolve(options.root || path.join(__dirname, ".."));
   const projectStore = createProjectStore(root);
   const extractVideoFramesImpl = options.extractVideoFramesImpl || extractVideoFrames;
+  const encodeGifImpl = options.encodeGifImpl || encodeGifWithFfmpeg;
   const cutoutPngFileImpl = options.cutoutPngFileImpl || null;
   const probeTunerImpl = options.probeTunerImpl || probeTunerUrl;
   const launchTunerImpl = options.launchTunerImpl || launchTunerProcess;
@@ -794,6 +991,18 @@ function createXsxbMcpService(options = {}) {
   function manifestFor(project) {
     const paths = projectStore.projectPaths(project);
     return projectStore.readJson(paths.manifest, { schemaVersion: 1, profiles: [] });
+  }
+
+  /**
+   * Reads frame-audio bindings as an array regardless of the stored shape.
+   * @param {object} paths Project data paths.
+   * @returns {object[]} SFX bindings.
+   */
+  function readSfxBindings(paths) {
+    const raw = projectStore.readJson(paths.frameAudio, []);
+    return Array.isArray(raw)
+      ? raw
+      : Object.entries(raw || {}).map(([key, value]) => ({ key, ...(value || {}) }));
   }
 
   function animationFor(args = {}) {
@@ -1171,34 +1380,97 @@ function createXsxbMcpService(options = {}) {
     const { project, profile, animation } = animationFor(args);
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot update boxes on an animation without frames.");
-    const frame = requireFrameIndex(args.frame || 0, frames.length - 1);
-    const patches = BOX_NAMES.filter((name) => args[name] && typeof args[name] === "object");
-    if (!patches.length) throw new Error("Provide at least one of hurtbox, collisionbox, or hitbox.");
+    const batch = Array.isArray(args.frames) && args.frames.length > 0;
+    const requests = batch
+      ? args.frames
+      : [{ frame: args.frame || 0, hurtbox: args.hurtbox, collisionbox: args.collisionbox, hitbox: args.hitbox }];
     const paths = projectStore.projectPaths(project);
     const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
     tuning.frame_box_overrides =
       tuning.frame_box_overrides && typeof tuning.frame_box_overrides === "object"
         ? tuning.frame_box_overrides
         : {};
-    const key = frameBoxKey(profile.id, animation.id || animation.name, frame);
-    const current =
-      tuning.frame_box_overrides[key] && typeof tuning.frame_box_overrides[key] === "object"
-        ? tuning.frame_box_overrides[key]
-        : {};
-    const boxes = { ...current };
-    for (const name of patches) {
-      boxes[name] = mergeBox(current[name], args[name], { ground: name === "collisionbox" });
-    }
-    tuning.frame_box_overrides[key] = boxes;
+    const updates = requests.map((request) => {
+      if (!request || typeof request !== "object") {
+        throw new Error("Each frames item must be an object with frame and box patches.");
+      }
+      const frame = requireFrameIndex(request.frame ?? 0, frames.length - 1);
+      const patches = BOX_NAMES.filter((name) => request[name] && typeof request[name] === "object");
+      if (!patches.length) throw new Error("Provide at least one of hurtbox, collisionbox, or hitbox.");
+      const key = frameBoxKey(profile.id, animation.id || animation.name, frame);
+      const current =
+        tuning.frame_box_overrides[key] && typeof tuning.frame_box_overrides[key] === "object"
+          ? tuning.frame_box_overrides[key]
+          : {};
+      const boxes = { ...current };
+      for (const name of patches) {
+        boxes[name] = mergeBox(current[name], request[name], { ground: name === "collisionbox" });
+      }
+      tuning.frame_box_overrides[key] = boxes;
+      return { frame, key, boxes };
+    });
     projectStore.writeJson(paths.tuning, tuning);
-    return {
+    const base = {
       projectId: project.id,
       profileId: profile.id,
       animationId: String(animation.id || animation.name),
-      frame,
-      key,
-      boxes,
+      updatedFrames: updates.length,
       sync: synchronize(project, booleanFlag(args.sync)),
+    };
+    if (!batch) return { ...base, frame: updates[0].frame, key: updates[0].key, boxes: updates[0].boxes };
+    return { ...base, updates };
+  }
+
+  function estimateBoxes(args = {}) {
+    const { project, profile, animation } = animationFor(args);
+    const frames = animation.frames || [];
+    if (!frames.length) throw new Error("Cannot estimate boxes on an animation without frames.");
+    const frameFiles = frames.map((frame, index) => {
+      const absolute = resolveAnimationFramePath(project, frame.path);
+      if (!absolute || !fs.existsSync(absolute)) {
+        throw new Error(`Frame ${index} has no generated PNG on disk; import or regenerate frames first.`);
+      }
+      return absolute;
+    });
+    const replace = booleanFlag(args.replace);
+    const dryRun = booleanFlag(args.dry_run);
+    const animationId = String(animation.id || animation.name);
+    const paths = projectStore.projectPaths(project);
+    const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+    tuning.frame_box_overrides =
+      tuning.frame_box_overrides && typeof tuning.frame_box_overrides === "object"
+        ? tuning.frame_box_overrides
+        : {};
+    const keyFor = (index) => frameBoxKey(profile.id, animationId, index);
+    const existing = new Set(
+      frames.map((_, index) => keyFor(index)).filter((key) => tuning.frame_box_overrides[key]),
+    );
+    upsertEstimatedFrameBoxes(tuning, profile.id, { ...animation, id: animationId }, frameFiles, {
+      replace,
+    });
+    const results = frames.map((_, index) => {
+      const key = keyFor(index);
+      const had = existing.has(key);
+      const skippedExisting = !replace && had;
+      return {
+        frame: index,
+        estimated: !skippedExisting && Boolean(tuning.frame_box_overrides[key]),
+        skippedExisting,
+        boxes: tuning.frame_box_overrides[key] || null,
+      };
+    });
+    if (!dryRun) projectStore.writeJson(paths.tuning, tuning);
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId,
+      frameCount: frames.length,
+      estimatedFrames: results.filter((entry) => entry.estimated).length,
+      skippedExistingFrames: results.filter((entry) => entry.skippedExisting).length,
+      replace,
+      dryRun,
+      frames: results,
+      sync: synchronize(project, dryRun ? false : booleanFlag(args.sync)),
     };
   }
 
@@ -1216,44 +1488,176 @@ function createXsxbMcpService(options = {}) {
     const fps = requireFps(args.fps === undefined ? target.fps : args.fps, Number(target.fps || 12));
     target.fps = fps;
     projectStore.writeJson(paths.manifest, manifest);
-    let playback = null;
-    if (
+    const batch = Array.isArray(args.frames) && args.frames.length > 0;
+    const singleRequested =
       args.frame !== undefined ||
       args.duration_ms !== undefined ||
       args.duration !== undefined ||
-      args.disabled !== undefined
-    ) {
+      args.disabled !== undefined;
+    let playback = null;
+    let playbackUpdates = null;
+    if (batch || singleRequested) {
       if (!frames.length) throw new Error("Cannot update frame timing on an animation without frames.");
-      const frame = requireFrameIndex(args.frame || 0, frames.length - 1);
+      const requests = batch
+        ? args.frames
+        : [
+            {
+              frame: args.frame,
+              duration_ms: args.duration_ms,
+              duration: args.duration,
+              disabled: args.disabled,
+            },
+          ];
       const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
       tuning.frame_playback_overrides =
         tuning.frame_playback_overrides && typeof tuning.frame_playback_overrides === "object"
           ? tuning.frame_playback_overrides
           : {};
-      const key = frameBoxKey(profile.id, animation.id || animation.name, frame);
-      const current = tuning.frame_playback_overrides[key] || {};
-      let duration = Number(current.duration || 1);
-      if (args.duration_ms !== undefined) duration = (Number(args.duration_ms) * fps) / 1000;
-      else if (args.duration !== undefined) duration = Number(args.duration);
-      duration = Math.max(0.001, duration);
-      const disabled = args.disabled === undefined ? current.disabled === true : Boolean(args.disabled);
-      if (disabled || duration !== 1) tuning.frame_playback_overrides[key] = { duration, disabled };
-      else delete tuning.frame_playback_overrides[key];
+      const applied = requests.map((request) => {
+        if (!request || typeof request !== "object") {
+          throw new Error("Each frames item must be an object with frame and timing fields.");
+        }
+        const frame = requireFrameIndex(request.frame ?? 0, frames.length - 1);
+        const key = frameBoxKey(profile.id, animation.id || animation.name, frame);
+        const current = tuning.frame_playback_overrides[key] || {};
+        let duration = Number(current.duration || 1);
+        if (request.duration_ms !== undefined) duration = (Number(request.duration_ms) * fps) / 1000;
+        else if (request.duration !== undefined) duration = Number(request.duration);
+        duration = Math.max(0.001, duration);
+        const disabled =
+          request.disabled === undefined ? current.disabled === true : Boolean(request.disabled);
+        if (disabled || duration !== 1) tuning.frame_playback_overrides[key] = { duration, disabled };
+        else delete tuning.frame_playback_overrides[key];
+        return {
+          frame,
+          key,
+          duration,
+          durationMs: Math.round((duration * 1000) / fps),
+          disabled,
+        };
+      });
       projectStore.writeJson(paths.tuning, tuning);
-      playback = {
-        frame,
-        key,
-        duration,
-        durationMs: Math.round((duration * 1000) / fps),
-        disabled,
-      };
+      if (batch) playbackUpdates = applied;
+      else playback = applied[0];
     }
-    return {
+    const result = {
       projectId: project.id,
       profileId: profile.id,
       animationId: String(animation.id || animation.name),
       fps,
       playback,
+      sync: synchronize(project, booleanFlag(args.sync)),
+    };
+    if (playbackUpdates) result.playbackUpdates = playbackUpdates;
+    return result;
+  }
+
+  function setVisualTransform(args = {}) {
+    const level = String(args.level || "group")
+      .trim()
+      .toLowerCase();
+    if (!["character", "group", "frame"].includes(level)) {
+      throw new Error('level must be one of "character", "group", or "frame".');
+    }
+    const clear = booleanFlag(args.clear);
+    const fields = ["visual_size", "offset_x", "offset_y", "rotation"].filter(
+      (name) => args[name] !== undefined,
+    );
+    if (!fields.length && !clear) {
+      throw new Error("Provide at least one of visual_size, offset_x, offset_y, rotation, or clear=true.");
+    }
+    let visualSize = null;
+    if (args.visual_size !== undefined) {
+      visualSize = Number(args.visual_size);
+      if (!Number.isFinite(visualSize) || visualSize <= 0) {
+        throw new Error("visual_size must be a finite number greater than 0.");
+      }
+    }
+    const selection = animationFor(args);
+    const { project, profile, animation } = selection;
+    const animationId = String(animation.id || animation.name);
+    const paths = projectStore.projectPaths(project);
+    const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+    tuning.values = tuning.values && typeof tuning.values === "object" ? tuning.values : {};
+    let applied;
+    if (level === "frame") {
+      const frames = animation.frames || [];
+      if (!frames.length) throw new Error("Cannot set frame visuals on an animation without frames.");
+      if (args.frame === undefined) throw new Error("frame is required when level=frame.");
+      const frame = requireFrameIndex(args.frame, frames.length - 1);
+      tuning.frame_visual_overrides =
+        tuning.frame_visual_overrides && typeof tuning.frame_visual_overrides === "object"
+          ? tuning.frame_visual_overrides
+          : {};
+      const key = frameBoxKey(profile.id, animationId, frame);
+      if (clear) {
+        delete tuning.frame_visual_overrides[key];
+        applied = { frame, key, cleared: true };
+      } else {
+        const current =
+          tuning.frame_visual_overrides[key] && typeof tuning.frame_visual_overrides[key] === "object"
+            ? tuning.frame_visual_overrides[key]
+            : {};
+        const next = { ...current };
+        if (visualSize !== null) {
+          next.visual_size = visualSize;
+          delete next.visual_scale;
+        }
+        if (args.offset_x !== undefined || args.offset_y !== undefined) {
+          const offset = current.offset && typeof current.offset === "object" ? current.offset : {};
+          next.offset = {
+            x: args.offset_x === undefined ? Number(offset.x || 0) : Number(args.offset_x),
+            y: args.offset_y === undefined ? Number(offset.y || 0) : Number(args.offset_y),
+          };
+        }
+        if (args.rotation !== undefined) next.rotation = Number(args.rotation);
+        tuning.frame_visual_overrides[key] = next;
+        applied = { frame, key, override: next };
+      }
+    } else {
+      const base =
+        level === "character"
+          ? `profiles.${profile.id}.character`
+          : `profiles.${profile.id}.groups.${animationId}`;
+      if (clear) {
+        for (const suffix of ["visual_size", "visual_scale", "offset", "rotation"]) {
+          delete tuning.values[`${base}.${suffix}`];
+        }
+        applied = { base, cleared: true };
+      } else {
+        if (visualSize !== null) {
+          tuning.values[`${base}.visual_size`] = visualSize;
+          delete tuning.values[`${base}.visual_scale`];
+        }
+        if (args.offset_x !== undefined || args.offset_y !== undefined) {
+          const offsetKey = `${base}.offset`;
+          const current =
+            tuning.values[offsetKey] && typeof tuning.values[offsetKey] === "object"
+              ? tuning.values[offsetKey]
+              : {};
+          tuning.values[offsetKey] = {
+            x: args.offset_x === undefined ? Number(current.x || 0) : Number(args.offset_x),
+            y: args.offset_y === undefined ? Number(current.y || 0) : Number(args.offset_y),
+          };
+        }
+        if (args.rotation !== undefined) tuning.values[`${base}.rotation`] = Number(args.rotation);
+        applied = {
+          base,
+          values: Object.fromEntries(
+            ["visual_size", "visual_scale", "offset", "rotation"]
+              .map((suffix) => [`${base}.${suffix}`, tuning.values[`${base}.${suffix}`]])
+              .filter(([, value]) => value !== undefined),
+          ),
+        };
+      }
+    }
+    projectStore.writeJson(paths.tuning, tuning);
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId,
+      level,
+      ...applied,
       sync: synchronize(project, booleanFlag(args.sync)),
     };
   }
@@ -1298,8 +1702,106 @@ function createXsxbMcpService(options = {}) {
     };
   }
 
+  /**
+   * Reads back tuning overrides and bindings owned by one animation.
+   * @param {{project:object,profile:object,animation:object}} selection Animation selection.
+   * @param {string[]} sections Requested include sections.
+   * @returns {object} Extra sections keyed by name.
+   */
+  function animationExtras(selection, sections) {
+    const { project, profile, animation } = selection;
+    const animationId = String(animation.id || animation.name);
+    const bindingKey = `${profile.id}/${animationId}`;
+    const framePrefix = `${bindingKey}:`;
+    const frameFromKey = (key) => Number(String(key).slice(framePrefix.length));
+    const paths = projectStore.projectPaths(project);
+    const wanted = new Set(sections);
+    const extras = {};
+    if (wanted.has("boxes") || wanted.has("timing") || wanted.has("visual")) {
+      const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+      if (wanted.has("boxes")) {
+        const overrides = tuning.frame_box_overrides || {};
+        extras.boxes = Object.fromEntries(
+          Object.keys(overrides)
+            .filter((key) => key.startsWith(framePrefix))
+            .map((key) => [frameFromKey(key), overrides[key]]),
+        );
+      }
+      if (wanted.has("timing")) {
+        const fps = Number(animation.fps || 12);
+        const overrides = tuning.frame_playback_overrides || {};
+        const frameOverrides = {};
+        for (const key of Object.keys(overrides)) {
+          if (!key.startsWith(framePrefix)) continue;
+          const entry = overrides[key] && typeof overrides[key] === "object" ? overrides[key] : {};
+          const duration = Number(entry.duration || 1);
+          frameOverrides[frameFromKey(key)] = {
+            duration,
+            durationMs: Math.round((duration * 1000) / fps),
+            disabled: entry.disabled === true,
+          };
+        }
+        extras.timing = { fps, frameOverrides };
+      }
+      if (wanted.has("visual")) {
+        const values = tuning.values && typeof tuning.values === "object" ? tuning.values : {};
+        const pick = (base) => ({
+          visual_size: values[`${base}.visual_size`],
+          visual_scale: values[`${base}.visual_scale`],
+          offset: values[`${base}.offset`],
+          rotation: values[`${base}.rotation`],
+        });
+        const overrides =
+          tuning.frame_visual_overrides && typeof tuning.frame_visual_overrides === "object"
+            ? tuning.frame_visual_overrides
+            : {};
+        const frameOverrides = {};
+        for (const key of Object.keys(overrides)) {
+          if (key.startsWith(framePrefix)) frameOverrides[frameFromKey(key)] = overrides[key];
+        }
+        extras.visual = {
+          character: pick(`profiles.${profile.id}.character`),
+          group: pick(`profiles.${profile.id}.groups.${animationId}`),
+          frameOverrides,
+        };
+      }
+    }
+    if (wanted.has("sfx")) {
+      extras.sfx = readSfxBindings(paths)
+        .filter((entry) => String(entry?.key || "").startsWith(framePrefix))
+        .map((entry) => {
+          const { data, ...rest } = entry;
+          return { ...rest, frame: frameFromKey(entry.key), hasData: Boolean(data) };
+        });
+    }
+    if (wanted.has("attachments")) {
+      const raw = projectStore.readJson(paths.frameImageAttachments, []);
+      extras.attachments = (Array.isArray(raw) ? raw : [])
+        .filter((entry) => String(entry?.key || entry?.frameKey || "").startsWith(framePrefix))
+        .map((entry) => ({ ...entry, frame: frameFromKey(entry.key || entry.frameKey) }));
+    }
+    if (wanted.has("trails")) {
+      const trails = normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
+      extras.trails = trails.bindings[bindingKey] || [];
+    }
+    return extras;
+  }
+
   async function getAnimation(args = {}) {
-    const result = animationResult(animationFor(args));
+    const selection = animationFor(args);
+    const result = animationResult(selection);
+    const includeRaw = Array.isArray(args.include)
+      ? args.include
+      : typeof args.include === "string" && args.include.trim()
+        ? args.include.split(",")
+        : [];
+    const include = includeRaw.map((entry) => String(entry).trim().toLowerCase()).filter(Boolean);
+    const allowed = ["boxes", "timing", "visual", "sfx", "attachments", "trails"];
+    const unknown = include.filter((entry) => !allowed.includes(entry));
+    if (unknown.length) {
+      throw new Error(`Unknown include section(s): ${unknown.join(", ")}. Allowed: ${allowed.join(", ")}.`);
+    }
+    if (include.length) Object.assign(result, animationExtras(selection, include));
     const framesMode = String(args.frames || "full").toLowerCase();
     if (framesMode !== "summary") return { ...result, summary: false };
     const samples = (result.animation.frames || []).slice(0, 3).map((frame) => ({
@@ -1687,10 +2189,7 @@ function createXsxbMcpService(options = {}) {
     if (!frames.length) throw new Error("Cannot bind SFX to an animation without frames.");
     const frame = requireFrameIndex(args.frame || 0, frames.length - 1);
     const paths = projectStore.projectPaths(project);
-    const raw = projectStore.readJson(paths.frameAudio, []);
-    const bindings = Array.isArray(raw)
-      ? raw
-      : Object.entries(raw || {}).map(([key, value]) => ({ key, ...(value || {}) }));
+    const bindings = readSfxBindings(paths);
     const key = `${profile.id}/${animation.id || animation.name}:${frame}`;
     const absolute = requireExistingFile(args.file_path, "SFX file");
     const mime = audioMimeType(absolute);
@@ -1719,6 +2218,99 @@ function createXsxbMcpService(options = {}) {
       binding: { ...binding, data: `[${mime} omitted]` },
       bindingCount: next.length,
       sync: synchronize(project, booleanFlag(args.sync, true)),
+    };
+  }
+
+  function removeBinding(args = {}) {
+    const { project, profile, animation } = animationFor(args);
+    const kind = String(args.kind || "")
+      .trim()
+      .toLowerCase();
+    if (!["sfx", "attachment", "trail"].includes(kind)) {
+      throw new Error('kind must be one of "sfx", "attachment", or "trail".');
+    }
+    const id = String(args.id || "").trim();
+    if (!id) throw new Error("id is required.");
+    const animationId = String(animation.id || animation.name);
+    const bindingKey = `${profile.id}/${animationId}`;
+    const framePrefix = `${bindingKey}:`;
+    const dryRun = booleanFlag(args.dry_run);
+    const paths = projectStore.projectPaths(project);
+    let frameFilter = null;
+    if (args.frame !== undefined) {
+      if (kind === "trail") throw new Error("frame is not applicable to trail bindings.");
+      frameFilter = requireFrameIndex(args.frame, Math.max(0, (animation.frames || []).length - 1));
+    }
+    const summarize = (entry) => {
+      const { data, ...rest } = entry;
+      return rest;
+    };
+    let removed;
+    let remainingCount;
+    let write;
+    if (kind === "trail") {
+      const trails = normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
+      const segments = trails.bindings[bindingKey] || [];
+      removed = segments.filter((segment) => String(segment.id) === id);
+      const kept = segments.filter((segment) => String(segment.id) !== id);
+      if (!removed.length) {
+        const available = segments.map((segment) => String(segment.id));
+        throw new Error(
+          `Trail segment not found: ${id}. Available: ${available.join(", ") || "(none)"}`,
+        );
+      }
+      remainingCount = kept.length;
+      write = () => {
+        if (kept.length) trails.bindings[bindingKey] = kept;
+        else delete trails.bindings[bindingKey];
+        projectStore.writeJson(paths.attackTrails, normalizeAttackTrails(trails));
+      };
+    } else {
+      const file = kind === "sfx" ? paths.frameAudio : paths.frameImageAttachments;
+      const bindings =
+        kind === "sfx"
+          ? readSfxBindings(paths)
+          : (() => {
+              const raw = projectStore.readJson(file, []);
+              return Array.isArray(raw) ? raw : [];
+            })();
+      const matches = (entry) => {
+        const key = String(entry?.key || entry?.frameKey || "");
+        if (!key.startsWith(framePrefix)) return false;
+        if (String(entry?.id) !== id) return false;
+        if (frameFilter !== null && key !== `${framePrefix}${frameFilter}`) return false;
+        return true;
+      };
+      removed = bindings.filter(matches);
+      const kept = bindings.filter((entry) => !matches(entry));
+      if (!removed.length) {
+        const available = [
+          ...new Set(
+            bindings
+              .filter((entry) => String(entry?.key || entry?.frameKey || "").startsWith(framePrefix))
+              .map((entry) => String(entry?.id)),
+          ),
+        ];
+        throw new Error(
+          `${kind} binding not found: ${id}${frameFilter !== null ? ` on frame ${frameFilter}` : ""}. Available: ${available.join(", ") || "(none)"}`,
+        );
+      }
+      remainingCount = kept.length;
+      write = () => projectStore.writeJson(file, kept);
+    }
+    if (!dryRun) write();
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId,
+      kind,
+      id,
+      frame: frameFilter,
+      dryRun,
+      removed: removed.map(summarize),
+      removedCount: removed.length,
+      remainingCount,
+      sync: synchronize(project, dryRun ? false : booleanFlag(args.sync, true)),
     };
   }
 
@@ -1760,6 +2352,127 @@ function createXsxbMcpService(options = {}) {
     };
   }
 
+  function replaceFrame(args = {}) {
+    const selection = animationFor(args);
+    const { project, manifest, profile, animation } = selection;
+    const frames = animation.frames || [];
+    if (!frames.length) throw new Error("Cannot replace a frame on an animation without frames.");
+    if (args.frame === undefined) throw new Error("frame is required.");
+    const frame = requireFrameIndex(args.frame, frames.length - 1);
+    const absolute = requireExistingFile(args.file_path, "Replacement frame");
+    if (!PNG_NAME.test(absolute)) throw new Error("Replacement frame must be a PNG.");
+    const buffer = fs.readFileSync(absolute);
+    let info;
+    try {
+      info = pngInfo(buffer);
+    } catch {
+      throw new Error("Replacement frame must be a valid PNG file.");
+    }
+    const target = resolveAnimationFramePath(project, frames[frame].path);
+    const workspaceDir = projectStore.projectWorkspaceDir(project);
+    if (!target || !isInsideDirectory(target, workspaceDir)) {
+      throw new Error(
+        "Only workspace-managed frames can be replaced; this frame lives outside the project workspace.",
+      );
+    }
+    const previousSize = {
+      width: Number(frames[frame].width || 0),
+      height: Number(frames[frame].height || 0),
+    };
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const tempPath = `${target}.tmp-${process.pid}`;
+    fs.writeFileSync(tempPath, buffer);
+    fs.renameSync(tempPath, target);
+    const newSize = { width: info.width, height: info.height };
+    const sizeChanged = newSize.width !== previousSize.width || newSize.height !== previousSize.height;
+    if (sizeChanged) {
+      frames[frame].width = newSize.width;
+      frames[frame].height = newSize.height;
+      projectStore.writeJson(projectStore.projectPaths(project).manifest, manifest);
+    }
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId: String(animation.id || animation.name),
+      frame,
+      path: reslash(path.relative(root, target)),
+      previousSize,
+      newSize,
+      sizeChanged,
+      warnings: sizeChanged
+        ? ["Frame size changed; existing boxes, attachments, and trails keep their old coordinates."]
+        : [],
+      sync: synchronize(project, booleanFlag(args.sync)),
+    };
+  }
+
+  async function exportGif(args = {}) {
+    const { project, profile, animation } = animationFor(args);
+    const frames = animation.frames || [];
+    if (!frames.length) throw new Error("Cannot export an animation without frames.");
+    const lastIndex = frames.length - 1;
+    const startFrame = args.start_frame === undefined ? 0 : requireFrameIndex(args.start_frame, lastIndex);
+    const endFrame = args.end_frame === undefined ? lastIndex : requireFrameIndex(args.end_frame, lastIndex);
+    if (endFrame < startFrame) throw new Error("end_frame must be greater than or equal to start_frame.");
+    const fps = requireFps(args.fps === undefined ? animation.fps : args.fps, 12);
+    const includeDisabled = booleanFlag(args.include_disabled);
+    const animationId = String(animation.id || animation.name);
+    const paths = projectStore.projectPaths(project);
+    const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+    const playbackOverrides =
+      tuning.frame_playback_overrides && typeof tuning.frame_playback_overrides === "object"
+        ? tuning.frame_playback_overrides
+        : {};
+    const framePaths = [];
+    const durations = [];
+    let skippedDisabledFrames = 0;
+    for (let index = startFrame; index <= endFrame; index += 1) {
+      const key = frameBoxKey(profile.id, animationId, index);
+      const override =
+        playbackOverrides[key] && typeof playbackOverrides[key] === "object" ? playbackOverrides[key] : {};
+      if (override.disabled === true && !includeDisabled) {
+        skippedDisabledFrames += 1;
+        continue;
+      }
+      const absolute = resolveAnimationFramePath(project, frames[index].path);
+      if (!absolute || !fs.existsSync(absolute)) {
+        throw new Error(`Frame ${index} has no generated PNG on disk; import or regenerate frames first.`);
+      }
+      framePaths.push(absolute);
+      durations.push(Math.max(0.001, Number(override.duration || 1)) / fps);
+    }
+    if (!framePaths.length) {
+      throw new Error("No exportable frames in the selected range (all frames are disabled).");
+    }
+    let outputPath;
+    if (args.output_path) {
+      outputPath = path.resolve(String(args.output_path));
+      if (!/\.gif$/i.test(outputPath)) throw new Error("output_path must end with .gif.");
+    } else {
+      outputPath = path.join(
+        projectStore.projectWorkspaceDir(project),
+        "exports",
+        `${profile.id}_${animationId}.gif`,
+      );
+    }
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    await encodeGifImpl({ framePaths, durations, fps, outputPath });
+    if (!fs.existsSync(outputPath)) throw new Error("GIF export produced no output file.");
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId,
+      outputPath,
+      frameCount: framePaths.length,
+      skippedDisabledFrames,
+      startFrame,
+      endFrame,
+      fps,
+      totalDurationMs: Math.round(durations.reduce((sum, value) => sum + value, 0) * 1000),
+      bytes: fs.statSync(outputPath).size,
+    };
+  }
+
   const handlers = {
     xsxb_list_projects: listProjects,
     xsxb_get_project: projectSnapshot,
@@ -1767,11 +2480,16 @@ function createXsxbMcpService(options = {}) {
     xsxb_import_animation: importUnified,
     xsxb_get_animation: getAnimation,
     xsxb_update_frame_boxes: updateFrameBoxes,
+    xsxb_estimate_boxes: estimateBoxes,
     xsxb_update_timing: updateTiming,
+    xsxb_set_visual_transform: setVisualTransform,
+    xsxb_replace_frame: replaceFrame,
+    xsxb_export_gif: exportGif,
     xsxb_validate_project: validateProject,
     xsxb_add_attack_trail: addAttackTrail,
     xsxb_add_attachment: addAttachment,
     xsxb_add_sfx: addSfx,
+    xsxb_remove_binding: removeBinding,
     xsxb_reorganize_frames: reorganizeFrames,
     xsxb_delete_animation: removeAnimation,
     xsxb_sync_godot: syncGodot,

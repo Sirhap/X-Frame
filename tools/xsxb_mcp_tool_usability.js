@@ -281,6 +281,34 @@ animations = [{
     return verdict("xsxb_update_frame_boxes", "ready", "writes boxes without implicit sync");
   },
 
+  async xsxb_estimate_boxes(fixture) {
+    await importSequence(fixture, "walk");
+    const preview = await fixture.service.call("xsxb_estimate_boxes", {
+      animation_id: "walk",
+      replace: true,
+      dry_run: true,
+    });
+    const applied = await fixture.service.call("xsxb_estimate_boxes", {
+      animation_id: "walk",
+      replace: true,
+    });
+    const skipped = await fixture.service.call("xsxb_estimate_boxes", { animation_id: "walk" });
+    if (
+      preview.dryRun !== true ||
+      preview.sync.requested !== false ||
+      applied.estimatedFrames !== 2 ||
+      !applied.frames[0].boxes?.hurtbox ||
+      skipped.skippedExistingFrames !== 2
+    ) {
+      return verdict("xsxb_estimate_boxes", "fail", JSON.stringify({ preview, applied, skipped }));
+    }
+    return verdict(
+      "xsxb_estimate_boxes",
+      "ready",
+      `estimated=${applied.estimatedFrames}; keeps existing overrides unless replace`,
+    );
+  },
+
   async xsxb_update_timing(fixture) {
     await importSequence(fixture, "walk");
     const timing = await fixture.service.call("xsxb_update_timing", {
@@ -295,6 +323,52 @@ animations = [{
     return verdict("xsxb_update_timing", "ready", "fps and per-frame duration persist");
   },
 
+  async xsxb_set_visual_transform(fixture) {
+    await importSequence(fixture, "walk");
+    const group = await fixture.service.call("xsxb_set_visual_transform", {
+      animation_id: "walk",
+      level: "group",
+      visual_size: 0.5,
+      offset_x: 4,
+      offset_y: -6,
+    });
+    const frameLevel = await fixture.service.call("xsxb_set_visual_transform", {
+      animation_id: "walk",
+      level: "frame",
+      frame: 1,
+      rotation: 0.25,
+    });
+    const readBack = await fixture.service.call("xsxb_get_animation", {
+      animation_id: "walk",
+      include: ["visual"],
+    });
+    const cleared = await fixture.service.call("xsxb_set_visual_transform", {
+      animation_id: "walk",
+      level: "frame",
+      frame: 1,
+      clear: true,
+    });
+    if (
+      group.sync.requested !== false ||
+      readBack.visual.group.visual_size !== 0.5 ||
+      readBack.visual.group.offset.y !== -6 ||
+      readBack.visual.frameOverrides["1"]?.rotation !== 0.25 ||
+      frameLevel.override.rotation !== 0.25 ||
+      cleared.cleared !== true
+    ) {
+      return verdict(
+        "xsxb_set_visual_transform",
+        "fail",
+        JSON.stringify({ group, frameLevel, readBack, cleared }),
+      );
+    }
+    return verdict(
+      "xsxb_set_visual_transform",
+      "ready",
+      "group and frame levels persist and read back via include=visual",
+    );
+  },
+
   async xsxb_reorganize_frames(fixture) {
     await importSequence(fixture, "walk");
     const reversed = await fixture.service.call("xsxb_reorganize_frames", {
@@ -306,6 +380,32 @@ animations = [{
       return verdict("xsxb_reorganize_frames", "fail", JSON.stringify(reversed));
     }
     return verdict("xsxb_reorganize_frames", "ready", "reorder remaps frame-owned state");
+  },
+
+  async xsxb_replace_frame(fixture) {
+    await importSequence(fixture, "walk");
+    const width = 4;
+    const height = 4;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let offset = 0; offset < rgba.length; offset += 4) rgba.set([255, 0, 0, 255], offset);
+    const replacementPath = path.join(fixture.root, "replacement.png");
+    fs.writeFileSync(replacementPath, encodePngRgba(rgba, width, height));
+    const replaced = await fixture.service.call("xsxb_replace_frame", {
+      animation_id: "walk",
+      frame: 0,
+      file_path: replacementPath,
+      sync: false,
+    });
+    const readBack = await fixture.service.call("xsxb_get_animation", { animation_id: "walk" });
+    if (
+      replaced.sizeChanged !== true ||
+      replaced.newSize.width !== 4 ||
+      readBack.animation.frames[0].width !== 4 ||
+      !replaced.warnings.length
+    ) {
+      return verdict("xsxb_replace_frame", "fail", JSON.stringify({ replaced, readBack }));
+    }
+    return verdict("xsxb_replace_frame", "ready", "swaps pixels and refreshes stored frame size");
   },
 
   async xsxb_delete_animation(fixture) {
@@ -440,6 +540,70 @@ animations = [{
       return verdict("xsxb_add_sfx", "fail", JSON.stringify(sfx));
     }
     return verdict("xsxb_add_sfx", "ready", `path=${sfx.binding.path}`);
+  },
+
+  async xsxb_remove_binding(fixture) {
+    await importSequence(fixture, "walk");
+    const filePath = path.join(fixture.root, "hit.wav");
+    fs.writeFileSync(filePath, createTestWav());
+    await fixture.service.call("xsxb_add_sfx", {
+      animation_id: "walk",
+      file_path: filePath,
+      frame: 0,
+      id: "hit",
+      sync: false,
+    });
+    const preview = await fixture.service.call("xsxb_remove_binding", {
+      kind: "sfx",
+      id: "hit",
+      dry_run: true,
+      sync: false,
+    });
+    const removed = await fixture.service.call("xsxb_remove_binding", {
+      kind: "sfx",
+      id: "hit",
+      sync: false,
+    });
+    const readBack = await fixture.service.call("xsxb_get_animation", {
+      animation_id: "walk",
+      include: ["sfx"],
+    });
+    if (preview.dryRun !== true || removed.removedCount !== 1 || readBack.sfx.length !== 0) {
+      return verdict("xsxb_remove_binding", "fail", JSON.stringify({ preview, removed, readBack }));
+    }
+    return verdict("xsxb_remove_binding", "ready", "dry_run previews; removal reads back empty");
+  },
+
+  async xsxb_export_gif() {
+    const jobs = [];
+    const fixture = createFixture({
+      encodeGifImpl: async (job) => {
+        jobs.push(job);
+        fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
+      },
+    });
+    try {
+      await importSequence(fixture, "walk");
+      await fixture.service.call("xsxb_update_timing", { animation_id: "walk", frame: 1, duration_ms: 500 });
+      const exported = await fixture.service.call("xsxb_export_gif", { animation_id: "walk" });
+      if (
+        exported.frameCount !== 2 ||
+        exported.fps !== 12 ||
+        !exported.outputPath.endsWith(".gif") ||
+        !fs.existsSync(exported.outputPath) ||
+        jobs[0].durations[0].toFixed(3) !== "0.083" ||
+        jobs[0].durations[1].toFixed(3) !== "0.500"
+      ) {
+        return verdict("xsxb_export_gif", "fail", JSON.stringify({ exported, jobs }));
+      }
+      return verdict(
+        "xsxb_export_gif",
+        "ready",
+        `wrote ${exported.outputPath.split("/").pop()} honoring per-frame durations`,
+      );
+    } finally {
+      fixture.cleanup();
+    }
   },
 };
 
