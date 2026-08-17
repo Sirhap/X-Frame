@@ -274,7 +274,7 @@
       previewIndex: 0,
       previewTimer: 0,
       viewMode: "edited",
-      showImportSetup: true,
+      showImportSetup: false,
       lastExpandedPanel: "",
       hadFrames: false,
       busy: false,

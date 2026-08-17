@@ -56,17 +56,16 @@
       if (hasFrames && !state.hadFrames) {
         state.showImportSetup = false;
       } else if (!hasFrames) {
-        state.showImportSetup = true;
         state.lastExpandedPanel = "";
       }
       state.hadFrames = hasFrames;
       const workbench = elements.organizerImportSetup?.closest?.(".organizerWorkbench");
       workbench?.classList?.toggle("hasFrames", hasFrames);
       workbench?.classList?.toggle("showImportSetup", Boolean(state.showImportSetup));
-      elements.organizerToggleImportSetup.hidden = state.mode !== "import" || !hasFrames;
+      elements.organizerToggleImportSetup.hidden = state.mode !== "import";
       elements.organizerToggleImportSetup.setAttribute(
         "aria-expanded",
-        String(state.mode === "import" && hasFrames && state.showImportSetup),
+        String(state.mode === "import" && state.showImportSetup),
       );
       const hasEditedResult = includedFrames().some((frame) => frame.hasEditedResult === true);
       elements.organizerViewEdited.disabled = !hasEditedResult || state.busy;
@@ -101,14 +100,14 @@
       elements.organizerGodotPlaceholder.disabled =
         dependencies.browserExportOnly !== true || state.mode !== "import" || !included || state.busy;
       elements.organizerDeleteSelected.disabled = !selected || state.busy;
-      elements.organizerDeleteSelected.hidden = !selected;
+      elements.organizerDeleteSelected.hidden = false;
       elements.organizerClearWorkset.disabled = !state.frames.length || state.busy;
       elements.organizerBatchCutout.disabled = !included || state.busy;
       elements.organizerInvert.disabled = !state.frames.length || state.busy;
       elements.organizerInvertSelection.disabled = !state.frames.length || state.busy;
       elements.organizerFlip.disabled = (!selected && !included) || state.busy;
       elements.organizerDeleteExcluded.disabled = included === state.frames.length || state.busy;
-      elements.organizerDeleteExcluded.hidden = included === state.frames.length;
+      elements.organizerDeleteExcluded.hidden = false;
       elements.organizerFileInput.disabled = state.busy;
       elements.organizerVideoInput.disabled = state.busy;
       elements.organizerAddAssets.hidden = !canAddAssets;

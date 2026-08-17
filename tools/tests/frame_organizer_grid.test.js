@@ -137,6 +137,19 @@ test("attached-assets action can report a missing target instead of becoming ine
   assert.equal(fixture.elements.organizerAddAssets.disabled, false);
 });
 
+test("empty import keeps import settings and removal actions visible", () => {
+  const fixture = createFixture({ mode: "import" });
+  fixture.state.frames = [];
+
+  fixture.controller.renderCounts();
+
+  assert.equal(fixture.elements.organizerToggleImportSetup.hidden, false);
+  assert.equal(fixture.elements.organizerDeleteSelected.hidden, false);
+  assert.equal(fixture.elements.organizerDeleteExcluded.hidden, false);
+  assert.equal(fixture.elements.organizerDeleteSelected.disabled, true);
+  assert.equal(fixture.elements.organizerDeleteExcluded.disabled, true);
+});
+
 test("attached-assets action is disabled without frames and hidden without host support", () => {
   const emptyFixture = createFixture({ included: false });
   emptyFixture.state.frames = [];
@@ -211,7 +224,7 @@ test("organizer grid reorders frames when one card is dropped onto another", () 
   );
 });
 
-test("secondary removal actions only occupy space when their selection state is actionable", () => {
+test("secondary removal actions stay visible and disable when they are not actionable", () => {
   const fixture = createFixture({ mode: "import" });
   fixture.state.frames = [
     { included: true, selected: false, hasEditedResult: false },
@@ -219,16 +232,18 @@ test("secondary removal actions only occupy space when their selection state is 
   ];
 
   fixture.controller.renderCounts();
-  assert.equal(fixture.elements.organizerDeleteSelected.hidden, true);
-  assert.equal(fixture.elements.organizerDeleteExcluded.hidden, true);
+  assert.equal(fixture.elements.organizerDeleteSelected.hidden, false);
+  assert.equal(fixture.elements.organizerDeleteExcluded.hidden, false);
+  assert.equal(fixture.elements.organizerDeleteSelected.disabled, true);
+  assert.equal(fixture.elements.organizerDeleteExcluded.disabled, true);
 
   fixture.state.frames[0].selected = true;
   fixture.controller.renderCounts();
-  assert.equal(fixture.elements.organizerDeleteSelected.hidden, false);
-  assert.equal(fixture.elements.organizerDeleteExcluded.hidden, true);
+  assert.equal(fixture.elements.organizerDeleteSelected.disabled, false);
+  assert.equal(fixture.elements.organizerDeleteExcluded.disabled, true);
 
   fixture.state.frames[1].included = false;
   fixture.controller.renderCounts();
-  assert.equal(fixture.elements.organizerDeleteSelected.hidden, false);
-  assert.equal(fixture.elements.organizerDeleteExcluded.hidden, false);
+  assert.equal(fixture.elements.organizerDeleteSelected.disabled, false);
+  assert.equal(fixture.elements.organizerDeleteExcluded.disabled, false);
 });

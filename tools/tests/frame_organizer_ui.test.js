@@ -83,11 +83,27 @@ test("import settings reveal project fields and frames are reordered by drag ins
     html.indexOf("</output>", html.indexOf('id="organizerAnalysisFeedback"')),
   );
 
-  assert.match(css, /\.organizerWorkbench\.importMode\.hasFrames\.showImportSetup \.organizerProjectMetadata/);
+  assert.match(css, /\.organizerWorkbench\.importMode\.showImportSetup \.organizerProjectMetadata/);
   assert.ok(!html.includes('id="organizerOrderFilename"'));
   assert.ok(!html.includes('id="organizerOrderSelection"'));
   assert.ok(html.includes('id="organizerAutoSort"'));
   assert.ok(!feedbackBlock.includes('data-organizer-i18n="analysisReady"'));
+});
+
+test("empty import keeps the preview column and does not collapse the toolbar", () => {
+  const css = [
+    fs.readFileSync(path.join(__dirname, "../animation_tuner/public/responsive.css"), "utf8"),
+    fs.readFileSync(path.join(__dirname, "../animation_tuner/public/organizer_workspace.css"), "utf8"),
+  ].join("\n");
+
+  assert.doesNotMatch(
+    css,
+    /\.organizerWorkbench\.importMode:not\(:has\(\.organizerFrame\)\) \.organizerPreviewPanel/,
+  );
+  assert.doesNotMatch(
+    css,
+    /\.organizerWorkbench\.importMode:not\(:has\(\.organizerFrame\)\) \.organizerToolbarPrimary/,
+  );
 });
 
 /** Creates the import fields needed to verify project-intent defaults. */

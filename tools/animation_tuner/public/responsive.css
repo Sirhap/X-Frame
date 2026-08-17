@@ -784,19 +784,6 @@
   }
 }
 
-.organizerWorkbench.importMode:not(:has(.organizerFrame)) .organizerToolbarPrimary,
-.organizerWorkbench.importMode:not(:has(.organizerFrame)) .organizerBody {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.organizerWorkbench.importMode:not(:has(.organizerFrame)) .organizerPreviewPanel {
-  display: none;
-}
-
-.organizerWorkbench.importMode:not(:has(.organizerFrame)) .organizerFramesPanel {
-  border-right: 0;
-}
-
 /*
  * Narrow-and-short viewports (browser zoom ≥150% on desktop): preserve the
  * compare canvas and squeeze the chrome. This block must stay last so its

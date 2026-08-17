@@ -73,7 +73,7 @@ body.organizerOpen .organizerClose {
 }
 
 .organizerWorkbench.importMode.createProjectMode .organizerProjectMetadata,
-.organizerWorkbench.importMode.hasFrames.showImportSetup .organizerProjectMetadata {
+.organizerWorkbench.importMode.showImportSetup .organizerProjectMetadata {
   display: grid;
 }
 
@@ -251,7 +251,7 @@ body.organizerOpen .organizerClose {
   font-size: 10px;
 }
 
-.organizerWorkbench.hasFrames:not(.showImportSetup) .organizerImportSetup {
+.organizerWorkbench:not(.showImportSetup) .organizerImportSetup {
   display: none;
 }
 
@@ -381,10 +381,6 @@ body.organizerOpen .organizerClose {
   align-self: start;
   border-color: color-mix(in srgb, var(--danger) 72%, var(--line));
   background: color-mix(in srgb, var(--danger) 8%, var(--panel));
-}
-
-.organizerDangerTools:not(:has(button:not([hidden]))) {
-  display: none;
 }
 
 .organizerReduceControl {
