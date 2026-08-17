@@ -238,7 +238,7 @@ test("remove_binding deletes sfx, attachments, and trails with dry_run preview",
     );
     await assert.rejects(
       current.service.call("xsxb_remove_binding", { kind: "bogus", id: "x" }),
-      /kind must be one of/,
+      /"kind" must be one of: sfx, attachment, trail/,
     );
   } finally {
     current.cleanup();

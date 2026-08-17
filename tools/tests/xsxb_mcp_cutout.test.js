@@ -126,6 +126,114 @@ test("cutoutFrameFiles uses the tuner smart-cutout path and keeps source layout 
   }
 });
 
+/**
+ * Builds a frame whose flat background surrounds a centered opaque block.
+ * @param {number[]} background Background RGB.
+ * @returns {{data:Uint8ClampedArray,width:number,height:number}} RGBA frame.
+ */
+function flatBackgroundFrame(background) {
+  const width = 16;
+  const height = 16;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const inside = x >= 4 && x < 12 && y >= 4 && y < 12;
+      setPixel(rgba, width, x, y, inside ? BODY : [...background, 255]);
+    }
+  }
+  return { data: rgba, width, height };
+}
+
+/**
+ * Counts pixels the cutout turned fully transparent.
+ * @param {Uint8ClampedArray} rgba RGBA pixels.
+ * @returns {number} Cleared pixel count.
+ */
+function clearedPixels(rgba) {
+  let cleared = 0;
+  for (let offset = 3; offset < rgba.length; offset += 4) if (rgba[offset] === 0) cleared += 1;
+  return cleared;
+}
+
+// A green screen alone cannot prove the cutout works: a profile that keeps every
+// pixel still lands near alpha 13 there, under the "background is gone" threshold.
+// A white or gray studio plate comes back fully opaque instead, so cover all three.
+for (const [label, background] of [
+  ["white", [255, 255, 255]],
+  ["studio gray", [128, 128, 128]],
+  ["green screen", [0, 177, 64]],
+]) {
+  test(`cutoutFrameFiles clears a flat ${label} background`, () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-plate-"));
+    const framePath = path.join(folder, "frame.png");
+    try {
+      const frame = flatBackgroundFrame(background);
+      fs.writeFileSync(framePath, encodePngRgba(frame.data, frame.width, frame.height));
+
+      const receipt = cutoutFrameFiles([framePath]);
+
+      assert.equal(receipt.processedFrameCount, 1);
+      const cut = decodePngRgba(framePath);
+      assert.equal(clearedPixels(cut.data), 16 * 16 - 8 * 8, "every background pixel is cleared");
+      assert.equal(cut.data[(6 * 16 + 6) * 4 + 3], 255, "the subject stays opaque");
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+}
+
+test("a frame with transparent corners but an opaque background is not treated as cut out", () => {
+  const frame = flatBackgroundFrame([255, 255, 255]);
+  for (const [x, y] of [
+    [0, 0],
+    [15, 0],
+    [0, 15],
+    [15, 15],
+  ]) {
+    setPixel(frame.data, 16, x, y, [0, 0, 0, 0]);
+  }
+
+  assert.equal(alreadyCutOut(frame.data, 16, 16), false);
+});
+
+test("cutout still processes a frame whose corners alone are transparent", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-corners-"));
+  const framePath = path.join(folder, "frame.png");
+  try {
+    const frame = flatBackgroundFrame([255, 255, 255]);
+    for (const [x, y] of [
+      [0, 0],
+      [15, 0],
+      [0, 15],
+      [15, 15],
+    ]) {
+      setPixel(frame.data, 16, x, y, [0, 0, 0, 0]);
+    }
+    fs.writeFileSync(framePath, encodePngRgba(frame.data, frame.width, frame.height));
+
+    const receipt = cutoutFrameFiles([framePath]);
+
+    assert.equal(receipt.skippedFrameCount, 0, "a leftover background must not be reported as done");
+    assert.equal(receipt.processedFrameCount, 1);
+    assert.equal(clearedPixels(decodePngRgba(framePath).data), 16 * 16 - 8 * 8);
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("a subject touching the frame edge does not force a second destructive cutout", () => {
+  const width = 16;
+  const height = 16;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  // Already cut out: transparent everywhere except a body column that runs off
+  // the bottom edge, so part of the border ring is legitimately opaque.
+  for (let y = 4; y < height; y += 1) {
+    for (let x = 7; x <= 8; x += 1) setPixel(rgba, width, x, y, BODY);
+  }
+
+  assert.equal(alreadyCutOut(rgba, width, height), true);
+});
+
 test("explicit canvas rematch shares one scale and pins body feet to the bottom", () => {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-canvas-"));
   const idlePath = path.join(folder, "idle.png");

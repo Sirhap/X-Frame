@@ -96,6 +96,86 @@ test("MCP transport initializes, lists tools, and returns structured tool result
   assert.equal(called.result.isError, false);
 });
 
+test("a failing tool answers with an MCP error result instead of a transport error", async () => {
+  const service = {
+    tools: toolDefinitions(),
+    call: async () => {
+      const error = new Error("Animation not found: ghost");
+      error.code = "xsxb_missing_animation";
+      throw error;
+    },
+  };
+
+  const called = await handleMessage(
+    { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "xsxb_get_animation" } },
+    service,
+  );
+
+  assert.equal(called.error, undefined, "a tool failure is not a JSON-RPC error");
+  assert.equal(called.result.isError, true);
+  assert.equal(called.result.structuredContent.ok, false);
+  assert.equal(called.result.structuredContent.error, "Animation not found: ghost");
+  assert.equal(called.result.structuredContent.code, "xsxb_missing_animation");
+  assert.match(called.result.content[0].text, /ghost/u);
+});
+
+test("unknown methods and malformed requests answer with JSON-RPC errors", async () => {
+  const service = { tools: toolDefinitions(), call: async () => ({ ok: true }) };
+
+  const unknown = await handleMessage({ jsonrpc: "2.0", id: 1, method: "tools/destroy" }, service);
+  assert.equal(unknown.error.code, -32601);
+  assert.match(unknown.error.message, /tools\/destroy/u);
+  assert.equal(unknown.id, 1);
+
+  const methodless = await handleMessage({ jsonrpc: "2.0", id: 2 }, service);
+  assert.equal(methodless.error.code, -32600);
+
+  const unknownTool = await handleMessage(
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "xsxb_nope" } },
+    { tools: [], call: createXsxbMcpService().call },
+  );
+  assert.equal(unknownTool.result.isError, true);
+  assert.match(unknownTool.result.structuredContent.error, /Unknown XSXB MCP tool/u);
+});
+
+test("notifications are executed without a response", async () => {
+  const service = { tools: toolDefinitions(), call: async () => ({ ok: true }) };
+
+  assert.equal(await handleMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, service), null);
+  assert.equal(await handleMessage({ jsonrpc: "2.0", method: "ping" }, service), null);
+});
+
+test("STDIO transport answers unparsable lines and keeps serving the next request", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let text = "";
+  output.on("data", (chunk) => {
+    text += chunk.toString();
+  });
+  const lines = startServer({
+    input,
+    output,
+    service: { tools: toolDefinitions(), call: async () => ({ projects: [] }) },
+  });
+
+  input.write("{ not json at all\n");
+  input.write("   \n");
+  input.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+  input.write(`${JSON.stringify({ jsonrpc: "2.0", id: 9, method: "ping" })}\n`);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  lines.close();
+
+  const responses = text
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(responses.length, 2, "blank lines and notifications produce no response");
+  assert.equal(responses[0].error.code, -32700);
+  assert.match(responses[0].error.message, /Parse error/u);
+  assert.equal(responses[1].id, 9, "the transport keeps serving after a parse error");
+  assert.deepEqual(responses[1].result, {});
+});
+
 test("STDIO server accepts newline-delimited JSON-RPC", async () => {
   const input = new PassThrough();
   const output = new PassThrough();
@@ -114,6 +194,86 @@ test("STDIO server accepts newline-delimited JSON-RPC", async () => {
   const response = JSON.parse(text.trim());
   assert.equal(response.id, 1);
   assert.equal(response.result.tools.length, MCP_TOOL_NAMES.length);
+});
+
+test("the dispatcher rejects arguments the declared schema does not allow", async () => {
+  const current = fixture();
+  try {
+    // A misspelled argument used to be dropped, so the tool ran with its
+    // defaults and reported success for work the caller never requested.
+    await assert.rejects(
+      () => current.service.call("xsxb_get_animation", { animaton_id: "idle" }),
+      /unknown argument "animaton_id".*animation_id/su,
+    );
+    await assert.rejects(
+      () => current.service.call("xsxb_validate_project", { layer: "gamplay" }),
+      /"layer" must be one of/u,
+    );
+    const error = await current.service
+      .call("xsxb_get_animation", { animaton_id: "idle" })
+      .catch((reason) => reason);
+    assert.equal(error.code, "xsxb_invalid_arguments");
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("GIF export refuses to write outside the project workspace", async () => {
+  const current = fixture();
+  const outside = path.join(os.tmpdir(), `xsxb-escape-${process.pid}.gif`);
+  try {
+    const sequenceDir = path.join(current.root, "seq");
+    fs.mkdirSync(sequenceDir, { recursive: true });
+    fs.writeFileSync(path.join(sequenceDir, "a.png"), ONE_PIXEL_PNG);
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "walk",
+    });
+
+    await assert.rejects(
+      () => current.service.call("xsxb_export_gif", { animation_id: "walk", output_path: outside }),
+      /must stay inside the XSXB workspace root/u,
+    );
+    assert.equal(fs.existsSync(outside), false, "the escaping path is never created");
+    await assert.rejects(
+      () =>
+        current.service.call("xsxb_export_gif", {
+          animation_id: "walk",
+          output_path: "../../../../../../escape.gif",
+        }),
+      /must stay inside the XSXB workspace root/u,
+    );
+  } finally {
+    fs.rmSync(outside, { force: true });
+    current.cleanup();
+  }
+});
+
+test("oversized agent-supplied files are refused before they are read", async () => {
+  const current = fixture();
+  try {
+    const sequenceDir = path.join(current.root, "seq");
+    fs.mkdirSync(sequenceDir, { recursive: true });
+    fs.writeFileSync(path.join(sequenceDir, "a.png"), ONE_PIXEL_PNG);
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "walk",
+    });
+    // Sparse file: the size guard must reject on the stat, never by reading it.
+    const huge = path.join(current.root, "huge.png");
+    const handle = fs.openSync(huge, "w");
+    fs.ftruncateSync(handle, 600 * 1024 * 1024);
+    fs.closeSync(handle);
+
+    await assert.rejects(
+      () => current.service.call("xsxb_add_attachment", { animation_id: "walk", file_path: huge }),
+      /too large/iu,
+    );
+  } finally {
+    current.cleanup();
+  }
 });
 
 test("XSXB MCP service executes the complete mutation workflow", async () => {
@@ -609,11 +769,11 @@ test("add tools accept real files and open_tuner can launch", async () => {
 
     await assert.rejects(
       () => service.call("xsxb_add_attachment", { animation_id: "walk", sync: false }),
-      /Attachment image not found/,
+      /missing required argument "file_path"/,
     );
     await assert.rejects(
       () => service.call("xsxb_add_sfx", { animation_id: "walk", sync: false }),
-      /SFX file not found/,
+      /missing required argument "file_path"/,
     );
     const ordered = await service.call("xsxb_add_attachment", {
       animation_id: "walk",
@@ -624,7 +784,7 @@ test("add tools accept real files and open_tuner can launch", async () => {
     assert.equal(ordered.binding.layerOrder, 0);
     await assert.rejects(
       () => service.call("xsxb_update_timing", { animation_id: "walk", fps: "abc" }),
-      /fps must be a finite number/,
+      /"fps" must be number/,
     );
     const stillWalk = await service.call("xsxb_get_animation", { animation_id: "walk" });
     assert.equal(stillWalk.animation.fps, 12);

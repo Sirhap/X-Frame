@@ -1,0 +1,554 @@
+"use strict";
+
+/**
+ * Declarative catalog of the XSXB MCP tools: the advertised order, the input
+ * schema of every tool, and the annotations clients use to reason about them.
+ * Kept apart from the service so the schemas can be read and reviewed without
+ * scrolling past the handler implementations.
+ */
+
+const path = require("node:path");
+
+const DEFAULT_PROFILE_ID = "mcp_imports";
+const MCP_TOOL_NAMES = Object.freeze([
+  "xsxb_list_projects",
+  "xsxb_get_project",
+  "xsxb_import_video",
+  "xsxb_import_animation",
+  "xsxb_get_animation",
+  "xsxb_update_frame_boxes",
+  "xsxb_estimate_boxes",
+  "xsxb_update_timing",
+  "xsxb_set_visual_transform",
+  "xsxb_reorganize_frames",
+  "xsxb_replace_frame",
+  "xsxb_add_attack_trail",
+  "xsxb_add_attachment",
+  "xsxb_add_sfx",
+  "xsxb_remove_binding",
+  "xsxb_delete_animation",
+  "xsxb_sync_godot",
+  "xsxb_validate_project",
+  "xsxb_set_active_project",
+  "xsxb_bind_godot",
+  "xsxb_cutout",
+  "xsxb_export_gif",
+  "xsxb_open_tuner",
+]);
+
+function toolDefinitions() {
+  const projectProperty = {
+    type: "string",
+    description: "XSXB project id. Defaults to the last selected/imported project.",
+  };
+  const animationProperties = {
+    project_id: projectProperty,
+    profile_id: { type: "string", description: "Animation profile id." },
+    animation_id: { type: "string", description: "Animation id." },
+  };
+  return [
+    {
+      name: "xsxb_list_projects",
+      description: "List every local XSXB project, its active state, Godot binding, and animation counts.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_get_project",
+      description:
+        "Return one project's registry record, Godot binding, animation list, frame counts, and last sync receipt.",
+      inputSchema: {
+        type: "object",
+        properties: { project_id: projectProperty },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_import_video",
+      description:
+        "Extract every native frame from a local video, import it as an XSXB animation, optionally sync to Godot, and validate the result.",
+      inputSchema: {
+        type: "object",
+        required: ["file_path"],
+        properties: {
+          file_path: { type: "string", description: "Absolute local video path." },
+          fps: { type: "number", minimum: 1, maximum: 120, default: 12 },
+          start_frame: {
+            type: "integer",
+            minimum: 0,
+            description: "Inclusive 0-based extracted frame index.",
+          },
+          end_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based extracted frame index." },
+          replace: {
+            type: "boolean",
+            default: false,
+            description: "Replace an existing animation id atomically.",
+          },
+          sync: { type: "boolean", default: false },
+          validate: { type: "boolean", default: false },
+          project_id: projectProperty,
+          profile_id: { type: "string", default: DEFAULT_PROFILE_ID },
+          animation_id: { type: "string", description: "Defaults to a sanitized video filename." },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    {
+      name: "xsxb_import_animation",
+      description:
+        "Import a video, PNG sequence, SpriteFrames file, or PNG data items as an XSXB animation. Video import remains available as xsxb_import_video.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          source: {
+            type: "string",
+            enum: ["video", "png_sequence", "spriteframes", "items"],
+            description: "Import kind. Inferred from file_path, directory, or items when omitted.",
+          },
+          file_path: { type: "string", description: "Absolute video or .spriteframes.tres path." },
+          directory: { type: "string", description: "Absolute directory of PNG frames." },
+          items: {
+            type: "array",
+            items: { type: "object" },
+            description: "PNG data-URL items for source=items.",
+          },
+          fps: { type: "number", minimum: 1, maximum: 120, default: 12 },
+          start_frame: { type: "integer", minimum: 0 },
+          end_frame: { type: "integer", minimum: 0 },
+          replace: { type: "boolean", default: false },
+          sync: { type: "boolean", default: false },
+          validate: { type: "boolean", default: false },
+          project_id: projectProperty,
+          profile_id: { type: "string", default: DEFAULT_PROFILE_ID },
+          animation_id: { type: "string" },
+          animation_name: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    {
+      name: "xsxb_get_animation",
+      description:
+        "Return animation metadata and frames. Pass frames=summary for a compact sample without animation.frames. Pass include to also read back current boxes, timing, sfx, attachments, or trails.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          frames: { type: "string", enum: ["summary", "full"], default: "full" },
+          include: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: ["boxes", "timing", "visual", "sfx", "attachments", "trails"],
+            },
+            description:
+              "Extra sections to return: box overrides, playback timing, visual transforms, and bindings.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_update_frame_boxes",
+      description:
+        "Update hurtbox, collisionbox, and hitbox for one animation frame, or many frames at once via frames. Does not sync Godot.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          frame: { type: "integer", minimum: 0, default: 0 },
+          hurtbox: { type: "object" },
+          collisionbox: { type: "object" },
+          hitbox: { type: "object" },
+          frames: {
+            type: "array",
+            items: { type: "object" },
+            description:
+              "Batch mode: [{frame, hurtbox?, collisionbox?, hitbox?}, ...] applied in one write. Overrides the single-frame parameters.",
+          },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_estimate_boxes",
+      description:
+        "Auto-estimate hurtbox, collisionbox, and hitbox overrides for every animation frame from opaque pixel bounds. Keeps existing overrides unless replace=true. Use dry_run to preview.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          replace: {
+            type: "boolean",
+            default: false,
+            description: "Recompute frames that already have box overrides.",
+          },
+          dry_run: { type: "boolean", default: false },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_update_timing",
+      description:
+        "Update animation FPS and optional per-frame duration or disabled playback, or many frames at once via frames. Does not sync Godot.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          fps: { type: "number", minimum: 1, maximum: 120 },
+          frame: { type: "integer", minimum: 0 },
+          duration_ms: { type: "number", minimum: 1 },
+          duration: {
+            type: "number",
+            minimum: 0.001,
+            description: "Frame duration multiplier. 1 equals one FPS tick.",
+          },
+          disabled: { type: "boolean" },
+          frames: {
+            type: "array",
+            items: { type: "object" },
+            description:
+              "Batch mode: [{frame, duration_ms?, duration?, disabled?}, ...] applied in one write. Overrides the single-frame parameters.",
+          },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_set_visual_transform",
+      description:
+        "Set visual size, offset, and rotation at the character (profile), animation group, or single-frame level. Pass clear=true to remove overrides at that level. Does not sync Godot.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          level: {
+            type: "string",
+            enum: ["character", "group", "frame"],
+            default: "group",
+            description:
+              "character applies to the whole profile; group to one animation; frame to one frame.",
+          },
+          frame: { type: "integer", minimum: 0, description: "Required when level=frame." },
+          visual_size: {
+            type: "number",
+            exclusiveMinimum: 0,
+            description: "Uniform visual scale multiplier.",
+          },
+          offset_x: { type: "number" },
+          offset_y: { type: "number" },
+          rotation: { type: "number", description: "Rotation in radians." },
+          clear: {
+            type: "boolean",
+            default: false,
+            description: "Remove all visual overrides at the selected level.",
+          },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_reorganize_frames",
+      description:
+        "Atomically reorganize animation frames and remap frame-owned tuning, audio, attachment, and attack-trail state. Defaults to an identity organization test.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          order: {
+            type: "array",
+            items: { type: "integer", minimum: 0 },
+            description: "Source frame indexes in the desired output order. Defaults to the current order.",
+          },
+          sync: { type: "boolean", default: true },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_replace_frame",
+      description:
+        "Replace one workspace frame PNG with a new local PNG while keeping boxes, timing, and bindings. Updates the stored frame size when it changes.",
+      inputSchema: {
+        type: "object",
+        required: ["frame", "file_path"],
+        properties: {
+          ...animationProperties,
+          frame: { type: "integer", minimum: 0 },
+          file_path: { type: "string", description: "Absolute replacement PNG path." },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    {
+      name: "xsxb_add_attack_trail",
+      description:
+        "Add or replace one attack-trail segment. Pass sticks and optional texture_path; omitting sticks writes a default two-stick trail.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          id: { type: "string", description: "Segment id. Defaults to the texture basename or trail." },
+          name: { type: "string" },
+          color: { type: "string", description: "#RRGGBB solid color." },
+          color_mode: { type: "string", enum: ["solid", "original", "gradient"], default: "solid" },
+          texture_path: {
+            type: "string",
+            description: "Absolute PNG trail texture. Defaults to the built-in luma preset.",
+          },
+          start_frame: { type: "integer", minimum: 0 },
+          end_frame: { type: "integer", minimum: 0 },
+          sticks: {
+            type: "array",
+            items: { type: "object" },
+            description: "Trail sticks with frame, top, and bottom points.",
+          },
+          sync: { type: "boolean", default: true },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_add_attachment",
+      description: "Bind a local PNG as a frame image attachment. file_path is required for a real asset.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          file_path: { type: "string", description: "Absolute PNG path to attach." },
+          frame: { type: "integer", minimum: 0, default: 0 },
+          id: { type: "string" },
+          name: { type: "string" },
+          layer: { type: "string", enum: ["above", "below"], default: "above" },
+          layer_order: { type: "integer", default: 1 },
+          offset_x: { type: "number", default: 0 },
+          offset_y: { type: "number" },
+          scale: { type: "number", default: 1 },
+          rotation: { type: "number", default: 0 },
+          sync: { type: "boolean", default: true },
+        },
+        required: ["file_path"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_add_sfx",
+      description: "Bind a local WAV/OGG/MP3 to one animation frame. file_path is required for a real clip.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          file_path: { type: "string", description: "Absolute audio path." },
+          frame: { type: "integer", minimum: 0, default: 0 },
+          id: { type: "string" },
+          name: { type: "string" },
+          sync: { type: "boolean", default: true },
+        },
+        required: ["file_path"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_remove_binding",
+      description:
+        "Remove one SFX, attachment, or attack-trail binding by id from one animation. Use frame to disambiguate sfx/attachment bindings that share an id. Supports dry_run.",
+      inputSchema: {
+        type: "object",
+        required: ["kind", "id"],
+        properties: {
+          ...animationProperties,
+          kind: { type: "string", enum: ["sfx", "attachment", "trail"] },
+          id: { type: "string", description: "Binding or trail segment id." },
+          frame: {
+            type: "integer",
+            minimum: 0,
+            description: "Only remove the binding on this frame. Not applicable to trails.",
+          },
+          dry_run: { type: "boolean", default: false },
+          sync: { type: "boolean", default: true },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+    },
+    {
+      name: "xsxb_delete_animation",
+      description:
+        "Delete one imported animation and its owned frames, tuning, and bindings. Supports dry_run.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          dry_run: { type: "boolean", default: false },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+    },
+    {
+      name: "xsxb_sync_godot",
+      description: "Synchronize the current project to its bound Godot root without changing animation data.",
+      inputSchema: {
+        type: "object",
+        properties: { project_id: projectProperty, force: { type: "boolean", default: false } },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_validate_project",
+      description:
+        "Validate standalone XSXB data, generated frames, Godot-synchronized data, assets, and runtime files.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_id: projectProperty,
+          strict: { type: "boolean", default: false },
+          require_gameplay: { type: "boolean", default: false },
+          layer: {
+            type: "string",
+            enum: ["all", "standalone", "bind", "gameplay"],
+            default: "all",
+            description: "Report only one validation layer. Default all, bind errors listed first.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_set_active_project",
+      description: "Set the registry active XSXB project used when project_id is omitted.",
+      inputSchema: {
+        type: "object",
+        required: ["project_id"],
+        properties: { project_id: projectProperty },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_bind_godot",
+      description:
+        "Point one XSXB project at an existing Godot root that contains project.godot. Does not sync files.",
+      inputSchema: {
+        type: "object",
+        required: ["project_root"],
+        properties: {
+          project_id: projectProperty,
+          project_root: { type: "string", description: "Absolute Godot project directory." },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_cutout",
+      description:
+        "Run the tuner smart-cutout product path on every animation frame. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          key_color: {
+            type: "string",
+            description: "Optional #RRGGBB key. Omit to auto-detect the same background as the tuner.",
+          },
+          output_width: {
+            type: "integer",
+            minimum: 8,
+            maximum: 4096,
+            description: "Optional canvas width. Omit to keep each frame's source size.",
+          },
+          output_height: {
+            type: "integer",
+            minimum: 8,
+            maximum: 4096,
+            description: "Optional canvas height. Defaults to output_width when only width is set.",
+          },
+          protected_colors: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional #RRGGBB colors to keep, same as the tuner protect-color list.",
+          },
+          protection_tolerance: { type: "number", minimum: 0, maximum: 100, default: 8 },
+          force: {
+            type: "boolean",
+            default: false,
+            description: "Re-cut frames whose borders are already transparent.",
+          },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+    },
+    {
+      name: "xsxb_export_gif",
+      description:
+        "Export one animation as an animated GIF preview via FFmpeg, honoring per-frame durations and skipping disabled frames. Returns the absolute output path.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          output_path: {
+            type: "string",
+            description:
+              "Absolute .gif destination. Defaults to <workspace>/exports/<profile>_<animation>.gif.",
+          },
+          fps: { type: "number", minimum: 1, maximum: 120, description: "Defaults to the animation FPS." },
+          start_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
+          end_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
+          include_disabled: {
+            type: "boolean",
+            default: false,
+            description: "Also render frames whose playback is disabled.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_open_tuner",
+      description:
+        "Start the local Tuner if needed and return a workspace URL focused on one project, profile, and animation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          start: {
+            type: "boolean",
+            default: true,
+            description: "Start the Tuner process when it is not listening.",
+          },
+          port: { type: "integer", minimum: 1, maximum: 65535, default: 5179 },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+  ];
+}
+
+module.exports = { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions };

@@ -13,6 +13,14 @@ const {
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const ALPHA_VISIBLE = 16;
+/**
+ * Share of border-ring pixels that must be transparent before a frame counts as
+ * cut out. A frame that still carries its background leaves the ring almost
+ * fully opaque, while an already-cut frame only touches the edge where a body
+ * or an effect runs off it, so a simple majority separates the two with room to
+ * spare in both directions.
+ */
+const CUT_BORDER_CLEAR_RATIO = 0.5;
 
 /**
  * Computes a PNG CRC32 checksum.
@@ -170,6 +178,12 @@ function parseProtectedColors(value) {
 
 /**
  * True when the image border is already transparent, so a second cutout would chew the subject.
+ *
+ * The whole border ring is sampled rather than the four corners: a frame that
+ * still carries its background but happens to have transparent corners would
+ * otherwise be skipped, and the receipt would report the frame as done while
+ * nothing was removed. A minority of opaque ring pixels is still accepted so a
+ * subject standing on the bottom edge does not trigger a second destructive cut.
  * @param {Uint8ClampedArray|Uint8Array} rgba RGBA pixels.
  * @param {number} width Image width.
  * @param {number} height Image height.
@@ -177,13 +191,17 @@ function parseProtectedColors(value) {
  */
 function alreadyCutOut(rgba, width, height) {
   if (width < 2 || height < 2) return false;
-  const samples = [
-    [0, 0],
-    [width - 1, 0],
-    [0, height - 1],
-    [width - 1, height - 1],
-  ];
-  return samples.every(([x, y]) => rgba[(y * width + x) * 4 + 3] <= ALPHA_VISIBLE);
+  let ringPixels = 0;
+  let clearPixels = 0;
+  for (let y = 0; y < height; y += 1) {
+    const edgeRow = y === 0 || y === height - 1;
+    for (let x = 0; x < width; x += 1) {
+      if (!edgeRow && x !== 0 && x !== width - 1) continue;
+      ringPixels += 1;
+      if (rgba[(y * width + x) * 4 + 3] <= ALPHA_VISIBLE) clearPixels += 1;
+    }
+  }
+  return ringPixels > 0 && clearPixels / ringPixels >= CUT_BORDER_CLEAR_RATIO;
 }
 
 /**

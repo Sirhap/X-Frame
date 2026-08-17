@@ -36,6 +36,7 @@ function fixture(serviceOptions = {}) {
     root,
     store,
     sequenceDir,
+    workspaceDir: store.projectWorkspaceDir(store.readRegistry().projects[0]),
     service: createXsxbMcpService({ root, ...serviceOptions }),
     cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
   };
@@ -198,6 +199,11 @@ test("export_gif honors timing, skips disabled frames, and validates the output 
     const custom = await current.service.call("xsxb_export_gif", { output_path: customPath });
     assert.equal(custom.outputPath, customPath);
     assert.ok(fs.existsSync(customPath), "parent directory is created");
+
+    // A relative output_path is anchored to the project workspace rather than
+    // to whatever directory the server happens to be running in.
+    const relative = await current.service.call("xsxb_export_gif", { output_path: "previews/walk.gif" });
+    assert.equal(relative.outputPath, path.join(current.workspaceDir, "previews", "walk.gif"));
 
     await assert.rejects(
       current.service.call("xsxb_export_gif", { output_path: "/tmp/not-a-gif.png" }),
