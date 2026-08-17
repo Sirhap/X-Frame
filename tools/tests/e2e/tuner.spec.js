@@ -200,10 +200,35 @@ test("organizer smart cutout reports progress and encodes every frame once", asy
   );
   await expect(page.locator(".organizerFrame")).toHaveCount(frameCount);
 
+  // The toast used to sit under the organizer modal (z-index 1000 vs 1001), so
+  // tests that only watched the hidden attribute could pass while the user saw
+  // no load progress at all.
+  const stacking = await page.evaluate(() => {
+    const overlay = document.querySelector("#organizerSmartCutoutProgress");
+    const organizer = document.querySelector("#organizerModal");
+    const wasHidden = overlay.hidden;
+    overlay.hidden = false;
+    const result = {
+      overlay: Number(getComputedStyle(overlay).zIndex) || 0,
+      organizer: Number(getComputedStyle(organizer).zIndex) || 0,
+    };
+    overlay.hidden = wasHidden;
+    return result;
+  });
+  expect(stacking.overlay).toBeGreaterThan(stacking.organizer);
+
   await page.locator("#organizerSmartCutoutProgress").evaluate((overlay) => {
     window.__overlayShown = false;
+    window.__overlayVisible = false;
     new MutationObserver(() => {
-      window.__overlayShown ||= overlay.hidden === false;
+      if (overlay.hidden) return;
+      window.__overlayShown = true;
+      const bounds = overlay.getBoundingClientRect();
+      window.__overlayVisible =
+        bounds.width > 0 &&
+        bounds.height > 0 &&
+        getComputedStyle(overlay).visibility !== "hidden" &&
+        getComputedStyle(overlay).opacity !== "0";
     }).observe(overlay, { attributes: true, attributeFilter: ["hidden"] });
   });
   const baselineEncodes = await page.evaluate(() => window.__frameEncodes);
@@ -214,6 +239,7 @@ test("organizer smart cutout reports progress and encodes every frame once", asy
     timeout: 120000,
   });
   expect(await page.evaluate(() => window.__overlayShown)).toBe(true);
+  expect(await page.evaluate(() => window.__overlayVisible)).toBe(true);
   await expect(page.locator("#organizerSmartCutoutProgress")).toBeHidden();
   await expect(page.locator("#organizerBatchCutout")).toBeEnabled();
   await expect(page.locator("#organizerViewEdited")).toHaveClass(/active/);

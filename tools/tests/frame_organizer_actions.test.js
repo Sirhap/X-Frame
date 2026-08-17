@@ -387,6 +387,50 @@ test("organizer single-frame cutout forwards the last applied parameter state", 
   assert.equal(fixture.state.viewMode, "edited");
 });
 
+test("after smart cutout, later cutout worksets reprocess the pre-cut source not the result", async () => {
+  const fixture = createFixture();
+  const sourceCanvas = { width: 16, height: 16, label: "source" };
+  const cutCanvas = { width: 16, height: 16, label: "cut" };
+  fixture.frame.originalCanvas = sourceCanvas;
+  fixture.frame.editedCanvas = sourceCanvas;
+  fixture.frame.hasEditedResult = false;
+  fixture.state.cutoutOutputs = [{ frame: { uid: fixture.frame.uid }, canvas: cutCanvas }];
+
+  await fixture.controller.editBatchCutout();
+
+  assert.equal(fixture.calls.autoCutoutWorksets[0].items[0].image, sourceCanvas);
+  assert.equal(fixture.frame.cutoutSourceCanvas, sourceCanvas);
+  assert.notEqual(fixture.frame.editedCanvas, sourceCanvas);
+  assert.equal(fixture.frame.hasEditedResult, true);
+
+  fixture.state.cutoutOutputs = [{ frame: { uid: fixture.frame.uid }, canvas: cutCanvas }];
+  await fixture.controller.editImportCutout(fixture.frame);
+
+  // Re-entering the editor must keep the true original as the immutable source so
+  // parameter tweaks (and restores) reprocess the import, not the already-cut bitmap.
+  assert.equal(fixture.calls.cutoutWorksets[0].items[0].image, sourceCanvas);
+  assert.equal(fixture.calls.cutoutWorksets[0].items[0].image.label, "source");
+});
+
+test("a second smart cutout replaces the previous result instead of stacking on it", async () => {
+  const fixture = createFixture();
+  const sourceCanvas = { width: 16, height: 16, label: "source" };
+  const firstCut = { width: 16, height: 16, label: "first-cut" };
+  const secondCut = { width: 16, height: 16, label: "second-cut" };
+  fixture.frame.originalCanvas = sourceCanvas;
+  fixture.frame.editedCanvas = sourceCanvas;
+  fixture.state.cutoutOutputsByCall = [
+    [{ frame: { uid: fixture.frame.uid }, canvas: firstCut }],
+    [{ frame: { uid: fixture.frame.uid }, canvas: secondCut }],
+  ];
+
+  await fixture.controller.editBatchCutout();
+  await fixture.controller.editBatchCutout();
+
+  assert.equal(fixture.calls.autoCutoutWorksets[1].items[0].image, sourceCanvas);
+  assert.equal(fixture.frame.cutoutSourceCanvas, sourceCanvas);
+});
+
 test("import mode creates an animation and enters the tuning workbench", async () => {
   const fixture = createFixture();
   fixture.state.mode = "import";

@@ -726,15 +726,27 @@
     function flipFrames() {
       const targets = selectedFrames().length ? selectedFrames() : includedFrames();
       targets.forEach((frame) => {
-        const source = frame.editedCanvas;
-        const canvas = document.createElement("canvas");
-        canvas.width = source.width;
-        canvas.height = source.height;
-        const context = canvas.getContext("2d");
-        context.translate(canvas.width, 0);
-        context.scale(-1, 1);
-        context.drawImage(source, 0, 0);
-        frame.editedCanvas = canvas;
+        /**
+         * Mirrors one canvas around the vertical axis.
+         * @param {HTMLCanvasElement} source Source bitmap.
+         * @returns {HTMLCanvasElement} Flipped copy.
+         */
+        const mirror = (source) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = source.width;
+          canvas.height = source.height;
+          const context = canvas.getContext("2d");
+          context.translate(canvas.width, 0);
+          context.scale(-1, 1);
+          context.drawImage(source, 0, 0);
+          return canvas;
+        };
+        frame.editedCanvas = mirror(frame.editedCanvas);
+        // Keep the cutout source in the same orientation so re-opening the
+        // editor still reprocesses the pre-cut pixels the user is looking at.
+        if (frame.cutoutSourceCanvas && frame.cutoutSourceCanvas !== frame.editedCanvas) {
+          frame.cutoutSourceCanvas = mirror(frame.cutoutSourceCanvas);
+        }
         frame.hasEditedResult = true;
         frame.flipped = !frame.flipped;
         frame.signature = null;

@@ -20,6 +20,18 @@
   const ORGANIZER_CUTOUT_BATCH_PIXEL_LIMIT = 64_000_000;
 
   /**
+   * Returns the immutable bitmap cutout should reprocess.
+   * After the first apply, `editedCanvas` holds the cut result; later worksets
+   * must keep feeding the pre-cut source or parameter restores restack on the
+   * already-cut pixels instead of reversing them.
+   * @param {object} frame Organizer frame.
+   * @returns {HTMLCanvasElement|ImageBitmap|object|null} Source image for cutout.
+   */
+  function cutoutSourceImage(frame) {
+    return frame?.cutoutSourceCanvas || frame?.editedCanvas || frame?.originalCanvas || null;
+  }
+
+  /**
    * Splits organizer frames into stable, pixel-safe workbench batches.
    * A single oversized frame remains isolated so the cutout workbench can
    * report its per-image limit without losing the frame's identity.
@@ -34,7 +46,7 @@
     let currentBatch = [];
     let currentPixels = 0;
     Array.from(frames || []).forEach((frame) => {
-      const source = frame?.editedCanvas || frame?.originalCanvas;
+      const source = cutoutSourceImage(frame);
       const pixels = Math.max(0, Number(source?.width) || 0) * Math.max(0, Number(source?.height) || 0);
       if (currentBatch.length && currentPixels + pixels > limit) {
         batches.push(currentBatch);
@@ -185,6 +197,10 @@
           applied += 1;
           if (writtenOutputs.get(frame.uid) === output) return;
           writtenOutputs.set(frame.uid, output);
+          // Pin the bitmap that produced this result before overwriting the
+          // working canvas. Later parameter edits (and a second smart cutout)
+          // reprocess this source so restoring params restores the image.
+          if (!frame.cutoutSourceCanvas) frame.cutoutSourceCanvas = frame.editedCanvas;
           frame.editedCanvas = imageCanvas(output.canvas);
           frame.hasEditedResult = true;
           frame.assetRevision = Math.max(0, Number(frame.assetRevision) || 0) + 1;
@@ -247,7 +263,7 @@
             },
             items: batchFrames.map((frame) => ({
               name: frame.name,
-              image: frame.editedCanvas,
+              image: cutoutSourceImage(frame),
               frame: { uid: frame.uid },
               cutoutState: frame.cutoutState,
             })),

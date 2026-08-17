@@ -1028,7 +1028,7 @@
           <div class="toolbarMain">
             <strong id="canvasTitle" data-i18n="canvas">画布</strong>
             <span id="hint" data-i18n="hint"
-              >拖动画布可平移。选中附加帧：拖动移动，按住 R 滚轮旋转，按住 Z 滚轮缩放。</span
+              >滚轮缩放；拖空画布/中键/空格拖平移。选中附加帧：拖动移动，按住 R 滚轮旋转，按住 Z 滚轮缩放。</span
             >
             <div id="selectionHud" class="selectionHud">帧 -</div>
             <div class="kunkunSignature" aria-hidden="true">
@@ -1175,11 +1175,14 @@
               <div class="shortcutGuidePanel">
                 <strong data-i18n="shortcutGuide">快捷键</strong>
                 <span><kbd>Space</kbd><b data-i18n="shortcutPlay">播放 / 暂停</b></span>
+                <span><kbd data-i18n="shortcutPanKeys">中键 / Space+拖</kbd><b data-i18n="shortcutPan">中键或空格拖动画布</b></span>
+                <span><kbd data-i18n="shortcutWheelKeys">滚轮</kbd><b data-i18n="shortcutWheel">滚轮缩放画布</b></span>
                 <span><kbd>← / →</kbd><b data-i18n="shortcutFrame">上一帧 / 下一帧</b></span>
                 <span><kbd>⇧ ← / →</kbd><b data-i18n="shortcutExtend">扩展帧选区</b></span>
                 <span><kbd>⌘ A</kbd><b data-i18n="shortcutAll">选择全部帧</b></span>
                 <span><kbd>⌘ Z</kbd><b data-i18n="undo">撤销</b></span>
                 <span><kbd>⇧ ⌘ Z</kbd><b data-i18n="redo">重做</b></span>
+                <span><kbd>⌘ + / −</kbd><b data-i18n="shortcutZoom">画布放大 / 缩小</b></span>
                 <span><kbd>F</kbd><b data-i18n="zoomFit">适应</b></span>
                 <span><kbd>0</kbd><b data-i18n="zoomActual">100%</b></span>
               </div>
@@ -4768,40 +4771,6 @@
       <span class="organizerSmartCutoutSpinner" aria-hidden="true"></span>
       <span id="organizerSmartCutoutProgressText">智能抠图处理中</span>
     </div>
-    <style>
-      .organizerSmartCutoutProgress {
-        position: fixed;
-        z-index: 1000;
-        right: 24px;
-        bottom: 24px;
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        min-height: 48px;
-        padding: 0 16px;
-        border: 1px solid var(--accent-2, #32d2b6);
-        border-radius: 10px;
-        background: rgb(10 24 31 / 94%);
-        box-shadow: 0 14px 36px rgb(0 0 0 / 35%);
-        color: var(--text, #edf7f5);
-        font-weight: 700;
-      }
-
-      .organizerSmartCutoutSpinner {
-        width: 18px;
-        height: 18px;
-        border: 2px solid rgb(50 210 182 / 28%);
-        border-top-color: var(--accent-2, #32d2b6);
-        border-radius: 50%;
-        animation: organizer-smart-cutout-spin 0.8s linear infinite;
-      }
-
-      @keyframes organizer-smart-cutout-spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-    </style>
     <script>
       (() => {
         const isTextEditingTarget = (target) =>

@@ -301,10 +301,19 @@
       state.items = worksetItems;
       state.sourceKind = "workset";
       state.sessionMode = workset.mode === "single" || inputs.length === 1 ? "single" : "batch";
-      state.items.forEach((item) => {
+      state.items.forEach((item, index) => {
         if (!workset.autoDetectBackground) {
-          item.automaticCutoutActivated = false;
-          item.processingActivated = false;
+          // A prior smart cutout left parameters on the frame. Keep automatic
+          // processing armed so the editor shows that result on the true source,
+          // and so dialing a slider back undoes the cut instead of stacking.
+          const persisted = inputs[index]?.cutoutState || {};
+          const hasPersistedCut = Boolean(
+            persisted.processingParameters ||
+              (Array.isArray(persisted.backgroundSamples) && persisted.backgroundSamples.length) ||
+              (Array.isArray(persisted.seedPoints) && persisted.seedPoints.length),
+          );
+          item.automaticCutoutActivated = hasPersistedCut;
+          item.processingActivated = hasPersistedCut;
         }
         item.pendingAutomaticPropagation = false;
       });

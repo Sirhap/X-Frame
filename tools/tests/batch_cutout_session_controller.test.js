@@ -212,3 +212,34 @@ test("session controller auto-detects each batch background and restores the req
   controller.close();
   assert.equal(await resultPromise, null);
 });
+
+test("single-frame reopen keeps prior cutout parameters armed on the true source", async () => {
+  const { appliedParameters, controller, state } = createFixture();
+  state.items = [];
+  state.selectedIds.clear();
+  state.sourceKind = "";
+  const resultPromise = controller.openWorkset({
+    name: "demo",
+    mode: "single",
+    items: [
+      {
+        name: "frame.png",
+        image: { label: "source" },
+        frame: { id: "frame-1" },
+        cutoutState: {
+          processingParameters: { tolerance: 1, feather: 2 },
+          backgroundSamples: [{ r: 255, g: 255, b: 255, a: 255 }],
+        },
+      },
+    ],
+  });
+
+  assert.equal(state.items[0].processingActivated, true);
+  assert.equal(state.items[0].automaticCutoutActivated, true);
+  assert.equal(state.items[0].processingParameters.tolerance, 1);
+  assert.deepEqual(state.items[0].backgroundSamples, [{ r: 255, g: 255, b: 255, a: 255 }]);
+  assert.equal(appliedParameters.at(-1), state.items[0].processingParameters);
+
+  controller.close();
+  assert.equal(await resultPromise, null);
+});
