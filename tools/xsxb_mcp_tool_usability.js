@@ -267,6 +267,75 @@ animations = [{
     return verdict("xsxb_get_animation", "ready", "default full frames; summary on request");
   },
 
+  async xsxb_find_loop(fixture) {
+    const directory = path.join(fixture.root, "loop-seq");
+    const width = 8;
+    const height = 8;
+    const phases = [
+      [255, 0, 0, 255],
+      [0, 255, 0, 255],
+      [0, 0, 255, 255],
+    ];
+    fs.mkdirSync(directory, { recursive: true });
+    for (let index = 0; index < 7; index += 1) {
+      const rgba = new Uint8ClampedArray(width * height * 4);
+      for (let offset = 0; offset < rgba.length; offset += 4) rgba.set(phases[index % 3], offset);
+      fs.writeFileSync(
+        path.join(directory, `${String(index + 1).padStart(2, "0")}.png`),
+        encodePngRgba(rgba, width, height),
+      );
+    }
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "cycle",
+    });
+    const found = await fixture.service.call("xsxb_find_loop", {
+      animation_id: "cycle",
+      sample_size: 8,
+      min_period: 2,
+      max_period: 4,
+    });
+    if (found.source !== "animation" || found.recommended?.period !== 3 || found.applied !== false) {
+      return verdict("xsxb_find_loop", "fail", JSON.stringify(found));
+    }
+    return verdict(
+      "xsxb_find_loop",
+      "ready",
+      `period=${found.recommended.period} order=${found.recommended.order.join(",")}`,
+    );
+  },
+
+  async xsxb_find_motion(fixture) {
+    const directory = path.join(fixture.root, "motion-seq");
+    fs.mkdirSync(directory, { recursive: true });
+    const canvas = 16;
+    const writeBody = (name, bodyH) => {
+      const rgba = new Uint8ClampedArray(canvas * canvas * 4);
+      const left = 6;
+      const top = canvas - bodyH - 1;
+      for (let y = top; y < top + bodyH; y += 1) {
+        for (let x = left; x < left + 4; x += 1) {
+          rgba.set([210, 36, 42, 255], (y * canvas + x) * 4);
+        }
+      }
+      fs.writeFileSync(path.join(directory, name), encodePngRgba(rgba, canvas, canvas));
+    };
+    for (let index = 1; index <= 3; index += 1) writeBody(`${String(index).padStart(2, "0")}.png`, 8);
+    for (let index = 4; index <= 6; index += 1) writeBody(`${String(index).padStart(2, "0")}.png`, 12);
+    for (let index = 7; index <= 8; index += 1) writeBody(`${String(index).padStart(2, "0")}.png`, 8);
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "jump",
+    });
+    const found = await fixture.service.call("xsxb_find_motion", { animation_id: "jump" });
+    if (found.start !== 3 || found.end !== 5 || found.order.join(",") !== "3,4,5") {
+      return verdict("xsxb_find_motion", "fail", JSON.stringify(found));
+    }
+    return verdict("xsxb_find_motion", "ready", `start=${found.start} end=${found.end}`);
+  },
+
   async xsxb_update_frame_boxes(fixture) {
     await importSequence(fixture, "walk");
     const boxes = await fixture.service.call("xsxb_update_frame_boxes", {
@@ -366,6 +435,63 @@ animations = [{
       "xsxb_set_visual_transform",
       "ready",
       "group and frame levels persist and read back via include=visual",
+    );
+  },
+
+  async xsxb_estimate_visual(fixture) {
+    const idleDir = path.join(fixture.root, "idle-est");
+    const comboDir = path.join(fixture.root, "combo-est");
+    fs.mkdirSync(idleDir, { recursive: true });
+    fs.mkdirSync(comboDir, { recursive: true });
+    const canvas = 16;
+    const writeBody = (directory, name, bodyH) => {
+      const rgba = new Uint8ClampedArray(canvas * canvas * 4);
+      const left = 6;
+      const top = canvas - bodyH - 1;
+      for (let y = top; y < top + bodyH; y += 1) {
+        for (let x = left; x < left + 4; x += 1) {
+          rgba.set([210, 36, 42, 255], (y * canvas + x) * 4);
+        }
+      }
+      fs.writeFileSync(path.join(directory, name), encodePngRgba(rgba, canvas, canvas));
+    };
+    writeBody(idleDir, "01.png", 12);
+    writeBody(idleDir, "02.png", 12);
+    writeBody(comboDir, "01.png", 6);
+    writeBody(comboDir, "02.png", 12);
+    writeBody(comboDir, "03.png", 12);
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: idleDir,
+      animation_id: "idle",
+    });
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: comboDir,
+      animation_id: "combo",
+    });
+    const estimated = await fixture.service.call("xsxb_estimate_visual", {
+      animation_id: "combo",
+      reference_animation_id: "idle",
+      apply: true,
+    });
+    const readBack = await fixture.service.call("xsxb_get_animation", {
+      animation_id: "combo",
+      include: ["visual"],
+    });
+    if (
+      estimated.groupScale !== 1 ||
+      estimated.zoomFrameCount !== 1 ||
+      estimated.frames[0].reason !== "zoom" ||
+      readBack.visual.group.visual_size !== 1 ||
+      readBack.visual.frameOverrides["0"]?.visual_size !== estimated.frames[0].scale
+    ) {
+      return verdict("xsxb_estimate_visual", "fail", JSON.stringify({ estimated, readBack }));
+    }
+    return verdict(
+      "xsxb_estimate_visual",
+      "ready",
+      `group=${estimated.groupScale} zoom=${estimated.frames[0].scale}`,
     );
   },
 
@@ -604,6 +730,41 @@ animations = [{
     } finally {
       fixture.cleanup();
     }
+  },
+
+  async xsxb_export_sheet(fixture) {
+    const directory = path.join(fixture.root, "sheet-seq");
+    fs.mkdirSync(directory, { recursive: true });
+    const canvas = 16;
+    for (const name of ["01.png", "02.png"]) {
+      const rgba = new Uint8ClampedArray(canvas * canvas * 4);
+      for (let y = 7; y < 15; y += 1) {
+        for (let x = 6; x < 10; x += 1) {
+          rgba.set([210, 36, 42, 255], (y * canvas + x) * 4);
+        }
+      }
+      fs.writeFileSync(path.join(directory, name), encodePngRgba(rgba, canvas, canvas));
+    }
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "walk",
+    });
+    const exported = await fixture.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      cell: 16,
+      pad: 2,
+      columns: 2,
+    });
+    if (
+      exported.frameCount !== 2 ||
+      exported.columns !== 2 ||
+      !exported.outputPath.endsWith("_sheet.png") ||
+      !fs.existsSync(exported.outputPath)
+    ) {
+      return verdict("xsxb_export_sheet", "fail", JSON.stringify(exported));
+    }
+    return verdict("xsxb_export_sheet", "ready", `wrote ${exported.outputPath.split("/").pop()}`);
   },
 };
 

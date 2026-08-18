@@ -4803,10 +4803,17 @@
           if (handled) event.preventDefault();
         });
 
-        window.XSXBOrganizerProgressOverlay?.createOverlay({
-          documentApi: document,
-          windowApi: window,
-        }).attach();
+        const attachOrganizerProgress = () =>
+          window.XSXBOrganizerProgressOverlay?.scheduleAttach(
+            window.XSXBOrganizerProgressOverlay,
+            document,
+            window,
+          );
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", attachOrganizerProgress);
+        } else {
+          attachOrganizerProgress();
+        }
       })();
     </script>
     <script>

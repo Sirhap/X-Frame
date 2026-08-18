@@ -117,7 +117,7 @@ Do not use MCP for this local attachment workflow. The Core/CLI owns determinist
 
 ## MCP Feedback
 
-When using XSXB MCP: if a tool errors, a needed capability is missing, or you must leave MCP to finish the request, tell the user and raise it to the `XSXB-Frame-Tuner` project. Include tool name, arguments, receipt or error, expected result, and actual result. Do not silently work around a product gap as if the MCP already covers it.
+When using XSXB MCP: if a tool errors, a needed capability is missing, or you must leave MCP to finish the request, tell the user and raise it to the `XSXB-Frame-Tuner` project. Include tool name, arguments, receipt or error, expected result, and actual result. Do not silently work around a product gap as if the MCP already covers it. Estimate standing scales with `xsxb_estimate_visual`, override with `xsxb_set_visual_transform` if needed, bake group/frame `visual_size` with `xsxb_cutout apply_visual`, and preview with `xsxb_export_gif` or `xsxb_export_sheet`. Trim one-shot holds with `xsxb_find_motion`. Do not rematch or bake frames outside MCP.
 
 ## Agent-Facing Commands
 

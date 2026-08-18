@@ -3,7 +3,11 @@
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBOrganizerProgressOverlay = api;
+  if (root) {
+    root.XSXBOrganizerProgressOverlay = api;
+    // Production bundles this file into ui.js after the inline boot script.
+    api.scheduleAttach(api, root.document, root);
+  }
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 
@@ -63,12 +67,16 @@
      * Starts observing organizer signals until the smart-cutout run settles.
      * @returns {boolean} Whether the overlay found every required element.
      */
+    let attached = false;
+
     function attach() {
+      if (attached) return true;
       const button = documentApi.querySelector("#organizerBatchCutout");
       const overlay = documentApi.querySelector("#organizerSmartCutoutProgress");
       const caption = documentApi.querySelector("#organizerSmartCutoutProgressText");
       const organizer = documentApi.querySelector("#organizerModal");
       if (!button || !overlay || !caption || !organizer) return false;
+      attached = true;
       let startedAt = 0;
       let sawBusy = false;
       let observer = null;
@@ -127,11 +135,37 @@
     return { attach, shouldKeepVisible };
   }
 
+  /**
+   * Attaches after the document and bundled scripts are present.
+   * Production moves the overlay module into `ui.js` after this inline call.
+   * @param {object} api Overlay API.
+   * @param {Document|null|undefined} documentApi Host document.
+   * @param {Window|typeof globalThis|null|undefined} windowApi Host window.
+   * @returns {boolean} Whether attach ran or was scheduled.
+   */
+  const attachedDocuments = typeof WeakSet === "function" ? new WeakSet() : null;
+
+  function scheduleAttach(api, documentApi, windowApi) {
+    if (!api?.createOverlay || !documentApi?.querySelector) return false;
+    const start = () => {
+      if (attachedDocuments?.has(documentApi)) return true;
+      const attached = Boolean(api.createOverlay({ documentApi, windowApi }).attach());
+      if (attached) attachedDocuments?.add(documentApi);
+      return attached;
+    };
+    if (documentApi.readyState === "loading") {
+      documentApi.addEventListener("DOMContentLoaded", start, { once: true });
+      return true;
+    }
+    return start();
+  }
+
   return Object.freeze({
     START_TIMEOUT_MS,
     createOverlay,
     parseProgress,
     progressLabel,
+    scheduleAttach,
     shouldKeepVisible,
   });
 });

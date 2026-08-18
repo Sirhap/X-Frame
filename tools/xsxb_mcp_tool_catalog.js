@@ -16,10 +16,13 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_import_video",
   "xsxb_import_animation",
   "xsxb_get_animation",
+  "xsxb_find_loop",
+  "xsxb_find_motion",
   "xsxb_update_frame_boxes",
   "xsxb_estimate_boxes",
   "xsxb_update_timing",
   "xsxb_set_visual_transform",
+  "xsxb_estimate_visual",
   "xsxb_reorganize_frames",
   "xsxb_replace_frame",
   "xsxb_add_attack_trail",
@@ -33,6 +36,7 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_bind_godot",
   "xsxb_cutout",
   "xsxb_export_gif",
+  "xsxb_export_sheet",
   "xsxb_open_tuner",
 ]);
 
@@ -153,6 +157,87 @@ function toolDefinitions() {
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
     {
+      name: "xsxb_find_loop",
+      description:
+        "Rank loop-segment candidates with the same Tuner loop finder. Query an imported animation, a PNG directory, or file_paths. Does not mutate frames; apply a candidate with xsxb_reorganize_frames order.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          directory: {
+            type: "string",
+            description: "Absolute PNG sequence directory. Overrides the imported animation when set.",
+          },
+          file_paths: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Absolute PNG paths in playback order. Overrides directory and the imported animation when set.",
+          },
+          min_period: {
+            type: "integer",
+            minimum: 2,
+            description: "Smallest loop period to consider. Defaults to the Tuner minimum of 2.",
+          },
+          max_period: {
+            type: "integer",
+            minimum: 2,
+            description: "Largest loop period to consider. Defaults to two-thirds of the frame count.",
+          },
+          start_frame: {
+            type: "integer",
+            minimum: 0,
+            description: "Ignore candidates that start before this 0-based index.",
+          },
+          preference: {
+            type: "string",
+            enum: ["auto", "short", "long"],
+            default: "auto",
+            description: "Bias ranking toward shorter or longer periods without dropping valid ones.",
+          },
+          boundary_factor: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            default: 0.85,
+            description: "Same Tuner seam threshold as the organizer loop search.",
+          },
+          sample_size: {
+            type: "integer",
+            minimum: 8,
+            maximum: 256,
+            default: 256,
+            description: "Square analysis sample. Matches the Tuner 256×256 reference size.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_find_motion",
+      description:
+        "Find the interior motion window by trimming a leading rest hold and, when the clip returns to that rest, the trailing hold. Query an imported animation, a PNG directory, or file_paths. Does not mutate frames; apply the order with xsxb_reorganize_frames.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          directory: {
+            type: "string",
+            description: "Absolute PNG sequence directory. Overrides the imported animation when set.",
+          },
+          file_paths: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Absolute PNG paths in playback order. Overrides directory and the imported animation when set.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
       name: "xsxb_update_frame_boxes",
       description:
         "Update hurtbox, collisionbox, and hitbox for one animation frame, or many frames at once via frames. Does not sync Godot.",
@@ -253,6 +338,41 @@ function toolDefinitions() {
             type: "boolean",
             default: false,
             description: "Remove all visual overrides at the selected level.",
+          },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_estimate_visual",
+      description:
+        "Estimate group and per-frame visual_size so standing height matches a reference animation or target_height. Frames shorter than the native median are treated as camera zoom-out; taller VFX or pose frames keep the group scale. apply writes those scales; bake pixels later with xsxb_cutout apply_visual.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          reference_animation_id: {
+            type: "string",
+            description:
+              "Animation whose median standing height is the target when target_height is omitted.",
+          },
+          target_height: {
+            type: "number",
+            exclusiveMinimum: 0,
+            description: "Desired standing body height in pixels. Overrides the reference median when set.",
+          },
+          zoom_ratio: {
+            type: "number",
+            minimum: 1,
+            default: 1.12,
+            description: "A frame shorter than native/zoom_ratio is treated as camera zoom-out.",
+          },
+          apply: {
+            type: "boolean",
+            default: false,
+            description: "Write group and zoom-frame visual_size. Does not bake pixels.",
           },
           sync: { type: "boolean", default: false },
         },
@@ -465,7 +585,7 @@ function toolDefinitions() {
     {
       name: "xsxb_cutout",
       description:
-        "Run the tuner smart-cutout product path on every animation frame. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom.",
+        "Run the tuner smart-cutout product path on every animation frame. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom. apply_visual rematches from group/frame visual_size instead of that shared scale. Character visual_size stays playback-only and is not baked.",
       inputSchema: {
         type: "object",
         properties: {
@@ -497,6 +617,18 @@ function toolDefinitions() {
             default: false,
             description: "Re-cut frames whose borders are already transparent.",
           },
+          apply_visual: {
+            type: "boolean",
+            default: false,
+            description:
+              "Rematch using group/frame visual_size instead of one shared scale. Requires or infers a canvas. Character visual_size is not baked.",
+          },
+          metrics: {
+            type: "boolean",
+            default: true,
+            description:
+              "Include per-frame bodyHeight, feetY, and leftover near-white counts on the receipt.",
+          },
           sync: { type: "boolean", default: false },
         },
         additionalProperties: false,
@@ -506,7 +638,7 @@ function toolDefinitions() {
     {
       name: "xsxb_export_gif",
       description:
-        "Export one animation as an animated GIF preview via FFmpeg, honoring per-frame durations and skipping disabled frames. Returns the absolute output path.",
+        "Export one animation as an animated GIF preview via FFmpeg, honoring per-frame durations and group/frame visual_size. Skips disabled frames. Returns the absolute output path.",
       inputSchema: {
         type: "object",
         properties: {
@@ -524,6 +656,40 @@ function toolDefinitions() {
             default: false,
             description: "Also render frames whose playback is disabled.",
           },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_export_sheet",
+      description:
+        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size and leftover dirt stay comparable. output_path must stay inside the XSXB root.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          output_path: {
+            type: "string",
+            description:
+              "Absolute .png destination. Defaults to <workspace>/exports/<profile>_<animation>_sheet.png.",
+          },
+          start_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
+          end_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
+          columns: {
+            type: "integer",
+            minimum: 1,
+            maximum: 32,
+            description: "Cells per row. Defaults to min(frameCount, 8).",
+          },
+          cell: {
+            type: "integer",
+            minimum: 8,
+            maximum: 1024,
+            default: 220,
+            description: "Shared cell edge in pixels. Every source canvas is scaled into this cell.",
+          },
+          pad: { type: "integer", minimum: 1, maximum: 64, default: 8 },
         },
         additionalProperties: false,
       },

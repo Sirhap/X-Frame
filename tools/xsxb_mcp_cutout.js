@@ -301,7 +301,9 @@ function opaqueComponents(rgba, width, height, threshold) {
  */
 function pickBodyComponent(components, width) {
   if (!components.length) return null;
-  return components.slice().sort((left, right) => {
+  const largest = Math.max(...components.map((entry) => entry.count));
+  const candidates = components.filter((entry) => entry.count >= largest * 0.25);
+  return candidates.slice().sort((left, right) => {
     const leftTall = left.height - left.width;
     const rightTall = right.height - right.width;
     if (leftTall !== rightTall) return rightTall - leftTall;
@@ -342,17 +344,20 @@ function subjectAnchor(rgba, width, height, threshold = ALPHA_VISIBLE) {
  * @param {number} canvasHeight Destination height.
  * @returns {Array<{data:Uint8ClampedArray,width:number,height:number}>} Rematched frames.
  */
-function placeFramesOnCanvas(frames, canvasWidth, canvasHeight) {
+function placeFramesOnCanvas(frames, canvasWidth, canvasHeight, options = {}) {
   const anchors = frames.map((frame) => subjectAnchor(frame.data, frame.width, frame.height));
   const usable = anchors.filter(Boolean);
   const maxWidth = Math.max(1, ...usable.map((anchor) => anchor.width));
   const maxHeight = Math.max(1, ...usable.map((anchor) => anchor.height));
-  const scale = Math.min(canvasWidth / maxWidth, canvasHeight / maxHeight);
+  const sharedScale = Math.min(canvasWidth / maxWidth, canvasHeight / maxHeight);
   const destFeetX = (canvasWidth - 1) / 2;
   const destFeetY = canvasHeight - 1;
+  const frameScales = Array.isArray(options.frameScales) ? options.frameScales : null;
   return frames.map((frame, index) => {
     const dest = new Uint8ClampedArray(canvasWidth * canvasHeight * 4);
     const anchor = anchors[index];
+    const requested = Number(frameScales?.[index]);
+    const scale = Number.isFinite(requested) && requested > 0 ? requested : sharedScale;
     if (!anchor || scale <= 0) return { data: dest, width: canvasWidth, height: canvasHeight };
     for (let y = 0; y < canvasHeight; y += 1) {
       const sourceY = Math.round(anchor.feetY + (y - destFeetY) / scale);
@@ -372,7 +377,7 @@ function placeFramesOnCanvas(frames, canvasWidth, canvasHeight) {
 /**
  * Runs the tuner smart-cutout path on every PNG and optionally rematches a shared canvas.
  * @param {string[]} filePaths Frame files written in place.
- * @param {{keyColor?:string,outputWidth?:number,outputHeight?:number,protectedColors?:unknown,protectionTolerance?:number,force?:boolean}} [options] Cutout options.
+ * @param {{keyColor?:string,outputWidth?:number,outputHeight?:number,protectedColors?:unknown,protectionTolerance?:number,force?:boolean,frameScales?:number[]}} [options] Cutout options.
  * @returns {{
  *   pipeline:string,
  *   rematched:boolean,
@@ -412,14 +417,22 @@ function cutoutFrameFiles(filePaths, options = {}) {
   const canvasHeight = Number.isInteger(Number(options.outputHeight))
     ? Math.max(8, Number(options.outputHeight))
     : canvasWidth;
-  const rematched = canvasWidth > 0 && canvasHeight > 0;
-  const outputFrames = rematched ? placeFramesOnCanvas(cutFrames, canvasWidth, canvasHeight) : cutFrames;
+  const frameScales = Array.isArray(options.frameScales) ? options.frameScales : [];
+  const applyVisual = frameScales.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+  const rematched = (canvasWidth > 0 && canvasHeight > 0) || applyVisual;
+  const destWidth = canvasWidth || cutFrames[0].width;
+  const destHeight = canvasHeight || cutFrames[0].height;
+  const outputFrames = rematched
+    ? placeFramesOnCanvas(cutFrames, destWidth, destHeight, applyVisual ? { frameScales } : {})
+    : cutFrames;
   outputFrames.forEach((frame, index) => {
     fs.writeFileSync(paths[index], encodePngRgba(frame.data, frame.width, frame.height));
   });
   return {
     pipeline: "smart_product",
     rematched,
+    rematchMode: applyVisual ? "visual" : rematched ? "shared" : "none",
+    frameScales: applyVisual ? frameScales : undefined,
     backgroundColor: formatHexColor(backgroundColor),
     outputWidth: outputFrames[0].width,
     outputHeight: outputFrames[0].height,

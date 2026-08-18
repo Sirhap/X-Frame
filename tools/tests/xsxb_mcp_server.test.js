@@ -340,6 +340,10 @@ test("generated MCP test WAV has a valid PCM RIFF header", () => {
 test("MCP catalog includes the production editing tools", () => {
   for (const name of [
     "xsxb_import_animation",
+    "xsxb_find_loop",
+    "xsxb_find_motion",
+    "xsxb_estimate_visual",
+    "xsxb_export_sheet",
     "xsxb_update_frame_boxes",
     "xsxb_update_timing",
     "xsxb_sync_godot",

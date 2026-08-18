@@ -7,6 +7,7 @@ const {
   createOverlay,
   parseProgress,
   progressLabel,
+  scheduleAttach,
   shouldKeepVisible,
 } = require("../animation_tuner/public/organizer_progress_overlay");
 
@@ -137,6 +138,54 @@ test("overlay clears itself when a click never produces work", () => {
   harness.advance(2);
   harness.tick();
   assert.equal(harness.nodes["#organizerSmartCutoutProgress"].hidden, true);
+});
+
+test("scheduleAttach waits until DOMContentLoaded when the document is still loading", () => {
+  const { harness } = createHarness();
+  const listeners = [];
+  const documentApi = {
+    readyState: "loading",
+    body: {},
+    querySelector: (selector) => harness.nodes[selector] || null,
+    querySelectorAll: () => ({ length: harness.state.frames }),
+    addEventListener: (type, handler) => listeners.push({ type, handler }),
+  };
+  const api = {
+    createOverlay: () =>
+      createOverlay({
+        documentApi,
+        windowApi: { requestAnimationFrame() {}, MutationObserver: class {} },
+      }),
+  };
+
+  assert.equal(scheduleAttach(api, documentApi, {}), true);
+  assert.equal(listeners.length, 1);
+  assert.equal(listeners[0].type, "DOMContentLoaded");
+  assert.equal(harness.nodes["#organizerBatchCutout"].listeners.click, undefined);
+
+  listeners[0].handler();
+  assert.equal(typeof harness.nodes["#organizerBatchCutout"].listeners.click, "function");
+});
+
+test("scheduleAttach is a no-op the second time so production boot cannot double-bind", () => {
+  const { harness } = createHarness();
+  const windowApi = { requestAnimationFrame() {}, MutationObserver: class {} };
+  const documentApi = {
+    readyState: "complete",
+    body: {},
+    querySelector: (selector) => harness.nodes[selector] || null,
+    querySelectorAll: () => ({ length: harness.state.frames }),
+  };
+  let clicks = 0;
+  harness.nodes["#organizerBatchCutout"].addEventListener = (type, handler) => {
+    clicks += 1;
+    harness.nodes["#organizerBatchCutout"].listeners[type] = handler;
+  };
+  const api = { createOverlay: () => createOverlay({ documentApi, windowApi }) };
+
+  assert.equal(scheduleAttach(api, documentApi, windowApi), true);
+  assert.equal(scheduleAttach(api, documentApi, windowApi), true);
+  assert.equal(clicks, 1);
 });
 
 test("overlay reports missing organizer markup instead of throwing", () => {

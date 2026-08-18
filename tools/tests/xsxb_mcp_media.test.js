@@ -21,6 +21,21 @@ function solidPng(size, color = [200, 40, 40, 255]) {
   return encodePngRgba(rgba, size, size);
 }
 
+/**
+ * Builds an already-cut frame: transparent border, opaque interior.
+ * @param {number} size Edge length in pixels.
+ * @returns {Buffer} Encoded PNG.
+ */
+function cutBodyPng(size) {
+  const rgba = new Uint8ClampedArray(size * size * 4);
+  for (let y = 1; y < size - 1; y += 1) {
+    for (let x = 1; x < size - 1; x += 1) {
+      rgba.set([210, 36, 42, 255], (y * size + x) * 4);
+    }
+  }
+  return encodePngRgba(rgba, size, size);
+}
+
 function fixture(serviceOptions = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-mcp-media-"));
   const godotRoot = path.join(root, "godot");
@@ -213,6 +228,73 @@ test("export_gif honors timing, skips disabled frames, and validates the output 
       current.service.call("xsxb_export_gif", { start_frame: 1, end_frame: 0 }),
       /greater than or equal/,
     );
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("cutout apply_visual rematches from group and frame visual_size, not a shared scale", async () => {
+  const current = fixture();
+  try {
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), cutBodyPng(16));
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), cutBodyPng(16));
+    await importWalk(current);
+    await current.service.call("xsxb_set_visual_transform", { level: "group", visual_size: 0.5 });
+    await current.service.call("xsxb_set_visual_transform", {
+      level: "frame",
+      frame: 1,
+      visual_size: 1,
+    });
+
+    const cut = await current.service.call("xsxb_cutout", {
+      output_width: 16,
+      output_height: 16,
+      apply_visual: true,
+    });
+    assert.equal(cut.rematchMode, "visual");
+    assert.deepEqual(cut.frameScales, [0.5, 1]);
+
+    const { decodePngRgba, subjectAnchor } = require("../xsxb_mcp_cutout");
+    const readBack = await current.service.call("xsxb_get_animation", { frames: "full" });
+    const first = decodePngRgba(readBack.animation.frames[0].absolutePath);
+    const second = decodePngRgba(readBack.animation.frames[1].absolutePath);
+    assert.equal(subjectAnchor(first.data, 16, 16).height, 7);
+    assert.equal(subjectAnchor(second.data, 16, 16).height, 14);
+    assert.equal(subjectAnchor(first.data, 16, 16).feetY, 15);
+    assert.equal(subjectAnchor(second.data, 16, 16).feetY, 15);
+
+    const visual = await current.service.call("xsxb_get_animation", { include: ["visual"] });
+    assert.equal(visual.visual.group.visual_size, 1, "baked group scale is consumed");
+    assert.equal(visual.visual.frameOverrides["1"], undefined, "baked frame scale is consumed");
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_gif rematches group and frame visual_size before encode", async () => {
+  const jobs = [];
+  const { decodePngRgba, subjectAnchor } = require("../xsxb_mcp_cutout");
+  const current = fixture({
+    encodeGifImpl: async (job) => {
+      const first = decodePngRgba(job.framePaths[0]);
+      jobs.push({
+        ...job,
+        firstHeight: subjectAnchor(first.data, first.width, first.height).height,
+      });
+      fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
+    },
+  });
+  try {
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), cutBodyPng(16));
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), cutBodyPng(16));
+    await importWalk(current);
+    await current.service.call("xsxb_set_visual_transform", { level: "group", visual_size: 0.5 });
+    const exported = await current.service.call("xsxb_export_gif", {});
+    assert.equal(exported.appliedVisual, true);
+    assert.deepEqual(exported.frameScales, [0.5, 0.5]);
+    assert.equal(jobs[0].firstHeight, 7);
+    const source = (await current.service.call("xsxb_get_animation")).animation.frames[0].absolutePath;
+    assert.notEqual(jobs[0].framePaths[0], source);
   } finally {
     current.cleanup();
   }

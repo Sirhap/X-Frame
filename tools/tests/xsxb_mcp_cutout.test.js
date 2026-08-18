@@ -70,6 +70,20 @@ test("PNG encode/decode keeps RGBA pixels", () => {
   }
 });
 
+test("subject anchor keeps a large lying body instead of a thin dirt column", () => {
+  const width = 24;
+  const height = 16;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 10; y <= 13; y += 1) {
+    for (let x = 2; x <= 21; x += 1) setPixel(rgba, width, x, y, BODY);
+  }
+  for (let y = 1; y <= 8; y += 1) setPixel(rgba, width, 1, y, BODY);
+  const anchor = subjectAnchor(rgba, width, height);
+  assert.equal(anchor.width, 20);
+  assert.equal(anchor.height, 4);
+  assert.equal(anchor.feetY, 13);
+});
+
 test("subject anchor uses the standing body, not slash pixels below", () => {
   const idle = subjectAnchor(greenScreenFrame({ transparent: true }).data, 16, 16);
   const hit = subjectAnchor(greenScreenFrame({ slash: true, transparent: true }).data, 16, 16);
@@ -256,4 +270,25 @@ test("explicit canvas rematch shares one scale and pins body feet to the bottom"
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }
+});
+
+test("per-frame scales rematch different body heights to one standing size", () => {
+  const short = greenScreenFrame({ transparent: true });
+  const tall = greenScreenFrame({ transparent: true });
+  for (let y = 6; y <= 7; y += 1) {
+    setPixel(short.data, 16, 7, y, [0, 0, 0, 0]);
+    setPixel(short.data, 16, 8, y, [0, 0, 0, 0]);
+  }
+  const shortAnchor = subjectAnchor(short.data, 16, 16);
+  const tallAnchor = subjectAnchor(tall.data, 16, 16);
+  assert.equal(shortAnchor.height, 4);
+  assert.equal(tallAnchor.height, 6);
+
+  const placed = placeFramesOnCanvas([short, tall], 16, 16, { frameScales: [1.5, 1] });
+  const shortPlaced = subjectAnchor(placed[0].data, 16, 16);
+  const tallPlaced = subjectAnchor(placed[1].data, 16, 16);
+  assert.equal(shortPlaced.height, 6);
+  assert.equal(tallPlaced.height, 6);
+  assert.equal(shortPlaced.feetY, 15);
+  assert.equal(tallPlaced.feetY, 15);
 });

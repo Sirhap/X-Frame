@@ -18,7 +18,17 @@ const { syncGodotProject, validGodotProjectRoot } = require("./godot_sync");
 const { parseSpriteFrames } = require("./import_spriteframes");
 const { createProjectStore, EMPTY_TUNING, reslash, slug } = require("./project_store");
 const { validateImport } = require("./validate_import");
-const { cutoutFrameFiles } = require("./xsxb_mcp_cutout");
+const { cutoutFrameFiles, decodePngRgba, encodePngRgba, placeFramesOnCanvas } = require("./xsxb_mcp_cutout");
+const { findLoopInPngFiles, resolveExternalLoopFrames } = require("./xsxb_mcp_loop");
+const {
+  estimateVisualScales,
+  findMotionWindow,
+  measureFrame,
+  measureFrameFiles,
+  median,
+  renderContactSheet,
+  summarizeMetrics,
+} = require("./xsxb_mcp_visual_qa");
 const { validateToolArguments } = require("./xsxb_mcp_schema");
 const { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions } = require("./xsxb_mcp_tool_catalog");
 const {
@@ -48,6 +58,33 @@ const {
 const DEFAULT_TUNER_HOST = "127.0.0.1";
 const DEFAULT_TUNER_PORT = 5179;
 const BOX_NAMES = Object.freeze(["hurtbox", "collisionbox", "hitbox"]);
+
+/**
+ * Resolves group/frame visual_size for baking or GIF rematch.
+ * Character visual_size is Godot playback scale and is not included.
+ * @param {object} tuning Project tuning file.
+ * @param {string} profileId Profile id.
+ * @param {string} animationId Animation id.
+ * @param {number} frameCount Frame count.
+ * @returns {number[]} Per-frame scales.
+ */
+function bakedVisualScales(tuning, profileId, animationId, frameCount) {
+  const values = tuning?.values && typeof tuning.values === "object" ? tuning.values : {};
+  const group = Number(values[`profiles.${profileId}.groups.${animationId}.visual_size`]);
+  const groupScale = Number.isFinite(group) && group > 0 ? group : 1;
+  const overrides =
+    tuning?.frame_visual_overrides && typeof tuning.frame_visual_overrides === "object"
+      ? tuning.frame_visual_overrides
+      : {};
+  const scales = [];
+  for (let index = 0; index < frameCount; index += 1) {
+    const key = frameBoxKey(profileId, animationId, index);
+    const override = overrides[key] && typeof overrides[key] === "object" ? overrides[key] : {};
+    const frameScale = Number(override.visual_size);
+    scales.push(Number.isFinite(frameScale) && frameScale > 0 ? frameScale : groupScale);
+  }
+  return scales;
+}
 
 /**
  * Creates the business service used by the XSXB MCP transport.
@@ -938,6 +975,212 @@ function createXsxbMcpService(options = {}) {
     };
   }
 
+  /**
+   * Ranks Tuner loop-segment candidates without changing frames.
+   * @param {object} args Tool arguments.
+   * @returns {object} Ranked candidates and the recommended order.
+   */
+  function findLoop(args = {}) {
+    const external = resolveExternalLoopFrames(args);
+    const source = external?.source || "animation";
+    let filePaths = external?.filePaths || [];
+    const payload = { source, applied: false };
+    if (!external) {
+      const selection = animationFor(args);
+      const result = animationResult(selection);
+      payload.projectId = selection.project.id;
+      payload.profileId = selection.profile.id;
+      payload.animationId = String(selection.animation.id || selection.animation.name);
+      filePaths = result.animation.frames.map((frame) => {
+        if (!frame.exists) {
+          throw new Error(
+            `Frame ${frame.index} has no generated PNG on disk; import or regenerate frames first.`,
+          );
+        }
+        return frame.absolutePath;
+      });
+    }
+    const found = findLoopInPngFiles(filePaths, {
+      minPeriod: args.min_period,
+      maxPeriod: args.max_period,
+      startFrame: args.start_frame,
+      preference: args.preference,
+      boundaryFactor: args.boundary_factor,
+      sampleSize: args.sample_size,
+    });
+    return {
+      ...payload,
+      source,
+      frameCount: found.frameCount,
+      sampleSize: found.sampleSize,
+      candidates: found.candidates,
+      recommended: found.recommended,
+    };
+  }
+
+  /**
+   * Resolves on-disk PNG paths for one imported animation.
+   * @param {object} project Project record.
+   * @param {object} animation Manifest animation.
+   * @param {string} [label] Error label.
+   * @returns {string[]} Absolute PNG paths.
+   */
+  function collectFramePaths(project, animation, label = "Frame") {
+    return Array.from(animation.frames || []).map((frame, index) => {
+      const absolute = resolveAnimationFramePath(project, frame.path);
+      if (!absolute || !fs.existsSync(absolute)) {
+        throw new Error(`${label} ${index} has no generated PNG on disk; import or regenerate frames first.`);
+      }
+      return absolute;
+    });
+  }
+
+  /**
+   * Writes estimated group and zoom-frame visual_size without baking pixels.
+   * @param {object} tuning Tuning file.
+   * @param {string} profileId Profile id.
+   * @param {string} animationId Animation id.
+   * @param {{groupScale:number,frames:Array<{index:number,reason:string,scale:number}>}} estimated Scale plan.
+   * @returns {void}
+   */
+  function applyEstimatedVisual(tuning, profileId, animationId, estimated) {
+    tuning.values = tuning.values && typeof tuning.values === "object" ? tuning.values : {};
+    const base = `profiles.${profileId}.groups.${animationId}`;
+    tuning.values[`${base}.visual_size`] = estimated.groupScale;
+    delete tuning.values[`${base}.visual_scale`];
+    tuning.frame_visual_overrides =
+      tuning.frame_visual_overrides && typeof tuning.frame_visual_overrides === "object"
+        ? tuning.frame_visual_overrides
+        : {};
+    const prefix = `${profileId}/${animationId}:`;
+    for (const key of Object.keys(tuning.frame_visual_overrides)) {
+      if (!key.startsWith(prefix)) continue;
+      const current =
+        tuning.frame_visual_overrides[key] && typeof tuning.frame_visual_overrides[key] === "object"
+          ? tuning.frame_visual_overrides[key]
+          : {};
+      delete current.visual_size;
+      delete current.visual_scale;
+      if (!Object.keys(current).length) delete tuning.frame_visual_overrides[key];
+      else tuning.frame_visual_overrides[key] = current;
+    }
+    for (const frame of estimated.frames) {
+      if (frame.reason !== "zoom") continue;
+      const key = frameBoxKey(profileId, animationId, frame.index);
+      const current =
+        tuning.frame_visual_overrides[key] && typeof tuning.frame_visual_overrides[key] === "object"
+          ? tuning.frame_visual_overrides[key]
+          : {};
+      tuning.frame_visual_overrides[key] = { ...current, visual_size: frame.scale };
+    }
+  }
+
+  /**
+   * Trims leading/trailing rest holds on a clip without changing frames.
+   * @param {object} args Tool arguments.
+   * @returns {object} Motion window and per-frame activity.
+   */
+  function findMotion(args = {}) {
+    const external = resolveExternalLoopFrames(args);
+    const source = external?.source || "animation";
+    let filePaths = external?.filePaths || [];
+    const payload = { source, applied: false };
+    if (!external) {
+      const selection = animationFor(args);
+      payload.projectId = selection.project.id;
+      payload.profileId = selection.profile.id;
+      payload.animationId = String(selection.animation.id || selection.animation.name);
+      filePaths = collectFramePaths(selection.project, selection.animation);
+    }
+    const measured = measureFrameFiles(filePaths);
+    const found = findMotionWindow(
+      measured.map((frame) => ({
+        opaque: frame.opaque,
+        height: frame.bodyHeight,
+        cy: frame.cy,
+      })),
+    );
+    return {
+      ...payload,
+      frameCount: filePaths.length,
+      start: found.start,
+      end: found.end,
+      order: found.order,
+      activity: found.activity,
+      frames: measured.map((frame) => ({
+        index: frame.index,
+        bodyHeight: frame.bodyHeight,
+        opaque: frame.opaque,
+        cy: frame.cy,
+      })),
+    };
+  }
+
+  /**
+   * Estimates standing visual scales against a reference height.
+   * @param {object} args Tool arguments.
+   * @returns {object} Scale plan, optionally written to tuning.
+   */
+  function estimateVisual(args = {}) {
+    const selection = animationFor(args);
+    const { project, profile, animation } = selection;
+    const animationId = String(animation.id || animation.name);
+    const targetHeightArg = args.target_height !== undefined ? Number(args.target_height) : null;
+    if (targetHeightArg !== null && (!Number.isFinite(targetHeightArg) || targetHeightArg <= 0)) {
+      throw new Error("target_height must be a finite number greater than 0.");
+    }
+    const measured = measureFrameFiles(collectFramePaths(project, animation));
+    let targetHeight = targetHeightArg;
+    let referenceAnimationId = "";
+    if (args.reference_animation_id) {
+      referenceAnimationId = String(args.reference_animation_id).trim();
+      const reference = (profile.animations || []).find(
+        (entry) => String(entry.id || entry.name) === referenceAnimationId,
+      );
+      if (!reference) throw new Error(`Reference animation not found: ${referenceAnimationId}`);
+      const referenceMeasured = measureFrameFiles(collectFramePaths(project, reference, "Reference frame"));
+      if (targetHeight === null) {
+        targetHeight = median(referenceMeasured.map((frame) => frame.bodyHeight));
+      }
+    }
+    if (targetHeight === null) {
+      throw new Error("Provide target_height or reference_animation_id.");
+    }
+    const zoomRatio = args.zoom_ratio === undefined ? 1.12 : Number(args.zoom_ratio);
+    if (!Number.isFinite(zoomRatio) || zoomRatio < 1) {
+      throw new Error("zoom_ratio must be a finite number greater than or equal to 1.");
+    }
+    const estimated = estimateVisualScales(
+      measured.map((frame) => frame.bodyHeight),
+      targetHeight,
+      { zoomRatio },
+    );
+    const apply = booleanFlag(args.apply);
+    if (apply) {
+      const paths = projectStore.projectPaths(project);
+      const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+      applyEstimatedVisual(tuning, profile.id, animationId, estimated);
+      projectStore.writeJson(paths.tuning, tuning);
+    }
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId,
+      referenceAnimationId: referenceAnimationId || undefined,
+      targetHeight: estimated.targetHeight,
+      nativeHeight: estimated.nativeHeight,
+      groupScale: estimated.groupScale,
+      zoomRatio,
+      applied: apply,
+      zoomFrameCount: estimated.frames.filter((frame) => frame.reason === "zoom").length,
+      frames: estimated.frames.map((frame, index) => ({
+        ...frame,
+        nearWhite: measured[index].nearWhite,
+      })),
+      sync: apply ? synchronize(project, booleanFlag(args.sync)) : { requested: false, ok: null },
+    };
+  }
+
   function layerValidation(raw, layer = "all") {
     const requested = ["standalone", "bind", "gameplay"].includes(layer) ? layer : "all";
     const layers = { standalone: [], bind: [], gameplay: [] };
@@ -1037,6 +1280,15 @@ function createXsxbMcpService(options = {}) {
     }
     if (!jobs.length) throw new Error("Cutout found no on-disk frames to process.");
     const paths = projectStore.projectPaths(project);
+    const applyVisual = booleanFlag(args.apply_visual);
+    const visualScales = applyVisual
+      ? bakedVisualScales(
+          projectStore.readJson(paths.tuning, EMPTY_TUNING),
+          profile.id,
+          String(animation.id || animation.name),
+          frames.length,
+        )
+      : undefined;
     const manifest = manifestFor(project);
     const stored = (manifest.profiles || [])
       .find((entry) => entry.id === profile.id)
@@ -1079,6 +1331,7 @@ function createXsxbMcpService(options = {}) {
           protectedColors: args.protected_colors || args.protectedColors,
           protectionTolerance: args.protection_tolerance,
           force: booleanFlag(args.force),
+          frameScales: visualScales,
         },
       );
       processedFrameCount = receipt.processedFrameCount;
@@ -1091,12 +1344,36 @@ function createXsxbMcpService(options = {}) {
       });
     }
     projectStore.writeJson(paths.manifest, manifest);
+    if (applyVisual) {
+      const animationId = String(animation.id || animation.name);
+      const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+      tuning.values = tuning.values && typeof tuning.values === "object" ? tuning.values : {};
+      tuning.values[`profiles.${profile.id}.groups.${animationId}.visual_size`] = 1;
+      delete tuning.values[`profiles.${profile.id}.groups.${animationId}.visual_scale`];
+      const overrides =
+        tuning.frame_visual_overrides && typeof tuning.frame_visual_overrides === "object"
+          ? tuning.frame_visual_overrides
+          : {};
+      const prefix = `${frameBoxKey(profile.id, animationId, 0).replace(/:0$/, ":")}`;
+      for (const key of Object.keys(overrides)) {
+        if (!key.startsWith(prefix)) continue;
+        const current = overrides[key] && typeof overrides[key] === "object" ? overrides[key] : {};
+        delete current.visual_size;
+        delete current.visual_scale;
+        if (!Object.keys(current).length) delete overrides[key];
+        else overrides[key] = current;
+      }
+      tuning.frame_visual_overrides = overrides;
+      projectStore.writeJson(paths.tuning, tuning);
+    }
     return {
       projectId: project.id,
       profileId: profile.id,
       animationId: String(animation.id || animation.name),
       pipeline: receipt.pipeline,
       rematched: receipt.rematched,
+      rematchMode: receipt.rematchMode || (receipt.rematched ? "shared" : "none"),
+      frameScales: receipt.frameScales,
       backgroundColor: receipt.backgroundColor,
       keyColor: keyColor || receipt.backgroundColor,
       outputWidth: receipt.outputWidth || outputWidth || 0,
@@ -1104,6 +1381,27 @@ function createXsxbMcpService(options = {}) {
       frameCount: frames.length,
       processedFrameCount,
       skippedFrameCount: Number(receipt.skippedFrameCount || 0),
+      metrics: booleanFlag(args.metrics, true)
+        ? summarizeMetrics(
+            jobs.map((job) => {
+              try {
+                const image = decodePngRgba(job.absolutePath);
+                return { index: job.index, ...measureFrame(image.data, image.width, image.height) };
+              } catch (error) {
+                return {
+                  index: job.index,
+                  bodyHeight: 0,
+                  bodyWidth: 0,
+                  feetY: 0,
+                  cy: 0,
+                  opaque: 0,
+                  nearWhite: 0,
+                  error: String(error && error.message ? error.message : error),
+                };
+              }
+            }),
+          )
+        : undefined,
       sync: synchronize(project, booleanFlag(args.sync)),
     };
   }
@@ -1540,7 +1838,9 @@ function createXsxbMcpService(options = {}) {
       tuning.frame_playback_overrides && typeof tuning.frame_playback_overrides === "object"
         ? tuning.frame_playback_overrides
         : {};
+    const visualScales = bakedVisualScales(tuning, profile.id, animationId, frames.length);
     const framePaths = [];
+    const selectedScales = [];
     const durations = [];
     let skippedDisabledFrames = 0;
     for (let index = startFrame; index <= endFrame; index += 1) {
@@ -1556,6 +1856,7 @@ function createXsxbMcpService(options = {}) {
         throw new Error(`Frame ${index} has no generated PNG on disk; import or regenerate frames first.`);
       }
       framePaths.push(absolute);
+      selectedScales.push(visualScales[index]);
       durations.push(Math.max(0.001, Number(override.duration || 1)) / fps);
     }
     if (!framePaths.length) {
@@ -1579,7 +1880,26 @@ function createXsxbMcpService(options = {}) {
       outputPath = path.join(exportRoot, "exports", `${profile.id}_${animationId}.gif`);
     }
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    await encodeGifImpl({ framePaths, durations, fps, outputPath });
+    const appliedVisual = selectedScales.some((scale) => scale !== 1);
+    let encodePaths = framePaths;
+    let tempDir = null;
+    if (appliedVisual) {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-gif-visual-"));
+      const decoded = framePaths.map((filePath) => decodePngRgba(filePath));
+      const placed = placeFramesOnCanvas(decoded, decoded[0].width, decoded[0].height, {
+        frameScales: selectedScales,
+      });
+      encodePaths = placed.map((frame, index) => {
+        const filePath = path.join(tempDir, `frame_${String(index + 1).padStart(4, "0")}.png`);
+        fs.writeFileSync(filePath, encodePngRgba(frame.data, frame.width, frame.height));
+        return filePath;
+      });
+    }
+    try {
+      await encodeGifImpl({ framePaths: encodePaths, durations, fps, outputPath });
+    } finally {
+      if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+    }
     if (!fs.existsSync(outputPath)) throw new Error("GIF export produced no output file.");
     return {
       projectId: project.id,
@@ -1591,7 +1911,73 @@ function createXsxbMcpService(options = {}) {
       startFrame,
       endFrame,
       fps,
+      appliedVisual,
+      frameScales: appliedVisual ? selectedScales : undefined,
       totalDurationMs: Math.round(durations.reduce((sum, value) => sum + value, 0) * 1000),
+      bytes: fs.statSync(outputPath).size,
+    };
+  }
+
+  /**
+   * Exports a contact sheet that scales every source canvas into a shared cell.
+   * @param {object} args Tool arguments.
+   * @returns {object} Sheet receipt.
+   */
+  function exportSheet(args = {}) {
+    const { project, profile, animation } = animationFor(args);
+    const frames = animation.frames || [];
+    if (!frames.length) throw new Error("Cannot export a sheet without frames.");
+    const lastIndex = frames.length - 1;
+    const startFrame = args.start_frame === undefined ? 0 : requireFrameIndex(args.start_frame, lastIndex);
+    const endFrame = args.end_frame === undefined ? lastIndex : requireFrameIndex(args.end_frame, lastIndex);
+    if (endFrame < startFrame) throw new Error("end_frame must be greater than or equal to start_frame.");
+    const selected = [];
+    for (let index = startFrame; index <= endFrame; index += 1) {
+      const absolute = resolveAnimationFramePath(project, frames[index].path);
+      if (!absolute || !fs.existsSync(absolute)) {
+        throw new Error(`Frame ${index} has no generated PNG on disk; import or regenerate frames first.`);
+      }
+      selected.push(decodePngRgba(absolute));
+    }
+    const columns =
+      args.columns === undefined ? Math.min(selected.length, 8) : Math.max(1, Number(args.columns));
+    if (!Number.isFinite(columns) || columns < 1) {
+      throw new Error("columns must be a finite number greater than 0.");
+    }
+    const cell = args.cell === undefined ? 220 : Math.max(8, Number(args.cell));
+    const pad = args.pad === undefined ? 8 : Math.max(1, Number(args.pad));
+    const sheet = renderContactSheet(selected, { cell, pad, columns });
+    const exportRoot = projectStore.projectWorkspaceDir(project);
+    const animationId = String(animation.id || animation.name);
+    let outputPath;
+    if (args.output_path) {
+      const requested = String(args.output_path);
+      outputPath = path.resolve(exportRoot, requested);
+      if (!/\.png$/i.test(outputPath)) throw new Error("output_path must end with .png.");
+      if (!isInsideDirectory(outputPath, root)) {
+        throw new Error(
+          `output_path must stay inside the XSXB workspace root (${root}). Received: ${requested}`,
+        );
+      }
+    } else {
+      outputPath = path.join(exportRoot, "exports", `${profile.id}_${animationId}_sheet.png`);
+    }
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, encodePngRgba(sheet.data, sheet.width, sheet.height));
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId,
+      outputPath,
+      frameCount: selected.length,
+      startFrame,
+      endFrame,
+      columns,
+      rows: Math.ceil(selected.length / columns),
+      cell,
+      pad,
+      width: sheet.width,
+      height: sheet.height,
       bytes: fs.statSync(outputPath).size,
     };
   }
@@ -1602,12 +1988,16 @@ function createXsxbMcpService(options = {}) {
     xsxb_import_video: importVideo,
     xsxb_import_animation: importUnified,
     xsxb_get_animation: getAnimation,
+    xsxb_find_loop: findLoop,
+    xsxb_find_motion: findMotion,
     xsxb_update_frame_boxes: updateFrameBoxes,
     xsxb_estimate_boxes: estimateBoxes,
     xsxb_update_timing: updateTiming,
     xsxb_set_visual_transform: setVisualTransform,
+    xsxb_estimate_visual: estimateVisual,
     xsxb_replace_frame: replaceFrame,
     xsxb_export_gif: exportGif,
+    xsxb_export_sheet: exportSheet,
     xsxb_validate_project: validateProject,
     xsxb_add_attack_trail: addAttackTrail,
     xsxb_add_attachment: addAttachment,
