@@ -6,6 +6,7 @@ Use this reference for existing tuner operations beyond deterministic animation 
 
 - Local execution and project selection
 - Batch cutout
+- MCP video-to-loop playbook
 - Video extraction and frame organization
 - Transform and playback tuning
 - Boxes, SFX, and image attachments
@@ -48,6 +49,21 @@ Workflow:
 8. After replacement, inspect the animation, save, sync Godot, and verify manifest frame paths and counts.
 
 Do not claim a clean cutout solely because the batch completed. Check edge halos, missing foreground colors, accidental holes, alpha noise, and consistency across frames.
+
+## MCP Video-to-Loop Playbook
+
+For a local video that should become one looping animation, stay on XSXB MCP:
+
+1. Import with `xsxb_import_animation` or `xsxb_import_video`.
+2. Remove near-duplicate holds: `xsxb_find_duplicates` (`threshold` / `duplicate_ratio` is the organizer 重复比例 slider, 55–100, default 88). Skip apply when the receipt has `autoAdjustedThreshold` unless you passed `auto_adjust`. Otherwise `xsxb_reorganize_frames` with the returned `order`.
+3. Run `xsxb_cutout` (omit sliders for the shared smart profile). This can wait until just before sheet export.
+4. Query loops with `xsxb_find_loop`. Export each candidate as a Sprite Sheet via `xsxb_export_sheet` `start_frame` / `end_frame`.
+5. Every sheet cell is labeled with its absolute 0-based index. `mark_frame` highlights one cell (defaults to the candidate start) so a second pass can drop that frame from the current loop group.
+6. Inspect the sheets, pick the smoothest loop, and `xsxb_reorganize_frames` to that `order`. Drop any extra labeled cells that still break the cycle.
+7. Keep character scale the same across clips: choose one animation as the template, `xsxb_estimate_visual` with `reference_animation_id` and `apply`, then `xsxb_cutout apply_visual` on a shared canvas.
+8. Finish with one `xsxb_export_gif` of the kept loop.
+
+Do not treat a finder receipt as applied. `xsxb_find_duplicates` and `xsxb_find_loop` only return orders.
 
 ## Video Extraction and Frame Organization
 

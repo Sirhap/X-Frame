@@ -519,6 +519,16 @@ test("regular cutout selects the FramePacker-compatible replacement path", () =>
   assert.equal(options.blendStrength, 10);
 });
 
+test("black-plate processing options keep reference chroma key off", () => {
+  const parameters = sessionCore.captureProcessingParameters(createControls());
+  parameters.perceptual = false;
+  const options = sessionCore.createProcessingOptions(
+    { processingParameters: parameters },
+    { backgroundColor: { r: 8, g: 7, b: 9 }, backgroundColors: [], protectedColors: [] },
+  );
+  assert.equal(options.referenceChromaKey, false);
+});
+
 test("apply-to-all transactions undo and redo every target while preserving source edits", () => {
   const sourceItem = {
     repairs: [{ id: "source-repair", mode: "fill" }],

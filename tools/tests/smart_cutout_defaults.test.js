@@ -2,7 +2,16 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { REGULAR_AUTO_BACKGROUND_PARAMETERS } = require("../animation_tuner/public/smart_cutout_defaults");
+const {
+  CHROMA_SMART_OVERRIDES,
+  PLATE_SMART_OVERRIDES,
+  REGULAR_AUTO_BACKGROUND_PARAMETERS,
+  classifySmartBackground,
+  overlaySmartCutoutParameters,
+  referenceChromaKeyFor,
+  resolveSmartCutoutParameters,
+} = require("../animation_tuner/public/smart_cutout_defaults");
+const { createSmartCutoutOptions } = require("../animation_tuner/public/scatter_slice_smart_cutout");
 const cutoutCore = require("../animation_tuner/public/batch_cutout_core");
 
 /**
@@ -35,14 +44,10 @@ function clearBackground(rgba, size) {
   const detected = cutoutCore.estimateBackgroundColor(rgba, size, size);
   const backgroundColor = { r: detected.r, g: detected.g, b: detected.b };
   return cutoutCore.applyCutout(rgba, size, size, {
-    ...REGULAR_AUTO_BACKGROUND_PARAMETERS,
-    backgroundColor,
+    ...createSmartCutoutOptions(backgroundColor),
     backgroundColors: [{ ...backgroundColor, a: 255 }],
-    referenceChromaKey: !REGULAR_AUTO_BACKGROUND_PARAMETERS.perceptual,
-    edgeRecoveryTolerance: 0,
     seedPoints: [],
     protectedColors: [],
-    automaticCutout: true,
   });
 }
 
@@ -61,13 +66,15 @@ for (const [label, background, subject] of [
     const rgba = paintSubjectOnBackground(size, background, subject);
 
     const { data } = clearBackground(rgba, size);
+    const plate =
+      classifySmartBackground({ r: background[0], g: background[1], b: background[2] }) === "plate";
 
-    assert.equal(data[3], 0, "the corner background pixel becomes fully transparent");
+    assert.ok(data[3] <= (plate ? 0 : 16), "the corner background pixel becomes transparent");
     assert.equal(data[((size / 2) * size + size / 2) * 4 + 3], 255, "the subject stays opaque");
     let cleared = 0;
     let opaque = 0;
     for (let offset = 3; offset < data.length; offset += 4) {
-      if (data[offset] === 0) cleared += 1;
+      if (data[offset] <= (plate ? 0 : 16)) cleared += 1;
       if (data[offset] === 255) opaque += 1;
     }
     assert.equal(cleared, size * size - (size / 2) * (size / 2), "every background pixel is cleared");
@@ -75,10 +82,41 @@ for (const [label, background, subject] of [
   });
 }
 
-test("the shared auto profile keeps the workbench slider range", () => {
-  assert.ok(
-    REGULAR_AUTO_BACKGROUND_PARAMETERS.tolerance >= 0,
-    "a negative tolerance matches no pixel and disables the profile",
-  );
+test("the workbench idle profile stays in the slider range", () => {
+  assert.ok(REGULAR_AUTO_BACKGROUND_PARAMETERS.tolerance >= 0);
   assert.ok(REGULAR_AUTO_BACKGROUND_PARAMETERS.tolerance <= 100);
+  assert.equal(REGULAR_AUTO_BACKGROUND_PARAMETERS.blendStrength, 0);
+  assert.equal(REGULAR_AUTO_BACKGROUND_PARAMETERS.despillStrength, 0);
+});
+
+test("plate and chroma smart overlays stay on the exported tables", () => {
+  assert.equal(classifySmartBackground({ r: 255, g: 255, b: 255 }), "plate");
+  assert.equal(classifySmartBackground({ r: 8, g: 8, b: 8 }), "plate");
+  assert.equal(classifySmartBackground({ r: 0, g: 177, b: 64 }), "chroma");
+  assert.equal(classifySmartBackground({ r: 128, g: 128, b: 128 }), "plate");
+  assert.equal(classifySmartBackground({ r: 40, g: 80, b: 200 }), "chroma");
+  assert.equal(
+    resolveSmartCutoutParameters({ r: 255, g: 255, b: 255 }).tolerance,
+    PLATE_SMART_OVERRIDES.tolerance,
+  );
+  assert.equal(
+    resolveSmartCutoutParameters({ r: 0, g: 177, b: 64 }).tolerance,
+    CHROMA_SMART_OVERRIDES.tolerance,
+  );
+  assert.equal(
+    resolveSmartCutoutParameters({ r: 0, g: 177, b: 64 }).blendStrength,
+    CHROMA_SMART_OVERRIDES.blendStrength,
+  );
+});
+
+test("workset sliders win over the detected smart overlay", () => {
+  const merged = overlaySmartCutoutParameters(CHROMA_SMART_OVERRIDES, { r: 255, g: 255, b: 255 });
+  assert.equal(merged.blendStrength, CHROMA_SMART_OVERRIDES.blendStrength);
+  assert.equal(merged.tolerance, CHROMA_SMART_OVERRIDES.tolerance);
+});
+
+test("black plates keep reference chroma key off even when perceptual is false", () => {
+  assert.equal(referenceChromaKeyFor({ r: 8, g: 7, b: 9 }, false), false);
+  assert.equal(referenceChromaKeyFor({ r: 0, g: 177, b: 64 }, false), true);
+  assert.equal(referenceChromaKeyFor({ r: 8, g: 7, b: 9 }, true), false);
 });

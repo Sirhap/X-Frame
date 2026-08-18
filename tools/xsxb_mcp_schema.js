@@ -32,6 +32,18 @@ function typeOf(value) {
  * @param {string} expected Declared JSON Schema type.
  * @returns {boolean} Whether the value is usable as that type.
  */
+function parseNumeric(value) {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string") return Number(value);
+  const trimmed = value.trim();
+  const fraction = trimmed.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (fraction) {
+    const denominator = Number(fraction[2]);
+    return denominator ? Number(fraction[1]) / denominator : NaN;
+  }
+  return trimmed ? Number(trimmed) : NaN;
+}
+
 function matchesType(value, expected) {
   const actual = typeOf(value);
   if (expected === "string") return actual === "string";
@@ -43,7 +55,7 @@ function matchesType(value, expected) {
     return actual === "string" && BOOLEAN_WORDS.has(value.trim().toLowerCase());
   }
   if (expected === "number" || expected === "integer") {
-    const numeric = actual === "number" ? value : actual === "string" && value.trim() ? Number(value) : NaN;
+    const numeric = parseNumeric(value);
     if (!Number.isFinite(numeric)) return false;
     return expected === "number" || Number.isInteger(numeric);
   }
@@ -56,7 +68,7 @@ function matchesType(value, expected) {
  * @returns {number} Parsed number, or NaN.
  */
 function asNumber(value) {
-  return typeof value === "number" ? value : Number(value);
+  return parseNumeric(value);
 }
 
 /**

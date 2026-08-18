@@ -276,6 +276,18 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
   font: 720 11px/1 var(--ui-font);
 }
 
+.workspaceFlowChrome .shortcutGuide {
+  flex: 0 0 auto;
+}
+
+.workspaceFlowChrome .shortcutGuide > summary {
+  width: 34px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
 .workspaceAccount {
   min-height: 34px;
   padding: 0 12px;
@@ -1150,15 +1162,15 @@ body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
 }
 
 .toolbar {
-  min-height: 56px;
+  min-height: 0;
   align-items: center;
-  padding: 8px 10px;
+  padding: 4px 8px;
   background: color-mix(in srgb, var(--panel) 94%, transparent);
 }
 
-.toolbarMain {
-  min-width: 180px;
-  gap: 3px;
+.toolbarMain,
+.toolbarMain[hidden] {
+  display: none !important;
 }
 
 .toolbarMain > strong {
@@ -1180,8 +1192,9 @@ body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
 }
 
 .toolbarActions {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 6px;
+  justify-content: flex-start;
 }
 
 .toolbarActions
@@ -1701,7 +1714,7 @@ body.organizerOpen .organizerFooterActions {
   }
 
   .toolbar {
-    min-height: 50px;
+    min-height: 0;
   }
 
   #hint {

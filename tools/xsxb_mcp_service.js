@@ -18,14 +18,29 @@ const { syncGodotProject, validGodotProjectRoot } = require("./godot_sync");
 const { parseSpriteFrames } = require("./import_spriteframes");
 const { createProjectStore, EMPTY_TUNING, reslash, slug } = require("./project_store");
 const { validateImport } = require("./validate_import");
-const { cutoutFrameFiles, decodePngRgba, encodePngRgba, placeFramesOnCanvas } = require("./xsxb_mcp_cutout");
-const { findLoopInPngFiles, resolveExternalLoopFrames } = require("./xsxb_mcp_loop");
 const {
+  collectWorkbenchExtras,
+  cutoutFrameFiles,
+  decodePngRgba,
+  encodePngRgba,
+  placeFramesOnCanvas,
+} = require("./xsxb_mcp_cutout");
+const {
+  findDuplicatesInPngFiles,
+  findLoopInPngFiles,
+  resolveExternalLoopFrames,
+} = require("./xsxb_mcp_loop");
+const {
+  GROUP_GRID_MIN_CELL,
   estimateVisualScales,
   findMotionWindow,
+  groupGridStep,
   measureFrame,
   measureFrameFiles,
+  measureLongAxis,
   median,
+  paintedOriginCell,
+  parseGripT,
   renderContactSheet,
   summarizeMetrics,
 } = require("./xsxb_mcp_visual_qa");
@@ -1019,6 +1034,38 @@ function createXsxbMcpService(options = {}) {
   }
 
   /**
+   * Finds near-duplicate holds without changing frames.
+   * @param {object} args Tool arguments.
+   * @returns {object} Drop indexes and the keep-order.
+   */
+  function findDuplicates(args = {}) {
+    const external = resolveExternalLoopFrames(args);
+    const source = external?.source || "animation";
+    let filePaths = external?.filePaths || [];
+    const payload = { source, applied: false };
+    if (!external) {
+      const selection = animationFor(args);
+      payload.projectId = selection.project.id;
+      payload.profileId = selection.profile.id;
+      payload.animationId = String(selection.animation.id || selection.animation.name);
+      filePaths = collectFramePaths(selection.project, selection.animation);
+    }
+    if (args.duplicate_ratio !== undefined && args.threshold !== undefined) {
+      if (Number(args.duplicate_ratio) !== Number(args.threshold)) {
+        throw new Error("threshold and duplicate_ratio disagree. Pass only one.");
+      }
+    }
+    return {
+      ...payload,
+      ...findDuplicatesInPngFiles(filePaths, {
+        threshold: args.duplicate_ratio !== undefined ? args.duplicate_ratio : args.threshold,
+        sampleSize: args.sample_size,
+        autoAdjust: booleanFlag(args.auto_adjust, false),
+      }),
+    };
+  }
+
+  /**
    * Resolves on-disk PNG paths for one imported animation.
    * @param {object} project Project record.
    * @param {object} animation Manifest animation.
@@ -1307,6 +1354,7 @@ function createXsxbMcpService(options = {}) {
       for (const job of jobs) {
         const temporaryPath = `${job.absolutePath}.cutout-tmp.png`;
         await cutoutPngFileImpl(job.absolutePath, temporaryPath, {
+          ...collectWorkbenchExtras(args),
           keyColor,
           outputWidth,
           outputHeight,
@@ -1325,11 +1373,10 @@ function createXsxbMcpService(options = {}) {
       receipt = cutoutFrameFiles(
         jobs.map((job) => job.absolutePath),
         {
+          ...collectWorkbenchExtras(args),
           keyColor,
           outputWidth,
           outputHeight,
-          protectedColors: args.protected_colors || args.protectedColors,
-          protectionTolerance: args.protection_tolerance,
           force: booleanFlag(args.force),
           frameScales: visualScales,
         },
@@ -1946,7 +1993,24 @@ function createXsxbMcpService(options = {}) {
     }
     const cell = args.cell === undefined ? 220 : Math.max(8, Number(args.cell));
     const pad = args.pad === undefined ? 8 : Math.max(1, Number(args.pad));
-    const sheet = renderContactSheet(selected, { cell, pad, columns });
+    const markFrame =
+      args.mark_frame === undefined ? startFrame : requireFrameIndex(args.mark_frame, lastIndex);
+    if (markFrame < startFrame || markFrame > endFrame) {
+      throw new Error(`mark_frame must fall between start_frame ${startFrame} and end_frame ${endFrame}.`);
+    }
+    const indexes = [];
+    for (let index = startFrame; index <= endFrame; index += 1) indexes.push(index);
+    const grid = booleanFlag(args.grid, true);
+    const anchorMode = String(animation.anchorMode || "canvas_bottom_center");
+    const sheet = renderContactSheet(selected, {
+      cell,
+      pad,
+      columns,
+      startIndex: startFrame,
+      markFrame,
+      grid,
+      anchorMode,
+    });
     const exportRoot = projectStore.projectWorkspaceDir(project);
     const animationId = String(animation.id || animation.name);
     let outputPath;
@@ -1972,6 +2036,8 @@ function createXsxbMcpService(options = {}) {
       frameCount: selected.length,
       startFrame,
       endFrame,
+      indexes,
+      markFrame,
       columns,
       rows: Math.ceil(selected.length / columns),
       cell,
@@ -1979,6 +2045,41 @@ function createXsxbMcpService(options = {}) {
       width: sheet.width,
       height: sheet.height,
       bytes: fs.statSync(outputPath).size,
+      grid:
+        grid && cell >= GROUP_GRID_MIN_CELL
+          ? {
+              enabled: true,
+              anchorMode,
+              ySign: "down",
+              note: "Group (0,0) is the canvas foot origin. Body is negative y. Axes match the tuner stage.",
+              step: selected[0] ? groupGridStep(cell, selected[0].width) : undefined,
+              originCell: selected[0]
+                ? paintedOriginCell(selected[0].width, selected[0].height, cell, anchorMode)
+                : undefined,
+            }
+          : {
+              enabled: false,
+              reason: grid ? `cell ${cell} is below ${GROUP_GRID_MIN_CELL}` : "grid disabled",
+            },
+    };
+  }
+
+  /**
+   * Measures a weapon/sprite PNG's long axis and handle fractions.
+   * @param {object} args Tool arguments.
+   * @returns {object} Pommel, tip, and grip landmarks.
+   */
+  function measureImage(args = {}) {
+    const absolute = requireExistingFile(args.file_path, "Sprite image");
+    if (!/\.png$/i.test(absolute)) throw new Error("file_path must be a PNG.");
+    const image = decodePngRgba(absolute);
+    const t = parseGripT(args.t);
+    const measured = measureLongAxis(image.data, image.width, image.height, { t });
+    return {
+      filePath: absolute,
+      space: "image_pixels",
+      note: "t=0 is the thicker pommel, t=1 is the thinner tip. localFromCenter is the grip relative to the image center. Attachment offset = hand - localFromCenter.",
+      ...measured,
     };
   }
 
@@ -1989,6 +2090,7 @@ function createXsxbMcpService(options = {}) {
     xsxb_import_animation: importUnified,
     xsxb_get_animation: getAnimation,
     xsxb_find_loop: findLoop,
+    xsxb_find_duplicates: findDuplicates,
     xsxb_find_motion: findMotion,
     xsxb_update_frame_boxes: updateFrameBoxes,
     xsxb_estimate_boxes: estimateBoxes,
@@ -1998,6 +2100,7 @@ function createXsxbMcpService(options = {}) {
     xsxb_replace_frame: replaceFrame,
     xsxb_export_gif: exportGif,
     xsxb_export_sheet: exportSheet,
+    xsxb_measure_image: measureImage,
     xsxb_validate_project: validateProject,
     xsxb_add_attack_trail: addAttackTrail,
     xsxb_add_attachment: addAttachment,

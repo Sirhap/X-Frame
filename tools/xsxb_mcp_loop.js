@@ -9,7 +9,9 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const {
+  ORGANIZER_SIMILARITY_THRESHOLD,
   REFERENCE_SAMPLE_SIZE,
+  analyzeDuplicateFrames,
   createSignature,
   findLoopCandidates,
 } = require("./animation_tuner/public/frame_organizer_core");
@@ -17,6 +19,8 @@ const { PNG_NAME, listPngSequence, requireExistingFile } = require("./xsxb_mcp_a
 const { decodePngRgba } = require("./xsxb_mcp_cutout");
 
 const MINIMUM_LOOP_FRAMES = 4;
+const MINIMUM_DUPLICATE_FRAMES = 3;
+const DEFAULT_DUPLICATE_THRESHOLD = ORGANIZER_SIMILARITY_THRESHOLD.fallback;
 
 /**
  * Builds an inclusive integer range.
@@ -121,6 +125,52 @@ function findLoopInPngFiles(filePaths, options = {}) {
 }
 
 /**
+ * Finds near-duplicate holds with the same Tuner duplicate finder.
+ * Does not mutate frames; apply the keep-order with xsxb_reorganize_frames.
+ * @param {string[]} filePaths Absolute PNG paths in playback order.
+ * @param {{threshold?:number,sampleSize?:number}} [options] Search options.
+ * @returns {{frameCount:number,sampleSize:number,threshold:number,autoAdjustedThreshold:number|null,drop:number[],order:number[],matches:object[],applied:boolean}}
+ */
+function findDuplicatesInPngFiles(filePaths, options = {}) {
+  if (!Array.isArray(filePaths) || filePaths.length < MINIMUM_DUPLICATE_FRAMES) {
+    throw new Error(
+      `Duplicate search needs at least ${MINIMUM_DUPLICATE_FRAMES} PNG frames; received ${filePaths?.length || 0}.`,
+    );
+  }
+  const sampleSize = Math.max(8, Math.round(options.sampleSize || REFERENCE_SAMPLE_SIZE));
+  const threshold = options.threshold === undefined ? DEFAULT_DUPLICATE_THRESHOLD : Number(options.threshold);
+  if (
+    !Number.isFinite(threshold) ||
+    threshold < ORGANIZER_SIMILARITY_THRESHOLD.min ||
+    threshold > ORGANIZER_SIMILARITY_THRESHOLD.max
+  ) {
+    throw new Error(
+      `threshold must be a number between ${ORGANIZER_SIMILARITY_THRESHOLD.min} and ${ORGANIZER_SIMILARITY_THRESHOLD.max}.`,
+    );
+  }
+  const signatures = filePaths.map((filePath) => loadSignature(filePath, sampleSize));
+  const analyzed = analyzeDuplicateFrames(signatures, threshold);
+  const suggestedDrop = analyzed.matches.map((entry) => Number(entry.index));
+  const applyAuto = Boolean(options.autoAdjust) && analyzed.autoAdjustedThreshold != null;
+  const drop = analyzed.autoAdjustedThreshold == null || applyAuto ? suggestedDrop : [];
+  const dropped = new Set(drop);
+  const order = filePaths.map((_, index) => index).filter((index) => !dropped.has(index));
+  const suggestedDropped = new Set(suggestedDrop);
+  return {
+    frameCount: filePaths.length,
+    sampleSize,
+    threshold,
+    autoAdjustedThreshold: analyzed.autoAdjustedThreshold,
+    drop,
+    order,
+    suggestedDrop,
+    suggestedOrder: filePaths.map((_, index) => index).filter((index) => !suggestedDropped.has(index)),
+    matches: analyzed.matches,
+    applied: false,
+  };
+}
+
+/**
  * Resolves PNG paths from explicit files or a directory of numbered frames.
  * @param {{file_paths?:string[],directory?:string}} args Tool arguments.
  * @returns {{source:string,filePaths:string[]}|null} Resolved files, or null when neither source is set.
@@ -143,8 +193,12 @@ function resolveExternalLoopFrames(args = {}) {
 }
 
 module.exports = {
+  DEFAULT_DUPLICATE_THRESHOLD,
+  ORGANIZER_SIMILARITY_THRESHOLD,
+  MINIMUM_DUPLICATE_FRAMES,
   MINIMUM_LOOP_FRAMES,
   downsampleRgba,
+  findDuplicatesInPngFiles,
   findLoopInPngFiles,
   resolveExternalLoopFrames,
 };

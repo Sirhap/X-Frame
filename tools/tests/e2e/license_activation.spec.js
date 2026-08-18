@@ -82,9 +82,10 @@ test("dedicated email authorization administration page renders from its direct 
 
 test("email authorization manager opens the sign-in flow without device state", async ({ page }) => {
   await page.goto("/workspace");
-  const manageButton = page.locator("#activationManage");
-  await expect(manageButton).toContainText("邮箱登录");
-  await manageButton.click();
+  const accountButton = page.locator("#workspaceAccount");
+  await expect(accountButton).toBeVisible();
+  await expect(page.locator("#activationManage")).toBeHidden();
+  await accountButton.click();
 
   const panel = page.locator("#activationPanel");
   await expect(panel).toBeVisible();

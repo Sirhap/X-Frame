@@ -7,6 +7,21 @@ const {
   createSmartCutoutOptions,
   detectBackgroundColor,
 } = require("../animation_tuner/public/scatter_slice_smart_cutout");
+const { resolveSmartCutoutParameters } = require("../animation_tuner/public/smart_cutout_defaults");
+
+/**
+ * Picks the workbench sliders that differ between plate and chroma smart profiles.
+ * @param {object} options Cutout options.
+ * @returns {object} Slider snapshot.
+ */
+function smartSliderSnapshot(options) {
+  return {
+    tolerance: options.tolerance,
+    edgeBoost: options.edgeBoost,
+    blendStrength: options.blendStrength,
+    despillStrength: options.despillStrength,
+  };
+}
 
 /**
  * Writes one RGBA pixel into a flat image buffer.
@@ -41,19 +56,50 @@ test("smart slice cutout auto-detects background and preserves the subject", () 
 test("smart slice cutout uses the requested regular background-clear parameters", () => {
   const backgroundColor = { r: 149, g: 215, b: 144 };
   const options = createSmartCutoutOptions(backgroundColor);
+  const resolved = resolveSmartCutoutParameters(backgroundColor);
 
   assert.deepEqual(options.backgroundColor, backgroundColor);
   assert.equal(options.referenceChromaKey, true);
-  assert.equal(options.tolerance, 1);
-  assert.equal(options.edgeBoost, 10);
-  assert.equal(options.blendStrength, 100);
+  assert.deepEqual(smartSliderSnapshot(options), smartSliderSnapshot(resolved));
   assert.equal(options.blendMode, "blend");
-  assert.equal(options.despillStrength, 100);
   assert.equal(options.despillMode, "general");
   assert.equal(options.connected, false);
   assert.equal(options.feather, 0);
   assert.equal(options.edgeRecoveryStrength, 0);
   assert.equal(options.alphaThreshold, 0);
+});
+
+test("white and black plates use the plate smart profile", () => {
+  for (const backgroundColor of [
+    { r: 255, g: 255, b: 255 },
+    { r: 128, g: 128, b: 128 },
+    { r: 8, g: 7, b: 9 },
+  ]) {
+    assert.deepEqual(
+      smartSliderSnapshot(createSmartCutoutOptions(backgroundColor)),
+      smartSliderSnapshot(resolveSmartCutoutParameters(backgroundColor)),
+    );
+    assert.equal(createSmartCutoutOptions(backgroundColor).tolerance, 1);
+    assert.equal(createSmartCutoutOptions(backgroundColor).blendStrength, 0);
+    assert.equal(createSmartCutoutOptions(backgroundColor).despillStrength, 0);
+  }
+});
+
+test("green and other colors use the chroma smart profile", () => {
+  for (const backgroundColor of [
+    { r: 0, g: 177, b: 64 },
+    { r: 149, g: 215, b: 144 },
+    { r: 40, g: 80, b: 200 },
+  ]) {
+    assert.deepEqual(
+      smartSliderSnapshot(createSmartCutoutOptions(backgroundColor)),
+      smartSliderSnapshot(resolveSmartCutoutParameters(backgroundColor)),
+    );
+    assert.equal(createSmartCutoutOptions(backgroundColor).tolerance, -1);
+    assert.equal(createSmartCutoutOptions(backgroundColor).edgeBoost, 10);
+    assert.equal(createSmartCutoutOptions(backgroundColor).blendStrength, 100);
+    assert.equal(createSmartCutoutOptions(backgroundColor).despillStrength, 100);
+  }
 });
 
 test("smart slice cutout detects one dominant source background instead of trusting one corner", () => {
@@ -99,7 +145,7 @@ test("regular background clear removes enclosed background regions instead of pr
   assert.equal(output[(2 * width + 2) * 4 + 3], 255, "surrounding subject stays opaque");
 });
 
-test("smart slice cutout removes a connected near-black background without erasing enclosed details", () => {
+test("smart slice cutout keys a black plate including enclosed black pixels", () => {
   const width = 7;
   const height = 7;
   const background = [8, 7, 9, 255];
@@ -113,9 +159,9 @@ test("smart slice cutout removes a connected near-black background without erasi
 
   const output = applySmartCutout(rgba, width, height);
 
-  assert.equal(output[3], 0, "black background connected to the slice border becomes transparent");
+  assert.equal(output[3], 0, "black background becomes transparent");
   assert.equal(output[(2 * width + 2) * 4 + 3], 255, "colored subject pixels stay opaque");
-  assert.equal(output[(3 * width + 3) * 4 + 3], 255, "enclosed black subject detail stays opaque");
+  assert.equal(output[(3 * width + 3) * 4 + 3], 0, "enclosed black plate pixels are keyed");
 });
 
 test("smart slice cutout validates dimensions before processing", () => {

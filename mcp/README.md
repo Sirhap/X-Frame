@@ -62,10 +62,13 @@ npm run mcp:start
 - 改数据前先 `xsxb_list_projects` 或 `xsxb_get_project`
 - 同步前先 `xsxb_bind_godot`
 - 导入用 `xsxb_import_animation`（支持 `start_frame` / `end_frame` / `replace`）；`xsxb_import_video` 只是视频别名
-- 抠图用 `xsxb_cutout`（网页同一套智能抠图；可传 `protected_colors`；已抠帧默认跳过，除非 `force`；回执带 `bodyHeight` / `nearWhite`，`metrics=false` 可关）
-- 循环段用 `xsxb_find_loop`（已导入动画、PNG 目录或 `file_paths`）；单次动作去头尾 hold 用 `xsxb_find_motion`；应用候选时再 `xsxb_reorganize_frames` 传 `order`
+- 抠图用 `xsxb_cutout`（网页同一套智能抠图和滑块；可传 `tolerance` / `feather` / `protected_colors` 等，省略则用共用智能档；已抠帧默认跳过，除非 `force`；回执带 `bodyHeight` / `nearWhite`，`metrics=false` 可关）
+- 视频做成循环动画：导入 → `xsxb_find_duplicates`（`threshold` / `duplicate_ratio` 即整理台重复比例滑块，55–100，默认 88）去重复帧 → `xsxb_cutout` → `xsxb_find_loop` → 每个候选 `xsxb_export_sheet`（格子上有绝对帧号，`mark_frame` 标出一格供二次剔除）→ 选最流畅的一组 `xsxb_reorganize_frames` → 以其中一个动画为模版 `xsxb_estimate_visual` 统一比例 → `xsxb_export_gif`
+- 循环段用 `xsxb_find_loop`（已导入动画、PNG 目录或 `file_paths`）；重复 hold 用 `xsxb_find_duplicates`；单次动作去头尾 hold 用 `xsxb_find_motion`；应用候选时再 `xsxb_reorganize_frames` 传 `order`
 - 统一角色大小先 `xsxb_estimate_visual`（对照参考动画或 `target_height`），或手填 `xsxb_set_visual_transform`；要把组/帧缩放写进像素时用 `xsxb_cutout apply_visual` 加画布，不要在 MCP 外烤图
-- 预览用 `xsxb_export_gif`（尊重单帧时长和组/帧 `visual_size`）或 `xsxb_export_sheet` 拼表
+- 预览用 `xsxb_export_gif`（尊重单帧时长和组/帧 `visual_size`）或 `xsxb_export_sheet` 拼表（格子带调参台组坐标网格，脚底 `0,0`，身体在负 y）
+- 量刀图长轴用 `xsxb_measure_image`：厚端是柄，薄端是尖；`t=0.5` 中间、`t=2/3` 或 `"2/3"` 是柄往尖的三分之二；`localFromCenter` 是相对图心的握点，附加图 offset = 手位置 − localFromCenter
+- `xsxb_find_duplicates` 回执若带 `autoAdjustedThreshold`，不要直接 `reorganize` 那个 `order`，除非传了 `auto_adjust`
 - 挂件/音效用 `file_path`；拖尾可传 `sticks` 与 `texture_path`
 - `xsxb_open_tuner` 会在本机 Tuner 没起来时拉起服务
 - 默认项目用 `xsxb_set_active_project`
@@ -79,6 +82,6 @@ npm run mcp:start
 
 ## 当前工具
 
-`xsxb_list_projects` · `xsxb_get_project` · `xsxb_set_active_project` · `xsxb_bind_godot` · `xsxb_import_animation` · `xsxb_import_video` · `xsxb_get_animation` · `xsxb_find_loop` · `xsxb_find_motion` · `xsxb_cutout` · `xsxb_estimate_visual` · `xsxb_set_visual_transform` · `xsxb_estimate_boxes` · `xsxb_update_frame_boxes` · `xsxb_update_timing` · `xsxb_replace_frame` · `xsxb_reorganize_frames` · `xsxb_add_attack_trail` · `xsxb_add_attachment` · `xsxb_add_sfx` · `xsxb_remove_binding` · `xsxb_delete_animation` · `xsxb_sync_godot` · `xsxb_validate_project` · `xsxb_export_gif` · `xsxb_export_sheet` · `xsxb_open_tuner`
+`xsxb_list_projects` · `xsxb_get_project` · `xsxb_set_active_project` · `xsxb_bind_godot` · `xsxb_import_animation` · `xsxb_import_video` · `xsxb_get_animation` · `xsxb_find_loop` · `xsxb_find_duplicates` · `xsxb_find_motion` · `xsxb_cutout` · `xsxb_estimate_visual` · `xsxb_set_visual_transform` · `xsxb_estimate_boxes` · `xsxb_update_frame_boxes` · `xsxb_update_timing` · `xsxb_replace_frame` · `xsxb_reorganize_frames` · `xsxb_add_attack_trail` · `xsxb_add_attachment` · `xsxb_add_sfx` · `xsxb_remove_binding` · `xsxb_delete_animation` · `xsxb_sync_godot` · `xsxb_validate_project` · `xsxb_export_gif` · `xsxb_export_sheet` · `xsxb_measure_image` · `xsxb_open_tuner`
 
 工具只接受项目、角色、动画、帧等业务标识，不接受任意 Shell 或不受限文件路径。

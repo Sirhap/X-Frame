@@ -16,7 +16,11 @@
   if (!cutoutCore?.applyProductCutout || !cutoutCore?.estimateBackgroundColor) {
     throw new Error("BatchCutoutCore is required for smart slice cutout.");
   }
-  if (!smartCutoutDefaults?.REGULAR_AUTO_BACKGROUND_PARAMETERS) {
+  if (
+    !smartCutoutDefaults?.REGULAR_AUTO_BACKGROUND_PARAMETERS ||
+    typeof smartCutoutDefaults.resolveSmartCutoutParameters !== "function" ||
+    typeof smartCutoutDefaults.classifySmartBackground !== "function"
+  ) {
     throw new Error("Shared smart-cutout defaults are required.");
   }
 
@@ -93,18 +97,15 @@
    * @returns {object} BatchCutoutCore product options.
    */
   function createSmartCutoutOptions(backgroundColor) {
-    // A black reference and transparent replacement share the same RGB axis, so
-    // the reference blend cannot derive opacity. Use border connectivity instead.
-    const nearBlackBackground = Math.max(backgroundColor.r, backgroundColor.g, backgroundColor.b) <= 24;
+    const resolved = smartCutoutDefaults.resolveSmartCutoutParameters(backgroundColor);
     return {
-      ...smartCutoutDefaults.REGULAR_AUTO_BACKGROUND_PARAMETERS,
+      ...resolved,
       automaticCutout: true,
       backgroundColor,
       backgroundColors: [backgroundColor],
-      connected: nearBlackBackground,
+      connected: resolved.connected,
       edgeRecoveryTolerance: 0,
-      referenceChromaKey: !nearBlackBackground,
-      tolerance: nearBlackBackground ? 4 : smartCutoutDefaults.REGULAR_AUTO_BACKGROUND_PARAMETERS.tolerance,
+      referenceChromaKey: smartCutoutDefaults.referenceChromaKeyFor(backgroundColor, resolved.perceptual),
     };
   }
 

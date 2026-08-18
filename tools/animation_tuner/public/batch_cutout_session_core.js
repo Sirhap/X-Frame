@@ -1,11 +1,16 @@
 (function attachBatchCutoutSessionCore(root, factory) {
   "use strict";
 
-  const api = factory();
+  const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
   root.BatchCutoutSessionCore = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, () => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
+
+  const smartCutoutDefaults =
+    (typeof module === "object" && module.exports
+      ? require("./smart_cutout_defaults")
+      : root?.XSXBSmartCutoutDefaults) || {};
 
   const NUMERIC_CONTROLS = Object.freeze([
     ["cutoutTolerance", "cutoutToleranceValue", "tolerance"],
@@ -336,7 +341,10 @@
       alphaThreshold: parameters.alphaThreshold,
       connected: parameters.connected,
       perceptual: parameters.perceptual,
-      referenceChromaKey: !parameters.perceptual,
+      referenceChromaKey:
+        typeof smartCutoutDefaults.referenceChromaKeyFor === "function"
+          ? smartCutoutDefaults.referenceChromaKeyFor(palettes.backgroundColor, parameters.perceptual)
+          : !parameters.perceptual,
       chromaFeather: parameters.chromaFeather,
       seedPoints: item.seedPoints || [],
       edgeBoost: parameters.edgeBoost,
@@ -706,6 +714,7 @@
   }
 
   return Object.freeze({
+    NUMERIC_PARAMETER_LIMITS,
     applyProcessingParameters,
     beginPropagation,
     captureProcessingParameters,

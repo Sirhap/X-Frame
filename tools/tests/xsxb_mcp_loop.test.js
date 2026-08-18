@@ -5,9 +5,11 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const { ORGANIZER_SIMILARITY_THRESHOLD } = require("../animation_tuner/public/frame_organizer_core");
 const { createProjectStore } = require("../project_store");
-const { findLoopInPngFiles } = require("../xsxb_mcp_loop");
-const { createXsxbMcpService } = require("../xsxb_mcp_service");
+const { findDuplicatesInPngFiles, findLoopInPngFiles } = require("../xsxb_mcp_loop");
+const { createXsxbMcpService, toolDefinitions } = require("../xsxb_mcp_service");
+const { validateToolArguments } = require("../xsxb_mcp_schema");
 const { encodePngRgba } = require("../xsxb_mcp_cutout");
 
 const PHASES = [
@@ -156,6 +158,121 @@ test("xsxb_find_loop rejects sequences shorter than four frames", async () => {
       () => current.service.call("xsxb_find_loop", { directory, sample_size: 8 }),
       /at least 4 PNG frames/u,
     );
+  } finally {
+    current.cleanup();
+  }
+});
+
+/**
+ * Writes a hold-heavy sequence: two reds, two greens, one blue.
+ * @param {string} directory Output directory.
+ * @returns {string[]} Written paths.
+ */
+function writeHolds(directory) {
+  fs.mkdirSync(directory, { recursive: true });
+  const colors = [PHASES[0], PHASES[0], PHASES[1], PHASES[1], PHASES[2]];
+  return colors.map((color, index) => {
+    const filePath = path.join(directory, `${String(index + 1).padStart(2, "0")}.png`);
+    fs.writeFileSync(filePath, solidPng(color));
+    return filePath;
+  });
+}
+
+test("find_duplicates slider matches the organizer 重复比例 range", () => {
+  const schema = toolDefinitions().find((tool) => tool.name === "xsxb_find_duplicates").inputSchema;
+  for (const name of ["threshold", "duplicate_ratio"]) {
+    assert.equal(schema.properties[name].minimum, ORGANIZER_SIMILARITY_THRESHOLD.min, name);
+    assert.equal(schema.properties[name].maximum, ORGANIZER_SIMILARITY_THRESHOLD.max, name);
+    assert.equal(schema.properties[name].default, ORGANIZER_SIMILARITY_THRESHOLD.fallback, name);
+  }
+  assert.throws(
+    () =>
+      validateToolArguments("xsxb_find_duplicates", schema, {
+        threshold: ORGANIZER_SIMILARITY_THRESHOLD.min - 1,
+      }),
+    /threshold/,
+  );
+});
+
+test("findDuplicatesInPngFiles keeps the first of each hold and drops the rest", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-dup-core-"));
+  try {
+    const files = writeHolds(directory);
+    const found = findDuplicatesInPngFiles(files, { sampleSize: 8, threshold: 88 });
+    assert.deepEqual(found.drop, [1, 3]);
+    assert.deepEqual(found.order, [0, 2, 4]);
+    assert.equal(found.applied, false);
+    assert.equal(found.threshold, 88);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("findDuplicatesInPngFiles does not apply an auto-lowered threshold unless asked", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-dup-auto-"));
+  try {
+    const near = new Uint8ClampedArray(16 * 16 * 4);
+    const tinted = new Uint8ClampedArray(16 * 16 * 4);
+    for (let y = 0; y < 16; y += 1) {
+      for (let x = 0; x < 16; x += 1) {
+        const offset = (y * 16 + x) * 4;
+        const border = x < 3 || y < 3 || x > 12 || y > 12;
+        near.set(border ? [40, 40, 40, 255] : [210, 36, 42, 255], offset);
+        tinted.set(border ? [40, 40, 40, 255] : [40, 90, 200, 255], offset);
+      }
+    }
+    const files = ["a.png", "b.png", "c.png"].map((name, index) => {
+      const filePath = path.join(directory, name);
+      fs.writeFileSync(filePath, encodePngRgba(index === 1 ? tinted : near, 16, 16));
+      return filePath;
+    });
+    const strict = findDuplicatesInPngFiles(files, { sampleSize: 8, threshold: 100 });
+    assert.equal(strict.autoAdjustedThreshold != null, true);
+    assert.deepEqual(strict.drop, []);
+    assert.deepEqual(strict.order, [0, 1, 2]);
+    assert.ok(strict.suggestedDrop.length >= 1);
+    const opted = findDuplicatesInPngFiles(files, { sampleSize: 8, threshold: 100, autoAdjust: true });
+    assert.ok(opted.drop.length >= 1);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("xsxb_find_duplicates queries an imported animation without mutating it", async () => {
+  const current = fixture();
+  try {
+    const directory = path.join(current.root, "hold-seq");
+    writeHolds(directory);
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "hold",
+    });
+    const found = await current.service.call("xsxb_find_duplicates", {
+      animation_id: "hold",
+      sample_size: 8,
+    });
+    const byRatio = await current.service.call("xsxb_find_duplicates", {
+      animation_id: "hold",
+      sample_size: 8,
+      duplicate_ratio: ORGANIZER_SIMILARITY_THRESHOLD.fallback,
+    });
+    assert.equal(found.source, "animation");
+    assert.equal(found.applied, false);
+    assert.equal(found.threshold, ORGANIZER_SIMILARITY_THRESHOLD.fallback);
+    assert.deepEqual(found.drop, [1, 3]);
+    assert.deepEqual(found.order, [0, 2, 4]);
+    assert.deepEqual(byRatio.drop, found.drop);
+    await assert.rejects(
+      current.service.call("xsxb_find_duplicates", {
+        animation_id: "hold",
+        threshold: 88,
+        duplicate_ratio: 70,
+      }),
+      /disagree/,
+    );
+    const still = await current.service.call("xsxb_get_animation", { animation_id: "hold" });
+    assert.equal(still.frameCount, 5);
   } finally {
     current.cleanup();
   }

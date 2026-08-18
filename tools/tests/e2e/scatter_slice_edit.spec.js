@@ -361,7 +361,7 @@ test("automatic recognition ignores a decorative border and connected editor gri
   await expect(tool.locator("#scatterStatus p")).toContainText("已过滤");
 });
 
-test("smart cutout removes black backgrounds in alpha detection mode without erasing subject details", async ({
+test("smart cutout keys a black plate including enclosed plate pixels without erasing the subject", async ({
   page,
 }) => {
   await page.goto("/tools/scatter-slice");
@@ -399,7 +399,8 @@ test("smart cutout removes black backgrounds in alpha detection mode without era
       for (let offset = 3; offset < rgba.length; offset += 4) sum += rgba[offset];
       return {
         background: rgba[(5 * canvas.width + 5) * 4 + 3],
-        enclosedBlackDetail: rgba[(50 * canvas.width + 50) * 4 + 3],
+        enclosedBlackPlate: rgba[(50 * canvas.width + 50) * 4 + 3],
+        orangeSubject: rgba[(25 * canvas.width + 35) * 4 + 3],
         pinkEffect: rgba[(46 * canvas.width + 75) * 4 + 3],
         sum,
       };
@@ -410,7 +411,8 @@ test("smart cutout removes black backgrounds in alpha detection mode without era
   const originalAlpha = await readAlpha();
 
   expect(smartAlpha.background).toBe(0);
-  expect(smartAlpha.enclosedBlackDetail).toBe(255);
+  expect(smartAlpha.enclosedBlackPlate).toBe(0);
+  expect(smartAlpha.orangeSubject).toBe(255);
   expect(smartAlpha.pinkEffect).toBe(255);
   expect(smartAlpha.sum).toBeLessThan(originalAlpha.sum);
 });

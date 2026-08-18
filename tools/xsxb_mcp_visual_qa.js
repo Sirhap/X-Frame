@@ -5,6 +5,59 @@ const { decodePngRgba, subjectAnchor } = require("./xsxb_mcp_cutout");
 const NEAR_WHITE_LUMA = 240;
 const NEAR_WHITE_ALPHA = 200;
 
+const DIGIT_GLYPHS = Object.freeze([
+  ["111", "101", "101", "101", "111"],
+  ["010", "110", "010", "010", "111"],
+  ["111", "001", "111", "100", "111"],
+  ["111", "001", "111", "001", "111"],
+  ["101", "101", "111", "001", "001"],
+  ["111", "100", "111", "001", "111"],
+  ["111", "100", "111", "101", "111"],
+  ["111", "001", "001", "001", "001"],
+  ["111", "101", "111", "101", "111"],
+  ["111", "101", "111", "001", "111"],
+]);
+
+const INDEX_BADGE = Object.freeze({
+  inset: 1,
+  pad: 1,
+  ink: Object.freeze([255, 255, 255, 255]),
+  plate: Object.freeze([8, 8, 12, 255]),
+});
+
+const MARK_BORDER = Object.freeze({
+  color: Object.freeze([255, 220, 0, 255]),
+  width: 2,
+});
+
+const GROUP_GRID = Object.freeze({
+  axis: Object.freeze([255, 196, 74, 255]),
+  line: Object.freeze([145, 215, 255, 72]),
+  originInk: Object.freeze([255, 224, 150, 255]),
+});
+
+const HANDLE_FRACTIONS = Object.freeze([0, 0.5, 2 / 3, 1]);
+const GROUP_GRID_MIN_CELL = 24;
+
+/**
+ * Parses a grip fraction. Accepts 0.666… or "2/3".
+ * @param {unknown} value Raw t.
+ * @param {number} [fallback=0.5] Default.
+ * @returns {number} Fraction in 0–1, or NaN when unusable.
+ */
+function parseGripT(value, fallback = 0.5) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "string") {
+    const fraction = value.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
+    if (fraction) {
+      const parsed = Number(fraction[1]) / Number(fraction[2]);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
 /**
  * Returns the median of finite numbers.
  * @param {number[]} values Sample.
@@ -30,6 +83,101 @@ function inclusiveRange(start, end) {
   const order = [];
   for (let index = start; index <= end; index += 1) order.push(index);
   return order;
+}
+
+/**
+ * Returns the source-canvas foot origin used by tuner/Godot.
+ * @param {number} width Canvas width.
+ * @param {number} height Canvas height.
+ * @param {string} [anchorMode] Animation anchor.
+ * @returns {{x:number,y:number}} Source pixel of group (0,0).
+ */
+function canvasAnchor(width, height, anchorMode = "canvas_bottom_center") {
+  if (anchorMode === "canvas_left_bottom") return { x: 0, y: height };
+  return { x: width / 2, y: height };
+}
+
+/**
+ * Converts a source-canvas pixel into group/runtime coordinates.
+ * @param {number} x Source column.
+ * @param {number} y Source row.
+ * @param {number} width Canvas width.
+ * @param {number} height Canvas height.
+ * @param {string} [anchorMode] Animation anchor.
+ * @returns {{x:number,y:number}} Group point. +x right, +y down; body is negative y.
+ */
+function canvasToGroup(x, y, width, height, anchorMode = "canvas_bottom_center") {
+  const origin = canvasAnchor(width, height, anchorMode);
+  return { x: x - origin.x, y: y - origin.y };
+}
+
+/**
+ * Converts a group/runtime point back onto the source canvas.
+ * @param {number} x Group X.
+ * @param {number} y Group Y.
+ * @param {number} width Canvas width.
+ * @param {number} height Canvas height.
+ * @param {string} [anchorMode] Animation anchor.
+ * @returns {{x:number,y:number}} Source pixel.
+ */
+function groupToCanvas(x, y, width, height, anchorMode = "canvas_bottom_center") {
+  const origin = canvasAnchor(width, height, anchorMode);
+  return { x: origin.x + x, y: origin.y + y };
+}
+
+/**
+ * Maps a source pixel into a contact-sheet cell.
+ * @param {number} x Source column.
+ * @param {number} y Source row.
+ * @param {number} sourceWidth Source width.
+ * @param {number} sourceHeight Source height.
+ * @param {number} cell Cell edge.
+ * @returns {{x:number,y:number}} Cell-local pixel.
+ */
+function canvasToCell(x, y, sourceWidth, sourceHeight, cell) {
+  return {
+    x: (x * cell) / Math.max(1, sourceWidth),
+    y: (y * cell) / Math.max(1, sourceHeight),
+  };
+}
+
+/**
+ * Maps the foot origin onto a painted cell pixel.
+ * @param {number} sourceWidth Source width.
+ * @param {number} sourceHeight Source height.
+ * @param {number} cell Cell edge.
+ * @param {string} [anchorMode] Animation anchor.
+ * @returns {{x:number,y:number}} Clamped cell-local pixel.
+ */
+function paintedOriginCell(sourceWidth, sourceHeight, cell, anchorMode) {
+  const raw = canvasToCell(
+    canvasAnchor(sourceWidth, sourceHeight, anchorMode).x,
+    canvasAnchor(sourceWidth, sourceHeight, anchorMode).y,
+    sourceWidth,
+    sourceHeight,
+    cell,
+  );
+  return {
+    x: Math.max(0, Math.min(cell - 1, Math.round(raw.x))),
+    y: Math.max(0, Math.min(cell - 1, Math.round(raw.y))),
+  };
+}
+
+/**
+ * Chooses a readable group-grid step in source units.
+ * @param {number} cell Cell edge.
+ * @param {number} sourceWidth Source width.
+ * @returns {number} Step.
+ */
+function groupGridStep(cell, sourceWidth) {
+  const sourcePerPixel = Math.max(1, sourceWidth) / Math.max(1, cell);
+  const raw = Math.max(1, (cell / 5) * sourcePerPixel);
+  const base = 10 ** Math.floor(Math.log10(raw));
+  for (const multiplier of [1, 2, 5, 10]) {
+    const step = base * multiplier;
+    if (step >= raw) return step;
+  }
+  return base * 10;
 }
 
 /**
@@ -162,6 +310,9 @@ function measureFrame(rgba, width, height) {
  * @returns {void}
  */
 function writePixel(rgba, width, x, y, r, g, b, a) {
+  if (x < 0 || y < 0 || x >= width) return;
+  const height = rgba.length / (width * 4);
+  if (y >= height) return;
   const offset = (y * width + x) * 4;
   rgba[offset] = r;
   rgba[offset + 1] = g;
@@ -170,9 +321,280 @@ function writePixel(rgba, width, x, y, r, g, b, a) {
 }
 
 /**
+ * Fills a rectangle clipped to a cell.
+ * @param {Uint8ClampedArray} rgba Destination.
+ * @param {number} width Sheet width.
+ * @param {number} left Inclusive left.
+ * @param {number} top Inclusive top.
+ * @param {number} right Exclusive right.
+ * @param {number} bottom Exclusive bottom.
+ * @param {readonly number[]} color RGBA color.
+ * @param {{x:number,y:number,size:number}} clip Cell clip.
+ * @returns {void}
+ */
+function fillRect(rgba, width, left, top, right, bottom, color, clip) {
+  const minX = Math.max(clip.x, left);
+  const minY = Math.max(clip.y, top);
+  const maxX = Math.min(clip.x + clip.size, right);
+  const maxY = Math.min(clip.y + clip.size, bottom);
+  for (let y = minY; y < maxY; y += 1) {
+    for (let x = minX; x < maxX; x += 1)
+      writePixel(rgba, width, x, y, color[0], color[1], color[2], color[3]);
+  }
+}
+
+/**
+ * Paints a 0-based index badge into the top-left of one cell.
+ * @param {Uint8ClampedArray} rgba Destination.
+ * @param {number} width Sheet width.
+ * @param {number} originX Cell left.
+ * @param {number} originY Cell top.
+ * @param {number} cell Cell edge.
+ * @param {number} value Absolute frame index.
+ * @returns {void}
+ */
+function drawIndexBadge(rgba, width, originX, originY, cell, value) {
+  const scale = Math.max(1, Math.floor(cell / 40));
+  const digits = String(Math.max(0, Math.floor(Number(value) || 0)));
+  const glyphWidth = 3 * scale;
+  const glyphHeight = 5 * scale;
+  const gap = scale;
+  const plateWidth = INDEX_BADGE.pad * 2 + digits.length * glyphWidth + Math.max(0, digits.length - 1) * gap;
+  const plateHeight = INDEX_BADGE.pad * 2 + glyphHeight;
+  const plateX = originX + INDEX_BADGE.inset;
+  const plateY = originY + INDEX_BADGE.inset;
+  const clip = { x: originX, y: originY, size: cell };
+  fillRect(rgba, width, plateX, plateY, plateX + plateWidth, plateY + plateHeight, INDEX_BADGE.plate, clip);
+  let cursorX = plateX + INDEX_BADGE.pad;
+  const glyphY = plateY + INDEX_BADGE.pad;
+  for (const character of digits) {
+    const glyph = DIGIT_GLYPHS[Number(character)] || DIGIT_GLYPHS[0];
+    for (let row = 0; row < glyph.length; row += 1) {
+      for (let column = 0; column < glyph[row].length; column += 1) {
+        if (glyph[row][column] !== "1") continue;
+        fillRect(
+          rgba,
+          width,
+          cursorX + column * scale,
+          glyphY + row * scale,
+          cursorX + (column + 1) * scale,
+          glyphY + (row + 1) * scale,
+          INDEX_BADGE.ink,
+          clip,
+        );
+      }
+    }
+    cursorX += glyphWidth + gap;
+  }
+}
+
+/**
+ * Projects opaque pixels onto their longest axis and names the thin end as the tip.
+ * @param {Uint8ClampedArray|Uint8Array} rgba Pixels.
+ * @param {number} width Width.
+ * @param {number} height Height.
+ * @param {{t?:number}} [options] Grip fraction from pommel (0) to tip (1).
+ * @returns {object} Axis, fractions, and the requested grip.
+ */
+function measureLongAxis(rgba, width, height, options = {}) {
+  const points = [];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (rgba[(y * width + x) * 4 + 3] < 16) continue;
+      points.push({ x, y });
+    }
+  }
+  if (points.length < 8) {
+    throw new Error("Image has too few opaque pixels to measure a weapon axis.");
+  }
+  const meanX = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+  const meanY = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const point of points) {
+    if (point.x < minX) minX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y > maxY) maxY = point.y;
+  }
+  const extentX = maxX - minX;
+  const extentY = maxY - minY;
+  let axisX;
+  let axisY;
+  if (extentY >= extentX * 1.15) {
+    axisX = 0;
+    axisY = 1;
+  } else if (extentX >= extentY * 1.15) {
+    axisX = 1;
+    axisY = 0;
+  } else {
+    let xx = 0;
+    let xy = 0;
+    let yy = 0;
+    for (const point of points) {
+      const dx = point.x - meanX;
+      const dy = point.y - meanY;
+      xx += dx * dx;
+      xy += dx * dy;
+      yy += dy * dy;
+    }
+    const trace = xx + yy;
+    const det = xx * yy - xy * xy;
+    const eigenvalue = trace / 2 + Math.sqrt(Math.max(0, (trace / 2) ** 2 - det));
+    axisX = xy === 0 && yy >= xx ? 0 : eigenvalue - yy;
+    axisY = xy === 0 && yy >= xx ? 1 : xy;
+    if (xy === 0 && xx >= yy) {
+      axisX = 1;
+      axisY = 0;
+    }
+  }
+  const axisLength = Math.max(0.0001, Math.hypot(axisX, axisY));
+  axisX /= axisLength;
+  axisY /= axisLength;
+  let minProj = Infinity;
+  let maxProj = -Infinity;
+  for (const point of points) {
+    const projection = (point.x - meanX) * axisX + (point.y - meanY) * axisY;
+    if (projection < minProj) minProj = projection;
+    if (projection > maxProj) maxProj = projection;
+  }
+  const minEnd = { x: meanX + minProj * axisX, y: meanY + minProj * axisY };
+  const maxEnd = { x: meanX + maxProj * axisX, y: meanY + maxProj * axisY };
+  /**
+   * Mean width in a window around one end.
+   * @param {{x:number,y:number}} end Axis end.
+   * @returns {number} Mean perpendicular spread.
+   */
+  function endWidth(end) {
+    const window = Math.max(2, Math.hypot(maxEnd.x - minEnd.x, maxEnd.y - minEnd.y) * 0.18);
+    let count = 0;
+    let spread = 0;
+    for (const point of points) {
+      if (Math.hypot(point.x - end.x, point.y - end.y) > window) continue;
+      spread += Math.abs((point.x - end.x) * -axisY + (point.y - end.y) * axisX);
+      count += 1;
+    }
+    return count ? spread / count : 0;
+  }
+  const minIsTip = endWidth(minEnd) <= endWidth(maxEnd);
+  const tip = minIsTip ? minEnd : maxEnd;
+  const pommel = minIsTip ? maxEnd : minEnd;
+  /**
+   * Interpolates along the pommel→tip axis.
+   * @param {number} t Fraction from pommel.
+   * @returns {{x:number,y:number}} Pixel.
+   */
+  function along(t) {
+    const phase = Math.min(1, Math.max(0, Number(t) || 0));
+    return {
+      x: pommel.x + (tip.x - pommel.x) * phase,
+      y: pommel.y + (tip.y - pommel.y) * phase,
+    };
+  }
+  const gripT = parseGripT(options.t);
+  if (!Number.isFinite(gripT) || gripT < 0 || gripT > 1) {
+    throw new Error("t must be a number between 0 and 1.");
+  }
+  const at = along(gripT);
+  const fractions = {};
+  for (const fraction of HANDLE_FRACTIONS) {
+    fractions[fraction === 2 / 3 ? "2/3" : String(fraction)] = along(fraction);
+  }
+  return {
+    width,
+    height,
+    center: { x: width / 2, y: height / 2 },
+    pommel: { x: pommel.x, y: pommel.y },
+    tip: { x: tip.x, y: tip.y },
+    length: Math.hypot(tip.x - pommel.x, tip.y - pommel.y),
+    direction: {
+      x: (tip.x - pommel.x) / Math.max(0.0001, Math.hypot(tip.x - pommel.x, tip.y - pommel.y)),
+      y: (tip.y - pommel.y) / Math.max(0.0001, Math.hypot(tip.x - pommel.x, tip.y - pommel.y)),
+    },
+    t: gripT,
+    at,
+    localFromCenter: { x: at.x - width / 2, y: at.y - height / 2 },
+    fractions,
+  };
+}
+
+/**
+ * Paints workbench-style group axes into one sheet cell.
+ * @param {Uint8ClampedArray} rgba Destination.
+ * @param {number} width Sheet width.
+ * @param {number} originX Cell left.
+ * @param {number} originY Cell top.
+ * @param {number} cell Cell edge.
+ * @param {number} sourceWidth Source width.
+ * @param {number} sourceHeight Source height.
+ * @param {string} anchorMode Animation anchor.
+ * @returns {void}
+ */
+function drawGroupGrid(rgba, width, originX, originY, cell, sourceWidth, sourceHeight, anchorMode) {
+  if (cell < GROUP_GRID_MIN_CELL) return;
+  const clip = { x: originX, y: originY, size: cell };
+  const step = groupGridStep(cell, sourceWidth);
+  const groupOrigin = canvasToCell(
+    canvasAnchor(sourceWidth, sourceHeight, anchorMode).x,
+    canvasAnchor(sourceWidth, sourceHeight, anchorMode).y,
+    sourceWidth,
+    sourceHeight,
+    cell,
+  );
+  const axisX = originX + Math.max(0, Math.min(cell - 1, Math.round(groupOrigin.x)));
+  const axisY = originY + Math.max(0, Math.min(cell - 1, Math.round(groupOrigin.y)));
+  const reachX = Math.max(sourceWidth, sourceHeight);
+  for (let group = -reachX; group <= reachX; group += step) {
+    if (group === 0) continue;
+    const canvas = groupToCanvas(group, 0, sourceWidth, sourceHeight, anchorMode);
+    const cellPoint = canvasToCell(canvas.x, canvas.y, sourceWidth, sourceHeight, cell);
+    const x = originX + Math.round(cellPoint.x);
+    if (x < originX || x >= originX + cell) continue;
+    fillRect(rgba, width, x, originY, x + 1, originY + cell, GROUP_GRID.line, clip);
+  }
+  for (let group = -reachX; group <= reachX; group += step) {
+    if (group === 0) continue;
+    const canvas = groupToCanvas(0, group, sourceWidth, sourceHeight, anchorMode);
+    const cellPoint = canvasToCell(canvas.x, canvas.y, sourceWidth, sourceHeight, cell);
+    const y = originY + Math.round(cellPoint.y);
+    if (y < originY || y >= originY + cell) continue;
+    fillRect(rgba, width, originX, y, originX + cell, y + 1, GROUP_GRID.line, clip);
+  }
+  fillRect(rgba, width, axisX, originY, axisX + 1, originY + cell, GROUP_GRID.axis, clip);
+  fillRect(rgba, width, originX, axisY, originX + cell, axisY + 1, GROUP_GRID.axis, clip);
+  writePixel(
+    rgba,
+    width,
+    axisX,
+    axisY,
+    GROUP_GRID.originInk[0],
+    GROUP_GRID.originInk[1],
+    GROUP_GRID.originInk[2],
+    GROUP_GRID.originInk[3],
+  );
+}
+
+function drawMarkBorder(rgba, width, originX, originY, cell) {
+  const thickness = Math.max(1, Math.min(MARK_BORDER.width, Math.floor(cell / 4)));
+  const color = MARK_BORDER.color;
+  for (let t = 0; t < thickness; t += 1) {
+    for (let x = 0; x < cell; x += 1) {
+      writePixel(rgba, width, originX + x, originY + t, color[0], color[1], color[2], color[3]);
+      writePixel(rgba, width, originX + x, originY + cell - 1 - t, color[0], color[1], color[2], color[3]);
+    }
+    for (let y = 0; y < cell; y += 1) {
+      writePixel(rgba, width, originX + t, originY + y, color[0], color[1], color[2], color[3]);
+      writePixel(rgba, width, originX + cell - 1 - t, originY + y, color[0], color[1], color[2], color[3]);
+    }
+  }
+}
+
+/**
  * Renders a contact sheet that scales every source canvas into a shared cell.
  * @param {Array<{data:Uint8ClampedArray,width:number,height:number}>} frames Source frames.
- * @param {{cell?:number,pad?:number,columns?:number}} [options] Layout.
+ * @param {{cell?:number,pad?:number,columns?:number,startIndex?:number,markFrame?:number,labels?:boolean}} [options] Layout.
  * @returns {{data:Uint8ClampedArray,width:number,height:number}} Sheet.
  */
 function renderContactSheet(frames, options = {}) {
@@ -180,6 +602,11 @@ function renderContactSheet(frames, options = {}) {
   const cell = Math.max(8, Number(options.cell || 220));
   const pad = Math.max(1, Number(options.pad || 8));
   const columns = Math.max(1, Number(options.columns || Math.min(items.length || 1, 8)));
+  const startIndex = Math.max(0, Math.floor(Number(options.startIndex || 0)));
+  const labels = options.labels !== false;
+  const grid = options.grid !== false;
+  const anchorMode = String(options.anchorMode || "canvas_bottom_center");
+  const markFrame = options.markFrame === undefined ? startIndex : Number(options.markFrame);
   const rows = Math.max(1, Math.ceil((items.length || 1) / columns));
   const width = columns * cell + (columns + 1) * pad;
   const height = rows * cell + (rows + 1) * pad;
@@ -192,6 +619,7 @@ function renderContactSheet(frames, options = {}) {
     const column = index % columns;
     const originX = pad + column * (cell + pad);
     const originY = pad + row * (cell + pad);
+    const absoluteIndex = startIndex + index;
     for (let y = 0; y < cell; y += 1) {
       for (let x = 0; x < cell; x += 1) {
         const checker = (Math.floor(x / 4) + Math.floor(y / 4)) % 2 === 0 ? 200 : 150;
@@ -213,6 +641,26 @@ function renderContactSheet(frames, options = {}) {
           255,
         );
       }
+    }
+    if (grid && frame?.width && frame?.height) {
+      drawGroupGrid(rgba, width, originX, originY, cell, frame.width, frame.height, anchorMode);
+    }
+    if (labels) drawIndexBadge(rgba, width, originX, originY, cell, absoluteIndex);
+    if (Number.isInteger(markFrame) && markFrame === absoluteIndex) {
+      drawMarkBorder(rgba, width, originX, originY, cell);
+    }
+    if (grid && frame?.width && frame?.height && cell >= GROUP_GRID_MIN_CELL) {
+      const origin = paintedOriginCell(frame.width, frame.height, cell, anchorMode);
+      writePixel(
+        rgba,
+        width,
+        originX + origin.x,
+        originY + origin.y,
+        GROUP_GRID.originInk[0],
+        GROUP_GRID.originInk[1],
+        GROUP_GRID.originInk[2],
+        GROUP_GRID.originInk[3],
+      );
     }
   });
   return { data: rgba, width, height };
@@ -249,12 +697,26 @@ function summarizeMetrics(frames) {
 }
 
 module.exports = {
+  DIGIT_GLYPHS,
+  GROUP_GRID,
+  GROUP_GRID_MIN_CELL,
+  HANDLE_FRACTIONS,
+  INDEX_BADGE,
+  MARK_BORDER,
+  canvasAnchor,
+  canvasToCell,
+  canvasToGroup,
   estimateVisualScales,
   findMotionWindow,
+  groupGridStep,
+  groupToCanvas,
   inclusiveRange,
   measureFrame,
   measureFrameFiles,
+  measureLongAxis,
   median,
+  paintedOriginCell,
+  parseGripT,
   renderContactSheet,
   summarizeMetrics,
 };

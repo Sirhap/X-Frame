@@ -23,13 +23,9 @@
   content: "PRO";
 }
 
-.activationManageLaunch {
-  min-width: 112px;
-  display: grid;
-  justify-items: start;
-  gap: 3px;
-  padding-block: 7px;
-  line-height: 1;
+.activationManageLaunch,
+.activationManageLaunch[hidden] {
+  display: none !important;
 }
 
 .administratorConsoleLink {

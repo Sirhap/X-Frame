@@ -131,6 +131,16 @@
       const background = backgroundController?.normalizeColor
         ? backgroundController.normalizeColor(estimated)
         : { ...estimated, a: 255 };
+      const smartDefaults =
+        (typeof module === "object" && module.exports
+          ? require("./smart_cutout_defaults")
+          : root?.XSXBSmartCutoutDefaults) || {};
+      if (typeof smartDefaults.overlaySmartCutoutParameters === "function") {
+        item.processingParameters = smartDefaults.overlaySmartCutoutParameters(
+          item.processingParameters,
+          background,
+        );
+      }
       item.processingParameters.backgroundColor = backgroundHex(background);
       item.backgroundSamples = [background];
       item.seedPoints = [];

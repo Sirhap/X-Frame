@@ -306,6 +306,45 @@ animations = [{
     );
   },
 
+  async xsxb_find_duplicates(fixture) {
+    const directory = path.join(fixture.root, "dup-seq");
+    const width = 8;
+    const height = 8;
+    const colors = [
+      [255, 0, 0, 255],
+      [255, 0, 0, 255],
+      [0, 255, 0, 255],
+      [0, 255, 0, 255],
+      [0, 0, 255, 255],
+    ];
+    fs.mkdirSync(directory, { recursive: true });
+    colors.forEach((color, index) => {
+      const rgba = new Uint8ClampedArray(width * height * 4);
+      for (let offset = 0; offset < rgba.length; offset += 4) rgba.set(color, offset);
+      fs.writeFileSync(
+        path.join(directory, `${String(index + 1).padStart(2, "0")}.png`),
+        encodePngRgba(rgba, width, height),
+      );
+    });
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "holds",
+    });
+    const found = await fixture.service.call("xsxb_find_duplicates", {
+      animation_id: "holds",
+      sample_size: 8,
+    });
+    if (found.applied !== false || found.drop.join(",") !== "1,3" || found.order.join(",") !== "0,2,4") {
+      return verdict("xsxb_find_duplicates", "fail", JSON.stringify(found));
+    }
+    return verdict(
+      "xsxb_find_duplicates",
+      "ready",
+      `drop=${found.drop.join(",")} order=${found.order.join(",")}`,
+    );
+  },
+
   async xsxb_find_motion(fixture) {
     const directory = path.join(fixture.root, "motion-seq");
     fs.mkdirSync(directory, { recursive: true });
@@ -752,19 +791,52 @@ animations = [{
     });
     const exported = await fixture.service.call("xsxb_export_sheet", {
       animation_id: "walk",
-      cell: 16,
+      cell: 32,
       pad: 2,
       columns: 2,
     });
     if (
       exported.frameCount !== 2 ||
       exported.columns !== 2 ||
+      exported.grid.enabled !== true ||
+      exported.grid.anchorMode !== "canvas_bottom_center" ||
       !exported.outputPath.endsWith("_sheet.png") ||
       !fs.existsSync(exported.outputPath)
     ) {
       return verdict("xsxb_export_sheet", "fail", JSON.stringify(exported));
     }
     return verdict("xsxb_export_sheet", "ready", `wrote ${exported.outputPath.split("/").pop()}`);
+  },
+
+  async xsxb_measure_image(fixture) {
+    const width = 16;
+    const height = 32;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 2; y <= 28; y += 1) {
+      const taper = y < 10 ? 0 : y < 20 ? 1 : 2;
+      for (let x = 7 - taper; x <= 8 + taper; x += 1) {
+        rgba.set([180, 180, 190, 255], (y * width + x) * 4);
+      }
+    }
+    const filePath = path.join(fixture.root, "blade.png");
+    fs.writeFileSync(filePath, encodePngRgba(rgba, width, height));
+    const measured = await fixture.service.call("xsxb_measure_image", {
+      file_path: filePath,
+      t: 2 / 3,
+    });
+    if (
+      !(measured.tip.y < measured.pommel.y) ||
+      measured.t !== 2 / 3 ||
+      !measured.fractions["2/3"] ||
+      measured.localFromCenter.y !== measured.at.y - height / 2
+    ) {
+      return verdict("xsxb_measure_image", "fail", JSON.stringify(measured));
+    }
+    return verdict(
+      "xsxb_measure_image",
+      "ready",
+      `t=${measured.t} tipY=${measured.tip.y} pommelY=${measured.pommel.y}`,
+    );
   },
 };
 

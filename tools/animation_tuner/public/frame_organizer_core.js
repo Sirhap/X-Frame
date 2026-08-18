@@ -17,6 +17,7 @@
   }
 
   const REFERENCE_SAMPLE_SIZE = 256;
+  const ORGANIZER_SIMILARITY_THRESHOLD = Object.freeze({ min: 55, max: 100, fallback: 88 });
   const BACKGROUND_CORNER_SIZE = 16;
   const BACKGROUND_SATURATION = 0.15;
   const BACKGROUND_HUE_TOLERANCE = 15;
@@ -731,6 +732,7 @@
     matrixSimilarity,
     scoreLoopCandidates,
     signatureSimilarity,
+    ORGANIZER_SIMILARITY_THRESHOLD,
     REFERENCE_SAMPLE_SIZE,
   };
 });

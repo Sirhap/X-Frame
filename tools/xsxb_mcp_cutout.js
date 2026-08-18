@@ -4,12 +4,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
 const { parsePng, unfilterPng } = require("./attachment_sequence_analysis");
+const { NUMERIC_PARAMETER_LIMITS } = require("./animation_tuner/public/batch_cutout_session_core");
+const {
+  REGULAR_AUTO_BACKGROUND_PARAMETERS,
+  referenceChromaKeyFor,
+} = require("./animation_tuner/public/smart_cutout_defaults");
 const { applyProductCutout } = require("./animation_tuner/public/batch_cutout_core");
 const {
-  applySmartCutout,
   createSmartCutoutOptions,
   detectBackgroundColor,
 } = require("./animation_tuner/public/scatter_slice_smart_cutout");
+
+const REFERENCE_MODES = Object.freeze(["general", "blend", "chroma"]);
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const ALPHA_VISIBLE = 16;
@@ -205,17 +211,145 @@ function alreadyCutOut(rgba, width, height) {
 }
 
 /**
- * Builds tuner smart-cutout options, plus optional color protection.
+ * Converts a workbench camelCase slider key to the MCP snake_case argument.
+ * @param {string} name Workbench parameter key.
+ * @returns {string} MCP argument name.
+ */
+function toSnake(name) {
+  return name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+/**
+ * Reads a present argument that may arrive in camelCase or snake_case.
+ * @param {object} source Argument bag.
+ * @param {string} camel Workbench key.
+ * @returns {unknown} Raw value, or undefined when omitted.
+ */
+function readAlias(source, camel) {
+  const snake = toSnake(camel);
+  if (Object.prototype.hasOwnProperty.call(source, camel) && source[camel] !== "") return source[camel];
+  if (Object.prototype.hasOwnProperty.call(source, snake) && source[snake] !== "") return source[snake];
+  return undefined;
+}
+
+/**
+ * Parses an optional boolean the same way MCP handlers accept "true"/"1".
+ * @param {unknown} value Raw argument.
+ * @returns {boolean|undefined} Parsed flag, or undefined when omitted.
+ */
+function optionalBoolean(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (value === true || value === 1 || value === "1") return true;
+  if (value === false || value === 0 || value === "0") return false;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "yes") return true;
+    if (normalized === "false" || normalized === "no") return false;
+  }
+  return undefined;
+}
+
+/**
+ * Clamps one workbench slider to the tuner range.
+ * @param {string} key Workbench parameter key.
+ * @param {unknown} value Raw number.
+ * @returns {number|undefined} Bounded value.
+ */
+function clampSlider(key, value) {
+  const limits = NUMERIC_PARAMETER_LIMITS[key];
+  const numeric = Number(value);
+  if (!limits || !Number.isFinite(numeric)) return undefined;
+  return Math.max(limits.minimum, Math.min(limits.maximum, numeric));
+}
+
+/**
+ * Builds xsxb_cutout schema fields from the tuner slider table.
+ * @returns {object} JSON schema properties.
+ */
+function workbenchSliderSchemaProperties() {
+  const properties = {};
+  for (const [key, limits] of Object.entries(NUMERIC_PARAMETER_LIMITS)) {
+    properties[toSnake(key)] = {
+      type: "number",
+      minimum: limits.minimum,
+      maximum: limits.maximum,
+      description: `Same as the tuner ${key} slider. Omit to keep the shared smart-cutout profile.`,
+    };
+  }
+  properties.connected = {
+    type: "boolean",
+    description:
+      "Same as the tuner edge-only checkbox. Omit for the smart-cutout default (off; enclosed near-black plate pixels are keyed).",
+  };
+  properties.perceptual = {
+    type: "boolean",
+    description: "Same as the tuner OKLab / YCbCr checkbox.",
+  };
+  properties.blend_mode = {
+    type: "string",
+    enum: [...REFERENCE_MODES],
+    default: REGULAR_AUTO_BACKGROUND_PARAMETERS.blendMode,
+    description: "Same as the tuner blend-mode select.",
+  };
+  properties.despill_mode = {
+    type: "string",
+    enum: [...REFERENCE_MODES],
+    default: REGULAR_AUTO_BACKGROUND_PARAMETERS.despillMode,
+    description: "Same as the tuner despill-mode select.",
+  };
+  return properties;
+}
+
+/**
+ * Collects workbench slider overrides from MCP or camelCase callers.
+ * @param {object} [args] Tool arguments.
+ * @returns {object} Cutout extras.
+ */
+function collectWorkbenchExtras(args = {}) {
+  const extras = {};
+  const keyColor = args.key_color || args.color || args.keyColor;
+  if (keyColor) extras.keyColor = keyColor;
+  const protectedColors = args.protected_colors ?? args.protectedColors;
+  if (protectedColors != null && protectedColors !== "") extras.protectedColors = protectedColors;
+  for (const key of Object.keys(NUMERIC_PARAMETER_LIMITS)) {
+    const raw = readAlias(args, key);
+    if (raw === undefined) continue;
+    const clamped = clampSlider(key, raw);
+    if (clamped !== undefined) extras[key] = clamped;
+  }
+  const connected = optionalBoolean(args.connected);
+  if (connected !== undefined) extras.connected = connected;
+  const perceptual = optionalBoolean(args.perceptual);
+  if (perceptual !== undefined) extras.perceptual = perceptual;
+  const blendMode = args.blend_mode ?? args.blendMode;
+  if (REFERENCE_MODES.includes(String(blendMode || ""))) extras.blendMode = String(blendMode);
+  const despillMode = args.despill_mode ?? args.despillMode;
+  if (REFERENCE_MODES.includes(String(despillMode || ""))) extras.despillMode = String(despillMode);
+  return extras;
+}
+
+/**
+ * Builds tuner smart-cutout options, plus optional workbench slider overrides.
  * @param {{r:number,g:number,b:number}} backgroundColor Background sample.
- * @param {{protectedColors?:unknown,protectionTolerance?:number}} [extras] Optional protect colors.
+ * @param {object} [extras] Optional protect colors and slider overrides.
  * @returns {object} Product cutout options.
  */
 function buildCutoutOptions(backgroundColor, extras = {}) {
   const options = createSmartCutoutOptions(backgroundColor);
-  const protectedColors = parseProtectedColors(extras.protectedColors);
-  if (protectedColors.length) {
+  const overrides = collectWorkbenchExtras(extras);
+  for (const key of Object.keys(NUMERIC_PARAMETER_LIMITS)) {
+    if (overrides[key] !== undefined) options[key] = overrides[key];
+  }
+  if (overrides.connected !== undefined) options.connected = overrides.connected;
+  if (overrides.perceptual !== undefined) {
+    options.perceptual = overrides.perceptual;
+    options.referenceChromaKey = referenceChromaKeyFor(backgroundColor, overrides.perceptual);
+  }
+  if (overrides.blendMode) options.blendMode = overrides.blendMode;
+  if (overrides.despillMode) options.despillMode = overrides.despillMode;
+  const protectedColors = parseProtectedColors(overrides.protectedColors ?? extras.protectedColors);
+  if (protectedColors.length && overrides.protectionTolerance !== 0) {
     options.protectedColors = protectedColors;
-    options.protectionTolerance = Math.max(0, Number(extras.protectionTolerance || 8));
   }
   return options;
 }
@@ -226,15 +360,11 @@ function buildCutoutOptions(backgroundColor, extras = {}) {
  * @param {number} width Image width.
  * @param {number} height Image height.
  * @param {{r:number,g:number,b:number}} backgroundColor Shared background.
- * @param {object} [extras] Optional protect colors.
+ * @param {object} [extras] Optional protect colors and slider overrides.
  * @returns {Uint8ClampedArray} Cutout pixels.
  */
 function applyProtectedSmartCutout(rgba, width, height, backgroundColor, extras = {}) {
-  const options = buildCutoutOptions(backgroundColor, extras);
-  if (!options.protectedColors?.length) {
-    return applySmartCutout(rgba, width, height, backgroundColor);
-  }
-  return applyProductCutout(rgba, width, height, options, []).data;
+  return applyProductCutout(rgba, width, height, buildCutoutOptions(backgroundColor, extras), []).data;
 }
 
 /**
@@ -484,6 +614,7 @@ function cutoutPngFile(inputPath, outputPath, options = {}) {
 
 module.exports = {
   alreadyCutOut,
+  collectWorkbenchExtras,
   cutoutFrameFiles,
   cutoutPngFile,
   decodePngRgba,
@@ -492,4 +623,5 @@ module.exports = {
   parseProtectedColors,
   placeFramesOnCanvas,
   subjectAnchor,
+  workbenchSliderSchemaProperties,
 };

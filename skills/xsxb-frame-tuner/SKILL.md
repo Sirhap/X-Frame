@@ -117,7 +117,19 @@ Do not use MCP for this local attachment workflow. The Core/CLI owns determinist
 
 ## MCP Feedback
 
-When using XSXB MCP: if a tool errors, a needed capability is missing, or you must leave MCP to finish the request, tell the user and raise it to the `XSXB-Frame-Tuner` project. Include tool name, arguments, receipt or error, expected result, and actual result. Do not silently work around a product gap as if the MCP already covers it. Estimate standing scales with `xsxb_estimate_visual`, override with `xsxb_set_visual_transform` if needed, bake group/frame `visual_size` with `xsxb_cutout apply_visual`, and preview with `xsxb_export_gif` or `xsxb_export_sheet`. Trim one-shot holds with `xsxb_find_motion`. Do not rematch or bake frames outside MCP.
+When using XSXB MCP: if a tool errors, a needed capability is missing, or you must leave MCP to finish the request, tell the user and raise it to the `XSXB-Frame-Tuner` project. Include tool name, arguments, receipt or error, expected result, and actual result. Do not silently work around a product gap as if the MCP already covers it.
+
+Video-to-loop playbook (simple clip → one looping animation):
+
+1. `xsxb_import_animation` / `xsxb_import_video` the source clip.
+2. `xsxb_find_duplicates` (`threshold` / `duplicate_ratio` is the organizer 重复比例 slider, 55–100, default 88). If the receipt has `autoAdjustedThreshold`, do not apply `order` unless you passed `auto_adjust`. Otherwise `xsxb_reorganize_frames` with the returned `order` to drop hold frames.
+3. `xsxb_cutout` (omit sliders for the shared smart profile; same workbench ranges). Can wait until just before sheet export.
+4. `xsxb_find_loop`. Export each candidate with `xsxb_export_sheet` `start_frame`/`end_frame`. Cells are labeled with absolute 0-based indexes and the tuner group-coordinate grid (foot origin `0,0`, body is negative y); `mark_frame` (defaults to the loop start) highlights one cell.
+5. Look at the sheets and pick the smoothest loop. Second pass: drop any labeled/marked cells that break the cycle via another `xsxb_reorganize_frames` `order`.
+6. Keep character scale consistent: pick one clip as the template, `xsxb_estimate_visual` `reference_animation_id` + `apply`, then `xsxb_cutout apply_visual` with a shared canvas.
+7. Finish with one `xsxb_export_gif` of the kept loop.
+
+Read group coordinates from `xsxb_export_sheet` (foot origin `0,0`, body is negative y). Measure a weapon PNG with `xsxb_measure_image` (`t=0.5` middle of pommel→tip, `t=2/3` or `"2/3"` two-thirds toward the tip); `localFromCenter` is the grip relative to the image center, so attachment offset = hand − `localFromCenter`. Estimate standing scales with `xsxb_estimate_visual`, override with `xsxb_set_visual_transform` if needed, bake group/frame `visual_size` with `xsxb_cutout apply_visual`, and preview with `xsxb_export_gif` or `xsxb_export_sheet`. `xsxb_cutout` sliders (`tolerance`, `feather`, `protected_colors`, …) match the tuner workbench; omit them for the shared smart-cutout profile. Trim one-shot holds with `xsxb_find_motion`. Do not rematch or bake frames outside MCP.
 
 ## Agent-Facing Commands
 

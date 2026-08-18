@@ -6,12 +6,19 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { createProjectStore } = require("../project_store");
-const { encodePngRgba } = require("../xsxb_mcp_cutout");
+const { decodePngRgba, encodePngRgba } = require("../xsxb_mcp_cutout");
 const { createXsxbMcpService } = require("../xsxb_mcp_service");
 const {
+  DIGIT_GLYPHS,
+  GROUP_GRID,
+  INDEX_BADGE,
+  MARK_BORDER,
+  canvasToGroup,
   estimateVisualScales,
   findMotionWindow,
+  groupToCanvas,
   measureFrame,
+  measureLongAxis,
   renderContactSheet,
 } = require("../xsxb_mcp_visual_qa");
 
@@ -101,6 +108,126 @@ test("renderContactSheet places every source frame into a shared cell grid", () 
   assert.equal(sheet.height, 8 + 4);
   assert.equal(sheet.data.length, sheet.width * sheet.height * 4);
   assert.ok(sheet.data.some((value, index) => index % 4 === 3 && value > 16));
+});
+
+/**
+ * Reads one RGBA pixel from a sheet.
+ * @param {{data:Uint8ClampedArray,width:number}} sheet Sheet buffer.
+ * @param {number} x Column.
+ * @param {number} y Row.
+ * @returns {number[]} RGBA.
+ */
+function pixelAt(sheet, x, y) {
+  const offset = (y * sheet.width + x) * 4;
+  return [sheet.data[offset], sheet.data[offset + 1], sheet.data[offset + 2], sheet.data[offset + 3]];
+}
+
+test("renderContactSheet paints absolute frame indexes from the shared glyph table", () => {
+  const sheet = renderContactSheet([bodyFrame(16, 4, 8), bodyFrame(16, 4, 8)], {
+    cell: 32,
+    pad: 4,
+    columns: 2,
+    startIndex: 7,
+  });
+  const originX = 4 + INDEX_BADGE.inset + INDEX_BADGE.pad;
+  const originY = 4 + INDEX_BADGE.inset + INDEX_BADGE.pad;
+  const glyph = DIGIT_GLYPHS[7];
+  assert.equal(glyph.length, 5);
+  for (let row = 0; row < glyph.length; row += 1) {
+    for (let column = 0; column < glyph[row].length; column += 1) {
+      const expected = glyph[row][column] === "1" ? INDEX_BADGE.ink : INDEX_BADGE.plate;
+      assert.deepEqual(pixelAt(sheet, originX + column, originY + row), expected);
+    }
+  }
+});
+
+test("canvas_bottom_center maps the canvas foot to group origin", () => {
+  assert.deepEqual(canvasToGroup(8, 16, 16, 16, "canvas_bottom_center"), { x: 0, y: 0 });
+  assert.deepEqual(canvasToGroup(10, 10, 16, 16, "canvas_bottom_center"), { x: 2, y: -6 });
+  assert.deepEqual(groupToCanvas(0, -8, 16, 16, "canvas_bottom_center"), { x: 8, y: 8 });
+});
+
+test("renderContactSheet paints the group origin on the shared axis color", () => {
+  const sheet = renderContactSheet([bodyFrame(16, 4, 8)], {
+    cell: 32,
+    pad: 4,
+    columns: 1,
+    grid: true,
+    labels: false,
+    markFrame: -1,
+  });
+  const originX = 4 + 16;
+  const originY = 4 + 31;
+  assert.deepEqual(pixelAt(sheet, originX, originY), GROUP_GRID.originInk);
+  assert.deepEqual(pixelAt(sheet, originX, 4 + 16), GROUP_GRID.axis, "vertical axis through the body");
+});
+
+test("measureLongAxis reports pommel, tip, and handle fractions on a tapered blade", () => {
+  const width = 16;
+  const height = 32;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 2; y <= 28; y += 1) {
+    const taper = y < 10 ? 0 : y < 20 ? 1 : 2;
+    for (let x = 7 - taper; x <= 8 + taper; x += 1) {
+      setPixel(rgba, width, x, y, [180, 180, 190, 255]);
+    }
+  }
+  const measured = measureLongAxis(rgba, width, height, { t: 2 / 3 });
+  assert.ok(measured.tip.y < measured.pommel.y, "thinner end is the tip");
+  assert.equal(measured.fractions["0"].y, measured.pommel.y);
+  assert.equal(measured.fractions["1"].y, measured.tip.y);
+  const midY = (measured.pommel.y + measured.tip.y) / 2;
+  assert.ok(Math.abs(measured.fractions["0.5"].y - midY) < 1.5);
+  const twoThirdsY = measured.pommel.y + (measured.tip.y - measured.pommel.y) * (2 / 3);
+  assert.ok(Math.abs(measured.at.y - twoThirdsY) < 1.5);
+  assert.ok(Math.abs(measured.at.x - 7.5) < 1.5, "grip stays on the shaft centerline");
+  assert.deepEqual(measured.localFromCenter, {
+    x: measured.at.x - width / 2,
+    y: measured.at.y - height / 2,
+  });
+});
+
+test("measureLongAxis keeps grips on the centerline of a wide pommel", () => {
+  const width = 32;
+  const height = 48;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 2; y <= 44; y += 1) {
+    const half = y < 12 ? 1 : y < 32 ? 2 : 10;
+    for (let x = 16 - half; x <= 15 + half; x += 1) {
+      setPixel(rgba, width, x, y, [180, 180, 190, 255]);
+    }
+  }
+  const measured = measureLongAxis(rgba, width, height, { t: 0.5 });
+  assert.ok(measured.tip.y < measured.pommel.y, "thinner end is the tip");
+  assert.ok(Math.abs(measured.at.x - 15.5) < 2, "wide pommel must not pull the mid grip to a corner");
+});
+
+test("renderContactSheet keeps the foot origin on the marked cell", () => {
+  const sheet = renderContactSheet([bodyFrame(16, 4, 8)], {
+    cell: 32,
+    pad: 4,
+    columns: 1,
+    grid: true,
+    labels: false,
+    markFrame: 0,
+  });
+  const originX = 4 + 16;
+  const originY = 4 + 31;
+  assert.deepEqual(pixelAt(sheet, originX, originY), GROUP_GRID.originInk);
+});
+
+test("renderContactSheet marks one cell with the shared highlight border", () => {
+  const sheet = renderContactSheet([bodyFrame(16, 4, 8), bodyFrame(16, 4, 8)], {
+    cell: 32,
+    pad: 4,
+    columns: 2,
+    startIndex: 0,
+    markFrame: 1,
+  });
+  const markedX = 4 + 32 + 4;
+  const markedY = 4;
+  assert.deepEqual(pixelAt(sheet, markedX, markedY), MARK_BORDER.color);
+  assert.notDeepEqual(pixelAt(sheet, 4, 4), MARK_BORDER.color);
 });
 
 /**
@@ -227,7 +354,52 @@ test("export_sheet writes a PNG inside the workspace and rejects escapes", async
     });
     assert.equal(exported.frameCount, 2);
     assert.equal(exported.width, 2 * 16 + 3 * 2);
+    assert.deepEqual(exported.indexes, [0, 1]);
+    assert.equal(exported.markFrame, 0);
+    assert.equal(exported.grid.enabled, false, "cell 16 is below the paint threshold");
     assert.ok(fs.existsSync(exported.outputPath));
+    const marked = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      cell: 32,
+      pad: 4,
+      columns: 2,
+      mark_frame: 1,
+    });
+    assert.equal(marked.grid.enabled, true);
+    assert.equal(marked.grid.anchorMode, "canvas_bottom_center");
+    assert.equal(marked.grid.ySign, "down");
+    assert.ok(marked.grid.originCell.y < marked.cell);
+    assert.ok(marked.grid.originCell.y >= 0);
+    assert.equal(marked.markFrame, 1);
+    const markedSheet = decodePngRgba(marked.outputPath);
+    const markedX = 4 + 32 + 4;
+    assert.deepEqual(
+      [
+        markedSheet.data[(4 * markedSheet.width + markedX) * 4],
+        markedSheet.data[(4 * markedSheet.width + markedX) * 4 + 1],
+        markedSheet.data[(4 * markedSheet.width + markedX) * 4 + 2],
+        markedSheet.data[(4 * markedSheet.width + markedX) * 4 + 3],
+      ],
+      MARK_BORDER.color,
+    );
+    const foot = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      cell: 32,
+      pad: 4,
+      columns: 1,
+      mark_frame: 0,
+    });
+    const footSheet = decodePngRgba(foot.outputPath);
+    const originOffset = ((4 + 31) * footSheet.width + (4 + 16)) * 4;
+    assert.deepEqual(
+      [
+        footSheet.data[originOffset],
+        footSheet.data[originOffset + 1],
+        footSheet.data[originOffset + 2],
+        footSheet.data[originOffset + 3],
+      ],
+      GROUP_GRID.originInk,
+    );
     await assert.rejects(
       current.service.call("xsxb_export_sheet", {
         animation_id: "walk",
@@ -242,6 +414,34 @@ test("export_sheet writes a PNG inside the workspace and rejects escapes", async
       }),
       /must end with \.png/,
     );
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("xsxb_measure_image returns pommel-to-tip handle fractions", async () => {
+  const current = serviceFixture();
+  try {
+    const width = 16;
+    const height = 32;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 2; y <= 28; y += 1) {
+      const taper = y < 10 ? 0 : y < 20 ? 1 : 2;
+      for (let x = 7 - taper; x <= 8 + taper; x += 1) {
+        setPixel(rgba, width, x, y, [180, 180, 190, 255]);
+      }
+    }
+    const filePath = path.join(current.root, "blade.png");
+    fs.writeFileSync(filePath, encodePngRgba(rgba, width, height));
+    const measured = await current.service.call("xsxb_measure_image", {
+      file_path: filePath,
+      t: "2/3",
+    });
+    assert.ok(measured.tip.y < measured.pommel.y);
+    assert.equal(measured.t, 2 / 3);
+    assert.ok(measured.fractions["2/3"]);
+    assert.ok(Math.abs(measured.at.x - 7.5) < 1.5);
+    assert.equal(measured.localFromCenter.x, measured.at.x - width / 2);
   } finally {
     current.cleanup();
   }

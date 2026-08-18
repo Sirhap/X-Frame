@@ -5,6 +5,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const { NUMERIC_PARAMETER_LIMITS } = require("../animation_tuner/public/batch_cutout_session_core");
+const { toolDefinitions } = require("../xsxb_mcp_service");
 const {
   alreadyCutOut,
   cutoutFrameFiles,
@@ -13,6 +15,15 @@ const {
   placeFramesOnCanvas,
   subjectAnchor,
 } = require("../xsxb_mcp_cutout");
+
+/**
+ * Converts a workbench camelCase slider key to the MCP snake_case argument.
+ * @param {string} name Workbench parameter key.
+ * @returns {string} MCP argument name.
+ */
+function toSnake(name) {
+  return name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
 
 const GREEN = [0, 255, 0, 255];
 const BODY = [210, 36, 42, 255];
@@ -165,7 +176,7 @@ function flatBackgroundFrame(background) {
  */
 function clearedPixels(rgba) {
   let cleared = 0;
-  for (let offset = 3; offset < rgba.length; offset += 4) if (rgba[offset] === 0) cleared += 1;
+  for (let offset = 3; offset < rgba.length; offset += 4) if (rgba[offset] <= 16) cleared += 1;
   return cleared;
 }
 
@@ -291,4 +302,89 @@ test("per-frame scales rematch different body heights to one standing size", () 
   assert.equal(tallPlaced.height, 6);
   assert.equal(shortPlaced.feetY, 15);
   assert.equal(tallPlaced.feetY, 15);
+});
+
+test("xsxb_cutout slider schema matches the tuner workbench ranges", () => {
+  const cutout = toolDefinitions().find((tool) => tool.name === "xsxb_cutout");
+  assert.ok(cutout, "xsxb_cutout is in the catalog");
+  for (const [key, limits] of Object.entries(NUMERIC_PARAMETER_LIMITS)) {
+    const snake = toSnake(key);
+    const property = cutout.inputSchema.properties[snake];
+    assert.ok(property, `${snake} is declared`);
+    assert.equal(property.minimum, limits.minimum, snake);
+    assert.equal(property.maximum, limits.maximum, snake);
+    assert.equal(
+      property.default,
+      undefined,
+      `${snake} has no advertised idle default so agents omit it for the smart profile`,
+    );
+  }
+  assert.equal(cutout.inputSchema.properties.connected?.type, "boolean");
+  assert.equal(cutout.inputSchema.properties.perceptual?.type, "boolean");
+  assert.deepEqual(cutout.inputSchema.properties.blend_mode?.enum, ["general", "blend", "chroma"]);
+  assert.deepEqual(cutout.inputSchema.properties.despill_mode?.enum, ["general", "blend", "chroma"]);
+});
+
+test("protection_tolerance 0 stays off like the tuner slider", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-protect0-"));
+  const framePath = path.join(folder, "frame.png");
+  try {
+    const width = 16;
+    const height = 16;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    const plate = [0, 177, 64, 255];
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const inside = x >= 4 && x < 12 && y >= 4 && y < 12;
+        setPixel(rgba, width, x, y, inside ? BODY : plate);
+      }
+    }
+    fs.writeFileSync(framePath, encodePngRgba(rgba, width, height));
+
+    const receipt = cutoutFrameFiles([framePath], {
+      keyColor: "#00b140",
+      protectedColors: ["#00b140"],
+      protectionTolerance: 0,
+    });
+
+    assert.equal(receipt.options.protectionTolerance, 0);
+    const cut = decodePngRgba(framePath);
+    assert.ok(cut.data[3] <= 16, "unprotected green plate is keyed");
+    assert.equal(cut.data[(6 * 16 + 6) * 4 + 3], 255, "the subject stays opaque");
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("perceptual false on a black plate does not re-enable the broken reference key", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-black-"));
+  const framePath = path.join(folder, "frame.png");
+  try {
+    const frame = flatBackgroundFrame([8, 7, 9]);
+    fs.writeFileSync(framePath, encodePngRgba(frame.data, frame.width, frame.height));
+    const receipt = cutoutFrameFiles([framePath], { keyColor: "#080709", perceptual: false });
+    assert.equal(receipt.options.referenceChromaKey, false);
+    const cut = decodePngRgba(framePath);
+    assert.ok(cut.data[3] <= 16, "black plate is still keyed");
+    assert.equal(cut.data[(6 * 16 + 6) * 4 + 3], 255, "the subject stays opaque");
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("workbench tolerance -1 turns the MCP cutout into a no-op", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-off-"));
+  const framePath = path.join(folder, "frame.png");
+  try {
+    const frame = flatBackgroundFrame([255, 255, 255]);
+    fs.writeFileSync(framePath, encodePngRgba(frame.data, frame.width, frame.height));
+
+    const receipt = cutoutFrameFiles([framePath], { keyColor: "#ffffff", tolerance: -1 });
+
+    assert.equal(receipt.options.tolerance, -1);
+    assert.equal(clearedPixels(decodePngRgba(framePath).data), 0, "the off-stop must leave every pixel");
+    assert.equal(decodePngRgba(framePath).data[(6 * 16 + 6) * 4 + 3], 255);
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
 });

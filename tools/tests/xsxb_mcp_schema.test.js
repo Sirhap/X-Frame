@@ -95,6 +95,11 @@ test("the leniency the handlers already implement is preserved", () => {
   assert.equal(validationError({ file_path: "/tmp/a.mp4", fps: undefined }), "");
 });
 
+test("number fields accept a simple a/b fraction", () => {
+  const schema = toolDefinitions().find((tool) => tool.name === "xsxb_measure_image").inputSchema;
+  validateToolArguments("xsxb_measure_image", schema, { file_path: "/tmp/blade.png", t: "2/3" });
+});
+
 test("a valid argument set passes", () => {
   assert.equal(
     validationError({

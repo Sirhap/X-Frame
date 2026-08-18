@@ -8,6 +8,8 @@
  */
 
 const path = require("node:path");
+const { ORGANIZER_SIMILARITY_THRESHOLD } = require("./animation_tuner/public/frame_organizer_core");
+const { workbenchSliderSchemaProperties } = require("./xsxb_mcp_cutout");
 
 const DEFAULT_PROFILE_ID = "mcp_imports";
 const MCP_TOOL_NAMES = Object.freeze([
@@ -17,6 +19,7 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_import_animation",
   "xsxb_get_animation",
   "xsxb_find_loop",
+  "xsxb_find_duplicates",
   "xsxb_find_motion",
   "xsxb_update_frame_boxes",
   "xsxb_estimate_boxes",
@@ -37,6 +40,7 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_cutout",
   "xsxb_export_gif",
   "xsxb_export_sheet",
+  "xsxb_measure_image",
   "xsxb_open_tuner",
 ]);
 
@@ -201,6 +205,56 @@ function toolDefinitions() {
             maximum: 1,
             default: 0.85,
             description: "Same Tuner seam threshold as the organizer loop search.",
+          },
+          sample_size: {
+            type: "integer",
+            minimum: 8,
+            maximum: 256,
+            default: 256,
+            description: "Square analysis sample. Matches the Tuner 256×256 reference size.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_find_duplicates",
+      description:
+        "Find near-duplicate hold frames with the same Tuner duplicate finder. Pass threshold or duplicate_ratio for the organizer 重复比例 slider; do not pass both unless they match. If autoAdjustedThreshold is set, do not apply order unless you passed auto_adjust. Query an imported animation, a PNG directory, or file_paths. Does not mutate frames; apply the keep-order with xsxb_reorganize_frames.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          directory: {
+            type: "string",
+            description: "Absolute PNG sequence directory. Overrides the imported animation when set.",
+          },
+          file_paths: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Absolute PNG paths in playback order. Overrides directory and the imported animation when set.",
+          },
+          threshold: {
+            type: "number",
+            minimum: ORGANIZER_SIMILARITY_THRESHOLD.min,
+            maximum: ORGANIZER_SIMILARITY_THRESHOLD.max,
+            default: ORGANIZER_SIMILARITY_THRESHOLD.fallback,
+            description: "Organizer 相似度阈值 / 重复比例 slider. Higher keeps more near-duplicates.",
+          },
+          duplicate_ratio: {
+            type: "number",
+            minimum: ORGANIZER_SIMILARITY_THRESHOLD.min,
+            maximum: ORGANIZER_SIMILARITY_THRESHOLD.max,
+            default: ORGANIZER_SIMILARITY_THRESHOLD.fallback,
+            description: "Alias of threshold. Same organizer 重复比例 slider.",
+          },
+          auto_adjust: {
+            type: "boolean",
+            default: false,
+            description:
+              "If true, apply the finder's lowered threshold when nothing matches the requested slider. Default keeps order unchanged and reports autoAdjustedThreshold / suggestedOrder.",
           },
           sample_size: {
             type: "integer",
@@ -585,7 +639,7 @@ function toolDefinitions() {
     {
       name: "xsxb_cutout",
       description:
-        "Run the tuner smart-cutout product path on every animation frame. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom. apply_visual rematches from group/frame visual_size instead of that shared scale. Character visual_size stays playback-only and is not baked.",
+        "Run the tuner smart-cutout product path on every animation frame. Slider names and ranges match the cutout workbench; omit them to keep the shared smart-cutout profile. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom. apply_visual rematches from group/frame visual_size instead of that shared scale. Character visual_size stays playback-only and is not baked.",
       inputSchema: {
         type: "object",
         properties: {
@@ -611,7 +665,7 @@ function toolDefinitions() {
             items: { type: "string" },
             description: "Optional #RRGGBB colors to keep, same as the tuner protect-color list.",
           },
-          protection_tolerance: { type: "number", minimum: 0, maximum: 100, default: 8 },
+          ...workbenchSliderSchemaProperties(),
           force: {
             type: "boolean",
             default: false,
@@ -664,7 +718,7 @@ function toolDefinitions() {
     {
       name: "xsxb_export_sheet",
       description:
-        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size and leftover dirt stay comparable. output_path must stay inside the XSXB root.",
+        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size and leftover dirt stay comparable. Every cell is labeled with its absolute 0-based index and the tuner group-coordinate grid (foot origin 0,0; body is negative y). mark_frame highlights one cell for a second cull pass. output_path must stay inside the XSXB root.",
       inputSchema: {
         type: "object",
         properties: {
@@ -676,6 +730,12 @@ function toolDefinitions() {
           },
           start_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
           end_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
+          mark_frame: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "Absolute 0-based frame to highlight. Defaults to start_frame so the loop start is marked.",
+          },
           columns: {
             type: "integer",
             minimum: 1,
@@ -690,6 +750,32 @@ function toolDefinitions() {
             description: "Shared cell edge in pixels. Every source canvas is scaled into this cell.",
           },
           pad: { type: "integer", minimum: 1, maximum: 64, default: 8 },
+          grid: {
+            type: "boolean",
+            default: true,
+            description: "Paint the tuner group-coordinate axes and ticks. Origin is the canvas foot.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_measure_image",
+      description:
+        'Measure a PNG\'s long axis. The thicker end is the pommel, the thinner end is the tip. Pass t for a handle fraction (0=pommel, 0.5=middle, 0.666 or "2/3", 1=tip). Returns image-pixel landmarks. localFromCenter is the grip relative to the image center; attachment offset = hand - localFromCenter. Does not bind or write frames.',
+      inputSchema: {
+        type: "object",
+        required: ["file_path"],
+        properties: {
+          file_path: { type: "string", description: "Absolute PNG path of the weapon or sprite." },
+          t: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            default: 0.5,
+            description: "Grip fraction along pommel→tip. 0.5 is the middle; send 0.666… or the string 2/3.",
+          },
         },
         additionalProperties: false,
       },
