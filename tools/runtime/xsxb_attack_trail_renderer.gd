@@ -3,7 +3,8 @@ extends Node2D
 const TRAIL_SHADER: Shader = preload("res://xsxb_frame_tuner/runtime/xsxb_attack_trail.gdshader")
 const SPEED_PROFILE = [0.94, 1.015, 0.985, 1.025, 1.035, 1.02, 0.97, 1.04]
 const TAIL_WIDTH_SPEED_INFLUENCE := 0.18
-const DEFAULT_BEFORE_CHASE_MULTIPLIER := 0.5
+const DEFAULT_BEFORE_CHASE_MULTIPLIER := 0.12
+const DEFAULT_TRAIL_SMEAR_PX := 36.0
 const DEFAULT_AFTER_CHASE_MULTIPLIER := 2.0
 const DEFAULT_PATH_COLUMNS := 20
 const LEGACY_BEFORE_CHASE_SPEED := 110.0
@@ -185,7 +186,9 @@ func _update_renderer(state: Dictionary, segment: Dictionary, animation_name: St
 		# supply only a restrained stable wobble, never independent edge motion.
 		var speed_factor: float = 1.0 + (float(speed_factor_value) - 1.0) * TAIL_WIDTH_SPEED_INFLUENCE
 		var progress_multiplier: float = clampf(1.0 - (1.0 - before_multiplier) * speed_factor, 0.0, 1.0)
-		var tail_distance: float = current_distance * progress_multiplier
+		var keep: float = maxf(DEFAULT_TRAIL_SMEAR_PX, 8.0)
+		var chased: float = current_distance * progress_multiplier
+		var tail_distance: float = chased if current_distance <= keep else minf(chased, maxf(0.0, current_distance - keep))
 		if catch_elapsed > 0.0:
 			tail_distance = path_total * progress_multiplier
 			tail_distance += average_front_speed * after_multiplier * speed_factor * catch_elapsed
@@ -261,7 +264,9 @@ func _rebuild_path_cache(state: Dictionary, segment: Dictionary, animation_name:
 		var sample_time := duration * float(sample_index) / float(sample_count - 1)
 		var pose := _pose_at_local_time(sticks, local_times, sample_time)
 		if sample_index > 0:
-			cumulative += Vector2(previous_pose["center"]).distance_to(Vector2(pose["center"]))
+			var top_delta := Vector2(previous_pose["top"]).distance_to(Vector2(pose["top"]))
+			var bottom_delta := Vector2(previous_pose["bottom"]).distance_to(Vector2(pose["bottom"]))
+			cumulative += maxf(top_delta, bottom_delta)
 		path_times.append(sample_time)
 		path_distances.append(cumulative)
 		previous_pose = pose

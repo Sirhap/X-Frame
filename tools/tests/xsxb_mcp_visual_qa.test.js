@@ -202,6 +202,39 @@ test("measureLongAxis keeps grips on the centerline of a wide pommel", () => {
   assert.ok(Math.abs(measured.at.x - 15.5) < 2, "wide pommel must not pull the mid grip to a corner");
 });
 
+test("measureFrame ignores chroma leftover fog at alpha 13", () => {
+  const width = 16;
+  const height = 16;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < rgba.length; offset += 4) {
+    rgba[offset] = 1;
+    rgba[offset + 1] = 243;
+    rgba[offset + 2] = 0;
+    rgba[offset + 3] = 13;
+  }
+  for (let y = 6; y < 10; y += 1) {
+    for (let x = 6; x < 10; x += 1) {
+      setPixel(rgba, width, x, y, [210, 36, 42, 255]);
+    }
+  }
+  const measured = measureFrame(rgba, width, height);
+  assert.equal(measured.opaque, 16, "alpha-13 fog is not a subject pixel");
+});
+
+test("measureLongAxis names the handle end of a wide-blade sword as the pommel", () => {
+  const width = 64;
+  const height = 24;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let x = 2; x <= 61; x += 1) {
+    const half = x < 14 ? 1 : x < 20 ? 8 : 5;
+    for (let y = 12 - half; y <= 11 + half; y += 1) {
+      setPixel(rgba, width, x, y, [180, 180, 190, 255]);
+    }
+  }
+  const measured = measureLongAxis(rgba, width, height, { t: 0.5 });
+  assert.ok(measured.pommel.x < measured.tip.x, "thin grip is the pommel, wide blade is the tip");
+});
+
 test("renderContactSheet keeps the foot origin on the marked cell", () => {
   const sheet = renderContactSheet([bodyFrame(16, 4, 8)], {
     cell: 32,

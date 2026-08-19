@@ -7,8 +7,10 @@ const path = require("node:path");
 const {
   DEFAULT_ATTACK_TRAIL_PRESET_TEXTURE,
   EMPTY_ATTACK_TRAILS,
+  bladeEdgeTravel,
   normalizeAttackTrails,
   pngInfo,
+  stickCenterTravel,
   validateAttackTrails,
 } = require("./attack_trails");
 const { deleteAnimation } = require("./animation_mutations");
@@ -45,6 +47,7 @@ const {
   summarizeMetrics,
 } = require("./xsxb_mcp_visual_qa");
 const { validateToolArguments } = require("./xsxb_mcp_schema");
+const { compositeAttackTrails } = require("./xsxb_mcp_trail_preview");
 const { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions } = require("./xsxb_mcp_tool_catalog");
 const {
   PNG_NAME,
@@ -102,6 +105,33 @@ function bakedVisualScales(tuning, profileId, animationId, frameCount) {
 }
 
 /**
+ * Per-frame playback durations in seconds. Disabled frames contribute 0, matching Tuner arrival.
+ * @param {object} tuning Project tuning file.
+ * @param {string} profileId Profile id.
+ * @param {string} animationId Animation id.
+ * @param {number} frameCount Frame count.
+ * @param {number} fps Playback fps.
+ * @returns {number[]} Seconds per absolute frame.
+ */
+function playbackDurations(tuning, profileId, animationId, frameCount, fps) {
+  const overrides =
+    tuning?.frame_playback_overrides && typeof tuning.frame_playback_overrides === "object"
+      ? tuning.frame_playback_overrides
+      : {};
+  const durations = [];
+  for (let index = 0; index < frameCount; index += 1) {
+    const key = frameBoxKey(profileId, animationId, index);
+    const override = overrides[key] && typeof overrides[key] === "object" ? overrides[key] : {};
+    if (override.disabled === true) {
+      durations.push(0);
+      continue;
+    }
+    durations.push(Math.max(0.001, Number(override.duration || 1)) / fps);
+  }
+  return durations;
+}
+
+/**
  * Creates the business service used by the XSXB MCP transport.
  * @param {{root?:string,extractVideoFramesImpl?:Function,cutoutPngFileImpl?:Function,probeTunerImpl?:Function,launchTunerImpl?:Function}} [options] Service dependencies.
  * @returns {{tools:object[],call:(name:string,args?:object)=>Promise<object>}} MCP-facing service.
@@ -111,10 +141,35 @@ function createXsxbMcpService(options = {}) {
   const projectStore = createProjectStore(root);
   const extractVideoFramesImpl = options.extractVideoFramesImpl || extractVideoFrames;
   const encodeGifImpl = options.encodeGifImpl || encodeGifWithFfmpeg;
+  const compositeTrailImpl = options.compositeTrailImpl || compositeAttackTrails;
   const cutoutPngFileImpl = options.cutoutPngFileImpl || null;
   const probeTunerImpl = options.probeTunerImpl || probeTunerUrl;
   const launchTunerImpl = options.launchTunerImpl || launchTunerProcess;
   const context = { projectId: "", profileId: "", animationId: "" };
+
+  /**
+   * Composites authored attack-trail meshes onto export frames.
+   * @param {object} selection Project/profile/animation.
+   * @param {string[]} framePaths Source PNG paths.
+   * @param {number[]} frameIndexes Absolute indexes.
+   * @param {number[]} durations Per-absolute-frame seconds.
+   * @param {number} fps Playback fps.
+   * @returns {Promise<object>} Composite receipt.
+   */
+  function bakeTrailsOnto(selection, framePaths, frameIndexes, durations, fps) {
+    const { project, profile, animation } = selection;
+    const paths = projectStore.projectPaths(project);
+    const trails = normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
+    return compositeTrailImpl({
+      framePaths,
+      frameIndexes,
+      durations,
+      fps,
+      trails,
+      bindingKey: `${profile.id}/${animation.id || animation.name}`,
+      root,
+    });
+  }
 
   /**
    * Copies a local file into the project workspace and returns the repo-relative path.
@@ -1030,6 +1085,8 @@ function createXsxbMcpService(options = {}) {
       sampleSize: found.sampleSize,
       candidates: found.candidates,
       recommended: found.recommended,
+      oneShotLikely: found.oneShotLikely,
+      note: found.note,
     };
   }
 
@@ -1421,8 +1478,9 @@ function createXsxbMcpService(options = {}) {
       rematched: receipt.rematched,
       rematchMode: receipt.rematchMode || (receipt.rematched ? "shared" : "none"),
       frameScales: receipt.frameScales,
+      keyed: Boolean(receipt.keyed),
       backgroundColor: receipt.backgroundColor,
-      keyColor: keyColor || receipt.backgroundColor,
+      keyColor: keyColor || (receipt.keyed ? receipt.backgroundColor : null),
       outputWidth: receipt.outputWidth || outputWidth || 0,
       outputHeight: receipt.outputHeight || outputHeight || 0,
       frameCount: frames.length,
@@ -1500,6 +1558,18 @@ function createXsxbMcpService(options = {}) {
     };
   }
 
+  function summarizeAttackTrailSticks(sticks) {
+    const frames = sticks.map((stick) => Number(stick.frame) || 0);
+    const frameSpan = frames.length ? Math.max(...frames) - Math.min(...frames) : 0;
+    const centerTravel = Math.round(stickCenterTravel(sticks) * 10) / 10;
+    const edgeTravel = Math.round(bladeEdgeTravel(sticks) * 10) / 10;
+    let note = null;
+    if (sticks.length >= 2 && frameSpan <= 0) {
+      note = "Both sticks are on the same frame. The trail blooms on that frame only.";
+    }
+    return { frameSpan, centerTravel, edgeTravel, note };
+  }
+
   async function addAttackTrail(args = {}) {
     const selection = animationFor(args);
     const { project, profile, animation } = selection;
@@ -1570,6 +1640,8 @@ function createXsxbMcpService(options = {}) {
       color: args.color || "#d9364a",
       sticks,
     };
+    if (args.before_stop_chase !== undefined) segment.beforeStopChaseMultiplier = args.before_stop_chase;
+    if (args.after_stop_chase !== undefined) segment.afterStopChaseMultiplier = args.after_stop_chase;
     trails.bindings[bindingKey] = [
       ...(trails.bindings[bindingKey] || []).filter((entry) => entry.id !== segment.id),
       segment,
@@ -1577,10 +1649,12 @@ function createXsxbMcpService(options = {}) {
     const normalized = normalizeAttackTrails(trails);
     const warnings = validateAttackTrails(normalized, selection.manifest);
     projectStore.writeJson(paths.attackTrails, normalized);
+    const written = normalized.bindings[bindingKey].find((entry) => entry.id === segment.id);
     return {
       projectId: project.id,
       bindingKey,
-      segment: normalized.bindings[bindingKey].find((entry) => entry.id === segment.id),
+      segment: written,
+      ...summarizeAttackTrailSticks(written?.sticks || []),
       warnings,
       sync: synchronize(project, booleanFlag(args.sync, true)),
     };
@@ -1590,13 +1664,22 @@ function createXsxbMcpService(options = {}) {
     const { project, profile, animation } = animationFor(args);
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot attach an image to an animation without frames.");
-    const frame = requireFrameIndex(args.frame || 0, frames.length - 1);
+    const batch = Array.isArray(args.frames) && args.frames.length > 0;
+    const requests = batch
+      ? args.frames
+      : [
+          {
+            frame: args.frame || 0,
+            offset_x: args.offset_x,
+            offset_y: args.offset_y,
+            scale: args.scale,
+            rotation: args.rotation,
+          },
+        ];
     const absolute = requireExistingFile(args.file_path, "Attachment image");
     if (!/\.png$/i.test(absolute)) throw new Error("Attachment image must be a PNG.");
     const paths = projectStore.projectPaths(project);
     const bindings = projectStore.readJson(paths.frameImageAttachments, []);
-    const key = `${profile.id}/${animation.id || animation.name}:${frame}`;
-    const source = frames[frame] || frames[0];
     const relativePath = copyIntoWorkspace(
       project,
       path.join("attachments", profile.id, String(animation.id || animation.name)),
@@ -1604,47 +1687,65 @@ function createXsxbMcpService(options = {}) {
     );
     const name = String(args.name || path.basename(absolute));
     const id = slug(args.id || path.basename(absolute, path.extname(absolute)), "attachment");
-    const scale = Number(args.scale ?? 1);
+    const defaultScale = Number(args.scale ?? 1);
     const requestedOrder = args.layer_order ?? args.layerOrder;
     const layerOrder =
       requestedOrder === undefined || requestedOrder === null || requestedOrder === ""
         ? 1
         : Number(requestedOrder);
     if (!Number.isFinite(layerOrder)) throw new Error("layer_order must be a finite number.");
-    const attachment = {
-      id,
-      key,
-      frameKey: key,
-      name,
-      path: relativePath,
-      type: "image/png",
-      layer: String(args.layer || "above") === "below" ? "below" : "above",
-      layerOrder,
-      transform: {
-        offset: {
-          x: Number(args.offset_x || 0),
-          y: args.offset_y === undefined ? -Number(source.height || 100) * 0.2 : Number(args.offset_y),
-        },
-        scale: { x: scale, y: scale },
-        rotation: Number(args.rotation || 0),
-      },
-      metadata: {
-        profileId: profile.id,
-        animation: `${profile.id}/${animation.id || animation.name}`,
+    const layer = String(args.layer || "above") === "below" ? "below" : "above";
+    const added = [];
+    let next = Array.isArray(bindings) ? bindings.slice() : [];
+    for (const request of requests) {
+      if (!request || typeof request !== "object") {
+        throw new Error("Each frames item must be an object with a frame index.");
+      }
+      const frame = requireFrameIndex(request.frame ?? 0, frames.length - 1);
+      const key = `${profile.id}/${animation.id || animation.name}:${frame}`;
+      const source = frames[frame] || frames[0];
+      const scale = Number(request.scale ?? defaultScale);
+      const offsetX = Number(request.offset_x ?? args.offset_x ?? 0);
+      const offsetY =
+        request.offset_y === undefined
+          ? args.offset_y === undefined
+            ? -Number(source.height || 100) * 0.2
+            : Number(args.offset_y)
+          : Number(request.offset_y);
+      const rotation = Number(request.rotation ?? args.rotation ?? 0);
+      const attachment = {
+        id,
+        key,
+        frameKey: key,
         frame,
-      },
-    };
-    const next = [
-      ...(Array.isArray(bindings) ? bindings : []).filter((entry) => entry.id !== id || entry.key !== key),
-      attachment,
-    ];
+        name,
+        path: relativePath,
+        type: "image/png",
+        layer,
+        layerOrder,
+        transform: {
+          offset: { x: offsetX, y: offsetY },
+          scale: { x: scale, y: scale },
+          rotation,
+        },
+        metadata: {
+          profileId: profile.id,
+          animation: `${profile.id}/${animation.id || animation.name}`,
+          frame,
+        },
+      };
+      next = next.filter((entry) => entry.id !== id || entry.key !== key);
+      next.push(attachment);
+      added.push(attachment);
+    }
     projectStore.writeJson(paths.frameImageAttachments, next);
-    return {
+    const base = {
       projectId: project.id,
-      binding: attachment,
       bindingCount: next.length,
       sync: synchronize(project, booleanFlag(args.sync, true)),
     };
+    if (!batch) return { ...base, binding: added[0] };
+    return { ...base, updatedFrames: added.length, bindings: added, binding: added[added.length - 1] };
   }
 
   async function addSfx(args = {}) {
@@ -1929,23 +2030,48 @@ function createXsxbMcpService(options = {}) {
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     const appliedVisual = selectedScales.some((scale) => scale !== 1);
     let encodePaths = framePaths;
-    let tempDir = null;
+    let visualTemp = null;
+    let trailTemp = null;
+    const exportedIndexes = [];
+    for (let index = startFrame; index <= endFrame; index += 1) {
+      const key = frameBoxKey(profile.id, animationId, index);
+      const override =
+        playbackOverrides[key] && typeof playbackOverrides[key] === "object" ? playbackOverrides[key] : {};
+      if (override.disabled === true && !includeDisabled) continue;
+      exportedIndexes.push(index);
+    }
     if (appliedVisual) {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-gif-visual-"));
+      visualTemp = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-gif-visual-"));
       const decoded = framePaths.map((filePath) => decodePngRgba(filePath));
       const placed = placeFramesOnCanvas(decoded, decoded[0].width, decoded[0].height, {
         frameScales: selectedScales,
       });
       encodePaths = placed.map((frame, index) => {
-        const filePath = path.join(tempDir, `frame_${String(index + 1).padStart(4, "0")}.png`);
+        const filePath = path.join(visualTemp, `frame_${String(index + 1).padStart(4, "0")}.png`);
         fs.writeFileSync(filePath, encodePngRgba(frame.data, frame.width, frame.height));
         return filePath;
       });
     }
+    let bakedTrails = false;
+    let trailIds = [];
     try {
+      const baked = await bakeTrailsOnto(
+        { project, profile, animation },
+        encodePaths,
+        exportedIndexes,
+        playbackDurations(tuning, profile.id, animationId, frames.length, fps),
+        fps,
+      );
+      bakedTrails = baked.bakedTrails === true;
+      trailIds = baked.trailIds || [];
+      if (baked.bakedTrails) {
+        encodePaths = baked.framePaths;
+        trailTemp = baked.tempDir;
+      }
       await encodeGifImpl({ framePaths: encodePaths, durations, fps, outputPath });
     } finally {
-      if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+      if (visualTemp) fs.rmSync(visualTemp, { recursive: true, force: true });
+      if (trailTemp) fs.rmSync(trailTemp, { recursive: true, force: true });
     }
     if (!fs.existsSync(outputPath)) throw new Error("GIF export produced no output file.");
     return {
@@ -1959,6 +2085,8 @@ function createXsxbMcpService(options = {}) {
       endFrame,
       fps,
       appliedVisual,
+      bakedTrails,
+      trailIds,
       frameScales: appliedVisual ? selectedScales : undefined,
       totalDurationMs: Math.round(durations.reduce((sum, value) => sum + value, 0) * 1000),
       bytes: fs.statSync(outputPath).size,
@@ -1970,7 +2098,7 @@ function createXsxbMcpService(options = {}) {
    * @param {object} args Tool arguments.
    * @returns {object} Sheet receipt.
    */
-  function exportSheet(args = {}) {
+  async function exportSheet(args = {}) {
     const { project, profile, animation } = animationFor(args);
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot export a sheet without frames.");
@@ -1978,13 +2106,31 @@ function createXsxbMcpService(options = {}) {
     const startFrame = args.start_frame === undefined ? 0 : requireFrameIndex(args.start_frame, lastIndex);
     const endFrame = args.end_frame === undefined ? lastIndex : requireFrameIndex(args.end_frame, lastIndex);
     if (endFrame < startFrame) throw new Error("end_frame must be greater than or equal to start_frame.");
-    const selected = [];
+    const fps = requireFps(animation.fps, 12);
+    const paths = projectStore.projectPaths(project);
+    const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+    const sourcePaths = [];
+    const indexes = [];
     for (let index = startFrame; index <= endFrame; index += 1) {
       const absolute = resolveAnimationFramePath(project, frames[index].path);
       if (!absolute || !fs.existsSync(absolute)) {
         throw new Error(`Frame ${index} has no generated PNG on disk; import or regenerate frames first.`);
       }
-      selected.push(decodePngRgba(absolute));
+      sourcePaths.push(absolute);
+      indexes.push(index);
+    }
+    const baked = await bakeTrailsOnto(
+      { project, profile, animation },
+      sourcePaths,
+      indexes,
+      playbackDurations(tuning, profile.id, String(animation.id || animation.name), frames.length, fps),
+      fps,
+    );
+    let selected;
+    try {
+      selected = baked.framePaths.map((filePath) => decodePngRgba(filePath));
+    } finally {
+      if (baked.tempDir) fs.rmSync(baked.tempDir, { recursive: true, force: true });
     }
     const columns =
       args.columns === undefined ? Math.min(selected.length, 8) : Math.max(1, Number(args.columns));
@@ -1998,8 +2144,6 @@ function createXsxbMcpService(options = {}) {
     if (markFrame < startFrame || markFrame > endFrame) {
       throw new Error(`mark_frame must fall between start_frame ${startFrame} and end_frame ${endFrame}.`);
     }
-    const indexes = [];
-    for (let index = startFrame; index <= endFrame; index += 1) indexes.push(index);
     const grid = booleanFlag(args.grid, true);
     const anchorMode = String(animation.anchorMode || "canvas_bottom_center");
     const sheet = renderContactSheet(selected, {
@@ -2045,6 +2189,8 @@ function createXsxbMcpService(options = {}) {
       width: sheet.width,
       height: sheet.height,
       bytes: fs.statSync(outputPath).size,
+      bakedTrails: baked.bakedTrails === true,
+      trailIds: baked.trailIds || [],
       grid:
         grid && cell >= GROUP_GRID_MIN_CELL
           ? {

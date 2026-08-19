@@ -8,7 +8,8 @@
   const DIRECTION_HANDLE_UNIT_PX = 57.5;
   const DIRECTION_HANDLE_MIN_STRENGTH = 0.1;
   const DIRECTION_HANDLE_MAX_STRENGTH = 4;
-  const DEFAULT_BEFORE_CHASE_MULTIPLIER = 0.5;
+  const DEFAULT_BEFORE_CHASE_MULTIPLIER = 0.12;
+  const DEFAULT_TRAIL_SMEAR_PX = 36;
   const DEFAULT_AFTER_CHASE_MULTIPLIER = 2;
   const DEFAULT_PATH_COLUMNS = 20;
   const LEGACY_BEFORE_CHASE_SPEED = 110;
@@ -1356,6 +1357,11 @@
           previous = stick.framePhase;
         });
       }
+      const automatic = segment.sticks.filter((stick) => stick.phaseMode !== "manual");
+      if (automatic.length >= 2 && automatic[0].frame !== automatic[automatic.length - 1].frame) {
+        automatic[0].framePhase = 0;
+        automatic[automatic.length - 1].framePhase = 1;
+      }
     }
 
     async _uploadTexture(file) {
@@ -1482,7 +1488,10 @@
         const time = (duration * index) / (count - 1);
         const pose = this._pose(segment.sticks, timing.times, time);
         if (index)
-          distance += Math.hypot(pose.center.x - previous.center.x, pose.center.y - previous.center.y);
+          distance += Math.max(
+            Math.hypot(pose.top.x - previous.top.x, pose.top.y - previous.top.y),
+            Math.hypot(pose.bottom.x - previous.bottom.x, pose.bottom.y - previous.bottom.y),
+          );
         samples.push({ time, distance, pose });
         previous = pose;
       }
@@ -1870,7 +1879,15 @@
       ctx.restore();
     }
 
-    _tailDistances(state, segment, currentDistance, catchElapsed, duration, forcedDistance = 0) {
+    _tailDistances(
+      state,
+      segment,
+      currentDistance,
+      catchElapsed,
+      duration,
+      forcedDistance = 0,
+      smearPx = DEFAULT_TRAIL_SMEAR_PX,
+    ) {
       const averageFrontSpeed = state.total / Math.max(0.0001, duration);
       const lagRatio = 1 - segment.beforeStopChaseMultiplier;
       const distances = state.speeds.map((factor) => {
@@ -1879,14 +1896,17 @@
         // full raw spread turns the upper/lower boundary into a round balloon.
         const widthFactor = 1 + (factor - 1) * TAIL_WIDTH_SPEED_INFLUENCE;
         const progressMultiplier = clamp(1 - lagRatio * widthFactor, 0, 1, 0);
-        const beforeProgress = progressMultiplier * currentDistance;
+        const keep = Math.max(DEFAULT_TRAIL_SMEAR_PX, Number(smearPx) || DEFAULT_TRAIL_SMEAR_PX);
+        const chased = progressMultiplier * currentDistance;
+        const beforeProgress =
+          currentDistance <= keep ? chased : Math.min(chased, Math.max(0, currentDistance - keep));
         const endpointProgress = progressMultiplier * state.total;
-        const chased =
+        const afterProgress =
           catchElapsed > 0
             ? endpointProgress +
               averageFrontSpeed * segment.afterStopChaseMultiplier * widthFactor * catchElapsed
             : beforeProgress;
-        return Math.min(currentDistance, Math.max(chased, forcedDistance));
+        return Math.min(currentDistance, Math.max(afterProgress, forcedDistance));
       });
       return this._guardTailEdgeProgress(distances);
     }
@@ -2313,6 +2333,7 @@
           this._normalizeStick(stick, stickIndex, segmentLayer),
         ),
       };
+      this._renumberAndAutoPhase(segment);
       this._updateGenerated(segment);
       return segment;
     }

@@ -77,6 +77,24 @@ function loadSignature(filePath, sampleSize) {
  * @param {object} candidate Core loop candidate.
  * @returns {object} Agent-facing candidate.
  */
+/**
+ * Warns when the recommended loop is only a burst inside a longer clip.
+ * Short cycles stay unflagged so a 7-frame walk period is not called a one-shot.
+ * @param {number} frameCount Clip length.
+ * @param {{coverage?:number}|null} recommended Ranked candidate, if any.
+ * @returns {{oneShotLikely:boolean,note:string}} Advice for the receipt.
+ */
+function adviseLoopCandidate(frameCount, recommended) {
+  const coverage = Number(recommended && recommended.coverage);
+  const oneShotLikely = !recommended || !Number.isFinite(coverage) || (frameCount >= 12 && coverage < 0.5);
+  return {
+    oneShotLikely,
+    note: oneShotLikely
+      ? "Recommended loop covers less than half of the clip. Inspect sheets before applying; a one-shot should keep the full order or use xsxb_find_motion."
+      : "",
+  };
+}
+
 function summarizeCandidate(candidate) {
   const start = Number(candidate.start);
   const end = Number(candidate.end);
@@ -99,7 +117,7 @@ function summarizeCandidate(candidate) {
  * Ranks loop segments on an ordered PNG sequence.
  * @param {string[]} filePaths Absolute PNG paths in playback order.
  * @param {{minPeriod?:number,maxPeriod?:number,startFrame?:number,preference?:string,boundaryFactor?:number,sampleSize?:number}} [options] Search options.
- * @returns {{frameCount:number,sampleSize:number,candidates:object[],recommended:object|null}} Ranked loops.
+ * @returns {{frameCount:number,sampleSize:number,candidates:object[],recommended:object|null,oneShotLikely:boolean,note?:string}} Ranked loops.
  */
 function findLoopInPngFiles(filePaths, options = {}) {
   if (!Array.isArray(filePaths) || filePaths.length < MINIMUM_LOOP_FRAMES) {
@@ -116,11 +134,15 @@ function findLoopInPngFiles(filePaths, options = {}) {
     preference: options.preference,
     boundaryFactor: options.boundaryFactor,
   }).map(summarizeCandidate);
+  const recommended = candidates[0] || null;
+  const advice = adviseLoopCandidate(filePaths.length, recommended);
   return {
     frameCount: filePaths.length,
     sampleSize,
     candidates,
-    recommended: candidates[0] || null,
+    recommended,
+    oneShotLikely: advice.oneShotLikely,
+    note: advice.note || undefined,
   };
 }
 
@@ -197,6 +219,7 @@ module.exports = {
   ORGANIZER_SIMILARITY_THRESHOLD,
   MINIMUM_DUPLICATE_FRAMES,
   MINIMUM_LOOP_FRAMES,
+  adviseLoopCandidate,
   downsampleRgba,
   findDuplicatesInPngFiles,
   findLoopInPngFiles,

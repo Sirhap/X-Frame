@@ -29,6 +29,7 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+.cursor/mcp.json
 .tmp/
 screenshots/
 
@@ -44,6 +45,8 @@ data/lite/
 workspace/assets/*
 workspace/projects/*
 workspace/lite/
+workspace/mcp_probe_*/
+workspace/kbd_trail/
 !workspace/.gitkeep
 !workspace/assets/.gitkeep
 !workspace/projects/.gitkeep

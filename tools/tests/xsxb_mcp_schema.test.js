@@ -114,6 +114,26 @@ test("a valid argument set passes", () => {
   );
 });
 
+test("attack-trail stick schema names blade edges, layer, and reverseDirection", () => {
+  const tool = toolDefinitions().find((entry) => entry.name === "xsxb_add_attack_trail");
+  const stick = tool.inputSchema.properties.sticks.items;
+  assert.match(tool.description, /blade|刀刃/i);
+  assert.match(tool.description, /layer/i);
+  assert.match(tool.description, /export_gif|GIF/i);
+  assert.match(tool.description, /bake/i);
+  assert.doesNotMatch(tool.description, /do not bake/i);
+  const gif = toolDefinitions().find((entry) => entry.name === "xsxb_export_gif");
+  const sheet = toolDefinitions().find((entry) => entry.name === "xsxb_export_sheet");
+  assert.match(gif.description, /trail/i);
+  assert.match(sheet.description, /trail/i);
+  assert.equal(stick.type, "object");
+  assert.ok(stick.properties.frame);
+  assert.ok(stick.properties.top);
+  assert.ok(stick.properties.bottom);
+  assert.deepEqual(stick.properties.layer.enum, ["behind", "front"]);
+  assert.equal(stick.properties.reverseDirection.type, "boolean");
+});
+
 test("every declared tool schema is one this validator understands", () => {
   const supported = new Set([
     "type",

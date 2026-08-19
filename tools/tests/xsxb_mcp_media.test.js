@@ -7,7 +7,12 @@ const path = require("node:path");
 const test = require("node:test");
 const { createProjectStore } = require("../project_store");
 const { createXsxbMcpService } = require("../xsxb_mcp_service");
-const { encodePngRgba } = require("../xsxb_mcp_cutout");
+const { decodePngRgba, encodePngRgba } = require("../xsxb_mcp_cutout");
+
+const TRAIL_PRESET = path.join(
+  __dirname,
+  "../animation_tuner/public/presets/attack_trails/dynamic_trail_luma.png",
+);
 
 /**
  * Builds a square opaque PNG of one color.
@@ -36,11 +41,78 @@ function cutBodyPng(size) {
   return encodePngRgba(rgba, size, size);
 }
 
+/**
+ * Builds a 64×64 cut frame: transparent field plus a red torso.
+ * @returns {Buffer} Encoded PNG.
+ */
+function slashBodyPng() {
+  const width = 64;
+  const height = 64;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 20; y < 56; y += 1) {
+    for (let x = 28; x < 36; x += 1) {
+      rgba.set([200, 40, 40, 255], (y * width + x) * 4);
+    }
+  }
+  return encodePngRgba(rgba, width, height);
+}
+
+/**
+ * Counts gold-tint pixels that a solid #ffe082 trail mesh must produce.
+ * @param {Uint8ClampedArray|Buffer} rgba Pixel buffer.
+ * @returns {number} Matching pixels.
+ */
+function isGoldPixel(rgba, offset) {
+  return (
+    rgba[offset + 3] >= 32 &&
+    rgba[offset] > 180 &&
+    rgba[offset + 1] > 140 &&
+    rgba[offset + 2] < 190 &&
+    rgba[offset + 1] > rgba[offset + 2]
+  );
+}
+
+function countGoldPixels(rgba) {
+  let count = 0;
+  for (let offset = 0; offset < rgba.length; offset += 4) {
+    if (isGoldPixel(rgba, offset)) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Counts gold pixels inside a box. Used to prove a rotating slash leaves a
+ * smear behind the blade instead of filling the whole pie.
+ * @param {Uint8ClampedArray|Buffer} rgba Pixel buffer.
+ * @param {number} width Image width.
+ * @param {number} x0 Inclusive left.
+ * @param {number} y0 Inclusive top.
+ * @param {number} x1 Exclusive right.
+ * @param {number} y1 Exclusive bottom.
+ * @returns {number} Matching pixels.
+ */
+function countGoldInBox(rgba, width, x0, y0, x1, y1) {
+  let count = 0;
+  const height = rgba.length / 4 / width;
+  for (let y = Math.max(0, y0); y < Math.min(height, y1); y += 1) {
+    for (let x = Math.max(0, x0); x < Math.min(width, x1); x += 1) {
+      if (isGoldPixel(rgba, (y * width + x) * 4)) count += 1;
+    }
+  }
+  return count;
+}
+
 function fixture(serviceOptions = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-mcp-media-"));
   const godotRoot = path.join(root, "godot");
   fs.mkdirSync(godotRoot, { recursive: true });
   fs.writeFileSync(path.join(godotRoot, "project.godot"), '[application]\nconfig/name="Media"\n');
+  const presetPath = path.join(
+    root,
+    "tools/animation_tuner/public/presets/attack_trails/dynamic_trail_luma.png",
+  );
+  fs.mkdirSync(path.dirname(presetPath), { recursive: true });
+  fs.copyFileSync(TRAIL_PRESET, presetPath);
   const store = createProjectStore(root);
   store.addProject({ id: "media", label: "Media", projectRoot: godotRoot });
   const sequenceDir = path.join(root, "seq");
@@ -55,6 +127,36 @@ function fixture(serviceOptions = {}) {
     service: createXsxbMcpService({ root, ...serviceOptions }),
     cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
   };
+}
+
+/**
+ * Imports a three-frame slash with a gold blade that translates across the canvas.
+ * @param {object} [serviceOptions] Service overrides.
+ * @returns {Promise<object>} Fixture plus animation id.
+ */
+async function importedSlash(serviceOptions = {}) {
+  const current = fixture(serviceOptions);
+  fs.writeFileSync(path.join(current.sequenceDir, "a.png"), slashBodyPng());
+  fs.writeFileSync(path.join(current.sequenceDir, "b.png"), slashBodyPng());
+  fs.writeFileSync(path.join(current.sequenceDir, "c.png"), slashBodyPng());
+  await current.service.call("xsxb_import_animation", {
+    source: "png_sequence",
+    directory: current.sequenceDir,
+    project_id: "media",
+    animation_id: "slash",
+  });
+  await current.service.call("xsxb_add_attack_trail", {
+    animation_id: "slash",
+    id: "gold_cleave",
+    color: "#ffe082",
+    sticks: [
+      { frame: 0, top: { x: -22, y: -40 }, bottom: { x: -22, y: -16 }, layer: "front" },
+      { frame: 1, top: { x: 0, y: -48 }, bottom: { x: 0, y: -18 }, layer: "front" },
+      { frame: 2, top: { x: 22, y: -40 }, bottom: { x: 22, y: -16 }, layer: "front" },
+    ],
+    sync: false,
+  });
+  return current;
 }
 
 async function importWalk(current) {
@@ -295,6 +397,118 @@ test("export_gif rematches group and frame visual_size before encode", async () 
     assert.equal(jobs[0].firstHeight, 7);
     const source = (await current.service.call("xsxb_get_animation")).animation.frames[0].absolutePath;
     assert.notEqual(jobs[0].framePaths[0], source);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_gif bakes the attack-trail mesh into the encoded frames", async () => {
+  let encodedGold = 0;
+  const current = await importedSlash({
+    encodeGifImpl: async (job) => {
+      const last = decodePngRgba(job.framePaths[job.framePaths.length - 1]);
+      encodedGold = countGoldPixels(last.data);
+      fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
+    },
+  });
+  try {
+    const source = await current.service.call("xsxb_get_animation", {
+      animation_id: "slash",
+      frames: "full",
+    });
+    assert.equal(
+      countGoldPixels(decodePngRgba(source.animation.frames[2].absolutePath).data),
+      0,
+      "source frames stay unbaked",
+    );
+    const exported = await current.service.call("xsxb_export_gif", { animation_id: "slash" });
+    assert.equal(exported.bakedTrails, true);
+    assert.deepEqual(exported.trailIds, ["gold_cleave"]);
+    assert.ok(encodedGold > 40, `encoded last frame must show the gold mesh, got ${encodedGold} pixels`);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_sheet bakes the attack-trail mesh into the contact sheet", async () => {
+  const current = await importedSlash();
+  try {
+    const source = await current.service.call("xsxb_get_animation", {
+      animation_id: "slash",
+      frames: "full",
+    });
+    const lastSource = decodePngRgba(source.animation.frames[2].absolutePath);
+    assert.equal(countGoldPixels(lastSource.data), 0, "source frames stay unbaked");
+
+    const exported = await current.service.call("xsxb_export_sheet", {
+      animation_id: "slash",
+      cell: 64,
+      pad: 4,
+      columns: 3,
+      grid: false,
+    });
+    assert.equal(exported.bakedTrails, true);
+    assert.deepEqual(exported.trailIds, ["gold_cleave"]);
+    const sheet = decodePngRgba(exported.outputPath);
+    const gold = countGoldPixels(sheet.data);
+    assert.ok(gold > 40, `sheet must show the gold mesh, got ${gold} pixels`);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_gif paints a trailing smear behind a rotating blade", async () => {
+  const goldByFrame = [];
+  let startArcOnLast = 0;
+  let midArcOnLast = 0;
+  const current = fixture({
+    encodeGifImpl: async (job) => {
+      for (const filePath of job.framePaths) {
+        const frame = decodePngRgba(filePath);
+        goldByFrame.push(countGoldPixels(frame.data));
+      }
+      const last = decodePngRgba(job.framePaths[job.framePaths.length - 1]);
+      // Start blade is vertical at (32, 6)–(32, 50). End blade is horizontal
+      // through y=28. A 拖影 sits on the mid-arc behind the blade; a filled
+      // pie still paints the start tip; a 4px edge paints only the new blade.
+      startArcOnLast = countGoldInBox(last.data, last.width, 30, 4, 35, 10);
+      midArcOnLast = countGoldInBox(last.data, last.width, 40, 10, 56, 26);
+      fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
+    },
+  });
+  try {
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), slashBodyPng());
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), slashBodyPng());
+    fs.writeFileSync(path.join(current.sequenceDir, "c.png"), slashBodyPng());
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: current.sequenceDir,
+      project_id: "media",
+      animation_id: "spin",
+    });
+    const added = await current.service.call("xsxb_add_attack_trail", {
+      animation_id: "spin",
+      id: "spin_cleave",
+      color: "#ffe082",
+      sticks: [
+        { frame: 0, top: { x: 0, y: -58 }, bottom: { x: 0, y: -14 }, layer: "front" },
+        { frame: 2, top: { x: 22, y: -36 }, bottom: { x: -22, y: -36 }, layer: "front" },
+      ],
+      sync: false,
+    });
+    assert.equal(added.segment.sticks[0].framePhase, 0);
+    assert.equal(added.segment.sticks[1].framePhase, 1);
+    assert.ok(added.edgeTravel > 28, "receipt must report the tip sweep");
+    await current.service.call("xsxb_export_gif", { animation_id: "spin" });
+    const startGold = goldByFrame[0];
+    const endGold = goldByFrame[2];
+    assert.ok(startGold > 8, `start frame must already show the smear, got ${startGold}`);
+    assert.ok(endGold > 20, `end frame must show the smear, got ${endGold}`);
+    assert.ok(endGold > startGold, "the smear must grow toward the tip");
+    assert.ok(midArcOnLast > 6, `last frame must paint the smear behind the blade, got ${midArcOnLast}`);
+    // The collapsed tail is allowed to touch the origin as a point. Anything
+    // wider means the ribbon never let go of where the swing started.
+    assert.ok(startArcOnLast <= 4, `last frame must not hold on to the swing origin, got ${startArcOnLast}`);
   } finally {
     current.cleanup();
   }

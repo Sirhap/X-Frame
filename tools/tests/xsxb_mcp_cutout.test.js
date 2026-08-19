@@ -7,6 +7,7 @@ const path = require("node:path");
 const test = require("node:test");
 const { NUMERIC_PARAMETER_LIMITS } = require("../animation_tuner/public/batch_cutout_session_core");
 const { toolDefinitions } = require("../xsxb_mcp_service");
+const { measureFrame } = require("../xsxb_mcp_visual_qa");
 const {
   alreadyCutOut,
   cutoutFrameFiles,
@@ -367,6 +368,96 @@ test("perceptual false on a black plate does not re-enable the broken reference 
     const cut = decodePngRgba(framePath);
     assert.ok(cut.data[3] <= 16, "black plate is still keyed");
     assert.equal(cut.data[(6 * 16 + 6) * 4 + 3], 255, "the subject stays opaque");
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Builds a chroma plate with a colored body and a white hair block.
+ * A 1×1 or tiny field cannot tell “keyed to alpha 13 fog” from “cleared”.
+ * @returns {{data:Uint8ClampedArray,width:number,height:number,subject:number}} RGBA frame.
+ */
+function chromaHeroFrame() {
+  const width = 64;
+  const height = 48;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  let subject = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const body = x >= 24 && x < 40 && y >= 16 && y < 40;
+      const hair = x >= 26 && x < 38 && y >= 10 && y < 16;
+      if (hair) {
+        setPixel(rgba, width, x, y, [250, 250, 250, 255]);
+        subject += 1;
+      } else if (body) {
+        setPixel(rgba, width, x, y, BODY);
+        subject += 1;
+      } else {
+        setPixel(rgba, width, x, y, [1, 243, 0, 255]);
+      }
+    }
+  }
+  return { data: rgba, width, height, subject };
+}
+
+test("chroma cutout zeros the plate instead of leaving alpha-13 fog", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-chroma-zero-"));
+  const framePath = path.join(folder, "frame.png");
+  try {
+    const frame = chromaHeroFrame();
+    fs.writeFileSync(framePath, encodePngRgba(frame.data, frame.width, frame.height));
+    cutoutFrameFiles([framePath]);
+    const cut = decodePngRgba(framePath);
+    assert.equal(cut.data[3], 0, "corner plate must be fully transparent, not alpha-13 fog");
+    assert.equal(cut.data[(47 * 64 + 63) * 4 + 3], 0);
+    const metrics = measureFrame(cut.data, cut.width, cut.height);
+    assert.ok(metrics.opaque < frame.width * frame.height * 0.5, "opaque must not count the fog as subject");
+    assert.ok(metrics.opaque >= frame.subject * 0.8, "body and hair stay countable");
+    let white = 0;
+    for (let offset = 0; offset < cut.data.length; offset += 4) {
+      if (cut.data[offset + 3] > 16 && cut.data[offset] > 220 && cut.data[offset + 1] > 220) white += 1;
+    }
+    assert.ok(white >= 12, "white hair survives the first cut");
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("force without a key does not re-key an already-cut chroma frame", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-force-skip-"));
+  const framePath = path.join(folder, "frame.png");
+  try {
+    const frame = chromaHeroFrame();
+    fs.writeFileSync(framePath, encodePngRgba(frame.data, frame.width, frame.height));
+    const first = cutoutFrameFiles([framePath]);
+    assert.equal(first.processedFrameCount, 1);
+    const afterFirst = decodePngRgba(framePath);
+    let whiteBefore = 0;
+    for (let offset = 0; offset < afterFirst.data.length; offset += 4) {
+      if (
+        afterFirst.data[offset + 3] > 16 &&
+        afterFirst.data[offset] > 220 &&
+        afterFirst.data[offset + 1] > 220
+      ) {
+        whiteBefore += 1;
+      }
+    }
+    const second = cutoutFrameFiles([framePath], { force: true });
+    assert.equal(second.keyed, false, "already-cut frames must not pick a new auto key");
+    assert.equal(second.processedFrameCount, 0);
+    const afterForce = decodePngRgba(framePath);
+    let whiteAfter = 0;
+    for (let offset = 0; offset < afterForce.data.length; offset += 4) {
+      if (
+        afterForce.data[offset + 3] > 16 &&
+        afterForce.data[offset] > 220 &&
+        afterForce.data[offset + 1] > 220
+      ) {
+        whiteAfter += 1;
+      }
+    }
+    assert.equal(whiteAfter, whiteBefore, "force must not eat the white hair");
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }

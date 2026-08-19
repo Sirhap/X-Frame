@@ -245,6 +245,35 @@ test("remove_binding deletes sfx, attachments, and trails with dry_run preview",
   }
 });
 
+test("xsxb_add_attachment binds many frames in one call", async () => {
+  const current = await importedFixture();
+  try {
+    const attachmentPath = path.join(current.root, "sword.png");
+    fs.writeFileSync(attachmentPath, bodyFrame(0));
+    const added = await current.service.call("xsxb_add_attachment", {
+      file_path: attachmentPath,
+      id: "ember_sword",
+      scale: 0.13,
+      frames: [
+        { frame: 0, offset_x: 1, offset_y: -2 },
+        { frame: 1, offset_x: 3, offset_y: -4 },
+      ],
+      sync: false,
+    });
+    assert.equal(added.updatedFrames, 2);
+    assert.equal(added.bindings.length, 2);
+    assert.equal(added.bindings[0].frame, 0);
+    assert.equal(added.bindings[1].transform.offset.x, 3);
+    const readBack = await current.service.call("xsxb_get_animation", { include: ["attachments"] });
+    assert.equal(readBack.attachments.length, 2);
+    assert.equal(readBack.attachments[0].id, "ember_sword");
+    assert.equal(readBack.attachments[1].frame, 1);
+    assert.equal(readBack.attachments[1].transform.offset.y, -4);
+  } finally {
+    current.cleanup();
+  }
+});
+
 test("estimate_boxes fills every frame, previews with dry_run, and skips existing overrides", async () => {
   const current = await importedFixture();
   try {
@@ -274,6 +303,46 @@ test("estimate_boxes fills every frame, previews with dry_run, and skips existin
 
     const replaced = await current.service.call("xsxb_estimate_boxes", { replace: true });
     assert.equal(replaced.estimatedFrames, 2);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("add_attack_trail keeps stick layer and reverseDirection and spans the swing", async () => {
+  const current = await importedFixture();
+  try {
+    const trail = await current.service.call("xsxb_add_attack_trail", {
+      id: "cleave",
+      sticks: [
+        {
+          frame: 0,
+          top: { x: -10, y: -40 },
+          bottom: { x: 10, y: -8 },
+          layer: "behind",
+          reverseDirection: true,
+        },
+        {
+          frame: 1,
+          top: { x: 40, y: -12 },
+          bottom: { x: 8, y: -6 },
+          layer: "front",
+          reverseDirection: false,
+        },
+      ],
+      sync: false,
+    });
+    assert.equal(trail.segment.sticks[0].layer, "behind");
+    assert.equal(trail.segment.sticks[0].reverseDirection, true);
+    assert.equal(trail.segment.sticks[1].layer, "front");
+    assert.equal(trail.frameSpan, 1);
+    assert.equal(trail.segment.sticks[0].framePhase, 0);
+    assert.equal(trail.segment.sticks[1].framePhase, 1);
+    assert.ok(trail.centerTravel > 20, "centers must move for this authored pair");
+    assert.ok(trail.edgeTravel > 20, "blade edges must travel");
+    assert.ok(
+      trail.segment.beforeStopChaseMultiplier > 0.08 && trail.segment.beforeStopChaseMultiplier < 0.3,
+    );
+    assert.equal(trail.note, null);
   } finally {
     current.cleanup();
   }

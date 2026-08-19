@@ -13,7 +13,8 @@ const DEFAULT_ATTACK_TRAIL_PRESET_TEXTURE = Object.freeze({
   height: 435,
   hasEffectiveAlpha: false,
 });
-const DEFAULT_BEFORE_CHASE_MULTIPLIER = 0.5;
+const DEFAULT_BEFORE_CHASE_MULTIPLIER = 0.12;
+const DEFAULT_TRAIL_SMEAR_PX = 36;
 const DEFAULT_AFTER_CHASE_MULTIPLIER = 2;
 const DEFAULT_PATH_COLUMNS = 20;
 const LEGACY_BEFORE_CHASE_SPEED = 110;
@@ -143,6 +144,88 @@ function normalizeFramePhases(sticks) {
   return sticks;
 }
 
+/**
+ * Returns the authored stick pose, honoring reverseDirection.
+ * @param {object} stick Stick.
+ * @returns {{top:{x:number,y:number},bottom:{x:number,y:number},center:{x:number,y:number}}} Pose.
+ */
+function stickPose(stick) {
+  const source = stick && typeof stick === "object" ? stick : {};
+  const top = source.reverseDirection ? point(source.bottom) : point(source.top, { x: 0, y: -1 });
+  const bottom = source.reverseDirection
+    ? point(source.top, { x: 0, y: -1 })
+    : point(source.bottom, { x: 0, y: 1 });
+  return { top, bottom, center: { x: (top.x + bottom.x) / 2, y: (top.y + bottom.y) / 2 } };
+}
+
+/**
+ * Sums how far stick centers travel.
+ * @param {object[]} sticks Sticks in order.
+ * @returns {number} Pixels.
+ */
+function stickCenterTravel(sticks) {
+  let travel = 0;
+  for (let index = 1; index < (sticks || []).length; index += 1) {
+    const previous = stickPose(sticks[index - 1]).center;
+    const current = stickPose(sticks[index]).center;
+    travel += Math.hypot(current.x - previous.x, current.y - previous.y);
+  }
+  return travel;
+}
+
+/**
+ * Sums the faster blade-edge travel. A rotating slash counts even when the center stays put.
+ * @param {object[]} sticks Sticks in order.
+ * @returns {number} Pixels.
+ */
+function bladeEdgeTravel(sticks) {
+  let travel = 0;
+  for (let index = 1; index < (sticks || []).length; index += 1) {
+    const previous = stickPose(sticks[index - 1]);
+    const current = stickPose(sticks[index]);
+    travel += Math.max(
+      Math.hypot(current.top.x - previous.top.x, current.top.y - previous.top.y),
+      Math.hypot(current.bottom.x - previous.bottom.x, current.bottom.y - previous.bottom.y),
+    );
+  }
+  return travel;
+}
+
+/**
+ * Auto sticks on a swing start at the first frame and end at the last frame.
+ * Same-frame groups keep the per-frame spread from normalizeFramePhases.
+ * @param {object[]} sticks Normalized sticks.
+ * @returns {object[]} Sticks.
+ */
+function normalizeSegmentPhases(sticks) {
+  const automatic = (sticks || []).filter((stick) => stick.phaseMode !== "manual");
+  if (automatic.length < 2) return sticks;
+  const first = automatic[0];
+  const last = automatic[automatic.length - 1];
+  if (first.frame === last.frame) return sticks;
+  first.framePhase = 0;
+  last.framePhase = 1;
+  return sticks;
+}
+
+/**
+ * Tail start along the path. Chase compresses the brush; a pixel floor keeps
+ * a visible smear instead of a 4px edge on a short rotation.
+ * @param {number} currentDistance Head distance along the path.
+ * @param {number} beforeChaseMultiplier 0 fills the pie, 1 hugs the blade.
+ * @param {number} [smearPx] Minimum ribbon length in path pixels.
+ * @returns {number} Distance where the tail begins.
+ */
+function smearTailDistance(currentDistance, beforeChaseMultiplier, smearPx = DEFAULT_TRAIL_SMEAR_PX) {
+  const distance = Math.max(0, Number(currentDistance) || 0);
+  const chase = clamp(beforeChaseMultiplier, 0, 1, DEFAULT_BEFORE_CHASE_MULTIPLIER);
+  if (chase <= 0 || distance <= 0) return 0;
+  const keep = Math.max(8, Number(smearPx) || DEFAULT_TRAIL_SMEAR_PX);
+  const chased = chase * distance;
+  if (distance <= keep) return chased;
+  return Math.min(chased, distance - keep);
+}
+
 function normalizeChaseMultiplier(segment, phase, sourceSchema = 6) {
   const before = phase === "before";
   const direct = before
@@ -171,11 +254,13 @@ function normalizeSegment(value, index, bindingKey, sourceSchema = 6) {
   const segment = value && typeof value === "object" ? value : {};
   const [profileId = "", animationId = ""] = String(bindingKey || "").split("/");
   const segmentLayer = String(segment.layer || "behind") === "front" ? "front" : "behind";
-  const sticks = normalizeFramePhases(
-    (Array.isArray(segment.sticks) ? segment.sticks : [])
-      .map((stick, stickIndex) => normalizeStick(stick, stickIndex, segmentLayer))
-      .sort((a, b) => a.order - b.order)
-      .map((stick, order) => ({ ...stick, order })),
+  const sticks = normalizeSegmentPhases(
+    normalizeFramePhases(
+      (Array.isArray(segment.sticks) ? segment.sticks : [])
+        .map((stick, stickIndex) => normalizeStick(stick, stickIndex, segmentLayer))
+        .sort((a, b) => a.order - b.order)
+        .map((stick, order) => ({ ...stick, order })),
+    ),
   );
   const color = normalizeColor(segment.color);
   return {
@@ -370,11 +455,17 @@ function validateAttackTrails(data, manifest) {
 
 module.exports = {
   DEFAULT_ATTACK_TRAIL_PRESET_TEXTURE,
+  DEFAULT_BEFORE_CHASE_MULTIPLIER,
+  DEFAULT_TRAIL_SMEAR_PX,
   EMPTY_ATTACK_TRAILS,
+  smearTailDistance,
   attackTrailTextureDirectory,
+  bladeEdgeTravel,
   clone,
   normalizeAttackTrails,
   pngInfo,
   saveAttackTrailTexture,
+  stickCenterTravel,
+  stickPose,
   validateAttackTrails,
 };

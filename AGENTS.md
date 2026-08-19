@@ -58,3 +58,4 @@ Playwright 用例通过 `tools/tests/e2e/fixtures.js` 在每个测试前把 `XSX
 - **新增 schema 关键字要同步校验器**。`xsxb_mcp_schema.test.js` 会遍历整个目录，用到校验器不认识的关键字就直接失败——加 `exclusiveMinimum` 那次就是它当场抓出来的。
 - **写盘路径要留在 XSXB 根目录内**。帧路径本来就有沙箱，`export_gif` 的 `output_path` 也已纳入：相对路径挂到项目工作区，绝对路径必须落在根目录内。agent 传入的 `file_path` 有 64 MB 上限，靠 `requireExistingFile` 的 stat 拦下，不会先读进内存。
 - **模块分工**：`xsxb_mcp_tool_catalog.js` 只放 schema 声明，`xsxb_mcp_arguments.js` 放参数规整，`xsxb_mcp_processes.js` 放 ffmpeg 与 Tuner 子进程，`xsxb_mcp_service.js` 只剩共享状态的 handler 闭包。新工具按这个分工放，别再堆回一个文件。
+- **别丢目标**：过几轮对话或修完一刀代码之后，仍以用户最初要的那件东西为终点。中间修的缺陷、回执、具象结果（拖影/GIF/网格）都不是新任务。详见 `.cursor/rules/keep-user-goal.mdc`。

@@ -7,7 +7,7 @@ const path = require("node:path");
 const test = require("node:test");
 const { ORGANIZER_SIMILARITY_THRESHOLD } = require("../animation_tuner/public/frame_organizer_core");
 const { createProjectStore } = require("../project_store");
-const { findDuplicatesInPngFiles, findLoopInPngFiles } = require("../xsxb_mcp_loop");
+const { adviseLoopCandidate, findDuplicatesInPngFiles, findLoopInPngFiles } = require("../xsxb_mcp_loop");
 const { createXsxbMcpService, toolDefinitions } = require("../xsxb_mcp_service");
 const { validateToolArguments } = require("../xsxb_mcp_schema");
 const { encodePngRgba } = require("../xsxb_mcp_cutout");
@@ -72,9 +72,19 @@ test("findLoopInPngFiles ranks the same 3-frame period as the Tuner core", () =>
         (_, index) => found.recommended.start + index,
       ),
     );
+    assert.equal(found.oneShotLikely, false, "a short repeating cycle is not a one-shot");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("adviseLoopCandidate flags a long clip whose recommended loop covers less than half", () => {
+  const partial = adviseLoopCandidate(26, { coverage: 0.42 });
+  assert.equal(partial.oneShotLikely, true);
+  assert.match(partial.note, /find_motion|one-shot/i);
+  const shortCycle = adviseLoopCandidate(7, { coverage: 0.43 });
+  assert.equal(shortCycle.oneShotLikely, false);
+  assert.equal(shortCycle.note, "");
 });
 
 test("xsxb_find_loop queries a PNG directory without importing", async () => {

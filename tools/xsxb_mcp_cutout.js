@@ -363,8 +363,29 @@ function buildCutoutOptions(backgroundColor, extras = {}) {
  * @param {object} [extras] Optional protect colors and slider overrides.
  * @returns {Uint8ClampedArray} Cutout pixels.
  */
+/**
+ * Drops leftover chroma fog. The product keyer can leave the plate at alpha 13,
+ * which still looks keyed-out and trips alreadyCutOut, but counts as opaque in
+ * metrics and rematch unless it is actually zeroed.
+ * @param {Uint8ClampedArray|Uint8Array} rgba Cutout pixels.
+ * @returns {Uint8ClampedArray} Same buffer with invisible pixels hard-cleared.
+ */
+function flattenResidualAlpha(rgba) {
+  const pixels = rgba instanceof Uint8ClampedArray ? rgba : new Uint8ClampedArray(rgba);
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    if (pixels[offset + 3] > ALPHA_VISIBLE) continue;
+    pixels[offset] = 0;
+    pixels[offset + 1] = 0;
+    pixels[offset + 2] = 0;
+    pixels[offset + 3] = 0;
+  }
+  return pixels;
+}
+
 function applyProtectedSmartCutout(rgba, width, height, backgroundColor, extras = {}) {
-  return applyProductCutout(rgba, width, height, buildCutoutOptions(backgroundColor, extras), []).data;
+  return flattenResidualAlpha(
+    applyProductCutout(rgba, width, height, buildCutoutOptions(backgroundColor, extras), []).data,
+  );
 }
 
 /**
@@ -511,7 +532,8 @@ function placeFramesOnCanvas(frames, canvasWidth, canvasHeight, options = {}) {
  * @returns {{
  *   pipeline:string,
  *   rematched:boolean,
- *   backgroundColor:string,
+ *   keyed:boolean,
+ *   backgroundColor:string|null,
  *   outputWidth:number,
  *   outputHeight:number,
  *   processedFrameCount:number,
@@ -524,14 +546,17 @@ function cutoutFrameFiles(filePaths, options = {}) {
   if (!paths.length) throw new Error("Cutout found no on-disk frames to process.");
   const frames = paths.map((filePath) => decodePngRgba(filePath));
   const requestedBackground = parseHexColor(options.keyColor);
-  const firstLive =
-    frames.find((frame) => !alreadyCutOut(frame.data, frame.width, frame.height)) || frames[0];
-  const backgroundColor =
-    requestedBackground || detectBackgroundColor(firstLive.data, firstLive.width, firstLive.height);
-  const cutoutOptions = buildCutoutOptions(backgroundColor, options);
+  const uncut = frames.filter((frame) => !alreadyCutOut(frame.data, frame.width, frame.height));
+  const shouldKey = uncut.length > 0 || (Boolean(options.force) && Boolean(requestedBackground));
+  const sample = uncut[0] || frames[0];
+  const backgroundColor = shouldKey
+    ? requestedBackground || detectBackgroundColor(sample.data, sample.width, sample.height)
+    : null;
+  const cutoutOptions = backgroundColor ? buildCutoutOptions(backgroundColor, options) : {};
   let skippedFrameCount = 0;
   const cutFrames = frames.map((frame) => {
-    if (!options.force && alreadyCutOut(frame.data, frame.width, frame.height)) {
+    const already = alreadyCutOut(frame.data, frame.width, frame.height);
+    if (!shouldKey || (!options.force && already)) {
       skippedFrameCount += 1;
       return frame;
     }
@@ -558,16 +583,18 @@ function cutoutFrameFiles(filePaths, options = {}) {
   outputFrames.forEach((frame, index) => {
     fs.writeFileSync(paths[index], encodePngRgba(frame.data, frame.width, frame.height));
   });
+  const processedFrameCount = outputFrames.length - skippedFrameCount;
   return {
     pipeline: "smart_product",
     rematched,
     rematchMode: applyVisual ? "visual" : rematched ? "shared" : "none",
     frameScales: applyVisual ? frameScales : undefined,
-    backgroundColor: formatHexColor(backgroundColor),
+    keyed: shouldKey && processedFrameCount > 0,
+    backgroundColor: backgroundColor ? formatHexColor(backgroundColor) : null,
     outputWidth: outputFrames[0].width,
     outputHeight: outputFrames[0].height,
     frameSizes: outputFrames.map((frame) => ({ width: frame.width, height: frame.height })),
-    processedFrameCount: outputFrames.length - skippedFrameCount,
+    processedFrameCount,
     skippedFrameCount,
     options: cutoutOptions,
   };
@@ -613,6 +640,7 @@ function cutoutPngFile(inputPath, outputPath, options = {}) {
 }
 
 module.exports = {
+  ALPHA_VISIBLE,
   alreadyCutOut,
   collectWorkbenchExtras,
   cutoutFrameFiles,

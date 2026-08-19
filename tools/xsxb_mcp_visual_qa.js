@@ -1,6 +1,6 @@
 "use strict";
 
-const { decodePngRgba, subjectAnchor } = require("./xsxb_mcp_cutout");
+const { ALPHA_VISIBLE, decodePngRgba, subjectAnchor } = require("./xsxb_mcp_cutout");
 
 const NEAR_WHITE_LUMA = 240;
 const NEAR_WHITE_ALPHA = 200;
@@ -282,7 +282,7 @@ function measureFrame(rgba, width, height) {
   let nearWhite = 0;
   for (let offset = 0; offset < rgba.length; offset += 4) {
     const alpha = rgba[offset + 3];
-    if (alpha < 8) continue;
+    if (alpha <= ALPHA_VISIBLE) continue;
     opaque += 1;
     const luma = 0.2126 * rgba[offset] + 0.7152 * rgba[offset + 1] + 0.0722 * rgba[offset + 2];
     if (luma >= NEAR_WHITE_LUMA && alpha >= NEAR_WHITE_ALPHA) nearWhite += 1;
@@ -389,7 +389,8 @@ function drawIndexBadge(rgba, width, originX, originY, cell, value) {
 }
 
 /**
- * Projects opaque pixels onto their longest axis and names the thin end as the tip.
+ * Projects opaque pixels onto their longest axis. The pommel is the end closer
+ * to the widest cross-section (guard or forte); the far end is the tip.
  * @param {Uint8ClampedArray|Uint8Array} rgba Pixels.
  * @param {number} width Width.
  * @param {number} height Height.
@@ -400,7 +401,7 @@ function measureLongAxis(rgba, width, height, options = {}) {
   const points = [];
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      if (rgba[(y * width + x) * 4 + 3] < 16) continue;
+      if (rgba[(y * width + x) * 4 + 3] <= ALPHA_VISIBLE) continue;
       points.push({ x, y });
     }
   }
@@ -462,25 +463,31 @@ function measureLongAxis(rgba, width, height, options = {}) {
   }
   const minEnd = { x: meanX + minProj * axisX, y: meanY + minProj * axisY };
   const maxEnd = { x: meanX + maxProj * axisX, y: meanY + maxProj * axisY };
-  /**
-   * Mean width in a window around one end.
-   * @param {{x:number,y:number}} end Axis end.
-   * @returns {number} Mean perpendicular spread.
-   */
-  function endWidth(end) {
-    const window = Math.max(2, Math.hypot(maxEnd.x - minEnd.x, maxEnd.y - minEnd.y) * 0.18);
-    let count = 0;
-    let spread = 0;
-    for (const point of points) {
-      if (Math.hypot(point.x - end.x, point.y - end.y) > window) continue;
-      spread += Math.abs((point.x - end.x) * -axisY + (point.y - end.y) * axisX);
-      count += 1;
-    }
-    return count ? spread / count : 0;
+  const span = Math.max(0.0001, maxProj - minProj);
+  const binCount = 24;
+  const binMin = new Array(binCount).fill(Infinity);
+  const binMax = new Array(binCount).fill(-Infinity);
+  for (const point of points) {
+    const projection = (point.x - meanX) * axisX + (point.y - meanY) * axisY;
+    const bin = Math.min(binCount - 1, Math.max(0, Math.floor(((projection - minProj) / span) * binCount)));
+    const perp = (point.x - meanX) * -axisY + (point.y - meanY) * axisX;
+    if (perp < binMin[bin]) binMin[bin] = perp;
+    if (perp > binMax[bin]) binMax[bin] = perp;
   }
-  const minIsTip = endWidth(minEnd) <= endWidth(maxEnd);
-  const tip = minIsTip ? minEnd : maxEnd;
-  const pommel = minIsTip ? maxEnd : minEnd;
+  let maxWidth = -1;
+  let maxBin = 0;
+  for (let bin = 0; bin < binCount; bin += 1) {
+    if (!Number.isFinite(binMin[bin])) continue;
+    const widthAt = binMax[bin] - binMin[bin];
+    if (widthAt > maxWidth) {
+      maxWidth = widthAt;
+      maxBin = bin;
+    }
+  }
+  const maxStation = minProj + ((maxBin + 0.5) / binCount) * span;
+  const minIsPommel = Math.abs(minProj - maxStation) <= Math.abs(maxProj - maxStation);
+  const pommel = minIsPommel ? minEnd : maxEnd;
+  const tip = minIsPommel ? maxEnd : minEnd;
   /**
    * Interpolates along the pommel→tip axis.
    * @param {number} t Fraction from pommel.

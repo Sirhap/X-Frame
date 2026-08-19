@@ -163,7 +163,7 @@ function toolDefinitions() {
     {
       name: "xsxb_find_loop",
       description:
-        "Rank loop-segment candidates with the same Tuner loop finder. Query an imported animation, a PNG directory, or file_paths. Does not mutate frames; apply a candidate with xsxb_reorganize_frames order.",
+        "Rank loop-segment candidates with the same Tuner loop finder. Query an imported animation, a PNG directory, or file_paths. Does not mutate frames; apply a candidate with xsxb_reorganize_frames order. oneShotLikely is set when the recommended loop covers less than half of a clip with 12+ frames — inspect sheets or use xsxb_find_motion instead of applying a burst.",
       inputSchema: {
         type: "object",
         properties: {
@@ -473,7 +473,7 @@ function toolDefinitions() {
     {
       name: "xsxb_add_attack_trail",
       description:
-        "Add or replace one attack-trail segment. Pass sticks and optional texture_path; omitting sticks writes a default two-stick trail.",
+        "Add or replace one attack-trail segment. Sticks are blade edges (top=tip, bottom=grip) on one swing: start frame when the blade starts moving, end frame at the hit, a mid stick only if the arc bends. layer is behind while the blade is behind the body and front when it is in front. reverseDirection flips the curve handle if the ribbon folds through the body. Path length follows the faster blade edge, so a rotating slash still makes a trailing smear. Auto sticks start at the first frame and end at the last. before_stop_chase defaults to 0.12 so a slash-plus-settle still keeps the slash (拖影); 0 fills the whole swing; 1 hugs the current blade. Receipts include frameSpan, centerTravel, edgeTravel. xsxb_export_gif and xsxb_export_sheet bake the smear onto the preview. Omitting sticks writes a default two-stick trail.",
       inputSchema: {
         type: "object",
         properties: {
@@ -488,10 +488,45 @@ function toolDefinitions() {
           },
           start_frame: { type: "integer", minimum: 0 },
           end_frame: { type: "integer", minimum: 0 },
+          before_stop_chase: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            default: 0.12,
+            description:
+              "0.12 keeps a long smear so a follow-through does not erase the slash. 0 fills the whole swing. 1 hugs the current blade.",
+          },
+          after_stop_chase: {
+            type: "number",
+            minimum: 0.1,
+            maximum: 20,
+            default: 2,
+            description: "How fast the tail catches the head after the last stick.",
+          },
           sticks: {
             type: "array",
-            items: { type: "object" },
-            description: "Trail sticks with frame, top, and bottom points.",
+            description: "Blade-edge sticks. One swing per segment.",
+            items: {
+              type: "object",
+              properties: {
+                frame: { type: "integer", minimum: 0 },
+                top: { type: "object", description: "Blade tip in group coordinates." },
+                bottom: { type: "object", description: "Blade grip in group coordinates." },
+                layer: {
+                  type: "string",
+                  enum: ["behind", "front"],
+                  description: "Draw this stick's mesh behind or in front of the character.",
+                },
+                reverseDirection: {
+                  type: "boolean",
+                  description: "Flip the curve handle. Use when the ribbon folds through the body.",
+                },
+                tangentStrength: {
+                  type: "number",
+                  description: "Curve handle length. Product default 0.8; omit unless editing in Tuner.",
+                },
+              },
+            },
           },
           sync: { type: "boolean", default: true },
         },
@@ -501,13 +536,20 @@ function toolDefinitions() {
     },
     {
       name: "xsxb_add_attachment",
-      description: "Bind a local PNG as a frame image attachment. file_path is required for a real asset.",
+      description:
+        "Bind a local PNG as a frame image attachment. file_path is required for a real asset. Pass frames to bind the same asset on many frames in one write.",
       inputSchema: {
         type: "object",
         properties: {
           ...animationProperties,
           file_path: { type: "string", description: "Absolute PNG path to attach." },
           frame: { type: "integer", minimum: 0, default: 0 },
+          frames: {
+            type: "array",
+            items: { type: "object" },
+            description:
+              "Batch mode: [{frame, offset_x?, offset_y?, scale?, rotation?}, ...] applied in one write. Shared file_path/id/layer apply to every entry. Overrides the single-frame parameters.",
+          },
           id: { type: "string" },
           name: { type: "string" },
           layer: { type: "string", enum: ["above", "below"], default: "above" },
@@ -692,7 +734,7 @@ function toolDefinitions() {
     {
       name: "xsxb_export_gif",
       description:
-        "Export one animation as an animated GIF preview via FFmpeg, honoring per-frame durations and group/frame visual_size. Skips disabled frames. Returns the absolute output path.",
+        "Export one animation as an animated GIF preview via FFmpeg, honoring per-frame durations, group/frame visual_size, and authored attack-trail meshes. Skips disabled frames. Returns the absolute output path.",
       inputSchema: {
         type: "object",
         properties: {
@@ -718,7 +760,7 @@ function toolDefinitions() {
     {
       name: "xsxb_export_sheet",
       description:
-        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size and leftover dirt stay comparable. Every cell is labeled with its absolute 0-based index and the tuner group-coordinate grid (foot origin 0,0; body is negative y). mark_frame highlights one cell for a second cull pass. output_path must stay inside the XSXB root.",
+        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size, leftover dirt, and authored attack-trail meshes stay comparable. Every cell is labeled with its absolute 0-based index and the tuner group-coordinate grid (foot origin 0,0; body is negative y). mark_frame highlights one cell for a second cull pass. output_path must stay inside the XSXB root.",
       inputSchema: {
         type: "object",
         properties: {
@@ -763,7 +805,7 @@ function toolDefinitions() {
     {
       name: "xsxb_measure_image",
       description:
-        'Measure a PNG\'s long axis. The thicker end is the pommel, the thinner end is the tip. Pass t for a handle fraction (0=pommel, 0.5=middle, 0.666 or "2/3", 1=tip). Returns image-pixel landmarks. localFromCenter is the grip relative to the image center; attachment offset = hand - localFromCenter. Does not bind or write frames.',
+        'Measure a PNG\'s long axis. The pommel is the end closer to the widest cross-section (guard or forte); the far end is the tip. Pass t for a handle fraction (0=pommel, 0.5=middle, 0.666 or "2/3", 1=tip). Returns image-pixel landmarks. localFromCenter is the grip relative to the image center; attachment offset = hand - localFromCenter. Does not bind or write frames.',
       inputSchema: {
         type: "object",
         required: ["file_path"],
