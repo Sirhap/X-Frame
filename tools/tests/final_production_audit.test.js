@@ -110,6 +110,7 @@ test("production HTML permits canonical app routes but rejects arbitrary unhashe
     "/workspace/resources/import",
     "/workspace/resources/cutout",
     "/workspace/resources/scatter",
+    "/workspace/animation/overview",
     "/workspace/animation/transform",
     "/workspace/animation/boxes",
     "/workspace/animation/trails",

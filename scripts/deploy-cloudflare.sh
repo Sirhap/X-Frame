@@ -20,6 +20,7 @@ readonly -a HEALTH_CHECK_URLS=(
   "https://xsxb.devops9527.dpdns.org/workspace/resources/import"
   "https://xsxb.devops9527.dpdns.org/workspace/resources/cutout"
   "https://xsxb.devops9527.dpdns.org/workspace/resources/scatter"
+  "https://xsxb.devops9527.dpdns.org/workspace/animation/overview"
   "https://xsxb.devops9527.dpdns.org/workspace/animation/transform"
   "https://xsxb.devops9527.dpdns.org/workspace/animation/boxes"
   "https://xsxb.devops9527.dpdns.org/workspace/animation/trails"
