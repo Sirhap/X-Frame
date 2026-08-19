@@ -146,14 +146,46 @@
 
     let sidebarCollapsed = false;
 
+    let ignoreAutomaticPreview = 0;
+
     /**
      * Schedules an automatic-processing refresh and switches to its result.
      * @param {{recordHistory?:boolean}} [options] Preview history behavior.
      * @returns {void}
      */
     function scheduleAutomaticPreview(options = {}) {
+      if (ignoreAutomaticPreview) return;
       schedulePreview(options);
       activateAutomaticPreview(state, selectedItem());
+    }
+
+    /**
+     * Shows one automatic-parameter panel without recapturing hidden range defaults.
+     * Unhiding Post sliders can fire synthetic `input` events whose HTML values
+     * would otherwise wipe the current result.
+     * @param {string} tab Panel identifier.
+     * @returns {void}
+     */
+    function selectCutoutSettingsTab(tab) {
+      ignoreAutomaticPreview += 1;
+      document.querySelectorAll("[data-cutout-tab]").forEach((candidate) => {
+        const active = candidate.dataset.cutoutTab === tab;
+        candidate.classList.toggle("active", active);
+        candidate.setAttribute("aria-selected", String(active));
+      });
+      document.querySelectorAll("[data-cutout-panel]").forEach((panel) => {
+        const active = panel.dataset.cutoutPanel === tab;
+        panel.classList.toggle("active", active);
+        panel.hidden = !active;
+        panel.setAttribute("aria-hidden", String(!active));
+      });
+      const item = selectedItem();
+      if (item?.processingParameters) applyProcessingParametersToControls(item.processingParameters);
+      state.previewFitScale = null;
+      renderPreview();
+      requestAnimationFrame(() => {
+        ignoreAutomaticPreview = Math.max(0, ignoreAutomaticPreview - 1);
+      });
     }
 
     /**
@@ -588,17 +620,7 @@
       });
       document.querySelectorAll("[data-cutout-tab]").forEach((button) => {
         button.addEventListener("click", () => {
-          const tab = button.dataset.cutoutTab;
-          document.querySelectorAll("[data-cutout-tab]").forEach((candidate) => {
-            candidate.classList.toggle("active", candidate === button);
-            candidate.setAttribute("aria-selected", String(candidate === button));
-          });
-          document.querySelectorAll("[data-cutout-panel]").forEach((panel) => {
-            const active = panel.dataset.cutoutPanel === tab;
-            panel.classList.toggle("active", active);
-            panel.hidden = !active;
-            panel.setAttribute("aria-hidden", String(!active));
-          });
+          selectCutoutSettingsTab(button.dataset.cutoutTab);
         });
         button.addEventListener("keydown", (event) => {
           if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -647,8 +669,11 @@
           }
           if (event.key === "Escape" && !elements.cutoutModal.hidden) {
             if (!elements.cutoutConfirmPanel.hidden) resolveConfirmation(false);
-            else
+            else if (typeof state.worksetResolver === "function") {
               requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
+            } else {
+              event.preventDefault?.();
+            }
             return;
           }
           if (
@@ -711,12 +736,23 @@
       elements.cutoutDespillMode.addEventListener("change", scheduleAutomaticPreview);
       elements.cutoutColor.addEventListener("input", () => {
         const item = selectedItem();
+        const sampled = colorUtils.hexToRgb(elements.cutoutColor.value);
+        const adjusted =
+          root.XSXBSmartCutoutDefaults &&
+          typeof root.XSXBSmartCutoutDefaults.adjustParametersForBackgroundColor === "function"
+            ? root.XSXBSmartCutoutDefaults.adjustParametersForBackgroundColor(
+                item?.processingParameters || sessionCore.captureProcessingParameters(elements),
+                sampled,
+              )
+            : null;
         if (item) {
           recordItemEdit(item);
           backgroundController.clearBackgroundSamples(item);
-          item.backgroundSamples = [
-            backgroundController.normalizeColor(colorUtils.hexToRgb(elements.cutoutColor.value)),
-          ];
+          item.backgroundSamples = [backgroundController.normalizeColor(sampled)];
+          if (adjusted) {
+            item.processingParameters = adjusted;
+            applyProcessingParametersToControls(adjusted);
+          }
         }
         scheduleAutomaticPreview({ recordHistory: false });
       });

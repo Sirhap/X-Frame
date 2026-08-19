@@ -238,7 +238,10 @@
 }
 
 .cutoutSettingTabs button > span {
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.15;
 }
 
 .cutoutSettingTabs .premiumOption {
@@ -251,6 +254,12 @@
   flex: 0 0 auto;
   margin-left: 0;
   padding-inline: 3px;
+}
+
+@media (max-width: 1100px) {
+  .cutoutSettingTabs .premiumOption::after {
+    display: none;
+  }
 }
 
 .cutoutSettingTabs button:hover,

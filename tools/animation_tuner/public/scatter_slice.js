@@ -63,6 +63,9 @@
     groupSelection: requireElement("#scatterGroupSelection"),
     interactionStatus: requireElement("#scatterInteractionStatus"),
     modeInput: requireElement("#scatterMode"),
+    thresholdInput: document.querySelector("#scatterThreshold"),
+    colorKeyFields: document.querySelector("#scatterColorKeyFields"),
+    alphaHint: document.querySelector("#scatterAlphaHint"),
     normalizeBoxesButton: requireElement("#scatterNormalizeBoxes"),
     playAllButton: requireElement("#scatterPlayAll"),
     playAllCanvas: requireElement("#scatterPlaybackAll"),
@@ -217,6 +220,23 @@
   }
 
   /**
+   * Returns whether production builds rejected transparent slicing.
+   * @param {unknown} error Caught failure.
+   * @returns {boolean} True when the web build has no cloud cutout kernel.
+   */
+  function isTransparentSlicingUnavailable(error) {
+    return /Cloud transparent slicing is not available/i.test(String(error?.message || error || ""));
+  }
+
+  /** @returns {string} Visible explanation for a missing cloud cutout kernel. */
+  function transparentSlicingUnavailableMessage() {
+    const language = String(root.document?.documentElement?.lang || root.XSXBLanguage || "");
+    return /en/i.test(language)
+      ? "This web build cannot do cloud transparent slicing. Crops keep the original pixels."
+      : "网页版没有云端透明切片。已按原图裁切，可继续导出。";
+  }
+
+  /**
    * Locks file and detection actions while an asynchronous task is running.
    * @param {boolean} busy Whether work is running.
    * @returns {void}
@@ -241,8 +261,8 @@
     return {
       mode: elements.modeInput.value,
       colorKey: elements.colorInput.value,
-      threshold: core.DEFAULT_OPTIONS.threshold,
-      mergeGap: Math.max(1, Math.min(4, Math.round(shortestSide / 600))),
+      threshold: Number(elements.thresholdInput?.value) || core.DEFAULT_OPTIONS.threshold,
+      mergeGap: Math.max(0, Math.min(4, Math.round(shortestSide / 600))),
       minPixels: Math.max(4, Math.round((width * height) / 100_000)),
       minSide: Math.max(1, Math.round(shortestSide / 500)),
       sortOrder: "row-major",
@@ -371,7 +391,10 @@
       const link = document.createElement("a");
       link.href = url;
       link.download = fileName;
+      link.rel = "noopener";
+      document.body.appendChild(link);
       link.click();
+      link.remove();
       root.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       throw new Error(errorMessage(error, "下载 PNG 失败"));
@@ -486,15 +509,21 @@
     context.imageSmoothingEnabled = false;
     context.drawImage(sourceCanvas, padded.x, padded.y, padded.w, padded.h, 0, 0, padded.w, padded.h);
     if (elements.transparentInput.checked) {
-      const imageData = context.getImageData(0, 0, output.width, output.height);
-      const transparent = smartCutout.applySmartCutout(
-        imageData.data,
-        output.width,
-        output.height,
-        state.smartBackgroundColor,
-      );
-      imageData.data.set(transparent);
-      context.putImageData(imageData, 0, 0);
+      try {
+        const imageData = context.getImageData(0, 0, output.width, output.height);
+        const transparent = smartCutout.applySmartCutout(
+          imageData.data,
+          output.width,
+          output.height,
+          state.smartBackgroundColor,
+        );
+        imageData.data.set(transparent);
+        context.putImageData(imageData, 0, 0);
+      } catch (error) {
+        if (!isTransparentSlicingUnavailable(error)) throw error;
+        elements.transparentInput.checked = false;
+        setStatus(transparentSlicingUnavailableMessage(), "error");
+      }
     }
     state.sliceCanvasCache.set(box, { canvas: output, key: cacheKey });
     return output;
@@ -788,16 +817,22 @@
       reportFailure(error, "预览更新失败");
       return false;
     }
+    let previewOk = true;
     try {
       if (state.previewFrameId !== null) {
         root.cancelAnimationFrame(state.previewFrameId);
         state.previewFrameId = null;
       }
       renderPreview();
+    } catch (error) {
+      previewOk = false;
+      reportFailure(error, "预览更新失败");
+    }
+    try {
       renderSliceList();
       setToolMode(state.toolMode);
       history.updateHistoryControls();
-      return true;
+      return previewOk;
     } catch (error) {
       reportFailure(error, "预览更新失败");
       return false;
@@ -1407,7 +1442,39 @@
     onUnsupported: () => setStatus("零散切片只支持粘贴 PNG、JPG 或 WebP 图片。", "error"),
     onError: (error) => reportFailure(error, "粘贴图片失败"),
   });
+  /**
+   * Shows mode-specific detection controls and reruns recognition when a source is loaded.
+   * @returns {void}
+   */
+  function syncDetectionModeControls() {
+    const mode = elements.modeInput.value;
+    const colorKey = mode !== "alpha";
+    if (elements.colorKeyFields) elements.colorKeyFields.hidden = !colorKey;
+    else {
+      const colorLabel = document.querySelector('label[for="scatterColor"]');
+      if (colorLabel) colorLabel.hidden = !colorKey;
+      elements.colorInput.hidden = !colorKey;
+      elements.colorValue.hidden = !colorKey;
+    }
+    if (elements.thresholdInput) {
+      const thresholdLabel = document.querySelector('label[for="scatterThreshold"]');
+      if (thresholdLabel) thresholdLabel.hidden = mode === "alpha";
+      elements.thresholdInput.hidden = mode === "alpha";
+    }
+    if (elements.alphaHint) elements.alphaHint.hidden = mode !== "alpha";
+  }
+
   elements.detectButton.addEventListener("click", runDetection);
+  elements.modeInput.addEventListener("change", () => {
+    syncDetectionModeControls();
+    if (state.source) runDetection();
+  });
+  if (elements.thresholdInput) {
+    elements.thresholdInput.addEventListener("input", () => {
+      if (state.source && state.boxes.length) runDetection();
+    });
+  }
+  syncDetectionModeControls();
   elements.undoButton.addEventListener("click", history.undo);
   elements.redoButton.addEventListener("click", history.redo);
   elements.regroupButton.addEventListener("click", () => {
@@ -1451,6 +1518,14 @@
   elements.colorInput.addEventListener("input", () => {
     elements.colorValue.textContent = elements.colorInput.value.toUpperCase();
   });
+  if (elements.thresholdInput) {
+    const thresholdValue = document.querySelector("#scatterThresholdValue");
+    const publishThreshold = () => {
+      if (thresholdValue) thresholdValue.textContent = elements.thresholdInput.value;
+    };
+    elements.thresholdInput.addEventListener("input", publishThreshold);
+    publishThreshold();
+  }
   elements.transparentInput.addEventListener("change", () => {
     state.sliceCanvasCache = new WeakMap();
     renderAll();

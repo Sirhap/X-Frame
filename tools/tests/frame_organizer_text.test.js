@@ -23,4 +23,9 @@ test("organizer text exposes the original bilingual keys", () => {
   assert.equal(TEXT.en.discardTitle, "Results are not in a project yet");
   assert.match(TEXT.zh.discardConfirm, /抠图/);
   assert.match(TEXT.en.discardConfirm, /cutout/);
+  assert.equal(TEXT.zh.moreTools, "更多工具");
+  assert.equal(TEXT.en.moreTools, "More Tools");
+  assert.equal(TEXT.en.duplicateBadge, "DUP");
+  assert.equal(TEXT.en.previewPrimary.includes("{current}"), true);
+  assert.doesNotMatch(TEXT.en.cutoutScopeWorkset, /[\u4e00-\u9fff]/u);
 });

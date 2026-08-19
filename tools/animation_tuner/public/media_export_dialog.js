@@ -272,14 +272,31 @@
       return true;
     }
 
+    /** @returns {string} Why GIF/MP4 stay disabled in the web build. */
+    function localEncodeUnavailableReason() {
+      return english()
+        ? "GIF/MP4/MOV need the local app with FFmpeg. This web page cannot encode them."
+        : "网页版不能编码 GIF/MP4。请使用安装了 FFmpeg 的本地版。";
+    }
+
+    /** Applies the current local-encoder availability to GIF/MP4/MOV controls. */
+    function applyLocalFormatAvailability(busy) {
+      const unavailable = !localExportAvailable;
+      const reason = unavailable ? localEncodeUnavailableReason() : "";
+      [elements.mediaExportGif, elements.mediaExportMp4, elements.mediaExportMov]
+        .filter(Boolean)
+        .forEach((input) => {
+          input.disabled = busy || unavailable;
+          input.title = input.disabled && unavailable ? reason : "";
+        });
+    }
+
     /** Locks format choices during export while preserving local capability state. */
     function renderSubmittingState() {
       const busy = submitting || recoveringActive;
       elements.mediaExportFrames.disabled = busy;
       elements.mediaExportSheet.disabled = busy;
-      elements.mediaExportGif.disabled = busy || !localExportAvailable;
-      if (elements.mediaExportMp4) elements.mediaExportMp4.disabled = busy || !localExportAvailable;
-      elements.mediaExportMov.disabled = busy || !localExportAvailable;
+      applyLocalFormatAvailability(busy);
       elements.mediaExportSubmit.disabled = busy;
       elements.mediaExportDialog.setAttribute("aria-busy", String(busy));
       elements.mediaExportCancel.textContent = busy

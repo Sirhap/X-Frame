@@ -3,9 +3,11 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  BLACK_PLATE_OVERRIDES,
   CHROMA_SMART_OVERRIDES,
   PLATE_SMART_OVERRIDES,
   REGULAR_AUTO_BACKGROUND_PARAMETERS,
+  adjustParametersForBackgroundColor,
   classifySmartBackground,
   overlaySmartCutoutParameters,
   referenceChromaKeyFor,
@@ -119,4 +121,49 @@ test("black plates keep reference chroma key off even when perceptual is false",
   assert.equal(referenceChromaKeyFor({ r: 8, g: 7, b: 9 }, false), false);
   assert.equal(referenceChromaKeyFor({ r: 0, g: 177, b: 64 }, false), true);
   assert.equal(referenceChromaKeyFor({ r: 8, g: 7, b: 9 }, true), false);
+});
+
+test("a #000000 plate with compression noise still clears the background", () => {
+  const size = 32;
+  const rgba = new Uint8ClampedArray(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const inside = x >= size / 4 && x < (size * 3) / 4 && y >= size / 4 && y < (size * 3) / 4;
+      const noise = (x + y) % 17;
+      const color = inside ? [220, 60, 60] : [noise, noise, noise];
+      rgba.set([color[0], color[1], color[2], 255], (y * size + x) * 4);
+    }
+  }
+  const parameters = resolveSmartCutoutParameters("#000000");
+  assert.equal(parameters.tolerance, BLACK_PLATE_OVERRIDES.tolerance);
+  assert.ok(parameters.tolerance > PLATE_SMART_OVERRIDES.tolerance);
+  const { data } = cutoutCore.applyCutout(rgba, size, size, {
+    ...createSmartCutoutOptions({ r: 0, g: 0, b: 0 }),
+    backgroundColors: [{ r: 0, g: 0, b: 0, a: 255 }],
+    seedPoints: [],
+    protectedColors: [],
+  });
+  assert.ok(data[3] === 0, "the noisy black corner becomes transparent");
+  assert.equal(data[((size / 2) * size + size / 2) * 4 + 3], 255, "the subject stays opaque");
+  let cleared = 0;
+  let opaque = 0;
+  for (let offset = 3; offset < data.length; offset += 4) {
+    if (data[offset] === 0) cleared += 1;
+    if (data[offset] === 255) opaque += 1;
+  }
+  assert.equal(cleared, size * size - (size / 2) * (size / 2));
+  assert.equal(opaque, (size / 2) * (size / 2));
+});
+
+test("picking #000000 raises the idle plate tolerance without clobbering a manual crank", () => {
+  const idle = adjustParametersForBackgroundColor(
+    { ...REGULAR_AUTO_BACKGROUND_PARAMETERS, tolerance: PLATE_SMART_OVERRIDES.tolerance },
+    "#000000",
+  );
+  assert.equal(idle.tolerance, BLACK_PLATE_OVERRIDES.tolerance);
+  const manual = adjustParametersForBackgroundColor(
+    { ...REGULAR_AUTO_BACKGROUND_PARAMETERS, tolerance: 40 },
+    "#000000",
+  );
+  assert.equal(manual.tolerance, 40);
 });

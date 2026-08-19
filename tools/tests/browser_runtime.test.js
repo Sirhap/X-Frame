@@ -75,6 +75,70 @@ test("browser runtime builds a portable animation package", async () => {
   assert.equal(manifest.animation.frames[0].file, "frames/Walk-East1.png");
 });
 
+test("sprite-sheet-only export downloads PNG files instead of a zip package", async () => {
+  const downloads = [];
+  const documentApi = {
+    body: {
+      append(node) {
+        this.last = node;
+      },
+    },
+    createElement() {
+      return {
+        hidden: true,
+        click() {
+          downloads.push({ href: this.href, download: this.download });
+        },
+        remove() {},
+      };
+    },
+  };
+  let zipBuilds = 0;
+  const sheetBlob = new Blob(["png"]);
+  const result = await browserRuntime.exportAnimationPackage(
+    { animationName: "Walk / East", exportRecipe: { metadataJson: false } },
+    [
+      {
+        name: "walk.png",
+        data: "data:image/png;base64,AA==",
+        image: { width: 8, height: 8 },
+        width: 8,
+        height: 8,
+      },
+    ],
+    {
+      formats: { frames: false, spritesheet: true },
+      batchZip: {
+        async buildZip() {
+          zipBuilds += 1;
+          return new Blob(["zip"]);
+        },
+      },
+      mediaExportCore: {
+        ...mediaExportCore,
+        async renderSpriteSheetEntries() {
+          return [{ name: "spritesheets/Walk-East.png", data: sheetBlob }];
+        },
+        createAtlasManifest() {
+          return { sheets: [{ file: "spritesheets/Walk-East.png" }] };
+        },
+        planSpriteSheets() {
+          return { pages: [{ index: 0, width: 8, height: 8 }], placements: [] };
+        },
+      },
+      document: documentApi,
+      urlApi: {
+        createObjectURL: () => "blob:sheet",
+        revokeObjectURL() {},
+      },
+    },
+  );
+
+  assert.equal(zipBuilds, 0);
+  assert.equal(result.filename, "Walk-East.png");
+  assert.equal(downloads[0].download, "Walk-East.png");
+});
+
 test("browser runtime rejects frames without processed PNG data", async () => {
   await assert.rejects(
     browserRuntime.exportAnimationPackage({ animationName: "Idle" }, [{ data: "" }], {
@@ -130,7 +194,8 @@ test("browser runtime creates organizer ZIP output after permit verification", a
 });
 
 test("browser runtime builds a sprite-sheet-only package without dangling PNG paths", async () => {
-  let capturedEntries = [];
+  let zipBuilds = 0;
+  const downloads = [];
   const drawCalls = [];
   const canvas = {
     width: 0,
@@ -142,7 +207,7 @@ test("browser runtime builds a sprite-sheet-only package without dangling PNG pa
     toBlob: (callback) => callback(new Blob(["sheet"])),
   };
 
-  await browserRuntime.exportAnimationPackage(
+  const result = await browserRuntime.exportAnimationPackage(
     { animationName: "Idle", fps: 10 },
     [
       {
@@ -156,27 +221,39 @@ test("browser runtime builds a sprite-sheet-only package without dangling PNG pa
     {
       formats: { frames: false, spritesheet: true },
       mediaExportCore,
-      urlApi: {},
+      urlApi: {
+        createObjectURL: () => "blob:sheet",
+        revokeObjectURL() {},
+      },
       document: {
-        body: { append() {} },
-        createElement: (tagName) => (tagName === "canvas" ? canvas : { click() {}, remove() {} }),
+        body: {
+          append(node) {
+            this.last = node;
+          },
+        },
+        createElement: (tagName) =>
+          tagName === "canvas"
+            ? canvas
+            : {
+                hidden: true,
+                click() {
+                  downloads.push({ href: this.href, download: this.download });
+                },
+                remove() {},
+              },
       },
       batchZip: {
-        async buildZip(entries) {
-          capturedEntries = entries;
+        async buildZip() {
+          zipBuilds += 1;
           return new Blob(["zip"]);
         },
       },
     },
   );
 
-  assert.ok(!capturedEntries.some((entry) => entry.name.startsWith("frames/")));
-  assert.ok(capturedEntries.some((entry) => entry.name === "spritesheets/Idle.png"));
-  assert.ok(capturedEntries.some((entry) => entry.name === "spritesheets/atlas.json"));
-  const manifest = JSON.parse(capturedEntries.find((entry) => entry.name === "xsxb-animation.json").data);
-  assert.equal(manifest.outputs.pngSequence, false);
-  assert.equal(manifest.outputs.spriteSheet, true);
-  assert.equal("file" in manifest.animation.frames[0], false);
+  assert.equal(zipBuilds, 0);
+  assert.match(result.filename, /\.png$/i);
+  assert.equal(downloads[0].download, result.filename);
   assert.deepEqual(drawCalls[0], [{ id: "idle" }, 0, 0, 32, 24]);
 });
 

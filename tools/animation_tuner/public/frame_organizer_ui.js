@@ -432,6 +432,9 @@
         documentApi.querySelectorAll("[data-organizer-i18n]").forEach((node) => {
           node.textContent = text(node.dataset.organizerI18n);
         });
+        documentApi.querySelectorAll("[data-organizer-i18n-aria-label]").forEach((node) => {
+          node.setAttribute("aria-label", text(node.dataset.organizerI18nAriaLabel));
+        });
         elements.organizerClose.setAttribute("aria-label", text("close"));
         elements.organizerVideoClose.setAttribute("aria-label", text("close"));
         elements.organizerLoopClose.setAttribute("aria-label", text("close"));
@@ -454,14 +457,23 @@
               : "importSubtitle"
             : "subtitle",
         );
+        const groupedSources = new Set((state.frames || []).map((frame) => frame.groupId).filter(Boolean))
+          .size;
+        const writeCurrent = hooks?.commitImportToCurrent?.() === true && groupedSources <= 1;
         elements.organizerApply.textContent = text(
-          state.mode === "import" ? (browserExportOnly ? "importSession" : "create") : "apply",
+          state.mode === "import"
+            ? writeCurrent
+              ? "apply"
+              : browserExportOnly
+                ? "importSession"
+                : "create"
+            : "apply",
         );
         elements.organizerGodotPlaceholder.hidden = true;
         elements.organizerGodotPlaceholder.textContent = text("importSession");
         elements.organizerReset.textContent = text(state.mode === "import" ? "clearWorkset" : "reset");
         elements.organizerClearWorkset.hidden = state.mode === "import";
-        elements.organizerImportSetup.hidden = state.mode !== "import";
+        elements.organizerImportSetup.hidden = state.mode !== "import" || writeCurrent;
         elements.organizerImportSetup
           .closest(".organizerWorkbench")
           ?.classList.toggle("importMode", state.mode === "import");
@@ -726,8 +738,7 @@
             state.lastExpandedPanel = "";
             renderCounts();
             elements.organizerToggleImportSetup.focus({ preventScroll: true });
-          } else
-            requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
+          } else event.preventDefault();
         });
         videoImporter.bindEvents();
         loopFinder.bindEvents();

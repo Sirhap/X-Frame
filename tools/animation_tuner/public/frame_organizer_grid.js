@@ -63,7 +63,17 @@
       const workbench = elements.organizerImportSetup?.closest?.(".organizerWorkbench");
       workbench?.classList?.toggle("hasFrames", hasFrames);
       workbench?.classList?.toggle("showImportSetup", Boolean(state.showImportSetup));
-      elements.organizerToggleImportSetup.hidden = state.mode !== "import";
+      const groupedSources = new Set(
+        state.frames
+          .filter((frame) => frame.included)
+          .map((frame) => frame.groupId)
+          .filter(Boolean),
+      ).size;
+      const writeCurrent = dependencies.commitImportToCurrent?.() === true && groupedSources <= 1;
+      elements.organizerToggleImportSetup.hidden = state.mode !== "import" || writeCurrent;
+      if (elements.organizerImportSetup) {
+        elements.organizerImportSetup.hidden = state.mode !== "import" || writeCurrent;
+      }
       elements.organizerToggleImportSetup.setAttribute(
         "aria-expanded",
         String(state.mode === "import" && state.showImportSetup),
@@ -79,15 +89,15 @@
       const batchScopeText = documentApi?.querySelector?.("#organizerBatchScopeText");
       const cutoutScope = documentApi?.querySelector?.("#organizerBatchCutoutScope");
       if (batchScope) batchScope.hidden = selected < 2;
-      if (batchScopeText) batchScopeText.textContent = `将操作应用到 ${selected} 帧`;
+      if (batchScopeText) batchScopeText.textContent = text("batchScopeApply", { count: selected });
       if (cutoutScope) {
         cutoutScope.textContent = selected
-          ? `作用于当前选择 · ${selected} 帧`
-          : `作用于参与工作集 · ${included} 帧`;
+          ? text("cutoutScopeSelection", { count: selected })
+          : text("cutoutScopeWorkset", { count: included });
       }
       elements.organizerApply.disabled =
         !included || state.busy || (state.mode === "edit" && !animation?.frames?.length);
-      if (state.mode === "import" && elements.organizerCreationMode) {
+      if (state.mode === "import" && !writeCurrent && elements.organizerCreationMode) {
         const groupCount = new Set(
           state.frames
             .filter((frame) => frame.included)
@@ -95,7 +105,7 @@
             .filter(Boolean),
         ).size;
         if (elements.organizerCreationMode.value === "groups" && groupCount > 1) {
-          elements.organizerApply.textContent = `创建 ${groupCount} 个动画并进入调参`;
+          elements.organizerApply.textContent = text("createAnimations", { count: groupCount });
         }
       }
       elements.organizerGodotPlaceholder.disabled =
@@ -203,7 +213,7 @@
       const cacheKey = state.viewMode === "original" ? "original" : "edited";
       if (!frame.thumbnails[cacheKey]) {
         const canvas = cacheKey === "original" ? frame.originalCanvas : frame.editedCanvas;
-        frame.thumbnails[cacheKey] = canvas.toDataURL("image/png");
+        frame.thumbnails[cacheKey] = createThumbnailDataUrl(canvas, 156, documentApi);
       }
       return frame.thumbnails[cacheKey];
     }
@@ -319,5 +329,30 @@
     return { renderCounts, renderGrid, selectFrame, selectIndexes, reorderFrame };
   }
 
-  return { createController };
+  /**
+   * Encodes a filmstrip-sized PNG so grid cards never re-encode the full frame.
+   * @param {{width?:number,height?:number,toDataURL?:Function}} sourceCanvas Source frame canvas.
+   * @param {number} [maxEdge=156] Longest thumbnail edge.
+   * @param {{createElement?:Function}|null} [documentApi] Document used to allocate the scaled canvas.
+   * @returns {string} PNG data URL.
+   */
+  function createThumbnailDataUrl(sourceCanvas, maxEdge = 156, documentApi = root.document) {
+    const width = Number(sourceCanvas?.width) || 0;
+    const height = Number(sourceCanvas?.height) || 0;
+    if (!width || !height || typeof sourceCanvas.toDataURL !== "function") return "";
+    const limit = Math.max(1, Number(maxEdge) || 156);
+    const scale = Math.min(1, limit / Math.max(width, height));
+    if (scale >= 1) return sourceCanvas.toDataURL("image/png");
+    const canvas = documentApi?.createElement?.("canvas");
+    if (!canvas?.getContext) return sourceCanvas.toDataURL("image/png");
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) return sourceCanvas.toDataURL("image/png");
+    context.imageSmoothingEnabled = false;
+    context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  }
+
+  return { createController, createThumbnailDataUrl };
 });

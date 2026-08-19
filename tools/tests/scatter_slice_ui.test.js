@@ -27,6 +27,36 @@ test("scatter detection updates counters before preview and does not mask render
   );
 });
 
+test("scatter detection keeps the group list even when preview rendering fails", () => {
+  const script = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/scatter_slice.js"),
+    "utf8",
+  );
+  const renderAll = script.slice(
+    script.indexOf("function renderAll()"),
+    script.indexOf("function runDetection()"),
+  );
+  const previewTry = renderAll.indexOf("renderPreview()");
+  const listCall = renderAll.indexOf("renderSliceList()");
+  assert.ok(previewTry > 0 && listCall > previewTry, "the group list renders after preview");
+  assert.match(renderAll, /catch \(error\) \{[^}]*reportFailure/);
+  const previewCatch = renderAll.indexOf("reportFailure", previewTry);
+  assert.ok(previewCatch > 0 && listCall > previewCatch, "preview failures must not skip the group list");
+});
+
+test("scatter detection mode exposes a threshold and retriggers recognition", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const script = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/scatter_slice.js"),
+    "utf8",
+  );
+  assert.match(html, /id="scatterThreshold"/);
+  assert.match(script, /elements\.modeInput\.addEventListener\("change"/);
+  assert.match(script, /runDetection\(\)/);
+  assert.match(script, /threshold:\s*Number\(elements\.thresholdInput/);
+  assert.match(script, /mergeGap:\s*Math\.max\(0,/);
+});
+
 test("scatter-slice routes recoverable failures through one error boundary", () => {
   const script = fs.readFileSync(
     path.resolve(__dirname, "../animation_tuner/public/scatter_slice.js"),
@@ -77,4 +107,24 @@ test("scatter-slice exposes history, grouping, multi-selection, and sizing contr
   assert.match(html, /src="\/batch_cutout_background_estimator\.js"/);
   assert.match(html, /id="scatterTransparent"[^>]+aria-label="智能抠图"/u);
   assert.match(html, /id="scatterUniformOutput"[^>]+aria-label="统一输出画布"/u);
+});
+
+test("scatter-slice degrades missing cloud transparency into a human export path", () => {
+  const script = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/scatter_slice.js"),
+    "utf8",
+  );
+
+  assert.match(script, /网页版没有云端透明切片/);
+  assert.match(script, /transparentInput\.checked = false/);
+  assert.match(script, /link\.download = fileName/);
+  assert.match(script, /document\.body\.append\(link\)|document\.body\.appendChild\(link\)/);
+});
+
+test("scatter results title and threshold markup are localized from the shared table", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  assert.match(html, /id="scatterResultsTitle"[^>]*data-i18n="scatterResultsTitle"/);
+  assert.match(html, /id="scatterThreshold"/);
+  assert.match(html, /data-i18n="scatterThreshold"/);
+  assert.match(html, /data-i18n="scatterAlphaHint"/);
 });

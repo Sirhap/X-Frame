@@ -244,7 +244,22 @@
       renderProgress(0, count * 3);
       setStage("params");
       elements.organizerLoopPanel.hidden = false;
+      showDialogError("");
       elements.organizerLoopStartSearch.focus();
+    }
+
+    /**
+     * Keeps search failures inside the dialog so the overlay no longer hides them.
+     * @param {string} message Visible error, or empty to clear.
+     * @returns {void}
+     */
+    function showDialogError(message) {
+      const textValue = String(message || "");
+      if (elements.organizerLoopError) {
+        elements.organizerLoopError.hidden = !textValue;
+        elements.organizerLoopError.textContent = textValue;
+      }
+      if (textValue) dependencies.setStatus(textValue, "error");
     }
 
     /** @returns {void} */
@@ -256,7 +271,8 @@
       stopPlayback();
       elements.organizerLoopPanel.hidden = true;
       dependencies.renderCounts();
-      elements.organizerFindLoop.focus({ preventScroll: true });
+      const restoreFocus = elements.organizerFileInput || elements.organizerAddAssets;
+      restoreFocus?.focus?.({ preventScroll: true });
     }
 
     /** @returns {Promise<void>} */
@@ -266,7 +282,7 @@
         .map((frame, index) => ({ frame, index }))
         .filter((entry) => entry.frame.included);
       if (sourceEntries.length < MINIMUM_LOOP_FRAMES) {
-        dependencies.setStatus(text("loopNeedFrames"), "error");
+        showDialogError(text("loopNeedFrames"));
         return;
       }
       const searchToken = state.loopSearchToken + 1;
@@ -275,6 +291,7 @@
       state.loopSourceEntries = sourceEntries;
       state.busy = true;
       dependencies.renderCounts();
+      showDialogError("");
       setStage("search");
       renderProgress(0, sourceEntries.length * 3);
       try {
@@ -319,9 +336,11 @@
         setStage("results");
         renderCandidates();
       } catch (error) {
-        if (searchToken !== state.loopSearchToken) return;
+        if (searchToken !== state.loopSearchToken || state.loopCancelled || error?.name === "AbortError") {
+          return;
+        }
         setStage("params");
-        dependencies.setStatus(text("failed", { message: normalizeError(error).message }), "error");
+        showDialogError(text("failed", { message: normalizeError(error).message }));
       } finally {
         if (searchToken === state.loopSearchToken) {
           state.busy = false;
@@ -387,21 +406,10 @@
       });
       elements.organizerLoopStartSearch.addEventListener("click", () => {
         startSearch().catch((error) => {
-          dependencies.setStatus(text("failed", { message: normalizeError(error).message }), "error");
+          showDialogError(text("failed", { message: normalizeError(error).message }));
         });
       });
-      elements.organizerLoopCancel.addEventListener("click", () => {
-        if (state.loopStage !== "search") {
-          close();
-          return;
-        }
-        state.loopCancelled = true;
-        state.loopSearchToken += 1;
-        executor.cancelAll();
-        state.busy = false;
-        setStage("params");
-        dependencies.renderCounts();
-      });
+      elements.organizerLoopCancel.addEventListener("click", close);
       elements.organizerLoopRetry.addEventListener("click", () => {
         stopPlayback();
         setStage("params");

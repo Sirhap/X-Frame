@@ -459,8 +459,8 @@
     const cutoutExecutor = dependencies.cutoutClient.createExecutor({
       WorkerConstructor: dependencies.WorkerConstructor,
       workerUrl: dependencies.cutoutWorkerUrl,
-      allowSyncFallback: false,
-      syncProcess: null,
+      allowSyncFallback: dependencies.allowSyncFallback === true,
+      syncProcess: dependencies.syncProcess || null,
     });
     const frameExecutor = dependencies.frameClient.createExecutor({
       WorkerConstructor: dependencies.WorkerConstructor,
@@ -676,19 +676,34 @@
     if (!browserRoot) throw new ProtectedAlgorithmError("ENGINE_BROWSER_CONTEXT_MISSING");
     if (browserRoot[DEFAULT_RUNTIME_KEY]) return browserRoot[DEFAULT_RUNTIME_KEY];
     const production = browserRoot.__XSXB_PRODUCTION__ === true;
-    const adapter = production
-      ? createProductionWorkerAdapter({
+    const canUseWorker =
+      typeof browserRoot.Worker === "function" &&
+      typeof browserRoot.BatchCutoutWorkerClient?.createExecutor === "function" &&
+      typeof browserRoot.FrameOrganizerWorkerClient?.createExecutor === "function";
+    let adapter = null;
+    if (production || canUseWorker) {
+      try {
+        adapter = createProductionWorkerAdapter({
           WorkerConstructor: browserRoot.Worker,
           cutoutClient: browserRoot.BatchCutoutWorkerClient,
           frameClient: browserRoot.FrameOrganizerWorkerClient,
-        })
-      : createDevelopmentJsAdapter({
-          cutout: browserRoot.BatchCutoutCore,
-          tracking: browserRoot.CutoutTrackingCore,
-          localTracking: browserRoot.CutoutLocalTrackingCore,
-          quality: browserRoot.CutoutQualityCore,
-          frame: browserRoot.FrameOrganizerCore,
+          allowSyncFallback: !production,
+          syncProcess: !production ? browserRoot.BatchCutoutCore?.applyProductCutout : null,
         });
+      } catch (error) {
+        if (production) throw error;
+        adapter = null;
+      }
+    }
+    if (!adapter) {
+      adapter = createDevelopmentJsAdapter({
+        cutout: browserRoot.BatchCutoutCore,
+        tracking: browserRoot.CutoutTrackingCore,
+        localTracking: browserRoot.CutoutLocalTrackingCore,
+        quality: browserRoot.CutoutQualityCore,
+        frame: browserRoot.FrameOrganizerCore,
+      });
+    }
     browserRoot[DEFAULT_RUNTIME_KEY] = createRuntime({
       adapter,
       capabilities: { transferableArrayBuffer: true },

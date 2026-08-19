@@ -779,6 +779,30 @@
   }
 
   /**
+   * Starts a same-tab download for one Blob without wrapping it in a ZIP.
+   * @param {Blob} blob File bytes.
+   * @param {string} filename Suggested download name.
+   * @param {Document|undefined} documentApi Host document.
+   * @param {typeof URL|undefined} urlApi URL constructor.
+   * @returns {void}
+   */
+  function triggerBrowserDownload(blob, filename, documentApi, urlApi) {
+    if (!blob || !documentApi || !urlApi?.createObjectURL) return;
+    const objectUrl = urlApi.createObjectURL(blob);
+    try {
+      const anchor = documentApi.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      anchor.hidden = true;
+      documentApi.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+    } finally {
+      root.setTimeout?.(() => urlApi.revokeObjectURL(objectUrl), 1000);
+    }
+  }
+
+  /**
    * Builds a browser-downloadable animation package from processed PNG data URLs.
    * @param {object} metadata Animation metadata collected by the organizer.
    * @param {Array<{name?:string,data:string,flipped?:boolean}>} items Processed frame items.
@@ -790,7 +814,6 @@
     if (!Array.isArray(items) || !items.length) throw new Error("At least one processed frame is required.");
     throwIfExportCancelled(dependencies.signal);
     const batchZip = dependencies.batchZip || root.BatchZip;
-    if (!batchZip || typeof batchZip.buildZip !== "function") throw new Error("ZIP export is unavailable.");
     const premiumFeatureIds = Array.from(dependencies.premiumFeatures || []);
     await verifyPremiumExportAuthorization(
       premiumFeatureIds,
@@ -910,6 +933,32 @@
       );
     }
     throwIfExportCancelled(dependencies.signal);
+    const documentApi = dependencies.document || root.document;
+    const urlApi = dependencies.urlApi || root.URL;
+    if (formats.spritesheet && !formats.frames) {
+      const sheetEntries = entries.filter(
+        (entry) => typeof entry?.name === "string" && /\.png$/i.test(entry.name) && entry.data,
+      );
+      if (!sheetEntries.length) throw new Error("Sprite-sheet export produced no PNG pages.");
+      const downloads = [];
+      for (const entry of sheetEntries) {
+        const filename = String(entry.name).replace(/^.*\//, "");
+        const blob =
+          typeof Blob === "function" && entry.data instanceof Blob
+            ? entry.data
+            : new Blob([entry.data], { type: "image/png" });
+        triggerBrowserDownload(blob, filename, documentApi, urlApi);
+        downloads.push({ filename, blob });
+      }
+      return {
+        filename: downloads[0].filename,
+        frameCount: items.length,
+        blob: downloads[0].blob,
+        downloads,
+        premiumFeatures: premiumFeatureIds,
+      };
+    }
+    if (!batchZip || typeof batchZip.buildZip !== "function") throw new Error("ZIP export is unavailable.");
     const blob = await batchZip.buildZip(entries, {
       onProgress: (current) => {
         throwIfExportCancelled(dependencies.signal);
@@ -918,22 +967,7 @@
     });
     throwIfExportCancelled(dependencies.signal);
     const filename = `${safeFilename(metadata.animationName)}-xsxb.zip`;
-    const documentApi = dependencies.document || root.document;
-    const urlApi = dependencies.urlApi || root.URL;
-    if (documentApi && urlApi?.createObjectURL) {
-      const objectUrl = urlApi.createObjectURL(blob);
-      try {
-        const anchor = documentApi.createElement("a");
-        anchor.href = objectUrl;
-        anchor.download = filename;
-        anchor.hidden = true;
-        documentApi.body.append(anchor);
-        anchor.click();
-        anchor.remove();
-      } finally {
-        root.setTimeout?.(() => urlApi.revokeObjectURL(objectUrl), 1000);
-      }
-    }
+    triggerBrowserDownload(blob, filename, documentApi, urlApi);
     return { filename, frameCount: items.length, blob, premiumFeatures: premiumFeatureIds };
   }
 

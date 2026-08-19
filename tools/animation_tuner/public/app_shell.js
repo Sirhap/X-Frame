@@ -9,11 +9,9 @@
 
   const STORAGE_KEYS = Object.freeze({
     sidebarCollapsed: "xsxbFrameTuner.sidebarCollapsed",
-    activePanelTab: "xsxbFrameTuner.activePanelTab",
     filmstripLayout: "xsxbFrameTuner.filmstripLayout",
     kunkunUnlocked: "xsxbFrameTuner.kunkunUnlocked",
   });
-  const SIDEBAR_TABS = Object.freeze(["project", "transform", "boxes", "effects"]);
   const FILMSTRIP_LAYOUTS = Object.freeze(["single", "grid"]);
   const TOOL_ROUTE_BY_PATH = Object.freeze({
     "/tools/cutout": "cutout",
@@ -25,6 +23,7 @@
     "/workspace/resources/import": "organizer",
     "/workspace/resources/cutout": "cutout",
     "/workspace/resources/scatter": "scatter",
+    "/workspace/animation/overview": "overview",
     "/workspace/animation/transform": "animation",
     "/workspace/animation/boxes": "boxes",
     "/workspace/animation/trails": "trails",
@@ -35,15 +34,6 @@
     "/workspace/delivery/codex-pet": "codex-pet",
     "/tools/export": "export",
   });
-
-  /**
-   * Returns a supported sidebar tab.
-   * @param {unknown} value Persisted tab value.
-   * @returns {"project"|"transform"|"boxes"|"effects"} Safe tab.
-   */
-  function normalizeSidebarTab(value) {
-    return SIDEBAR_TABS.includes(String(value)) ? String(value) : "transform";
-  }
 
   /**
    * Returns a supported filmstrip layout.
@@ -82,7 +72,6 @@
    * @returns {{
    *   bind:()=>void,
    *   destroy:()=>void,
-   *   setSidebarTab:(tab:string)=>void,
    *   setFilmstripLayout:(layout:string)=>void,
    *   setSidebarCollapsed:(collapsed:boolean)=>void,
    *   syncActiveRoute:()=>void,
@@ -110,7 +99,6 @@
       scatterSliceSurface: documentRef.querySelector("#scatterSliceSurface"),
       deliverySurface: documentRef.querySelector("#deliverySurface"),
       collapse: documentRef.querySelector("#sidebarCollapse"),
-      sidebarTabs: Array.from(documentRef.querySelectorAll("[data-sidebar-tab]")),
       filmstripPanel: documentRef.querySelector(".filmstripPanel"),
       filmstripButtons: Array.from(documentRef.querySelectorAll("[data-filmstrip-layout]")),
       routeItems: Array.from(documentRef.querySelectorAll("[data-app-mode]")),
@@ -219,19 +207,25 @@
       disposers.push(() => target?.removeEventListener?.(type, listener));
     }
 
-    /** Assigns existing sidebar blocks to stable information-architecture tabs. */
+    /**
+     * Assigns sidebar blocks to the workspace tool that owns them, so the URL is the
+     * only thing that decides which panel is on screen. Blocks left uncategorized —
+     * the animation picker — stay visible on every tool because they are context
+     * rather than one tool's parameters.
+     */
     function categorizeSidebar() {
       const categorySelectors = {
-        project: [
+        overview: [
           "#projectContext",
           "#importAnimationOpen",
-          ".animationPicker",
           '[data-panel="project-processing"]',
           '[data-panel="scene-reference"]',
         ],
-        transform: ['[data-panel="adjustment-base"]'],
+        animation: ['[data-panel="adjustment-base"]'],
         boxes: ['[data-panel="boxes"]'],
-        effects: ['[data-panel="attachment-assets"]', '[data-panel="attack-trails"]'],
+        trails: ['[data-panel="attack-trails"]'],
+        audio: ['[data-panel="frame-audio"]'],
+        attachments: ['[data-panel="attachment-assets"]'],
       };
       for (const [category, selectors] of Object.entries(categorySelectors)) {
         for (const selector of selectors) {
@@ -268,17 +262,21 @@
       if (cutout) target.append(cutout);
     }
 
-    /** @param {string} rawTab Requested tab. */
-    function setSidebarTab(rawTab) {
-      const tab = normalizeSidebarTab(rawTab);
-      if (elements.body) elements.body.dataset.sidebarTab = tab;
-      for (const button of elements.sidebarTabs) {
-        const active = button.dataset.sidebarTab === tab;
-        button.classList.toggle("active", active);
-        button.setAttribute("aria-selected", active ? "true" : "false");
-        button.tabIndex = active ? 0 : -1;
-      }
-      writePreference(STORAGE_KEYS.activePanelTab, tab);
+    /**
+     * Expands the panel the active tool exists to edit, so landing on a tool never
+     * shows a collapsed summary the user has to hunt for. Deliberately does not
+     * scroll: this runs on every route sync, and scrolling the panel into view
+     * drags the whole document and pushes the workspace toolbar off screen.
+     * @param {string} tool Active workspace tool.
+     */
+    function revealToolPanel(tool) {
+      const panel = documentRef.querySelector(
+        tool === "trails" ? "#attackTrailPanel" : `[data-shell-category="${tool}"]`,
+      );
+      if (!panel) return;
+      panel.hidden = false;
+      panel.removeAttribute?.("hidden");
+      panel.open = true;
     }
 
     /** @param {boolean} collapsed Whether the parameter sidebar is hidden. */
@@ -314,8 +312,14 @@
 
     /** Returns the project workflow stage represented by one route. */
     function workspaceStageForRoute(route, path) {
+      // Hubs are not a stage; claiming one lights up "resources" while the user is
+      // still choosing a project.
+      if (["projects", "tools"].includes(route)) return "";
       if (["export", "godot", "codex-pet"].includes(route)) return "delivery";
-      if (["animation", "boxes", "trails", "audio", "attachments"].includes(route) || path === "/workspace") {
+      if (
+        ["overview", "animation", "boxes", "trails", "audio", "attachments"].includes(route) ||
+        path === "/workspace"
+      ) {
         return "animation";
       }
       return "resources";
@@ -347,6 +351,7 @@
       for (const group of elements.workflowTools) {
         group.classList.toggle("active", group.dataset.stageTools === workspaceStage);
       }
+      revealToolPanel(route || "animation");
       for (const item of elements.workflowRouteItems) {
         const active = item.dataset.workbenchRoute === (route || "animation");
         item.classList.toggle("active", active);
@@ -428,23 +433,6 @@
       }, 1800);
     }
 
-    /** @param {KeyboardEvent} event Sidebar roving-tab keyboard event. */
-    function handleSidebarKeydown(event) {
-      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-      event.preventDefault();
-      const current = Math.max(0, elements.sidebarTabs.indexOf(event.currentTarget));
-      const nextIndex =
-        event.key === "Home"
-          ? 0
-          : event.key === "End"
-            ? elements.sidebarTabs.length - 1
-            : (current + (event.key === "ArrowRight" ? 1 : -1) + elements.sidebarTabs.length) %
-              elements.sidebarTabs.length;
-      const next = elements.sidebarTabs[nextIndex];
-      setSidebarTab(next.dataset.sidebarTab);
-      next.focus();
-    }
-
     /** @param {MouseEvent} event Tool-rail navigation event. */
     async function handleRouteClick(event) {
       event.preventDefault();
@@ -464,7 +452,6 @@
       categorizeSidebar();
       mountContextActions();
       mountProjectProcessingActions();
-      setSidebarTab(readPreference(storage, STORAGE_KEYS.activePanelTab, "transform"));
       setFilmstripLayout(readPreference(storage, STORAGE_KEYS.filmstripLayout, "single"));
       setSidebarCollapsed(readPreference(storage, STORAGE_KEYS.sidebarCollapsed, "false") === "true");
       const themePreference = readPreference(storage, "xsxbFrameTuner.theme", "dark");
@@ -476,10 +463,6 @@
       }
       syncActiveRoute();
 
-      for (const tab of elements.sidebarTabs) {
-        listen(tab, "click", () => setSidebarTab(tab.dataset.sidebarTab));
-        listen(tab, "keydown", handleSidebarKeydown);
-      }
       for (const button of elements.filmstripButtons) {
         listen(button, "click", () => setFilmstripLayout(button.dataset.filmstripLayout));
       }
@@ -542,7 +525,6 @@
       destroy,
       setFilmstripLayout,
       setSidebarCollapsed,
-      setSidebarTab,
       syncActiveRoute,
     };
   }
@@ -558,11 +540,9 @@
 
   return Object.freeze({
     FILMSTRIP_LAYOUTS,
-    SIDEBAR_TABS,
     STORAGE_KEYS,
     createController,
     normalizeFilmstripLayout,
-    normalizeSidebarTab,
     readPreference,
   });
 });

@@ -399,3 +399,11 @@ test("a failed empty-project cleanup restores the still-owned project selection"
   assert.match(fixture.elements.get("worksetHandoffStatus").textContent, /cleanup unavailable/);
   assert.equal(fixture.calls.apply.length, 0);
 });
+
+test("workset handoff uses the host translator for chrome copy", async () => {
+  const fixture = createFixture({
+    translate: (key) => (key === "handoffSubmit" ? "Check and add" : key),
+  });
+  await fixture.controller.open({ worksets: [workset()] });
+  assert.equal(fixture.elements.get("worksetHandoffSubmit").textContent, "Check and add");
+});

@@ -19,15 +19,18 @@ const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3n0AAAAASUVORK5CYII=",
   "base64",
 );
-const WORKBENCH_PATHS = new Set([
-  "/projects",
-  "/tools",
-  "/tools/import",
-  "/tools/cutout",
-  "/tools/organizer",
-  "/tools/scatter-slice",
-  "/workspace",
-]);
+const WORKBENCH_PATH_PREFIXES = ["/projects", "/tools", "/workspace"];
+
+/**
+ * Mirrors how the real servers hand every workbench route the same document,
+ * instead of keeping one more copy of the route table that can fall behind.
+ * @param {string} pathname Request pathname.
+ * @returns {boolean} Whether the entry document should answer.
+ */
+function isWorkbenchPath(pathname) {
+  if (path.extname(pathname)) return false;
+  return WORKBENCH_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
 
 let productionOrigin = "";
 let productionServer = null;
@@ -43,7 +46,7 @@ function serveProductionAsset(request, response) {
   try {
     const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
     const relativePath = decodeURIComponent(
-      requestUrl.pathname === "/" || WORKBENCH_PATHS.has(requestUrl.pathname)
+      requestUrl.pathname === "/" || isWorkbenchPath(requestUrl.pathname)
         ? "/index.html"
         : requestUrl.pathname,
     );
@@ -143,8 +146,7 @@ test("@cross-browser production workbench opens the new-animation importer witho
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  await page.goto(`${productionOrigin}/workspace`, { waitUntil: "load" });
-  await page.locator('[data-sidebar-tab="project"]').click();
+  await page.goto(`${productionOrigin}/workspace/animation/overview`, { waitUntil: "load" });
   await expect(page.locator("#importAnimationOpen")).toBeVisible();
   await page.locator("#importAnimationOpen").click();
 
@@ -194,7 +196,9 @@ test("@cross-browser English mode localizes the browser workbench shell", async 
   await expect(page.locator('a[data-app-mode="projects"]')).toContainText("Projects");
   await expect(page.locator('a[data-app-mode="tools"]')).toContainText("Tools");
   await expect(page.locator("#sidebarCollapse")).toContainText("Sidebar");
-  await expect(page.locator('button[data-sidebar-tab="transform"]')).toHaveText("Transform");
+  await expect(page.locator('.workspaceSecondaryTabs a[data-workbench-route="animation"]')).toHaveText(
+    "Transform",
+  );
   await expect(page.locator("#browserModeBanner strong")).toHaveText("Assets stay in this browser");
   await page.locator('a[data-app-mode="projects"]').click();
   await expect(page.locator("#projectHubTitle")).toHaveText("Animation Projects");

@@ -38,6 +38,10 @@
     edgeBoost: 10,
   });
 
+  const BLACK_PLATE_OVERRIDES = Object.freeze({
+    tolerance: 12,
+  });
+
   const CHROMA_SMART_OVERRIDES = Object.freeze({
     tolerance: -1,
     edgeBoost: 10,
@@ -127,7 +131,12 @@
   function resolveSmartCutoutParameters(color) {
     const parsed = parseBackgroundColor(color);
     const kind = classifySmartBackground(parsed);
-    const overrides = kind === "plate" ? PLATE_SMART_OVERRIDES : CHROMA_SMART_OVERRIDES;
+    const overrides =
+      kind === "plate"
+        ? isBlackPlate(parsed)
+          ? { ...PLATE_SMART_OVERRIDES, ...BLACK_PLATE_OVERRIDES }
+          : PLATE_SMART_OVERRIDES
+        : CHROMA_SMART_OVERRIDES;
     return {
       ...REGULAR_AUTO_BACKGROUND_PARAMETERS,
       ...overrides,
@@ -141,11 +150,33 @@
     };
   }
 
+  /**
+   * Raises the idle plate tolerance when the sampled color is a black plate.
+   * A user-cranked tolerance is left alone.
+   * @param {object|undefined} existing Current sliders.
+   * @param {object|string|undefined} color Newly sampled background.
+   * @returns {object} Parameters with an updated background color.
+   */
+  function adjustParametersForBackgroundColor(existing, color) {
+    const current = existing && typeof existing === "object" ? existing : {};
+    const resolved = resolveSmartCutoutParameters(color);
+    const next = { ...current, backgroundColor: resolved.backgroundColor };
+    if (
+      isBlackPlate(color) &&
+      Number(current.tolerance) <= PLATE_SMART_OVERRIDES.tolerance
+    ) {
+      next.tolerance = resolved.tolerance;
+    }
+    return next;
+  }
+
   return Object.freeze({
     BLACK_PLATE_MAX,
+    BLACK_PLATE_OVERRIDES,
     CHROMA_SMART_OVERRIDES,
     PLATE_SMART_OVERRIDES,
     REGULAR_AUTO_BACKGROUND_PARAMETERS,
+    adjustParametersForBackgroundColor,
     classifySmartBackground,
     isBlackPlate,
     overlaySmartCutoutParameters,

@@ -19,10 +19,12 @@
     const documentRef = dependencies.documentRef || root?.document;
     const windowRef = dependencies.windowRef || root?.window || root;
     const getConfig = dependencies.getConfig || (() => null);
+    const getCurrentGroup = dependencies.getCurrentGroup || (() => null);
     const getRoute = dependencies.getRoute || (() => "");
     const getContext = dependencies.getContext || (() => "project");
     const projectLabel =
       dependencies.projectLabel || ((project) => project?.label || project?.name || project?.id || "");
+    const groupLabel = dependencies.groupLabel || ((group) => group?.label || group?.name || "");
     const translate = dependencies.translate || ((key) => key);
     const toolTitle = dependencies.toolTitle || (() => "");
     if (!documentRef?.querySelector || !documentRef?.createElement) {
@@ -53,17 +55,27 @@
       return "stageAnimation";
     }
 
-    /** Returns the visible flow-header title for one route. */
-    function titleForRoute(route) {
-      if (RESOURCE_ROUTES.has(route)) {
-        return (
-          toolTitle(route) ||
-          (route === "cutout" ? translate("batchCutout") : "") ||
-          (route === "scatter" ? translate("scatterSliceTitle") : "") ||
-          activeProjectTitle()
-        );
-      }
-      return activeProjectTitle();
+    /**
+     * Returns the stage eyebrow, demoting the tool name into it so the title slot
+     * can keep naming the work rather than the tool the user happens to be in.
+     */
+    function eyebrowForRoute(route) {
+      const stage = translate(stageKey(route));
+      const tool =
+        toolTitle(route) ||
+        (route === "cutout" ? translate("batchCutout") : "") ||
+        (route === "scatter" ? translate("scatterSliceTitle") : "");
+      return tool ? `${stage} · ${tool}` : stage;
+    }
+
+    /** Returns the project, and the animation inside it, that every stage is acting on. */
+    function titleForRoute() {
+      const project = activeProjectTitle();
+      // The injected labeler dereferences group fields, so it never sees the null
+      // group that exists between boot and the first loaded animation.
+      const group = getCurrentGroup();
+      const animation = group ? groupLabel(group) : "";
+      return animation ? `${project} · ${animation}` : project;
     }
 
     /** Returns the back-button label for the current tool stack. */
@@ -80,9 +92,9 @@
     function render() {
       const route = getRoute();
       const resourcePage = RESOURCE_ROUTES.has(route);
-      if (elements.eyebrow) elements.eyebrow.textContent = translate(stageKey(route));
-      if (elements.title) elements.title.textContent = titleForRoute(route);
-      if (elements.save) elements.save.hidden = resourcePage;
+      if (elements.eyebrow) elements.eyebrow.textContent = eyebrowForRoute(route);
+      if (elements.title) elements.title.textContent = titleForRoute();
+      if (elements.save) elements.save.hidden = false;
       if (elements.back) {
         elements.back.hidden = !resourcePage;
         elements.back.textContent = backLabel(route);

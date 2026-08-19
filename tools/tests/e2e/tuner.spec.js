@@ -78,8 +78,22 @@ function subjectOnBackgroundPng(size, shift, background) {
  * @returns {Promise<number[]>} Transparent pixel ratio per frame.
  */
 function organizerThumbnailTransparency(page) {
-  return page.evaluate(() =>
-    Array.from(document.querySelectorAll(".organizerFrame img"), (image) => {
+  return page.evaluate(async () => {
+    const images = Array.from(document.querySelectorAll(".organizerFrame img"));
+    await Promise.all(
+      images.map((image) => {
+        if (image.complete && image.naturalWidth > 0) return undefined;
+        return new Promise((resolve, reject) => {
+          image.addEventListener("load", resolve, { once: true });
+          image.addEventListener(
+            "error",
+            () => reject(new Error(`organizer thumbnail failed to load: ${image.currentSrc}`)),
+            { once: true },
+          );
+        });
+      }),
+    );
+    return images.map((image) => {
       const canvas = document.createElement("canvas");
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;
@@ -89,8 +103,8 @@ function organizerThumbnailTransparency(page) {
       let transparent = 0;
       for (let offset = 3; offset < data.length; offset += 4) if (data[offset] === 0) transparent += 1;
       return transparent / (data.length / 4);
-    }),
-  );
+    });
+  });
 }
 
 /**
@@ -390,7 +404,6 @@ test("desktop selection is linkable and browser history restores it", async ({ p
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/workspace");
   await expect(page).toHaveTitle(/XSXB Frame Tuner$/);
-  await page.getByRole("tab", { name: "动画" }).click();
   const options = await page
     .locator("#groupSelect option")
     .evaluateAll((nodes) => nodes.map((node) => node.value));
@@ -447,7 +460,7 @@ test("homepage language selector persists the workbench language", async ({ page
 
   await page.goto("/workspace");
   await expect(page.locator('a[data-app-mode="projects"]')).toContainText("Projects");
-  await expect(page.locator('button[data-sidebar-tab="project"]')).toHaveText("Animation");
+  await expect(page.locator('a[data-workbench-route="overview"]')).toHaveText("Animation");
 });
 
 test("project and tool routes default to the dark UI theme", async ({ page }) => {
@@ -459,8 +472,7 @@ test("project and tool routes default to the dark UI theme", async ({ page }) =>
 });
 
 test("transform sidebar lets the main animation frame move directly on the canvas", async ({ page }) => {
-  await page.goto("/workspace");
-  await page.getByRole("tab", { name: "变换" }).click();
+  await page.goto("/workspace/animation/transform");
   await page.locator("#adjustGroup").check();
   const offsetBefore = Number(await page.locator("#baseX").inputValue());
   const stageBox = await page.locator("#stage").boundingBox();
@@ -475,28 +487,98 @@ test("transform sidebar lets the main animation frame move directly on the canva
   await expect.poll(async () => Number(await page.locator("#baseX").inputValue())).not.toBe(offsetBefore);
 });
 
+test("every stage keeps naming the project and animation being worked on", async ({ page }) => {
+  const routes = [
+    "/workspace/animation/transform",
+    "/workspace/animation/boxes",
+    "/workspace/animation/trails",
+    "/workspace/resources/import",
+    "/workspace/resources/cutout",
+    "/workspace/resources/scatter",
+    "/workspace/delivery/export",
+  ];
+
+  for (const route of routes) {
+    await page.goto(route);
+    await expect(page.locator("#workspaceFlowProject"), `${route} should name the project`).toHaveText(
+      /E2E Seed Project/,
+    );
+    await expect(page.locator("#workspaceFlowProject"), `${route} should name the animation`).toHaveText(
+      /Idle/,
+    );
+    await expect(
+      page.locator("#workspaceSaveIndicator"),
+      `${route} should keep the save indicator`,
+    ).toBeVisible();
+  }
+
+  // The tool the user is inside is still identified, just demoted out of the title slot.
+  await page.goto("/workspace/resources/cutout");
+  await expect(page.locator("#workspaceFlowEyebrow")).toContainText("资源处理");
+  await expect(page.locator("#workspaceFlowEyebrow")).toContainText("抠图");
+});
+
+test("the trails tool keeps attack trail mode reachable under web-mode chrome", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/workspace/animation/trails");
+  await page.evaluate(() => {
+    document.body.classList.add("browserOnlyMode");
+    const banner = document.querySelector("#browserModeBanner");
+    if (banner) banner.hidden = false;
+  });
+  const trailPanel = page.locator("#attackTrailPanel");
+  await trailPanel.evaluate((panel) => {
+    panel.hidden = false;
+    panel.open = true;
+  });
+
+  await expect(page.locator("#browserModeBanner")).toBeHidden();
+  await expect(page.locator(".sidebar > .brand")).toBeHidden();
+
+  const modeToggle = page.locator("label").filter({ has: page.locator("#attackTrailMode") });
+  await expect(modeToggle).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        modeToggle.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          const x = bounds.left + bounds.width / 2;
+          const y = bounds.top + bounds.height / 2;
+          if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {
+            return "outside the viewport";
+          }
+          const target = document.elementFromPoint(x, y);
+          if (!target) return "covered by nothing";
+          if (target === element || element.contains(target) || target.closest("label") === element) {
+            return "reachable";
+          }
+          return `covered by ${target.tagName}${target.id ? `#${target.id}` : ""}`;
+        }),
+      { message: "attack trail mode should receive clicks without scrolling the sidebar" },
+    )
+    .toBe("reachable");
+});
+
 test("workbench controls expose specific accessible names without nested actions", async ({ page }) => {
   await page.goto("/workspace");
   await expect(page.getByRole("spinbutton", { name: "缩放", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "减少缩放", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "增加缩放", exact: true })).toBeVisible();
-  await page.locator('[data-sidebar-tab="effects"]').click();
-  await page.locator('[data-panel="attachment-assets"] > summary').click();
+  await page.locator('a[data-workbench-route="attachments"]').click();
   await expect(page.getByRole("button", { name: "添加图片", exact: true })).toBeVisible();
 
   await page.evaluate(() => {
     localStorage.setItem("xsxbFrameTuner.language", "en");
     localStorage.setItem("xsxbFrameTuner.languageExplicit", "true");
   });
-  await page.reload();
-  await page.locator('[data-sidebar-tab="transform"]').click();
+  await page.goto("/workspace/animation/transform");
   await expect(page.getByRole("spinbutton", { name: "Scale", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Decrease Scale", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Increase Scale", exact: true })).toBeVisible();
   await expect(page.locator("#save")).toHaveCSS("color", "rgb(6, 18, 15)");
 
   await page.locator('#workspaceFlowHeader .themeButton[data-theme="light"]').click();
-  await page.locator('[data-sidebar-tab="project"]').click();
+  await page.locator('a[data-workbench-route="overview"]').click();
   await expect(page.locator("#projectContext")).toBeHidden();
   await expect(page.locator("#groupSelect")).toBeVisible();
 
@@ -542,8 +624,7 @@ test("tool rail keeps the active animation when opening contextual processing to
 });
 
 test("contextual tools preserve auto-saved tuning when switching", async ({ page }) => {
-  await page.goto("/workspace");
-  await page.getByRole("tab", { name: "变换" }).click();
+  await page.goto("/workspace/animation/transform");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
   await expect(page.locator("#saveState")).toContainText("未保存改动");
 
@@ -1481,7 +1562,7 @@ test("organizer migrates unconfirmed legacy English state back to Chinese", asyn
     localStorage.removeItem("xsxbFrameTuner.languageExplicit");
   });
   await page.goto("/tools/organizer");
-  await expect(page.locator("#workspaceFlowProject")).toHaveText("导入与处理动画");
+  await expect(page.locator("#workspaceFlowEyebrow")).toContainText("导入与处理动画");
 });
 
 test("compact desktop cutout keeps batch actions and readable previews in the sidebar", async ({ page }) => {
@@ -1547,5 +1628,157 @@ test("compact desktop cutout keeps batch actions and readable previews in the si
     expect(preview.cardHeight).toBeGreaterThanOrEqual(160);
     expect(preview.imageHeight).toBeGreaterThanOrEqual(110);
     expect(preview.imageWidth).toBeGreaterThan(preview.imageHeight * 1.8);
+  }
+});
+
+test("loop finder cancel closes the dialog", async ({ page }) => {
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0004.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator("#organizerFindLoop")).toBeEnabled();
+  await page.locator("#organizerFindLoop").click();
+  await expect(page.locator("#organizerLoopPanel")).toBeVisible();
+  await page.locator("#organizerLoopCancel").click();
+  await expect(page.locator("#organizerLoopPanel")).toBeHidden();
+});
+
+test("New Project asks for a name and stays on the hub when cancelled", async ({ page }) => {
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.goto("/projects");
+  await page.locator("#projectHubNew").click();
+  await expect(page).toHaveURL(/\/projects$/);
+});
+
+test("the trails page shows the attack trail panel instead of attached assets", async ({ page }) => {
+  await page.goto("/workspace/animation/trails");
+  await expect(page.locator("body")).toHaveAttribute("data-workspace-tool", "trails");
+  await expect(page.locator("#attackTrailPanel")).toBeVisible();
+  await expect(page.locator('[data-panel="attachment-assets"]')).toBeHidden();
+});
+
+/**
+ * Reads the share of mostly-opaque pixels on the cutout result canvas.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @returns {Promise<number>} Opaque pixel ratio.
+ */
+function cutoutOpaqueShare(page) {
+  return page.locator("#cutoutResult").evaluate((canvas) => {
+    const context = canvas.getContext("2d");
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let opaque = 0;
+    for (let offset = 3; offset < data.length; offset += 4) if (data[offset] > 128) opaque += 1;
+    return opaque / (data.length / 4);
+  });
+}
+
+test("switching to Post-processing keeps the cutout subject", async ({ page }) => {
+  const frame = subjectOnBackgroundPng(32, 0, [255, 255, 255]);
+  await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles({
+    name: "subject.png",
+    mimeType: "image/png",
+    buffer: frame,
+  });
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
+  const before = await cutoutOpaqueShare(page);
+  expect(before).toBeGreaterThan(0.02);
+  await page.locator("#cutoutTabPost").click();
+  await expect(page.locator("#cutoutDespillStrength")).toBeVisible();
+  const afterPost = await cutoutOpaqueShare(page);
+  expect(afterPost).toBeGreaterThan(before * 0.8);
+  await page.locator("#cutoutTabRegular").click();
+  const afterRegular = await cutoutOpaqueShare(page);
+  expect(afterRegular).toBeGreaterThan(before * 0.8);
+});
+
+test("Escape on standalone cutout keeps the batch on the page", async ({ page }) => {
+  await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles({
+    name: "frame.png",
+    mimeType: "image/png",
+    buffer: ONE_PIXEL_PNG,
+  });
+  await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/\/tools\/cutout/);
+  await expect(page.locator("#cutoutModal")).toBeVisible();
+  await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
+});
+
+test("picking #000000 raises the idle black-plate tolerance", async ({ page }) => {
+  await page.goto("/tools/cutout");
+  await page.locator("#cutoutFileInput").setInputFiles({
+    name: "frame.png",
+    mimeType: "image/png",
+    buffer: subjectOnBackgroundPng(32, 0, [0, 0, 0]),
+  });
+  await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
+  await page.locator("#cutoutColor").fill("#000000");
+  await expect(page.locator("#cutoutTolerance")).toHaveValue("12");
+});
+
+test("scatter detection modes expose their own parameters", async ({ page }) => {
+  await page.goto("/tools/scatter-slice");
+  await expect(page.locator("#scatterMode")).toBeVisible();
+  await page.locator("#scatterMode").selectOption("alpha");
+  await expect(page.locator("#scatterAlphaHint")).toBeVisible();
+  await expect(page.locator("#scatterThreshold")).toBeHidden();
+  await page.locator("#scatterMode").selectOption("colorkey");
+  await expect(page.locator("#scatterThreshold")).toBeVisible();
+  await expect(page.locator("#scatterAlphaHint")).toBeHidden();
+});
+
+test("English workbench copy drops the leftover Chinese resource labels", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('[data-factory-language="en"]').click();
+  await page.goto("/tools/organizer");
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  await expect(page.locator(".organizerDownstreamMenu summary")).toHaveText("More Tools");
+  await expect(page.locator("#workspaceSaveIndicator")).toHaveText("Saved");
+  await expect(page.locator("#organizerFileInput")).toHaveAttribute("aria-label", "Import images");
+  await expect(page.locator("#organizerVideoInput")).toHaveAttribute("aria-label", "Import video");
+  await expect(page.locator("#organizerReduceStep")).toHaveAttribute("aria-label", "Frame skip interval");
+  await expect(page.locator("#organizerBatchCutoutScope")).toHaveText(/Applies to the workset/);
+  await page.goto("/workspace/resources/scatter");
+  await expect(page.locator("#scatterResultsTitle")).toHaveText("Animation groups and slices");
+});
+
+test("narrow English chrome keeps scatter and cutout tab labels readable", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('[data-factory-language="en"]').click();
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await page.goto("/workspace/resources/scatter");
+  const scatterTab = page.locator(".workspaceSecondaryTabs a[data-workbench-route='scatter']");
+  await expect(scatterTab).toBeVisible();
+  const scatterMetrics = await scatterTab.evaluate((element) => {
+    const chrome = document.querySelector(".workspaceFlowChrome");
+    return {
+      text: element.textContent.trim(),
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+      right: element.getBoundingClientRect().right,
+      chromeLeft: chrome.getBoundingClientRect().left,
+    };
+  });
+  expect(scatterMetrics.text).toMatch(/Scatter/i);
+  expect(scatterMetrics.scrollWidth).toBeLessThanOrEqual(scatterMetrics.clientWidth + 1);
+  expect(scatterMetrics.right).toBeLessThanOrEqual(scatterMetrics.chromeLeft + 1);
+
+  await page.goto("/tools/cutout");
+  await page.setViewportSize({ width: 900, height: 800 });
+  const tabMetrics = await page.locator(".cutoutSettingTabs button").evaluateAll((buttons) =>
+    buttons.map((button) => ({
+      text: button.textContent.replace(/\s+/g, " ").trim(),
+      scrollWidth: button.scrollWidth,
+      clientWidth: button.clientWidth,
+    })),
+  );
+  expect(tabMetrics.some((tab) => /Post/i.test(tab.text))).toBe(true);
+  for (const tab of tabMetrics) {
+    expect(tab.scrollWidth, tab.text).toBeLessThanOrEqual(tab.clientWidth + 1);
   }
 });

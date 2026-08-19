@@ -351,8 +351,14 @@
             let outputData = resultArtifacts.get(item.id, artifactRevision);
             if (!outputData) {
               await processItem(item, { preview: false });
-              outputData =
-                resultArtifacts.get(item.id, artifactRevision) || item.resultCanvas.toDataURL("image/png");
+              outputData = resultArtifacts.get(item.id, artifactRevision);
+            }
+            if (!outputData && item.resultCanvas && options.applyProgress) {
+              outputData = "";
+            } else if (!outputData) {
+              outputData = item.resultCanvas.toDataURL("image/png");
+              resultArtifacts.put(item.id, artifactRevision, outputData);
+            } else {
               resultArtifacts.put(item.id, artifactRevision, outputData);
             }
             removedPixels += Number(item.statistics?.removedPixels || 0);

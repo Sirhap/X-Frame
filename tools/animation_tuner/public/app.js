@@ -693,18 +693,9 @@ const routing = globalThis.XSXBAppRouting.createController({
       if (activeToolId) workspaceStore.endToolSession(activeToolId);
       workspaceStore.beginToolSession(routeTool);
     }
-    const sidebarTab =
-      route === "boxes" ? "boxes" : ["trails", "attachments"].includes(route) ? "effects" : "transform";
-    appShell?.setSidebarTab(sidebarTab);
     document.querySelectorAll("[data-delivery-panel]").forEach((panel) => {
       panel.classList.toggle("active", panel.dataset.deliveryPanel === route);
     });
-    if (route === "trails") {
-      const panel = document.querySelector("#attackTrailPanel");
-      if (panel && !panel.hidden) panel.open = true;
-    }
-    if (route === "attachments")
-      document.querySelector('[data-panel="attachment-assets"]')?.setAttribute("open", "");
   },
   getTemporaryWorkset: () => temporaryWorksetStore?.getSnapshot() || null,
   openTemporaryCutout,
@@ -1340,11 +1331,7 @@ const eventState = lifecycleState;
   ["showBoxes", () => showBoxes, (value) => (showBoxes = value)],
   ["stageViewMode", () => stageViewMode, (value) => (stageViewMode = value)],
   ["stageSpacePan", () => stageSpacePan, (value) => (stageSpacePan = value)],
-  [
-    "stageSpacePanConsumed",
-    () => stageSpacePanConsumed,
-    (value) => (stageSpacePanConsumed = value),
-  ],
+  ["stageSpacePanConsumed", () => stageSpacePanConsumed, (value) => (stageSpacePanConsumed = value)],
   ["uiTheme", () => uiTheme, (value) => (uiTheme = value)],
   ["view", () => view, (value) => (view = value)],
 ].forEach(([key, getter, setter]) => bindLifecycleState(eventState, key, getter, setter));
@@ -1436,10 +1423,7 @@ const projectLifecycle = projectLifecycleModule.createController({
   onGroupSelected: () => syncWorkspaceFrameSelection(),
   onConfigLoaded: (nextConfig) => {
     syncWorkspaceProjectContext(nextConfig);
-    const projectId = nextConfig.activeProjectId || selectedProjectId || "workspace";
-    const flowProject = document.querySelector("#workspaceFlowProject");
-    if (flowProject)
-      flowProject.textContent = projectLabel(nextConfig.activeProject) || projectId || "当前项目";
+    navigationContext?.render();
   },
 });
 const tuningValuesModule = globalThis.XSXBAppTuningValues;
@@ -1545,21 +1529,27 @@ globalThis.XSXBWorkspace = workspaceStore;
     : "animation";
   workspaceStore.beginToolSession(initialTool);
 }
-workspaceStore.subscribe((snapshot) => {
+/**
+ * Publishes the workspace autosave chip in the active language.
+ * @param {{saveStatus?:string,saveError?:string}|null|undefined} snapshot Store snapshot.
+ * @returns {void}
+ */
+function applySaveIndicator(snapshot) {
   const indicator = document.querySelector("#workspaceSaveIndicator");
-  if (!indicator) return;
+  if (!indicator || !snapshot) return;
   const labels = {
-    idle: "已保存",
-    dirty: "等待保存",
-    saving: "保存中…",
-    saved: "已保存",
-    error: "保存失败",
-    conflict: "发生冲突",
+    idle: t("workspaceSaved"),
+    dirty: t("workspacePending"),
+    saving: t("workspaceSaving"),
+    saved: t("workspaceSaved"),
+    error: t("workspaceSaveFailed"),
+    conflict: t("workspaceConflict"),
   };
   indicator.dataset.status = snapshot.saveStatus;
-  indicator.textContent = labels[snapshot.saveStatus] || "已保存";
+  indicator.textContent = labels[snapshot.saveStatus] || t("workspaceSaved");
   indicator.title = snapshot.saveError || "";
-});
+}
+workspaceStore.subscribe((snapshot) => applySaveIndicator(snapshot));
 
 const adjustmentInputsModule = globalThis.XSXBAppAdjustmentInputs;
 if (!adjustmentInputsModule) throw new Error("XSXBAppAdjustmentInputs is required.");
@@ -1651,6 +1641,7 @@ function t(...args) {
 }
 function applyLanguage(...args) {
   const result = projectStateCall("applyLanguage", ...args);
+  applySaveIndicator(workspaceStore?.getSnapshot?.());
   updateDeliverySummary();
   attackTrailEditor?.render();
   activationController.renderStatus();
@@ -3188,7 +3179,7 @@ function updateAdjustmentFromInputs() {
  */
 function hitTestDirectManipulationFrame(event) {
   if (
-    document.body.dataset.sidebarTab !== "transform" ||
+    document.body.dataset.workspaceTool !== "animation" ||
     !currentGroup ||
     selectedFrameIndexes().length !== 1
   ) {
@@ -3670,6 +3661,7 @@ frameOrganizer =
             images,
           }
         : null,
+    commitImportToCurrent: () => Boolean(currentGroup?.animationId && currentGroup.profileId),
     applyPlan: browserOnlyMode ? applyBrowserFrameOrganizerPlan : applyFrameOrganizerPlan,
     createAnimation: browserOnlyMode ? exportBrowserAnimation : createAnimationFromOrganizer,
     createSessionAnimation: browserOnlyMode ? createBrowserSessionAnimation : undefined,
@@ -3941,6 +3933,25 @@ modeHubs = modeHubsModule.createController({
   windowRef: globalThis,
   projectLabel,
   translate: t,
+  async createProject(label) {
+    if (browserOnlyMode) {
+      const created = browserRuntime.createSessionProject(label);
+      return { projectId: created.projectId };
+    }
+    const response = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ label, kind: "animation" }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || payload.message || `HTTP ${response.status}`);
+    }
+    return { projectId: payload.activeProjectId };
+  },
+  onError(error) {
+    status(error.message);
+  },
 });
 modeHubs.bind();
 const navigationContextModule = globalThis.XSXBNavigationContext;
@@ -4011,6 +4022,7 @@ worksetHandoff = handoffDialogModule.createController({
   windowRef: globalThis,
   getConfig: () => config,
   projectLabel,
+  translate: t,
   ...handoffAdapter,
   onApplied: async (_result, context) => {
     if (!browserOnlyMode || context.projectId === activeProjectId()) {
@@ -4183,25 +4195,25 @@ function renderDeliveryExportEmpty(mount, message) {
 async function mountDeliveryExportWorkbench() {
   const mount = document.querySelector("#deliveryExportMount");
   if (!mount || currentWorkbenchRoute() !== "export") return;
-  const temporaryWorkset = temporaryWorksetStore?.getSnapshot();
-  const projectFramesReady = Boolean(currentGroup?.frames?.length);
-  if (currentNavigationContext() === "standalone") {
-    if (temporaryWorkset?.frames?.length) {
-      frameOrganizer?.mountLoadedExport(mount, temporaryWorkset);
-      return;
-    }
-    renderDeliveryExportEmpty(mount, "请先导入需要导出的图片序列");
+  const source = modeHubsModule.resolveDeliveryExportSource({
+    navigationContext: currentNavigationContext(),
+    temporaryWorkset: temporaryWorksetStore?.getSnapshot(),
+    currentGroup,
+    translate: t,
+  });
+  if (source.kind === "temporary") {
+    frameOrganizer?.mountLoadedExport(mount, source.workset);
     return;
   }
-  if (!projectFramesReady) {
-    renderDeliveryExportEmpty(mount, "当前动画没有可导出的帧");
+  if (source.kind === "empty") {
+    renderDeliveryExportEmpty(mount, source.message);
     return;
   }
   try {
     await frameOrganizer?.mountCurrentExport(mount);
     mount.scrollIntoView({ block: "start" });
   } catch (error) {
-    status(`打开导出失败：${error.message}`);
+    status(t("openExportFailed", { message: error.message }));
   }
 }
 document.querySelector("#temporaryWorksetClear")?.addEventListener("click", () => {
@@ -4209,17 +4221,15 @@ document.querySelector("#temporaryWorksetClear")?.addEventListener("click", () =
   status("临时工作集已清空");
 });
 document.querySelector("#deliveryOpenGodot")?.addEventListener("click", async () => {
-  syncWorkbenchRoute("animation", { push: true, context: "project" });
+  syncWorkbenchRoute("overview", { push: true, context: "project" });
   await applyWorkbenchRoute();
-  appShell.setSidebarTab("project");
   const card = document.querySelector("#godotHandoffCard");
   card?.scrollIntoView?.({ block: "center" });
   card?.focus?.();
 });
 document.querySelector("#deliveryOpenCodexPet")?.addEventListener("click", async () => {
-  syncWorkbenchRoute("animation", { push: true, context: "project" });
+  syncWorkbenchRoute("overview", { push: true, context: "project" });
   await applyWorkbenchRoute();
-  appShell.setSidebarTab("project");
   document.querySelector("#codexPetActions")?.scrollIntoView?.({ block: "center" });
 });
 window.addEventListener("xsxb:routechange", () => {
@@ -4230,8 +4240,9 @@ const attackTrailGuideModule = globalThis.AttackTrailGuide;
 if (!attackTrailGuideModule) throw new Error("AttackTrailGuide is required.");
 attackTrailGuideModule.createController({
   documentRef: globalThis.document,
-  onLocate: (selector) => {
-    appShell.setSidebarTab("effects");
+  onLocate: async (selector) => {
+    syncWorkbenchRoute("trails", { push: true, context: "project" });
+    await applyWorkbenchRoute();
     const panel = document.querySelector("#attackTrailPanel");
     if (panel) panel.open = true;
     let target = document.querySelector(selector);

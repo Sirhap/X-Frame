@@ -90,8 +90,33 @@
   }
 
   /**
+   * Chooses the export workset for the delivery page without inventing frames.
+   * @param {{navigationContext?:string,temporaryWorkset?:{frames?:object[]}|null,currentGroup?:{frames?:object[]}|null}} input Visible sources.
+   * @returns {{kind:"temporary"|"current"|"empty",workset?:object,message?:string}} Mount source.
+   */
+  function resolveDeliveryExportSource(input = {}) {
+    const temporaryFrames = Array.isArray(input.temporaryWorkset?.frames)
+      ? input.temporaryWorkset.frames
+      : [];
+    if (temporaryFrames.length) return { kind: "temporary", workset: input.temporaryWorkset };
+    const currentFrames = Array.isArray(input.currentGroup?.frames) ? input.currentGroup.frames : [];
+    if (currentFrames.length) return { kind: "current" };
+    return {
+      kind: "empty",
+      message:
+        typeof input.translate === "function"
+          ? input.translate(
+              input.navigationContext === "standalone" ? "exportNeedSequence" : "exportNeedFrames",
+            )
+          : input.navigationContext === "standalone"
+            ? "请先导入需要导出的图片序列"
+            : "当前动画没有可导出的帧",
+    };
+  }
+
+  /**
    * Creates the project and quick-tool hub renderer.
-   * @param {{documentRef?:Document,windowRef?:Window,projectLabel?:(project:object)=>string,translate?:(key:string,vars?:object)=>string}} dependencies Hub dependencies.
+   * @param {{documentRef?:Document,windowRef?:Window,projectLabel?:(project:object)=>string,translate?:(key:string,vars?:object)=>string,prompt?:(message:string)=>string|null,createProject?:(label:string)=>Promise<object|void>|object|void,onError?:(error:Error)=>void}} dependencies Hub dependencies.
    * @returns {{bind:()=>void,renderProjects:(config:object|null)=>void}} Hub operations.
    */
   function createController(dependencies = {}) {
@@ -114,6 +139,7 @@
           browserSessionProject: "浏览器临时工作区",
           importProject: "导入视频 / 图片序列 →",
           projectNeedsImportSummary: "还没有动画帧 · 可从视频抽帧或导入 PNG",
+          newProjectPrompt: "项目名称",
         };
         return defaults[key] || key;
       });
@@ -244,13 +270,40 @@
     function bind() {
       if (bound) return;
       bound = true;
-      elements.newProject?.addEventListener("click", () => {
-        windowRef.location.assign("/tools/organizer?createProject=1");
+      elements.newProject?.addEventListener("click", async (event) => {
+        event.preventDefault?.();
+        const promptImpl = dependencies.prompt || windowRef.prompt?.bind(windowRef);
+        const label = String(promptImpl?.(translate("newProjectPrompt")) || "").trim();
+        if (!label) return;
+        if (typeof dependencies.createProject === "function") {
+          try {
+            const result = await dependencies.createProject(label);
+            const projectId = String(result?.projectId || result?.id || result?.activeProjectId || "");
+            const url = new URL(
+              "/workspace/resources/import",
+              windowRef.location?.origin || "http://localhost",
+            );
+            if (projectId) url.searchParams.set("project", projectId);
+            windowRef.location.assign(`${url.pathname}${url.search}`);
+          } catch (error) {
+            dependencies.onError?.(error instanceof Error ? error : new Error(String(error)));
+          }
+          return;
+        }
+        const url = new URL("/workspace/resources/import", windowRef.location?.origin || "http://localhost");
+        url.searchParams.set("createProject", "1");
+        url.searchParams.set("projectName", label);
+        windowRef.location.assign(`${url.pathname}${url.search}`);
       });
     }
 
     return { bind, renderProjects };
   }
 
-  return Object.freeze({ createController, summarizeDeliveryReadiness, summarizeDeliveryScope });
+  return Object.freeze({
+    createController,
+    resolveDeliveryExportSource,
+    summarizeDeliveryReadiness,
+    summarizeDeliveryScope,
+  });
 });

@@ -128,6 +128,36 @@ test("color-key detection removes thin editor guides before finding subjects", (
   ]);
 });
 
+test("three-view sheets with a shared ground line split into separate boxes", () => {
+  const width = 48;
+  const height = 20;
+  const rgba = createImage(width, height, [255, 255, 255, 255]);
+  for (const left of [2, 20, 38]) {
+    for (let y = 2; y < 14; y += 1) {
+      for (let x = left; x < left + 8; x += 1) setPixel(rgba, width, x, y, [20, 30, 40, 255]);
+    }
+  }
+  for (let x = 2; x < 46; x += 1) setPixel(rgba, width, x, 14, [20, 30, 40, 255]);
+
+  const result = detectScatterSlices(rgba, width, height, {
+    mode: "colorkey",
+    colorKey: "#ffffff",
+    mergeGap: 0,
+    minPixels: 8,
+    threshold: 8,
+  });
+
+  assert.equal(result.boxes.length, 3, "the shared ground must not collapse three views into one box");
+  assert.deepEqual(
+    result.boxes.map((box) => [box.x, box.w]),
+    [
+      [2, 8],
+      [20, 8],
+      [38, 8],
+    ],
+  );
+});
+
 test("color sampling clamps coordinates and transparency removal keeps source immutable", () => {
   const rgba = createImage(2, 1, [152, 215, 155, 255]);
   setPixel(rgba, 2, 1, 0, [250, 80, 40, 255]);

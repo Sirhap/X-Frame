@@ -233,6 +233,59 @@ test("processAll publishes live outputs after each successful frame", async () =
   assert.deepEqual(liveApplies, [1, 2]);
 });
 
+test("processAll keeps live apply on canvases instead of encoding every frame as PNG", async () => {
+  let encoded = 0;
+  const liveApplies = [];
+  const { controller } = createFixture({
+    state: {
+      worksetResolver: {
+        liveApply: async (outputs) => {
+          liveApplies.push(outputs.map((output) => output.data));
+        },
+      },
+      items: [
+        {
+          id: "a",
+          name: "a.png",
+          frame: { uid: "a" },
+          excluded: false,
+          status: "processed",
+          thumbnailRevision: 0,
+          resultVariant: "committed",
+          resultCanvas: {
+            toDataURL() {
+              encoded += 1;
+              return "data:image/png;base64,full";
+            },
+          },
+          statistics: {},
+        },
+      ],
+    },
+    dependencies: {
+      resultArtifacts: {
+        get: () => "",
+        put() {},
+      },
+      outputCore: {
+        uniquePngName: (name) => name,
+        createOutput: (output) => output,
+      },
+      windowRef: {
+        setTimeout(callback) {
+          callback();
+          return 1;
+        },
+      },
+    },
+  });
+
+  await controller.processAll({ applyProgress: true });
+
+  assert.equal(encoded, 0);
+  assert.deepEqual(liveApplies, [[""]]);
+});
+
 test("cutout results can be handed to a project while retaining frame mapping", async () => {
   const sourceFrame = { name: "idle.png" };
   let projectRequest = null;

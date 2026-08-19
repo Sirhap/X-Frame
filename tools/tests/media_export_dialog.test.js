@@ -319,6 +319,36 @@ test("media export dialog enables local formats only when FFmpeg is available", 
   }
 });
 
+test("disabled GIF and MP4 explain that the web build cannot encode them", async () => {
+  const originalDocument = global.document;
+  global.document = {
+    activeElement: null,
+    addEventListener() {},
+    body: { classList: { add() {}, remove() {} } },
+    createElement: () => element(),
+  };
+  try {
+    const elements = createElements();
+    const controller = createController({
+      elements,
+      getLanguage: () => "en",
+      getSummary: () => ({ frameCount: 2, fps: 12, canvas: "32×24" }),
+      onExport: async () => ({ downloads: [] }),
+      fetchImpl: async () => {
+        throw new Error("LOCAL_EXPORT_UNAVAILABLE");
+      },
+    });
+
+    await controller.refreshCapabilities();
+
+    assert.equal(elements.mediaExportGif.disabled, true);
+    assert.match(elements.mediaExportGif.title, /local app with FFmpeg|web/i);
+    assert.equal(elements.mediaExportMp4.title, elements.mediaExportGif.title);
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
 test("media export dialog consumes Escape and restores trigger focus", () => {
   const originalDocument = global.document;
   let keydownListener = null;

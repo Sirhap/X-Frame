@@ -226,8 +226,9 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
 }
 
 .workspaceSecondaryTabs {
-  overflow: hidden;
+  overflow: visible;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .workspaceSecondaryTabs > span {
@@ -848,6 +849,15 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
   gap: 14px;
 }
 
+.quickToolGrid {
+  counter-reset: quick-tool;
+}
+
+.quickToolCard > span::before {
+  counter-increment: quick-tool;
+  content: counter(quick-tool, decimal-leading-zero) " / ";
+}
+
 .projectHubCard,
 .quickToolCard {
   min-width: 0;
@@ -1025,44 +1035,30 @@ body:not(.theme-kunkun) .mark {
   margin-top: 2px;
 }
 
-.sidebarTabs {
-  position: sticky;
-  top: -12px;
-  z-index: 20;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 3px;
-  margin: 0 0 12px;
-  padding: 8px 0;
-  background: var(--panel);
-}
-
-.sidebarTabs button {
-  min-height: 32px;
-  padding: 4px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 720;
-}
-
-.sidebarTabs button.active {
-  border-color: var(--line);
-  background: var(--panel-2);
-  color: var(--accent-text);
-  box-shadow: inset 0 -2px 0 var(--accent-2);
-}
-
-body[data-sidebar-tab] .sidebar [data-shell-category] {
+/* Sidebar panels belong to exactly one workspace tool, so the URL alone decides
+   what is on screen. Uncategorized blocks (the animation picker) stay visible. */
+.sidebar [data-shell-category] {
   display: none;
 }
 
-body[data-sidebar-tab="project"] .sidebar [data-shell-category="project"],
-body[data-sidebar-tab="transform"] .sidebar [data-shell-category="transform"],
-body[data-sidebar-tab="boxes"] .sidebar [data-shell-category="boxes"],
-body[data-sidebar-tab="effects"] .sidebar [data-shell-category="effects"] {
+body[data-workspace-tool="overview"] .sidebar [data-shell-category="overview"],
+body[data-workspace-tool="animation"] .sidebar [data-shell-category="animation"],
+body[data-workspace-tool="boxes"] .sidebar [data-shell-category="boxes"],
+body[data-workspace-tool="trails"] .sidebar [data-shell-category="trails"],
+body[data-workspace-tool="audio"] .sidebar [data-shell-category="audio"],
+body[data-workspace-tool="attachments"] .sidebar [data-shell-category="attachments"] {
   display: block;
+}
+
+/* Frame-level tools carry tall controls; the brand block and the web-mode notice
+   would push them under the fold. */
+body[data-workspace-tool="trails"] .sidebar > .brand,
+body[data-workspace-tool="attachments"] .sidebar > .brand,
+body[data-workspace-tool="audio"] .sidebar > .brand,
+body[data-workspace-tool="trails"] #browserModeBanner,
+body[data-workspace-tool="attachments"] #browserModeBanner,
+body[data-workspace-tool="audio"] #browserModeBanner {
+  display: none;
 }
 
 .sidebar :is(.panel, .projectContext, .sidebarSection) {
@@ -1451,9 +1447,40 @@ body:is(.cutoutOpen, .organizerOpen) :is(.cutoutModal, .organizerModal) {
 }
 
 @media (max-width: 1180px) {
+  :root {
+    --shell-flow-height: 88px;
+  }
+
   .workspaceFlowHeader {
-    grid-template-columns: minmax(120px, 0.5fr) auto minmax(130px, 0.7fr) auto;
-    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+    height: auto;
+    min-height: var(--shell-flow-height);
+    row-gap: 4px;
+  }
+
+  .workspaceFlowContext {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .workspacePrimaryTabs {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .workspaceSecondaryTabs {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    overflow: visible;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .workspaceFlowChrome {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: start;
   }
 
   .workspaceSecondaryTabs a {

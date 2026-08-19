@@ -15,6 +15,30 @@
     return node;
   }
 
+  const HANDOFF_DEFAULTS = Object.freeze({
+    handoffSubmit: "检查并加入项目",
+    handoffConfirmImpact: "确认影响并加入项目",
+    handoffCancel: "取消",
+    handoffContinue: "继续处理",
+    handoffCreateGroup: "新建动画组",
+    handoffReplaceGroup: "替换已有动画",
+    handoffWriteMode: "写入方式",
+    handoffCharacter: "角色",
+    handoffAnimation: "动画",
+    handoffExisting: "已有动画",
+    handoffChooseExisting: "选择已有动画…",
+    handoffCharacterPlaceholder: "角色名称",
+    handoffAnimationPlaceholder: "动画名称",
+    handoffNewLocalProject: "＋ 新建本地项目",
+    handoffWorksetFrames: "{label} · {count} 帧",
+    handoffOpenAnimation: "打开动画 →",
+    handoffChecking: "正在检查目标与绑定影响…",
+    handoffConfirmStatus: "请检查替换影响；再次确认后才会写入项目。",
+    handoffWriting: "正在原子写入动画项目…",
+    handoffConflict: "目标存在冲突，请检查名称和写入方式。",
+    handoffFailed: "加入动画项目失败。",
+  });
+
   /**
    * Creates the shared quick-tool to project handoff dialog.
    * @param {{documentRef?:Document,windowRef?:Window,getConfig:()=>object|null,loadProjectConfig:(projectId:string)=>Promise<object>,createProject:(label:string)=>Promise<{projectId:string,config:object}>,discardProject?:(projectId:string,context:object)=>Promise<void>,plan:(payload:object)=>Promise<object>,apply:(payload:object)=>Promise<object>,onApplied?:(result:object,context:{projectId:string,operations:object[]})=>Promise<void>|void,projectLabel?:(project:object)=>string}} dependencies Dialog dependencies.
@@ -64,6 +88,21 @@
     let returnFocus = null;
     let inertedSurfaces = [];
 
+    /**
+     * Resolves dialog copy from the host translator, falling back to Chinese.
+     * @param {string} key Message key.
+     * @param {Record<string,unknown>} [vars] Interpolation values.
+     * @returns {string} Localized copy.
+     */
+    function text(key, vars = {}) {
+      const translated = dependencies.translate?.(key, vars);
+      const fallback = HANDOFF_DEFAULTS[key] || key;
+      const template = translated && translated !== key ? translated : fallback;
+      return String(template).replace(/\{(\w+)\}/g, (_match, name) =>
+        vars[name] == null ? `{${name}}` : String(vars[name]),
+      );
+    }
+
     /** Updates the live status region. */
     function setStatus(message, tone = "") {
       if (!elements.status) return;
@@ -77,7 +116,7 @@
       pendingPlan = null;
       pendingSignature = "";
       if (elements.impact) elements.impact.hidden = true;
-      elements.submit.textContent = "检查并加入项目";
+      elements.submit.textContent = text("handoffSubmit");
     }
 
     /** Applies a consistent busy state to all mutation controls. */
@@ -122,27 +161,30 @@
       const eyebrow = documentRef.createElement("span");
       eyebrow.textContent = `WORKSET ${String(index + 1).padStart(2, "0")}`;
       const title = documentRef.createElement("strong");
-      title.textContent = `${workset.label || workset.name || `动画 ${index + 1}`} · ${workset.items.length} 帧`;
+      title.textContent = text("handoffWorksetFrames", {
+        label: workset.label || workset.name || `动画 ${index + 1}`,
+        count: workset.items.length,
+      });
       header.append(eyebrow, title);
 
       const type = documentRef.createElement("select");
       type.append(
-        option(documentRef, "create", "新建动画组"),
-        option(documentRef, "replace", "替换已有动画"),
+        option(documentRef, "create", text("handoffCreateGroup")),
+        option(documentRef, "replace", text("handoffReplaceGroup")),
       );
       type.value = workset.defaultType === "replace" ? "replace" : "create";
       const profileInput = documentRef.createElement("input");
       profileInput.type = "text";
       profileInput.maxLength = 80;
       profileInput.value = workset.profileLabel || "character";
-      profileInput.placeholder = "角色名称";
+      profileInput.placeholder = text("handoffCharacterPlaceholder");
       const animationInput = documentRef.createElement("input");
       animationInput.type = "text";
       animationInput.maxLength = 80;
       animationInput.value = workset.animationName || workset.name || `animation-${index + 1}`;
-      animationInput.placeholder = "动画名称";
+      animationInput.placeholder = text("handoffAnimationPlaceholder");
       const targetSelect = documentRef.createElement("select");
-      targetSelect.append(option(documentRef, "", "选择已有动画…"));
+      targetSelect.append(option(documentRef, "", text("handoffChooseExisting")));
       for (const group of targetGroups()) {
         targetSelect.append(
           option(
@@ -155,10 +197,10 @@
       if (workset.targetProfileId && workset.targetAnimationId) {
         targetSelect.value = `${workset.targetProfileId}/${workset.targetAnimationId}`;
       }
-      const typeField = field("写入方式", type);
-      const profileField = field("角色", profileInput);
-      const animationField = field("动画", animationInput);
-      const targetField = field("已有动画", targetSelect);
+      const typeField = field(text("handoffWriteMode"), type);
+      const profileField = field(text("handoffCharacter"), profileInput);
+      const animationField = field(text("handoffAnimation"), animationInput);
+      const targetField = field(text("handoffExisting"), targetSelect);
       const controls = {
         type,
         typeField,
@@ -196,7 +238,7 @@
       const projects = Array.from(config?.projects || []);
       elements.project.replaceChildren(
         ...projects.map((project) => option(documentRef, project.id, projectLabel(project) || project.id)),
-        option(documentRef, "__new__", "＋ 新建本地项目"),
+        option(documentRef, "__new__", text("handoffNewLocalProject")),
       );
       const activeProjectId =
         config?.activeProjectId || config?.activeProject?.id || projects[0]?.id || "__new__";
@@ -372,7 +414,7 @@
         link.href = `${url.pathname}${url.search}`;
         link.textContent = `${target.profileId}/${target.animationId}`;
         const action = documentRef.createElement("strong");
-        action.textContent = "打开动画 →";
+        action.textContent = text("handoffOpenAnimation");
         link.append(action);
         return link;
       });
@@ -380,14 +422,14 @@
       elements.form.hidden = true;
       elements.success.hidden = false;
       elements.submit.hidden = true;
-      if (elements.cancel) elements.cancel.textContent = "继续处理";
+      if (elements.cancel) elements.cancel.textContent = text("handoffContinue");
     }
 
     /** Plans, confirms, and atomically applies the current target selection. */
     async function submit() {
       if (busy) return;
       setBusy(true);
-      setStatus("正在检查目标与绑定影响…");
+      setStatus(text("handoffChecking"));
       let applyStarted = false;
       try {
         const projectId = await ensureProject();
@@ -398,18 +440,18 @@
           plan = await dependencies.plan({ projectId, operations: summaryOperations });
           if (!plan?.ok) {
             const message = Array.from(plan?.conflicts || [], (conflict) => conflict.message).join("\n");
-            throw new Error(message || "目标存在冲突，请检查名称和写入方式。");
+            throw new Error(message || text("handoffConflict"));
           }
           if (Array.isArray(plan.impacts) && plan.impacts.length) {
             pendingPlan = plan;
             pendingSignature = signature;
             renderImpact(plan.impacts);
-            elements.submit.textContent = "确认影响并加入项目";
-            setStatus("请检查替换影响；再次确认后才会写入项目。");
+            elements.submit.textContent = text("handoffConfirmImpact");
+            setStatus(text("handoffConfirmStatus"));
             return;
           }
         }
-        setStatus("正在原子写入动画项目…");
+        setStatus(text("handoffWriting"));
         const appliedOperations = collectOperations(true);
         applyStarted = true;
         const result = await dependencies.apply({
@@ -439,7 +481,7 @@
             })
             .catch(() => {});
         }
-        setStatus(error?.message || "加入动画项目失败。", "error");
+        setStatus(error?.message || text("handoffFailed"), "error");
       } finally {
         setBusy(false);
       }
@@ -466,8 +508,8 @@
       elements.form.hidden = false;
       if (elements.success) elements.success.hidden = true;
       elements.submit.hidden = false;
-      elements.submit.textContent = "检查并加入项目";
-      if (elements.cancel) elements.cancel.textContent = "取消";
+      elements.submit.textContent = text("handoffSubmit");
+      if (elements.cancel) elements.cancel.textContent = text("handoffCancel");
       if (elements.impact) elements.impact.hidden = true;
       setStatus("");
       renderProjects(config);

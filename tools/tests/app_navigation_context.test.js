@@ -11,7 +11,7 @@ function headerNode(text = "") {
 }
 
 /**
- * @param {{route?:string,context?:"project"|"standalone",organizerOpen?:boolean,cutoutOpen?:boolean,toolTitle?:function}} [options]
+ * @param {{route?:string,context?:"project"|"standalone",organizerOpen?:boolean,cutoutOpen?:boolean,toolTitle?:function,group?:object|null}} [options]
  * @returns {{controller:object,eyebrow:object,title:object,save:object,back:object}}
  */
 function createFixture(options = {}) {
@@ -50,16 +50,17 @@ function createFixture(options = {}) {
       activeProjectId: "browser-session",
       activeProject: { id: "browser-session", label: "浏览器临时工作区" },
     }),
-    getCurrentGroup: () => null,
+    getCurrentGroup: () => options.group ?? null,
     getRoute: () => options.route || "import",
     getContext: () => options.context || "project",
+    groupLabel: (group) => group?.label || group?.name || "",
     translate: (key) => labels[key] || key,
     toolTitle: options.toolTitle,
   });
   return { controller, eyebrow, title, save, back };
 }
 
-test("import route shows the tool title, hides save, and offers a tuning return", () => {
+test("import route keeps the project identity, demotes the tool name, and offers a tuning return", () => {
   const fixture = createFixture({
     route: "import",
     toolTitle: (route) => (route === "import" ? "导入与处理动画" : ""),
@@ -67,9 +68,9 @@ test("import route shows the tool title, hides save, and offers a tuning return"
 
   fixture.controller.render();
 
-  assert.equal(fixture.eyebrow.textContent, "Resources");
-  assert.equal(fixture.title.textContent, "导入与处理动画");
-  assert.equal(fixture.save.hidden, true);
+  assert.equal(fixture.eyebrow.textContent, "Resources · 导入与处理动画");
+  assert.equal(fixture.title.textContent, "Browser Temporary Workspace");
+  assert.equal(fixture.save.hidden, false);
   assert.equal(fixture.back.hidden, false);
   assert.equal(fixture.back.textContent, "← Back to Animation Tuning");
 });
@@ -84,9 +85,9 @@ test("cutout opened from organizer uses the organizer return label", () => {
 
   fixture.controller.render();
 
-  assert.equal(fixture.eyebrow.textContent, "Resources");
-  assert.equal(fixture.title.textContent, "批量抠图");
-  assert.equal(fixture.save.hidden, true);
+  assert.equal(fixture.eyebrow.textContent, "Resources · 批量抠图");
+  assert.equal(fixture.title.textContent, "Browser Temporary Workspace");
+  assert.equal(fixture.save.hidden, false);
   assert.equal(fixture.back.hidden, false);
   assert.equal(fixture.back.textContent, "← Back to Frame Organizer");
 });
@@ -122,9 +123,47 @@ test("standalone scatter returns to quick tools", () => {
 
   fixture.controller.render();
 
-  assert.equal(fixture.eyebrow.textContent, "Resources");
-  assert.equal(fixture.title.textContent, "零散切片");
-  assert.equal(fixture.save.hidden, true);
+  assert.equal(fixture.eyebrow.textContent, "Resources · 零散切片");
+  assert.equal(fixture.title.textContent, "Browser Temporary Workspace");
+  assert.equal(fixture.save.hidden, false);
   assert.equal(fixture.back.hidden, false);
   assert.equal(fixture.back.textContent, "← Back to Quick Tools");
+});
+
+test("rendering before an animation is loaded never calls the null-hostile group labeler", () => {
+  // app.js injects groupLabel(group) which dereferences group.tuningTarget, so the
+  // header must not hand it the null group that exists during boot.
+  const fixture = createFixture({ route: "animation", group: null });
+  fixture.controller.destroy();
+  const controller = createController({
+    documentRef: {
+      body: { classList: { contains: () => false } },
+      querySelector: () => headerNode(""),
+      createElement: () => ({ textContent: "", href: "" }),
+    },
+    getConfig: () => null,
+    getCurrentGroup: () => null,
+    getRoute: () => "animation",
+    getContext: () => "project",
+    groupLabel: (group) => group.tuningTarget,
+    translate: (key) => key,
+  });
+
+  assert.doesNotThrow(() => controller.render());
+});
+
+test("the animation being edited stays named in the header on every stage", () => {
+  const group = { label: "Hero - Idle" };
+  for (const route of ["animation", "boxes", "trails", "import", "cutout", "scatter", "export"]) {
+    const fixture = createFixture({ route, group, toolTitle: () => "" });
+
+    fixture.controller.render();
+
+    assert.equal(
+      fixture.title.textContent,
+      "Browser Temporary Workspace · Hero - Idle",
+      `route ${route} should still name the animation`,
+    );
+    assert.equal(fixture.save.hidden, false, `route ${route} should keep the save indicator`);
+  }
 });

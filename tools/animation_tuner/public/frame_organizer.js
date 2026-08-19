@@ -9,6 +9,7 @@
    * @param {{
    *   getLanguage?:()=>string,
    *   getCurrentAnimation?:()=>object|null,
+   *   commitImportToCurrent?:()=>boolean,
    *   getImportContext?:()=>{activeProject?:object|null,profiles?:object[]},
    *   applyPlan?:(items:Array<object>)=>Promise<void>,
    *   createAnimation?:(metadata:object,items:Array<object>)=>Promise<void>,
@@ -95,6 +96,7 @@
       "organizerLoopStartCustom",
       "organizerLoopStartRow",
       "organizerLoopStartInput",
+      "organizerLoopError",
       "organizerLoopSearch",
       "organizerLoopSearchLabel",
       "organizerLoopProgressBar",
@@ -358,6 +360,7 @@
       state,
       text,
       getCurrentAnimation: () => hooks.getCurrentAnimation?.(),
+      commitImportToCurrent: () => hooks.commitImportToCurrent?.() === true,
       canAddAssets: () => typeof hooks.addAssets === "function",
       canExport: () => typeof hooks.exportAnimation === "function",
       browserExportOnly: hooks.browserExportOnly === true,

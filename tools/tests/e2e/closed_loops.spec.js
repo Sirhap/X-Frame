@@ -54,22 +54,50 @@ async function dropFileOnCurrentFrame(page, file) {
   }, file);
 }
 
-test("image import creates a persisted animation through the organizer", async ({ page }) => {
+test("image import writes frames into the current animation through the organizer", async ({ page }) => {
   await page.goto("/tools/import");
   await page.locator("#organizerFileInput").setInputFiles([
     { name: "loop-idle.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
     { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
   ]);
+  await expect(page.locator("#organizerApply")).toHaveText("替换当前动画");
+  await expect(page.locator("#organizerImportSetup")).toBeHidden();
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
   await page.locator("#organizerApply").click();
   await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
-  await expect(page.locator("#organizerConfirmMessage")).toContainText("创建为动画");
+  await expect(page.locator("#organizerConfirmMessage")).toContainText("覆盖动画帧");
+  await expect(page.locator("#organizerConfirmMessage")).not.toContainText("动画组");
   await page.locator("#organizerConfirmAccept").click();
   await expect(page).toHaveURL(/\/workspace/);
   await expect(page.locator("#organizerModal")).toBeHidden();
   await expect(page.locator("#projectSelect option:checked")).toContainText("E2E Seed Project");
-  await expect(page.locator("#groupSelect option:checked")).toContainText("loop-idle");
+  await expect(page.locator("#groupSelect option:checked")).toContainText("Idle");
+  await expect(page.locator("#groupSelect option:checked")).not.toContainText("loop-idle");
   await expect(page.locator(".thumb")).toHaveCount(2);
+});
+
+test("workspace import writes extracted frames into the current animation", async ({ page }) => {
+  await page.goto("/workspace/resources/import");
+  await expect(page.locator("#organizerApply")).toHaveText("替换当前动画");
+  await expect(page.locator("#organizerImportSetup")).toBeHidden();
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "swing_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "swing_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "swing_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator(".organizerFrame")).toHaveCount(5);
+  await page.locator("#organizerApply").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
+  await expect(page.locator("#organizerConfirmMessage")).toContainText("覆盖动画帧");
+  await expect(page.locator("#organizerConfirmMessage")).not.toContainText("动画组");
+  await page.locator("#organizerConfirmAccept").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeHidden();
+  await expect(page.locator(".organizerFrame")).toHaveCount(5);
+  await page.goto("/workspace/animation/transform");
+  await expect(page.locator("#groupSelect option:checked")).toContainText("Idle");
+  await expect(page.locator("#groupSelect option:checked")).not.toContainText("swing");
+  await expect(page.locator(".thumb")).toHaveCount(5);
 });
 
 test("single-frame animation disables playback and explains why", async ({ page, request }) => {
@@ -489,7 +517,7 @@ test("project switching, clearing, and deletion preserve explicit confirmation",
   const second = await importProject(request, "lifecycle-b");
   await page.goto("/workspace");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
-  await page.locator('[data-sidebar-tab="project"]').click();
+  await page.locator('a[data-workbench-route="overview"]').click();
   await page.locator("#projectSelect").selectOption(first.activeProjectId, { force: true });
   await expect(page.locator("#appConfirmPanel")).toBeVisible();
   await expect(page.locator("#appConfirmMessage")).toContainText("未保存");
@@ -566,4 +594,13 @@ test("@touch touch controls can reorder an attached image layer", async ({ page,
   expect(buttonBounds?.height).toBeGreaterThanOrEqual(44);
   await moveDownButton.tap();
   await expect(page.locator(".attachmentThumb")).toHaveClass(/layerBelow/);
+});
+
+test("standalone export reads frames already added to the current project", async ({ page, request }) => {
+  await importProject(request, "export-standalone", 3);
+  await page.goto("/tools/export");
+  await expect(page.locator("#deliveryExportMount")).not.toContainText("请先导入需要导出的图片序列");
+  await expect(
+    page.locator("#mediaExportDialog, #deliveryExportMount .mediaExportDialog").first(),
+  ).toBeVisible();
 });

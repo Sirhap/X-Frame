@@ -42,7 +42,7 @@
     <link rel="stylesheet" href="/app_shell.css" />
     <link rel="stylesheet" href="/scatter_workspace.css" />
   </head>
-  <body class="theme-dark" data-sidebar-tab="transform">
+  <body class="theme-dark">
     <a class="skipLink" href="#mainWorkbench" data-i18n="skipToMain">跳到主要内容</a>
     <aside class="desktopRecommendedBanner" role="status">
       <strong data-i18n="desktopRecommended">建议在桌面端使用</strong>
@@ -178,6 +178,12 @@
         </span>
         <span data-stage-tools="animation">
           <a
+            href="/workspace/animation/overview"
+            data-workbench-route="overview"
+            data-i18n="stageToolOverview"
+            >动画</a
+          >
+          <a
             href="/workspace/animation/transform"
             data-workbench-route="animation"
             data-i18n="stageToolTransform"
@@ -286,47 +292,6 @@
             </div>
             <p data-i18n="brandSubtitle">帧动画调参工作台</p>
           </div>
-        </div>
-        <div class="sidebarTabs" role="tablist" aria-label="调参分类" data-i18n-aria-label="tuningCategories">
-          <button
-            type="button"
-            role="tab"
-            data-sidebar-tab="project"
-            aria-selected="false"
-            tabindex="-1"
-            data-i18n="sidebarProject"
-          >
-            动画
-          </button>
-          <button
-            type="button"
-            role="tab"
-            data-sidebar-tab="transform"
-            aria-selected="true"
-            data-i18n="sidebarTransform"
-          >
-            变换
-          </button>
-          <button
-            type="button"
-            role="tab"
-            data-sidebar-tab="boxes"
-            aria-selected="false"
-            tabindex="-1"
-            data-i18n="sidebarBoxes"
-          >
-            框体
-          </button>
-          <button
-            type="button"
-            role="tab"
-            data-sidebar-tab="effects"
-            aria-selected="false"
-            tabindex="-1"
-            data-i18n="sidebarEffects"
-          >
-            特效
-          </button>
         </div>
         <section id="browserModeBanner" class="browserModeBanner" hidden>
           <span data-i18n="browserModeLocalProcessing">WEB MODE / LOCAL PROCESSING</span>
@@ -765,6 +730,33 @@
                 >禁用此帧</span
               ></label
             >
+          </div>
+        </details>
+        <details class="panel frameAudioPanel" data-panel="frame-audio" open>
+          <summary>
+            <span class="panelTitle"
+              ><h2 data-i18n="frameAudioPanel">帧音效</h2>
+              <small data-i18n="optional">可选</small></span
+            >
+          </summary>
+          <p class="panelHint" data-i18n="frameAudioHint">给选中的帧绑定一个音频，播放到这一帧时触发。</p>
+          <div id="frameAudioDrop" class="frameAudioDrop" aria-disabled="true">
+            <output id="frameAudioName" class="frameAudioName" data-i18n="noFrameSfx">无帧音效</output>
+            <div class="frameAudioActions">
+              <label class="secondary frameAudioBrowse" for="frameAudioFile" data-i18n="frameAudioBrowse"
+                >选择音频</label
+              >
+              <button
+                id="clearFrameAudio"
+                type="button"
+                class="dangerMini"
+                data-i18n="clearFrameSfx"
+                disabled
+              >
+                清除帧音效
+              </button>
+            </div>
+            <input id="frameAudioFile" type="file" accept="audio/*" hidden />
           </div>
         </details>
         <details class="panel attachmentAssetsPanel" data-panel="attachment-assets">
@@ -1327,14 +1319,14 @@
         </aside>
         <div class="quickToolGrid">
           <a class="quickToolCard" href="/tools/cutout" data-workbench-route="cutout">
-            <span>01 / ALPHA</span>
+            <span>ALPHA</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 3 8 18M16 3 8 21M5 8h14M5 16h14" /></svg>
             <h2>批量抠图</h2>
             <p>移除背景、修复边缘与局部区域，导出透明图片或加入动画。</p>
             <strong>进入工具 →</strong>
           </a>
           <a class="quickToolCard" href="/tools/organizer" data-workbench-route="import">
-            <span>02 / SEQUENCE</span>
+            <span>SEQUENCE</span>
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 5h16v4H4zM4 11h10v4H4zM4 17h13v2H4zM17 12l3 3-3 3" />
             </svg>
@@ -1343,7 +1335,7 @@
             <strong>进入工具 →</strong>
           </a>
           <a class="quickToolCard" href="/tools/scatter-slice" data-workbench-route="scatter">
-            <span>03 / SLICE</span>
+            <span>SLICE</span>
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 4h6v6H4zM14 3h7v5h-7zM3 15h5v6H3zM12 13h9v8h-9z" />
             </svg>
@@ -1353,7 +1345,7 @@
           </a>
           <!-- cloudflare-local-only:start -->
           <a class="quickToolCard" href="/tools/watermark" data-document-navigation>
-            <span>04 / VIDEO</span>
+            <span>VIDEO</span>
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 5h16v14H4zM8 9h8M8 13h5M17 15l3 3M20 15l-3 3" />
             </svg>
@@ -1363,7 +1355,7 @@
           </a>
           <!-- cloudflare-local-only:end -->
           <a class="quickToolCard" href="/tools/export" data-workbench-route="export">
-            <span>05 / DELIVERY</span>
+            <span>DELIVERY</span>
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 18v2h14v-2" />
             </svg>
@@ -1553,12 +1545,24 @@
                     <option value="alpha" data-i18n="scatterModeAlpha">Alpha 透明度</option>
                     <option value="colorkey" data-i18n="scatterModeColorKey">背景色键</option>
                   </select>
-                  <label class="fieldLabel" for="scatterColor" data-i18n="scatterBackgroundColor"
-                    >背景色 · 也可在画布取色</label
-                  >
-                  <div class="colorField">
-                    <input id="scatterColor" type="color" value="#98d79b" />
-                    <output id="scatterColorValue" for="scatterColor">#98D79B</output>
+                  <p id="scatterAlphaHint" class="automaticDetectionHint" hidden data-i18n="scatterAlphaHint">
+                    Alpha 模式按不透明像素识别，不需要背景色。
+                  </p>
+                  <div id="scatterColorKeyFields">
+                    <label class="fieldLabel" for="scatterColor" data-i18n="scatterBackgroundColor"
+                      >背景色 · 也可在画布取色</label
+                    >
+                    <div class="colorField">
+                      <input id="scatterColor" type="color" value="#98d79b" />
+                      <output id="scatterColorValue" for="scatterColor">#98D79B</output>
+                    </div>
+                    <label class="fieldLabel" for="scatterThreshold" data-i18n="scatterThreshold"
+                      >色键容差</label
+                    >
+                    <label class="cutoutRange scatterThresholdRange">
+                      <input id="scatterThreshold" type="range" min="0" max="64" step="1" value="24" />
+                      <output id="scatterThresholdValue" for="scatterThreshold">24</output>
+                    </label>
                   </div>
                   <button
                     id="scatterDetect"
@@ -1698,7 +1702,7 @@
               <header class="resultsHeader">
                 <div>
                   <span>DETECTED OUTPUT</span>
-                  <h2 id="scatterResultsTitle">动画分组与切片</h2>
+                  <h2 id="scatterResultsTitle" data-i18n="scatterResultsTitle">动画分组与切片</h2>
                 </div>
                 <div class="groupExportSelection">
                   <output id="scatterGroupSelection">0 / 0 组</output>
@@ -3092,6 +3096,7 @@
                   accept="image/png,image/jpeg,image/webp"
                   multiple
                   aria-label="导入图片"
+                  data-organizer-i18n-aria-label="importImagesAria"
                 />
               </span>
               <span class="organizerFilePicker">
@@ -3108,6 +3113,7 @@
                   type="file"
                   accept="video/mp4,video/webm,video/quicktime,video/x-m4v"
                   aria-label="导入视频"
+                  data-organizer-i18n-aria-label="importVideoAria"
                 />
               </span>
             </div>
@@ -3128,6 +3134,7 @@
                   value="2"
                   inputmode="numeric"
                   aria-label="减帧间隔"
+                  data-organizer-i18n-aria-label="reduceStepAria"
                 />
                 <button id="organizerReduce" type="button" data-organizer-i18n="reduce">减帧</button>
               </label>
@@ -3335,6 +3342,7 @@
                     <span data-organizer-i18n="loopStartSuffix">帧开始搜索</span>
                   </label>
                 </fieldset>
+                <p id="organizerLoopError" class="organizerLoopError" hidden role="alert"></p>
               </section>
               <section id="organizerLoopSearch" class="organizerLoopSearch" aria-live="polite" hidden>
                 <span class="organizerLoopSearchPulse">ACF</span>
@@ -3598,7 +3606,7 @@
             </div>
             <div class="organizerFooterActions">
               <details class="organizerDownstreamMenu">
-                <summary>其他操作</summary>
+                <summary data-organizer-i18n="moreTools">其他操作</summary>
                 <div>
                   <button id="organizerReset" type="button" class="secondary" data-organizer-i18n="reset">
                     恢复原动画
@@ -3640,7 +3648,7 @@
                 导入动画组并进入调参
               </button>
               <button id="organizerApply" type="button" class="organizerPrimary" data-organizer-i18n="apply">
-                应用到动画
+                替换当前动画
               </button>
             </div>
             <label class="organizerSpeed">
@@ -4463,18 +4471,26 @@
         <header>
           <div>
             <span>ADD TO PROJECT</span>
-            <h2 id="worksetHandoffTitle">加入动画项目</h2>
-            <p>默认新建动画组；只有明确选择已有动画时才会替换。</p>
+            <h2 id="worksetHandoffTitle" data-i18n="handoffTitle">加入动画项目</h2>
+            <p data-i18n="handoffHint">默认新建动画组；只有明确选择已有动画时才会替换。</p>
           </div>
-          <button id="worksetHandoffClose" type="button" class="secondary" aria-label="关闭">×</button>
+          <button
+            id="worksetHandoffClose"
+            type="button"
+            class="secondary"
+            aria-label="关闭"
+            data-i18n-aria-label="handoffClose"
+          >
+            ×
+          </button>
         </header>
         <div id="worksetHandoffForm" class="worksetHandoffForm">
           <label>
-            <span>目标项目</span>
+            <span data-i18n="handoffProject">目标项目</span>
             <select id="worksetHandoffProject"></select>
           </label>
           <label id="worksetHandoffNewProjectField" hidden>
-            <span>新项目名称</span>
+            <span data-i18n="handoffNewProject">新项目名称</span>
             <input id="worksetHandoffNewProject" type="text" maxlength="80" autocomplete="off" />
           </label>
           <div id="worksetHandoffRows" class="worksetHandoffRows"></div>
@@ -4482,13 +4498,15 @@
           <p id="worksetHandoffStatus" class="worksetHandoffStatus" role="status" aria-live="polite"></p>
         </div>
         <section id="worksetHandoffSuccess" class="worksetHandoffSuccess" hidden>
-          <strong>已加入动画项目</strong>
-          <p>快速处理会话仍然保留，你可以继续调整、下载，或打开目标动画。</p>
+          <strong data-i18n="handoffSuccess">已加入动画项目</strong>
+          <p data-i18n="handoffSuccessHint">快速处理会话仍然保留，你可以继续调整、下载，或打开目标动画。</p>
           <div id="worksetHandoffTargets"></div>
         </section>
         <footer>
-          <button id="worksetHandoffCancel" type="button" class="secondary">取消</button>
-          <button id="worksetHandoffSubmit" type="button">检查并加入项目</button>
+          <button id="worksetHandoffCancel" type="button" class="secondary" data-i18n="handoffCancel">
+            取消
+          </button>
+          <button id="worksetHandoffSubmit" type="button" data-i18n="handoffSubmit">检查并加入项目</button>
         </footer>
       </div>
     </section>

@@ -403,6 +403,83 @@
   }
 
   /**
+   * Splits a wide connected box on interior columns that are almost empty.
+   * Three-view sheets often share a ground line that would otherwise stay one box.
+   * @param {SliceBox} box Merged component bounds.
+   * @param {Uint8Array} mask Foreground mask.
+   * @param {number} width Image width.
+   * @param {number} height Image height.
+   * @param {Required<DetectionOptions>} options Safe options.
+   * @returns {SliceBox[]} Split copies, or the original box.
+   */
+  function splitBoxByGutters(box, mask, width, height, options) {
+    if (box.w < 16) return [box];
+    const counts = new Int32Array(box.w);
+    for (let y = box.y; y < box.y + box.h && y < height; y += 1) {
+      const row = y * width;
+      for (let x = 0; x < box.w; x += 1) {
+        const index = row + box.x + x;
+        if (index >= 0 && index < mask.length && mask[index]) counts[x] += 1;
+      }
+    }
+    let peak = 0;
+    for (const count of counts) if (count > peak) peak = count;
+    if (peak < 4) return [box];
+    const gutterMax = Math.max(1, Math.round(peak * 0.12));
+    const minRun = Math.max(2, Math.round(box.w * 0.02));
+    const ranges = [];
+    let start = 0;
+    while (start < counts.length) {
+      if (counts[start] > gutterMax) {
+        start += 1;
+        continue;
+      }
+      let end = start + 1;
+      while (end < counts.length && counts[end] <= gutterMax) end += 1;
+      const interior = start > 0 && end < counts.length;
+      if (interior && end - start >= minRun) ranges.push({ start, end });
+      start = end;
+    }
+    if (!ranges.length) return [box];
+    const segments = [];
+    let cursor = 0;
+    for (const range of ranges) {
+      if (range.start - cursor >= Math.max(1, options.minSide)) {
+        segments.push({ start: cursor, end: range.start });
+      }
+      cursor = range.end;
+    }
+    if (counts.length - cursor >= Math.max(1, options.minSide)) {
+      segments.push({ start: cursor, end: counts.length });
+    }
+    if (segments.length < 2) return [box];
+    return segments.map((segment) => {
+      const x = box.x + segment.start;
+      const w = segment.end - segment.start;
+      let minY = box.y + box.h;
+      let maxY = box.y;
+      let pixels = 0;
+      for (let y = box.y; y < box.y + box.h && y < height; y += 1) {
+        const row = y * width;
+        for (let column = 0; column < w; column += 1) {
+          const index = row + x + column;
+          if (index < 0 || index >= mask.length || !mask[index]) continue;
+          pixels += 1;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+      return {
+        x,
+        y: minY <= maxY ? minY : box.y,
+        w,
+        h: minY <= maxY ? maxY - minY + 1 : box.h,
+        pixels,
+      };
+    }).filter((next) => next.pixels >= options.minPixels && next.w >= options.minSide && next.h >= options.minSide);
+  }
+
+  /**
    * Detects scattered foreground regions from raw RGBA pixels.
    * @param {Uint8ClampedArray} rgba Raw pixels.
    * @param {number} width Image width.
@@ -420,7 +497,9 @@
       options,
     );
     const components = findComponents(mask, width, height, options);
-    const boxes = sortBoxes(mergeBoxes(components, options.mergeGap), options.sortOrder);
+    const merged = mergeBoxes(components, options.mergeGap);
+    const split = merged.flatMap((box) => splitBoxByGutters(box, mask, width, height, options));
+    const boxes = sortBoxes(split, options.sortOrder);
     return { boxes, mode, foregroundPixels, ignoredGuidePixels };
   }
 

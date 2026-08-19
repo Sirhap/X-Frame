@@ -37,7 +37,6 @@ test("createInitialState combines URL and persisted preferences", () => {
       "xsxbFrameTuner.checkedBoxes": "hitbox,hitbox",
       "xsxbFrameTuner.adjustmentMode": "frame",
       "xsxbFrameTuner.sidebarCollapsed": "true",
-      "xsxbFrameTuner.activePanelTab": "effects",
       "xsxbFrameTuner.filmstripLayout": "grid",
       "xsxbFrameTuner.kunkunUnlocked": "true",
     }),
@@ -53,7 +52,6 @@ test("createInitialState combines URL and persisted preferences", () => {
   assert.equal(state.selectedBox, "hurtbox");
   assert.equal(state.adjustmentMode, "frame");
   assert.equal(state.sidebarCollapsed, true);
-  assert.equal(state.activePanelTab, "effects");
   assert.equal(state.filmstripLayout, "grid");
   assert.equal(state.kunkunUnlocked, true);
   assert.deepEqual(state.view, { zoom: 1, x: 0, y: 0 });
@@ -83,7 +81,6 @@ test("createInitialState falls back safely when storage access throws", () => {
   assert.equal(state.language, "zh");
   assert.equal(state.uiTheme, "dark");
   assert.equal(state.sidebarCollapsed, false);
-  assert.equal(state.activePanelTab, "transform");
   assert.equal(state.filmstripLayout, "single");
   assert.equal(state.canvasColor, "#000000");
   assert.equal(state.adjustmentMode, "group");

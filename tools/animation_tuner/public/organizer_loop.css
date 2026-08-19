@@ -66,9 +66,15 @@
 }
 
 .organizerLoopBody {
-  min-height: 430px;
+  min-height: 0;
   overflow: auto;
   padding: 24px;
+}
+
+.organizerLoopError {
+  margin: 0;
+  color: #f05b62;
+  font: 800 12px/1.45 var(--data-font);
 }
 
 .organizerLoopParams {
@@ -355,6 +361,8 @@
 }
 
 .organizerLoopFooter {
+  position: relative;
+  z-index: 1;
   justify-content: flex-end;
   border-top: 4px solid var(--line);
   border-bottom: 0;

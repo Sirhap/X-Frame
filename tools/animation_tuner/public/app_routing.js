@@ -20,6 +20,7 @@
     "/workspace/resources/import": "organizer",
     "/workspace/resources/cutout": "cutout",
     "/workspace/resources/scatter": "scatter",
+    "/workspace/animation/overview": "overview",
     "/workspace/animation/transform": "animation",
     "/workspace/animation/boxes": "boxes",
     "/workspace/animation/trails": "trails",
@@ -44,6 +45,7 @@
     organizer: "/workspace/resources/import",
     projects: "/projects",
     tools: "/tools",
+    overview: "/workspace/animation/overview",
     animation: "/workspace/animation/transform",
     boxes: "/workspace/animation/boxes",
     trails: "/workspace/animation/trails",
@@ -62,6 +64,7 @@
     "projects",
     "scatter",
     "tools",
+    "overview",
     "animation",
     "boxes",
     "trails",
@@ -170,13 +173,14 @@
         projects: translate("projectHubTitle"),
         scatter: translate("scatterSliceTitle"),
         tools: translate("quickToolsTitle"),
-        animation: "动画编辑",
-        boxes: "碰撞框",
-        trails: "攻击拖尾",
-        audio: "帧音频",
-        attachments: "附加素材",
-        export: "文件导出",
-        godot: "Godot 交付",
+        overview: translate("stageToolOverview"),
+        animation: translate("stageToolTransform"),
+        boxes: translate("stageToolBoxes"),
+        trails: translate("attackTrails") || translate("stageToolTrails"),
+        audio: translate("frameAudioPanel"),
+        attachments: translate("assetLibrary"),
+        export: translate("stageToolExport"),
+        godot: "Godot",
         "codex-pet": "Codex Pet",
       };
       const currentGroup = getCurrentGroup();
@@ -378,7 +382,7 @@
             return false;
           }
         }
-        if (["animation", "boxes", "trails", "audio", "attachments"].includes(route)) {
+        if (["overview", "animation", "boxes", "trails", "audio", "attachments"].includes(route)) {
           activateWorkspaceRoute(route);
           return true;
         }

@@ -156,6 +156,53 @@
   gap: 8px;
 }
 
+.frameAudioDrop {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px dashed color-mix(in srgb, var(--accent-2) 48%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent-2) 6%, var(--panel-3));
+}
+
+.frameAudioDrop.dragOver {
+  border-style: solid;
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 14%, var(--panel-3));
+}
+
+.frameAudioDrop.disabled {
+  opacity: 0.55;
+}
+
+.frameAudioName {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frameAudioActions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.frameAudioBrowse {
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--control-ink);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 720;
+}
+
 .browserModeBanner {
   display: grid;
   gap: 7px;

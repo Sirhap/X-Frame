@@ -2,7 +2,10 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createController } = require("../animation_tuner/public/frame_organizer_grid");
+const {
+  createController,
+  createThumbnailDataUrl,
+} = require("../animation_tuner/public/frame_organizer_grid");
 
 /**
  * Creates the minimal state and element fixture used by count rendering tests.
@@ -97,10 +100,19 @@ function createFixture(options = {}) {
       return fakeNode();
     },
   });
+  const cutoutScope = { textContent: "", hidden: false };
+  const batchScope = { hidden: true };
+  const batchScopeText = { textContent: "" };
   const controller = createController({
     document: {
       createDocumentFragment: () => ({ appendChild() {} }),
       createElement: () => fakeNode(),
+      querySelector(selector) {
+        if (selector === "#organizerBatchCutoutScope") return cutoutScope;
+        if (selector === "#organizerBatchScope") return batchScope;
+        if (selector === "#organizerBatchScopeText") return batchScopeText;
+        return null;
+      },
     },
     elements,
     state,
@@ -113,7 +125,7 @@ function createFixture(options = {}) {
     restartPreview: () => {},
     setStatus: () => {},
   });
-  return { controller, elements, state, activeClasses, workbenchClasses };
+  return { controller, elements, state, activeClasses, workbenchClasses, cutoutScope, batchScopeText };
 }
 
 test("attached-assets action remains available while editing an existing animation", () => {
@@ -277,4 +289,43 @@ test("secondary removal actions stay visible and disable when they are not actio
   fixture.controller.renderCounts();
   assert.equal(fixture.elements.organizerDeleteSelected.disabled, false);
   assert.equal(fixture.elements.organizerDeleteExcluded.disabled, false);
+});
+
+test("organizer thumbnails encode a downscaled canvas instead of the full frame", () => {
+  const encoded = [];
+  const source = {
+    width: 1024,
+    height: 768,
+    toDataURL() {
+      throw new Error("full-resolution encode must not run");
+    },
+  };
+  const dataUrl = createThumbnailDataUrl(source, 156, {
+    createElement() {
+      const canvas = {
+        width: 0,
+        height: 0,
+        getContext() {
+          return { imageSmoothingEnabled: false, drawImage() {} };
+        },
+        toDataURL() {
+          encoded.push({ width: this.width, height: this.height });
+          return "data:thumb";
+        },
+      };
+      return canvas;
+    },
+  });
+
+  assert.equal(dataUrl, "data:thumb");
+  assert.deepEqual(encoded, [{ width: 156, height: 117 }]);
+});
+
+test("cutout scope copy comes from the organizer translator", () => {
+  const fixture = createFixture();
+  fixture.controller.renderCounts();
+  assert.equal(fixture.cutoutScope.textContent, "cutoutScopeWorkset");
+  fixture.state.frames[0].selected = true;
+  fixture.controller.renderCounts();
+  assert.equal(fixture.cutoutScope.textContent, "cutoutScopeSelection");
 });

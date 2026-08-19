@@ -17,6 +17,12 @@ test("main workbench translations expose both supported languages", () => {
   assert.equal(messages.en.desktopRecommended, "Best used on a desktop");
   assert.equal(messages.zh.deliveryTitle, "交付与导出");
   assert.equal(messages.en.mediaExportFilename, "File name");
+  assert.equal(messages.zh.scatterResultsTitle, "动画分组与切片");
+  assert.equal(messages.en.scatterResultsTitle, "Animation groups and slices");
+  assert.equal(messages.en.exportNeedSequence, "Import an image sequence to export first");
+  assert.equal(messages.en.handoffSubmit, "Check and add");
+  assert.doesNotMatch(messages.en.scatterResultsTitle, /[\u4e00-\u9fff]/u);
+  assert.doesNotMatch(messages.en.handoffHint, /[\u4e00-\u9fff]/u);
 });
 
 test("main workbench translations retain the shared key set", () => {

@@ -1,7 +1,25 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 const { createController } = require("../animation_tuner/public/app_frame_audio");
+
+test("the audio tool ships the markup its already-wired controller queries", () => {
+  // app_dom.js resolves these ids and every caller guards with `if (els.x)`, so a
+  // missing panel silently turns the whole audio tool into a no-op nav entry.
+  const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const dom = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app_dom.js"), "utf8");
+
+  const requiredIds = [...dom.matchAll(/querySelector\("#(frameAudio\w+|clearFrameAudio)"\)/g)].map(
+    (match) => match[1],
+  );
+  assert.ok(requiredIds.length >= 4, "app_dom should still resolve the frame-audio controls");
+  for (const id of requiredIds) {
+    assert.match(html, new RegExp(`id="${id}"`), `index.html is missing #${id}`);
+  }
+  assert.match(html, /data-panel="frame-audio"/, "the audio tool needs a sidebar panel to show");
+});
 
 function createAudioController(overrides = {}) {
   const bindings = {

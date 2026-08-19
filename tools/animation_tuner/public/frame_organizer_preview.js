@@ -92,7 +92,7 @@
       elements.organizerPreviewFrame.textContent =
         sourceIndex >= 0
           ? selectedCount
-            ? `主选帧：第 ${sourceIndex + 1} 帧 · 共选中 ${selectedCount} 帧`
+            ? text("previewPrimary", { current: sourceIndex + 1, count: selectedCount })
             : text("previewFrame", { current: normalizedIndex + 1, total: frames.length })
           : text("previewFrameEmpty");
       drawFrameToCanvas(frame, elements.organizerPreview);

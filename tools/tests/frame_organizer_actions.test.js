@@ -32,6 +32,7 @@ function createFixture() {
   const calls = {
     assets: null,
     exported: null,
+    applied: null,
     animation: null,
     animations: [],
     sessionAnimation: null,
@@ -87,6 +88,10 @@ function createFixture() {
         options.onProgress(1, items.length);
         return { filename: "demo-xsxb.zip", frameCount: items.length };
       },
+      applyPlan: async (items, options) => {
+        calls.applied = { items, options };
+      },
+      commitImportToCurrent: () => state.commitImportToCurrent === true,
       createAnimation: async (metadata, items) => {
         if (state.createError) throw state.createError;
         calls.animation = { metadata, items };
@@ -429,6 +434,27 @@ test("a second smart cutout replaces the previous result instead of stacking on 
 
   assert.equal(fixture.calls.autoCutoutWorksets[1].items[0].image, sourceCanvas);
   assert.equal(fixture.frame.cutoutSourceCanvas, sourceCanvas);
+});
+
+test("project-context import replaces the current animation instead of creating a group", async () => {
+  const fixture = createFixture();
+  fixture.state.mode = "import";
+  fixture.state.confirmApply = true;
+  fixture.state.commitImportToCurrent = true;
+  fixture.state.importMetadata = {
+    projectId: "project-a",
+    profileLabel: "Hero",
+    animationName: "should-not-use",
+  };
+
+  await fixture.controller.applyPlan();
+
+  assert.equal(fixture.calls.animation, null);
+  assert.equal(fixture.calls.applied.items[0].name, "frame.png");
+  assert.equal(fixture.state.mode, "edit");
+  assert.equal(fixture.calls.closes, 1);
+  assert.deepEqual(fixture.calls.status, ["applied"]);
+  assert.equal(fixture.state.busy, false);
 });
 
 test("import mode creates an animation and enters the tuning workbench", async () => {

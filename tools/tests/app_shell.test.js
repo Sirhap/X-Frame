@@ -1,12 +1,10 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
-const {
-  createController,
-  normalizeFilmstripLayout,
-  normalizeSidebarTab,
-} = require("../animation_tuner/public/app_shell");
+const { createController, normalizeFilmstripLayout } = require("../animation_tuner/public/app_shell");
 
 /** @returns {object} Minimal event-capable DOM element. */
 function createElement() {
@@ -32,6 +30,7 @@ function createElement() {
     },
     dataset: {},
     hidden: false,
+    open: false,
     tabIndex: 0,
     addEventListener(type, listener) {
       const entries = listeners.get(type) || [];
@@ -50,6 +49,7 @@ function createElement() {
       this.dispatch("click");
     },
     focus() {},
+    scrollIntoView() {},
     removeAttribute(name) {
       delete this.attributes[name];
     },
@@ -79,6 +79,8 @@ function createFixture(options = {}) {
     scatterSliceSurface: createElement(),
     collapse: createElement(),
     brandMark: createElement(),
+    browserModeBanner: createElement(),
+    attackTrailPanel: Object.assign(createElement(), { hidden: true }),
     filmstripPanel: createElement(),
     actionFeedback: createElement(),
     actionButtons: createElement(),
@@ -99,11 +101,6 @@ function createFixture(options = {}) {
   const contextToolActions = ["current-frame-cutout", "batch-cutout", "organizer"].map((tool) => {
     const element = createElement();
     element.dataset.contextTool = tool;
-    return element;
-  });
-  const sidebarTabs = ["project", "transform", "boxes", "effects"].map((tab) => {
-    const element = createElement();
-    element.dataset.sidebarTab = tab;
     return element;
   });
   const filmstripButtons = ["single", "grid"].map((layout) => {
@@ -131,6 +128,8 @@ function createFixture(options = {}) {
     ["#sidebarCollapse", elements.collapse],
     [".filmstripPanel", elements.filmstripPanel],
     ["#brandMark", elements.brandMark],
+    ["#browserModeBanner", elements.browserModeBanner],
+    ["#attackTrailPanel", elements.attackTrailPanel],
     [".contextActionFeedback", elements.actionFeedback],
     [".contextActionBarActions", elements.actionButtons],
     ["#save", elements.save],
@@ -154,7 +153,6 @@ function createFixture(options = {}) {
       return categories.get(selector);
     },
     querySelectorAll(selector) {
-      if (selector === "[data-sidebar-tab]") return sidebarTabs;
       if (selector === "[data-filmstrip-layout]") return filmstripButtons;
       if (selector === "[data-app-mode]") return routeItems;
       if (selector === "[data-workbench-route]") return workbenchRouteItems;
@@ -164,7 +162,6 @@ function createFixture(options = {}) {
     },
   };
   const values = new Map([
-    ["xsxbFrameTuner.activePanelTab", "effects"],
     ["xsxbFrameTuner.filmstripLayout", "grid"],
     ["xsxbFrameTuner.sidebarCollapsed", "true"],
   ]);
@@ -195,16 +192,17 @@ function createFixture(options = {}) {
     elements,
     filmstripButtons,
     routeItems,
-    sidebarTabs,
     storage,
     workbenchRouteItems,
     contextToolActions,
+    /** @param {string} selector Sidebar panel selector. @returns {string|undefined} Stamped category. */
+    categoryFor(selector) {
+      return (selectorMap.get(selector) || categories.get(selector))?.dataset.shellCategory;
+    },
   };
 }
 
 test("shell normalizers reject unknown persisted values", () => {
-  assert.equal(normalizeSidebarTab("effects"), "effects");
-  assert.equal(normalizeSidebarTab("unknown"), "transform");
   assert.equal(normalizeFilmstripLayout("grid"), "grid");
   assert.equal(normalizeFilmstripLayout("unknown"), "single");
 });
@@ -213,7 +211,6 @@ test("shell restores layout preferences and exposes accessible selected state", 
   const fixture = createFixture();
   fixture.controller.bind();
 
-  assert.equal(fixture.elements.body.dataset.sidebarTab, "effects");
   assert.equal(fixture.elements.body.classList.contains("sidebarCollapsed"), true);
   assert.equal(fixture.elements.sidebar.inert, true);
   assert.equal(fixture.elements.sidebar.attributes["aria-hidden"], "true");
@@ -221,7 +218,6 @@ test("shell restores layout preferences and exposes accessible selected state", 
   assert.equal(fixture.elements.body.dataset.appMode, "projects");
   assert.equal(fixture.elements.body.dataset.appSurface, "workspace");
   assert.equal(fixture.elements.filmstripPanel.dataset.layout, "grid");
-  assert.equal(fixture.sidebarTabs[3].attributes["aria-selected"], "true");
   assert.equal(fixture.filmstripButtons[1].attributes["aria-pressed"], "true");
   assert.equal(fixture.routeItems[0].attributes["aria-current"], "page");
   assert.deepEqual(fixture.elements.actionButtons.children, [
@@ -365,4 +361,131 @@ test("top-level routes expose exactly one primary surface", () => {
       );
     }
   }
+});
+
+test("the trails tool opens the attack trail panel instead of leaving it collapsed", () => {
+  const fixture = createFixture({ pathname: "/workspace/animation/trails" });
+  fixture.controller.bind();
+
+  assert.equal(fixture.elements.body.dataset.workspaceTool, "trails");
+  assert.equal(fixture.elements.attackTrailPanel.hidden, false);
+  assert.equal(fixture.elements.attackTrailPanel.open, true);
+});
+
+test("the audio tool reveals the frame-audio panel", () => {
+  const fixture = createFixture({ pathname: "/workspace/animation/audio" });
+  fixture.controller.bind();
+
+  assert.equal(fixture.elements.body.dataset.workspaceTool, "audio");
+  const audioPanel = fixture.controller;
+  assert.equal(fixture.categoryFor('[data-panel="frame-audio"]'), "audio");
+  assert.equal(audioPanel && fixture.elements.body.dataset.workspaceTool, "audio");
+});
+
+test("quick tool cards number themselves so removing the local-only card does not skip 04", () => {
+  const css = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app_shell.css"), "utf8");
+  const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  assert.match(css, /counter-reset:\s*quick-tool/);
+  assert.doesNotMatch(html, /05 \/ DELIVERY/);
+});
+
+test("crowded frame tools hide brand and web-mode banner so their controls sit on screen", () => {
+  const css = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app_shell.css"), "utf8");
+  for (const tool of ["trails", "attachments", "audio"]) {
+    assert.match(
+      css,
+      new RegExp(`body\\[data-workspace-tool="${tool}"\\][\\s\\S]*?\\.brand[\\s\\S]*?display:\\s*none`),
+      `${tool} should hide the brand block`,
+    );
+  }
+  assert.match(css, /body\[data-workspace-tool="trails"\][\s\S]*?#browserModeBanner/);
+});
+
+test("sidebar panels are addressed by workspace tool, with no second tab row to disagree with", () => {
+  const fixture = createFixture({ pathname: "/workspace/animation/trails" });
+  fixture.controller.bind();
+
+  assert.equal(fixture.elements.body.dataset.workspaceTool, "trails");
+  assert.equal(fixture.elements.body.dataset.sidebarTab, undefined, "no second navigation vocabulary");
+  assert.equal(typeof fixture.controller.setSidebarTab, "undefined", "no tab API to drift from the URL");
+  assert.equal(fixture.storage.getItem("xsxbFrameTuner.activePanelTab"), null, "URL is the only truth");
+
+  assert.equal(fixture.categoryFor('[data-panel="adjustment-base"]'), "animation");
+  assert.equal(fixture.categoryFor('[data-panel="boxes"]'), "boxes");
+  assert.equal(fixture.categoryFor('[data-panel="attack-trails"]'), "trails");
+  assert.equal(fixture.categoryFor('[data-panel="attachment-assets"]'), "attachments");
+  assert.equal(fixture.categoryFor('[data-panel="frame-audio"]'), "audio");
+  assert.equal(fixture.categoryFor("#projectContext"), "overview");
+  assert.equal(
+    fixture.categoryFor(".animationPicker"),
+    undefined,
+    "the animation being edited stays switchable from every tool",
+  );
+});
+
+test("every client route is served by both the local server and the Cloudflare worker", () => {
+  // A route the client can reach but the servers do not allowlist returns a 404
+  // document, so the tool silently disappears on reload and in production.
+  const read = (relativePath) => fs.readFileSync(path.resolve(__dirname, relativePath), "utf8");
+  const pathsIn = (source, marker) =>
+    new Set(
+      [...source.slice(source.indexOf(marker)).matchAll(/"(\/(?:workspace|tools|projects)[^"]*)"/g)]
+        .map((match) => match[1])
+        .slice(0, 40),
+    );
+
+  const clientRoutes = pathsIn(read("../animation_tuner/public/app_routing.js"), "ROUTE_BY_PATH");
+  const localRoutes = pathsIn(read("../animation_tuner/server.js"), "WORKBENCH_ROUTES");
+  const workerRoutes = pathsIn(read("../../cloudflare/site/src/index.mjs"), "WORKBENCH_ROUTES");
+
+  for (const route of clientRoutes) {
+    assert.ok(localRoutes.has(route), `local server does not serve ${route}`);
+    assert.ok(workerRoutes.has(route), `Cloudflare worker does not serve ${route}`);
+  }
+});
+
+test("the workbench ships one navigation vocabulary and an entry point for every sidebar panel", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
+
+  assert.doesNotMatch(html, /class="sidebarTabs"/, "the duplicate sidebar tab row should be gone");
+  assert.doesNotMatch(html, /data-sidebar-tab=/, "no control should speak the old tab vocabulary");
+  for (const route of ["overview", "animation", "boxes", "trails", "audio", "attachments"]) {
+    assert.match(html, new RegExp(`data-workbench-route="${route}"`), `${route} needs a visible entry point`);
+  }
+});
+
+test("empty attachment tray and trail quick-start stay compact enough to leave trail mode on screen", () => {
+  const filmstrip = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/filmstrip.css"),
+    "utf8",
+  );
+  const trails = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/attack_trails.css"),
+    "utf8",
+  );
+  const trayBlock = filmstrip.match(/\.attachmentAssetTray\s*\{[^}]+\}/)?.[0] || "";
+  const minHeight = Number((trayBlock.match(/min-height:\s*(\d+)/) || [])[1] || 999);
+  assert.ok(minHeight <= 80, `empty tray min-height should be compact, got ${minHeight}px`);
+  assert.match(trails, /\.attackTrailQuickStart\s*\{[^}]*display:\s*flex/);
+  assert.match(trails, /\.attackTrailQuickStart button\s*\{[^}]*width:\s*auto/);
+});
+
+test("narrow chrome wraps flow tabs instead of clipping their labels", () => {
+  const shell = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app_shell.css"), "utf8");
+  const cutout = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/cutout_settings.css"),
+    "utf8",
+  );
+  const organizer = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/organizer_workspace.css"),
+    "utf8",
+  );
+  assert.match(shell, /\.workspaceSecondaryTabs\s*\{[^}]*overflow:\s*visible/);
+  assert.match(shell, /@media \(max-width: 1180px\)[\s\S]*flex-wrap:\s*wrap/);
+  assert.match(cutout, /\.cutoutSettingTabs button > span\s*\{[^}]*white-space:\s*normal/);
+  assert.match(
+    cutout,
+    /@media \(max-width: 1100px\)[\s\S]*\.cutoutSettingTabs \.premiumOption::after[\s\S]*display:\s*none/,
+  );
+  assert.match(organizer, /\.organizerFrameTag\s*\{[^}]*overflow:\s*visible/);
 });

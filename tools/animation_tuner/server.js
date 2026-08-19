@@ -96,6 +96,7 @@ const WORKBENCH_ROUTES = new Set([
   "/workspace/resources/import",
   "/workspace/resources/cutout",
   "/workspace/resources/scatter",
+  "/workspace/animation/overview",
   "/workspace/animation/transform",
   "/workspace/animation/boxes",
   "/workspace/animation/trails",

@@ -182,7 +182,11 @@
       this._discardPresetEdit();
       const supported = this.hooks.projectKind() !== "codex_pets" && Boolean(this.hooks.group());
       this._syncGuideToggle(supported);
-      if (this.els.attackTrailPanel) this.els.attackTrailPanel.hidden = !supported;
+      const onTrailsPage =
+        (typeof document !== "undefined" &&
+          document.body?.getAttribute("data-workspace-tool") === "trails") ||
+        false;
+      if (this.els.attackTrailPanel) this.els.attackTrailPanel.hidden = !supported && !onTrailsPage;
       if (!supported) {
         this.enabled = false;
         if (this.els.attackTrailMode) this.els.attackTrailMode.checked = false;

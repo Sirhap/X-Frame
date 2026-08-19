@@ -7,7 +7,11 @@ const {
   createSmartCutoutOptions,
   detectBackgroundColor,
 } = require("../animation_tuner/public/scatter_slice_smart_cutout");
-const { resolveSmartCutoutParameters } = require("../animation_tuner/public/smart_cutout_defaults");
+const {
+  resolveSmartCutoutParameters,
+  BLACK_PLATE_OVERRIDES,
+  PLATE_SMART_OVERRIDES,
+} = require("../animation_tuner/public/smart_cutout_defaults");
 
 /**
  * Picks the workbench sliders that differ between plate and chroma smart profiles.
@@ -79,7 +83,11 @@ test("white and black plates use the plate smart profile", () => {
       smartSliderSnapshot(createSmartCutoutOptions(backgroundColor)),
       smartSliderSnapshot(resolveSmartCutoutParameters(backgroundColor)),
     );
-    assert.equal(createSmartCutoutOptions(backgroundColor).tolerance, 1);
+    const black = Math.max(backgroundColor.r, backgroundColor.g, backgroundColor.b) <= 24;
+    assert.equal(
+      createSmartCutoutOptions(backgroundColor).tolerance,
+      black ? BLACK_PLATE_OVERRIDES.tolerance : PLATE_SMART_OVERRIDES.tolerance,
+    );
     assert.equal(createSmartCutoutOptions(backgroundColor).blendStrength, 0);
     assert.equal(createSmartCutoutOptions(backgroundColor).despillStrength, 0);
   }

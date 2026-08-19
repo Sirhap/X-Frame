@@ -60,20 +60,22 @@ test("Edge persists theme, panel, sidebar, filmstrip, and easter-egg preferences
   await expect(page.locator("body")).toHaveClass(/kunkunUnlocked/);
   await expect(kunkunTheme).toBeVisible();
   await kunkunTheme.click();
-  await page.locator('[data-sidebar-tab="boxes"]').click();
+  await page.locator('a[data-workbench-route="boxes"]').click();
   await page.locator('[data-filmstrip-layout="grid"]').click();
   await page.locator("#sidebarCollapse").click();
 
   await expect(page.locator("body")).toHaveClass(/theme-kunkun/);
   await expect(page.locator("body")).toHaveClass(/sidebarCollapsed/);
-  await expect(page.locator("body")).toHaveAttribute("data-sidebar-tab", "boxes");
+  await expect(page.locator("body")).toHaveAttribute("data-workspace-tool", "boxes");
   await expect(page.locator(".filmstripPanel")).toHaveAttribute("data-layout", "grid");
 
   await page.reload();
   await expect(page.locator("body")).toHaveClass(/theme-kunkun/);
   await expect(page.locator("body")).toHaveClass(/kunkunUnlocked/);
   await expect(page.locator("body")).toHaveClass(/sidebarCollapsed/);
-  await expect(page.locator("body")).toHaveAttribute("data-sidebar-tab", "boxes");
+  // The active panel now survives reload because it lives in the URL, not storage.
+  await expect(page).toHaveURL(/\/workspace\/animation\/boxes/);
+  await expect(page.locator("body")).toHaveAttribute("data-workspace-tool", "boxes");
   await expect(page.locator(".filmstripPanel")).toHaveAttribute("data-layout", "grid");
   await expect(page.locator("#workbenchSidebar")).toHaveAttribute("aria-hidden", "true");
 
@@ -87,7 +89,7 @@ test("Edge persists theme, panel, sidebar, filmstrip, and easter-egg preferences
   expect(preferences).toEqual({
     theme: "kunkun",
     sidebar: "true",
-    tab: "boxes",
+    tab: null,
     filmstrip: "grid",
     kunkun: "true",
   });

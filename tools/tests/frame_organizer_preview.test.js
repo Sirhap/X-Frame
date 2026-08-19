@@ -67,3 +67,29 @@ test("organizer preview matches the frame aspect ratio instead of letterboxing",
   assert.equal(draws.length, 1);
   assert.deepEqual(draws[0], { x: 0, y: 0, width: 400, height: 200 });
 });
+
+test("organizer preview names the primary selected frame", () => {
+  const preview = { textContent: "" };
+  const frame = { originalCanvas: { width: 2, height: 2 }, editedCanvas: null, selected: true };
+  const other = { originalCanvas: { width: 2, height: 2 }, editedCanvas: null, selected: true };
+  const controller = createController({
+    elements: {
+      organizerPreview: {
+        clientWidth: 480,
+        clientHeight: 320,
+        getContext: () => null,
+      },
+      organizerPreviewFrame: preview,
+      organizerModal: { hidden: false },
+      organizerSpeed: { min: "40", max: "600", value: "400" },
+    },
+    state: { previewIndex: 0, previewTimer: 0, viewMode: "edited", frames: [frame, other] },
+    text: (key, values = {}) => `${key}:${values.current || ""}:${values.count || ""}`,
+    includedFrames: () => [frame, other],
+    clamp: (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value)),
+    window: { clearTimeout() {}, setTimeout: () => 1 },
+  });
+
+  controller.renderPreview();
+  assert.equal(preview.textContent, "previewPrimary:1:2");
+});

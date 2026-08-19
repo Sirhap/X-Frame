@@ -71,7 +71,7 @@
    *   elements:Record<string,any>,
    *   state:Record<string,any>,
    *   text:(key:string,variables?:Record<string,string|number>)=>string,
-   *   hooks?:{browserExportOnly?:boolean,getCurrentAnimation?:()=>object|null,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,createSessionAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,exportAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<object|null>,addToProject?:(request:{worksets:object[],sourceTool:string})=>Promise<void>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,autoCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
+   *   hooks?:{browserExportOnly?:boolean,getCurrentAnimation?:()=>object|null,commitImportToCurrent?:()=>boolean,applyPlan?:(items:Array<object>,options?:object)=>Promise<void>,createAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,createSessionAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<void>,exportAnimation?:(metadata:object,items:Array<object>,options?:object)=>Promise<object|null>,addToProject?:(request:{worksets:object[],sourceTool:string})=>Promise<void>,addAssets?:(items:Array<object>)=>Promise<number>,editCutout?:(workset:object)=>Promise<Array<object>|null>,autoCutout?:(workset:object)=>Promise<Array<object>|null>,ensurePremiumActivated?:(featureIds:string[])=>Promise<boolean>},
    *   includedFrames:()=>object[],
    *   imageCanvas:(image:CanvasImageSource)=>HTMLCanvasElement,
    *   renderCounts:()=>void,
@@ -338,9 +338,15 @@
      */
     async function applyPlan() {
       const frames = includedFrames();
+      const sourceGroupCount = new Set(frames.map((frame) => frame.groupId).filter(Boolean)).size;
+      const writeCurrent =
+        state.mode === "import" &&
+        hooks.browserExportOnly !== true &&
+        hooks.commitImportToCurrent?.() === true &&
+        sourceGroupCount <= 1;
       let metadata = null;
       try {
-        if (state.mode === "import") metadata = importMetadata();
+        if (state.mode === "import" && !writeCurrent) metadata = importMetadata();
       } catch (error) {
         setStatus(error.message, "error");
         return;
@@ -351,13 +357,17 @@
         Array.from(state.premiumFeatures || []);
       const sessionImport = hooks.browserExportOnly === true && state.mode === "import";
       const browserExportOnly = hooks.browserExportOnly === true && state.mode === "import" && !sessionImport;
-      const sourceGroupCount = new Set(frames.map((frame) => frame.groupId).filter(Boolean)).size;
-      const confirmation =
-        state.mode === "import"
+      const confirmation = writeCurrent
+        ? text("applyConfirm")
+        : state.mode === "import"
           ? text(browserExportOnly ? "exportConfirm" : "createConfirm", { count: frames.length })
           : text("applyConfirm");
-      const details =
-        state.mode === "import"
+      const details = writeCurrent
+        ? [
+            [text("detailAnimation"), hooks.getCurrentAnimation?.()?.name || state.animationName],
+            [text("detailFrames"), frames.length],
+          ]
+        : state.mode === "import"
           ? [
               [text("detailProject"), metadata.projectId || metadata.projectLabel],
               [text("detailProfile"), metadata.profileLabel],
@@ -394,7 +404,7 @@
               : "",
         });
         const items = frames.map(itemForFrame);
-        if (state.mode === "import") {
+        if (state.mode === "import" && !writeCurrent) {
           const createAnimation = sessionImport ? hooks.createSessionAnimation : hooks.createAnimation;
           if (typeof createAnimation !== "function") throw new Error("Animation import is unavailable.");
           const groupedFrames = new Map();
@@ -428,6 +438,14 @@
         } else {
           await hooks.applyPlan?.(items, { premiumFeatures: usedPremiumFeatures });
           setStatus(text("applied", { count: items.length }), "success");
+          if (writeCurrent) {
+            state.mode = "edit";
+            renderLanguage();
+            if (typeof closeOrganizer === "function") {
+              closeOrganizer();
+              return;
+            }
+          }
         }
         await loadCurrentAnimation();
       } catch (error) {

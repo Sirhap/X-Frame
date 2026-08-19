@@ -105,11 +105,20 @@
               <option value="alpha">Alpha 透明度</option>
               <option value="colorkey">背景色键</option>
             </select>
-
-            <label class="fieldLabel" for="scatterColor">背景色 · 点击画布也可取色</label>
-            <div class="colorField">
-              <input id="scatterColor" type="color" value="#98d79b" />
-              <output id="scatterColorValue" for="scatterColor">#98D79B</output>
+            <p id="scatterAlphaHint" class="automaticDetectionHint" hidden>
+              Alpha 模式按不透明像素识别，不需要背景色。
+            </p>
+            <div id="scatterColorKeyFields">
+              <label class="fieldLabel" for="scatterColor">背景色 · 点击画布也可取色</label>
+              <div class="colorField">
+                <input id="scatterColor" type="color" value="#98d79b" />
+                <output id="scatterColorValue" for="scatterColor">#98D79B</output>
+              </div>
+              <label class="fieldLabel" for="scatterThreshold">色键容差</label>
+              <label class="cutoutRange scatterThresholdRange">
+                <input id="scatterThreshold" type="range" min="0" max="64" step="1" value="24" />
+                <output id="scatterThresholdValue" for="scatterThreshold">24</output>
+              </label>
             </div>
 
             <button id="scatterDetect" class="actionButton detect" type="button" disabled>

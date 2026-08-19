@@ -142,8 +142,6 @@
       elements.cutoutModal.classList.toggle("worksetSession", workset);
       const sessionTitle = text(single ? "singleTitle" : "title");
       if (elements.cutoutTitle) elements.cutoutTitle.textContent = sessionTitle;
-      const flowTitle = elements.cutoutModal?.ownerDocument?.querySelector("#workspaceFlowProject");
-      if (flowTitle && !elements.cutoutModal.hidden) flowTitle.textContent = sessionTitle;
       elements.cutoutFramePrefix.textContent = text(single ? "singleFramePrefix" : "framePrefix");
       elements.cutoutPrevious.textContent = single ? "《" : "◀";
       elements.cutoutNext.textContent = single ? "》" : "▶";

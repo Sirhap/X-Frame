@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   createController,
+  resolveDeliveryExportSource,
   summarizeDeliveryReadiness,
   summarizeDeliveryScope,
 } = require("../animation_tuner/public/app_mode_hubs");
@@ -85,13 +86,24 @@ test("browser delivery identifies local Godot handoff as unavailable", () => {
 /** Creates the DOM subset required by the project-hub renderer. */
 function createElement(tagName = "div") {
   const attributes = new Map();
+  const listeners = new Map();
   return {
     tagName: tagName.toUpperCase(),
     children: [],
     dataset: {},
     hidden: false,
+    addEventListener(type, listener) {
+      const handlers = listeners.get(type) || [];
+      handlers.push(listener);
+      listeners.set(type, handlers);
+    },
     append(...children) {
       this.children.push(...children);
+    },
+    dispatch(type, event = {}) {
+      for (const listener of listeners.get(type) || []) {
+        listener({ preventDefault() {}, ...event });
+      }
     },
     getAttribute(name) {
       return attributes.get(name) ?? null;
@@ -240,4 +252,80 @@ test("recent project summary does not expose the machine-specific absolute works
   const summary = fixture.elements["#projectHubRecentSummary"].textContent;
   assert.equal(summary.includes("/Users/example/private/project"), false);
   assert.match(summary, /…\/(?:private\/)?project/u);
+});
+
+test("New Project asks for a name before creating and opening import", async () => {
+  const fixture = createFixture();
+  const assigned = [];
+  const created = [];
+  const controller = createController({
+    documentRef: fixture.documentRef,
+    windowRef: {
+      location: { origin: "http://localhost", assign: (url) => assigned.push(url) },
+    },
+    prompt: () => "QA Temp",
+    createProject: async (label) => {
+      created.push(label);
+      return { projectId: "qa-temp" };
+    },
+    translate: (key) => key,
+  });
+
+  controller.bind();
+  fixture.elements["#projectHubNew"].dispatch("click");
+  await Promise.resolve();
+
+  assert.deepEqual(created, ["QA Temp"]);
+  assert.deepEqual(assigned, ["/workspace/resources/import?project=qa-temp"]);
+});
+
+test("empty New Project name does not navigate away from the hub", async () => {
+  const fixture = createFixture();
+  const assigned = [];
+  const controller = createController({
+    documentRef: fixture.documentRef,
+    windowRef: {
+      location: { origin: "http://localhost", assign: (url) => assigned.push(url) },
+    },
+    prompt: () => "   ",
+    createProject: async () => {
+      throw new Error("should not create");
+    },
+    translate: (key) => key,
+  });
+
+  controller.bind();
+  fixture.elements["#projectHubNew"].dispatch("click");
+  await Promise.resolve();
+
+  assert.deepEqual(assigned, []);
+});
+
+test("standalone export falls back to the current animation when the temp workset is empty", () => {
+  const currentGroup = { frames: [{ id: "idle-1" }] };
+  assert.deepEqual(
+    resolveDeliveryExportSource({
+      navigationContext: "standalone",
+      temporaryWorkset: { frames: [] },
+      currentGroup,
+    }),
+    { kind: "current" },
+  );
+  assert.equal(
+    resolveDeliveryExportSource({
+      navigationContext: "standalone",
+      temporaryWorkset: null,
+      currentGroup: { frames: [] },
+    }).kind,
+    "empty",
+  );
+  assert.equal(
+    resolveDeliveryExportSource({
+      navigationContext: "standalone",
+      temporaryWorkset: null,
+      currentGroup: { frames: [] },
+      translate: (key) => (key === "exportNeedSequence" ? "Import an image sequence to export first" : key),
+    }).message,
+    "Import an image sequence to export first",
+  );
 });

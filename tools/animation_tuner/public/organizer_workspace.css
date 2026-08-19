@@ -283,9 +283,9 @@
 
 .organizerFrameTag {
   min-height: 13px;
-  overflow: hidden;
+  overflow: visible;
   color: var(--accent-text);
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
   text-align: left;
   font: 900 9px/1.2 var(--data-font);
