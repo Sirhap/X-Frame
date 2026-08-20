@@ -54,12 +54,16 @@ test("ENV-008 Tab inside 清空工作集 stays in the dialog and does not dismis
   await expect(page.locator("#organizerConfirmTitle")).toHaveText("清空当前工作集？");
   await expect(page.locator("#organizerConfirmMessage")).toContainText("将从工作集中移出全部 3 帧");
   await expect(page.locator("#organizerConfirmCancel")).toBeFocused();
+  await expect(page.locator(".organizerFrame")).toHaveCount(3);
 
   await page.keyboard.press("Tab");
   await expect(panel).toBeVisible();
+  await expect(page.locator("#organizerConfirmTitle")).toHaveText("清空当前工作集？");
   let focus = await confirmFocusState(page, "#organizerConfirmPanel");
-  expect(focus, "Tab must keep the dialog open").toMatchObject({ open: true, inside: true });
+  expect(focus, "the first Tab must not dismiss the dialog").toMatchObject({ open: true, inside: true });
   await expect(page.locator("#organizerConfirmAccept")).toBeFocused();
+  await expect(page.locator("#organizerAddAssets")).not.toBeFocused();
+  await expect(page.locator(".organizerFrame")).toHaveCount(3);
 
   await page.keyboard.press("Tab");
   await expect(panel).toBeVisible();

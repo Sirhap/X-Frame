@@ -61,6 +61,28 @@ test("ORG-035 canceling reduce confirmation leaves included flags unchanged", as
   );
 });
 
+test("ENV-008 confirm buttons stay in the Tab cycle when getClientRects is empty", () => {
+  const cancel = {
+    hidden: false,
+    disabled: false,
+    offsetParent: null,
+    getClientRects: () => [],
+  };
+  const accept = {
+    hidden: false,
+    disabled: false,
+    offsetParent: null,
+    getClientRects: () => [],
+  };
+  const container = {
+    querySelectorAll() {
+      return [cancel, accept];
+    },
+  };
+  assert.deepEqual(listFocusableElements(container), [cancel, accept]);
+  assert.deepEqual(listFocusableElements(container, [cancel, accept]), [cancel, accept]);
+});
+
 test("ENV-008 Tab cycles inside a confirm dialog even when offsetParent is null", () => {
   const documentRef = { activeElement: null };
   const cancel = {

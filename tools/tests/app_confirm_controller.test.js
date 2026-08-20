@@ -157,6 +157,9 @@ test("app confirmation traps Tab when offsetParent is null and does not dismiss"
   fixture.elements.cancel.offsetParent = null;
   fixture.elements.alternate.offsetParent = null;
   fixture.elements.accept.offsetParent = null;
+  fixture.elements.cancel.getClientRects = () => [];
+  fixture.elements.alternate.getClientRects = () => [];
+  fixture.elements.accept.getClientRects = () => [];
   const resultPromise = fixture.controller.requestConfirmation("Clear the workset?", [], {
     tone: "danger",
   });

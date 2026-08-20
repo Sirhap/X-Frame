@@ -59,22 +59,24 @@
 
     /**
      * Returns whether a control can receive Tab focus.
-     * `offsetParent` is null under `position: fixed` ancestors, so layout
-     * visibility uses getClientRects when the DOM provides it.
+     * Do not use `offsetParent` or `getClientRects`: `#appConfirmPanel` is
+     * `position: fixed` (offsetParent is null) and a just-opened dialog can
+     * have empty rects, which dropped every button from the trap.
      * @param {HTMLElement} element Candidate control.
      * @returns {boolean} Whether the control should be in the Tab cycle.
      */
     function isDisplayedForFocus(element) {
-      if (!element || element.disabled || element.hidden) return false;
-      if (typeof element.getClientRects === "function") return element.getClientRects().length > 0;
-      return true;
+      return Boolean(element) && !element.disabled && !element.hidden;
     }
 
     /**
-     * Returns focusable controls inside the visible confirmation card.
+     * Returns the confirmation actions that should cycle under Tab.
+     * Prefer the known action buttons so a query/layout miss cannot empty the trap.
      * @returns {HTMLElement[]} Focusable controls.
      */
     function focusableElements() {
+      const known = [elements.cancel, elements.alternate, elements.accept].filter(isDisplayedForFocus);
+      if (known.length) return known;
       return Array.from(elements.panel.querySelectorAll(FOCUSABLE_SELECTOR)).filter(isDisplayedForFocus);
     }
 
@@ -214,12 +216,10 @@
       }
       if (event.key !== "Tab") return;
       const focusable = focusableElements();
-      if (!focusable.length) {
-        event.preventDefault();
-        return;
-      }
-      const currentIndex = focusable.indexOf(documentRef.activeElement);
       event.preventDefault();
+      event.stopPropagation?.();
+      if (!focusable.length) return;
+      const currentIndex = focusable.indexOf(documentRef.activeElement);
       if (event.shiftKey) {
         const next = currentIndex <= 0 ? focusable[focusable.length - 1] : focusable[currentIndex - 1];
         next.focus();
@@ -258,7 +258,7 @@
       elements.panel.addEventListener("click", (event) => {
         if (event.target === elements.panel) resolveConfirmation(false);
       });
-      documentRef.addEventListener("keydown", handleKeydown);
+      documentRef.addEventListener("keydown", handleKeydown, true);
       documentRef.addEventListener("focusin", handleFocusIn);
     }
 
