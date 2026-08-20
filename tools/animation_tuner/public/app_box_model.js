@@ -89,6 +89,11 @@
       group = getCurrentGroup(),
       groupImages = getImages(),
     ) {
+      if (typeof boxName !== "string" || !boxName) {
+        throw new Error(
+          "frameBox(boxName, index, group, images) requires the box name string, not a box object",
+        );
+      }
       const base =
         boxName === "hitbox"
           ? defaultHitbox(index, group, groupImages)

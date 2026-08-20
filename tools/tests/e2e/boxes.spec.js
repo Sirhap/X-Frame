@@ -193,7 +193,16 @@ test("BOX-006 restore-auto ArrowLeft cannot jump-collapse the hurtbox", async ({
     (before.top + before.bottom) / 2,
   );
   await page.mouse.click(center.x, center.y);
-  for (let step = 0; step < 12; step += 1) await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  const afterOne = await measureHurtbox(page);
+  expect(afterOne, "hurtbox should still be visible after one ArrowLeft").toBeTruthy();
+  expect(afterOne.width, "one ArrowLeft must not collapse to a foot speck").toBeGreaterThan(
+    before.width * 0.6,
+  );
+  expect(afterOne.height).toBeGreaterThan(before.height * 0.6);
+  expect(Math.abs(afterOne.height - before.height)).toBeLessThan(8);
+
+  for (let step = 0; step < 11; step += 1) await page.keyboard.press("ArrowLeft");
 
   await expect(page.locator("#status")).toContainText("nudge box");
   await expect(page.locator("#filmstrip .thumb[data-frame-index='0']")).toHaveAttribute(

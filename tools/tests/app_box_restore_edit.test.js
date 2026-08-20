@@ -236,6 +236,10 @@ test("stage west-handle drag uses the displayed auto box, not a missing-image st
   );
   assert.equal(next.size.y, displayed.size.y);
   assert.ok(Math.abs(next.offset.y - displayed.offset.y) < 0.0001);
+  assert.ok(
+    Math.abs(next.offset.y - stub.offset.y) > 8,
+    `west drag jumped to the foot origin ${JSON.stringify(next.offset)}`,
+  );
 });
 
 /**
@@ -297,7 +301,9 @@ function createStoreBackedNudgeWorkbench(options = {}) {
 test("nudgeSelectedBox(-1, 0) changes store-backed offset.x by -1 and keeps size", () => {
   const { adjustment, boxModel, events, group, images } = createStoreBackedNudgeWorkbench();
   const before = boxModel.frameBox("hurtbox", 0, group, images);
+  const stub = boxModel.frameBox("hurtbox", 0, group, []);
   assert.ok(before.size.x > 20, `nudge started from foot stub ${before.size.x}x${before.size.y}`);
+  assert.ok(Math.abs(before.offset.y - stub.offset.y) > 8, "displayed box must not already sit at the foot");
   assert.equal(adjustment.nudgeSelectedBox(-1, 0), true);
   assert.deepEqual(events, ["nudge box"]);
   const after = boxModel.frameBox("hurtbox", 0, group, images);
@@ -310,6 +316,47 @@ test("nudgeSelectedBox(-1, 0) changes store-backed offset.x by -1 and keeps size
   assert.equal(after.size.x, before.size.x);
   assert.equal(after.size.y, before.size.y);
   assert.notEqual(after.size.x, BOX_MIN_SIZE);
+  assert.ok(after.size.x > stub.size.x * 2, `one nudge collapsed size to ${after.size.x}x${after.size.y}`);
+  assert.ok(
+    Math.abs(after.offset.y - stub.offset.y) > 8,
+    `one nudge jumped to the foot origin ${JSON.stringify(after.offset)}`,
+  );
+});
+
+test("naive offset.x+=-1 on the no-image stub is the live jump-collapse", () => {
+  const { boxModel, frameEdit, group, images } = createRestoreAutoWorkbench();
+  const displayed = boxModel.frameBox("hurtbox", 0, group, images);
+  const stub = boxModel.frameBox("hurtbox", 0, group, []);
+  const naive = {
+    ...stub,
+    offset: { x: stub.offset.x - 1, y: stub.offset.y },
+    size: stub.size,
+  };
+  frameEdit.setBoxOverride("hurtbox", naive, 0, group);
+  const after = boxModel.frameBox("hurtbox", 0, group, images);
+  assert.ok(after.size.x <= 8, "this fixture must still reproduce the live foot speck");
+  assert.ok(Math.abs(after.offset.y - displayed.offset.y) > 8);
+  assert.ok(displayed.size.x > 20);
+});
+
+test("frameBox rejects a box object so frameBox(box) cannot silently return the foot stub", () => {
+  const { boxModel, group, images } = createRestoreAutoWorkbench();
+  const displayed = boxModel.frameBox("hurtbox", 0, group, images);
+  assert.throws(() => boxModel.frameBox(displayed), /box name string|not a box object/i);
+});
+
+test("nudgeSelectedBox source uses nudgeFrameBox, not a shallow offset.x +=", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "../animation_tuner/public/app_box_adjustment.js"),
+    "utf8",
+  );
+  const match = source.match(/function nudgeSelectedBox\([\s\S]*?\n    \}/);
+  assert.ok(match, "nudgeSelectedBox source not found");
+  const body = match[0];
+  assert.match(body, /nudgeFrameBox\(selectedBox,\s*current,\s*dx,\s*dy\)/);
+  assert.match(body, /frameBox\(selectedBox,\s*frameIndex,\s*getCurrentGroup\(\),\s*getImages\(\)\)/);
+  assert.match(body, /setBoxOverride\(\s*selectedBox,\s*nudgeFrameBox/);
+  assert.equal(/\boffset\.x\s*\+=/.test(body), false);
 });
 
 test("setBoxOverride keeps displayed size when a live wrapper writes only a shallow offset", () => {

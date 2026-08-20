@@ -188,6 +188,11 @@
 
     /** Writes a normalized box override and marks the workbench dirty. */
     function setBoxOverride(boxName, box, index = getSelectedFrame(), group = getCurrentGroup()) {
+      if (typeof boxName !== "string" || !boxName) {
+        throw new Error(
+          "setBoxOverride(boxName, box, index, group) requires the box name string, not a box object",
+        );
+      }
       const store = boxOverrideStore(group);
       const key = frameBoxKey(index, group);
       const entry = structuredCloneValue(store[key] || {});

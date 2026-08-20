@@ -73,6 +73,10 @@ test("box model resolves defaults and persisted overrides", () => {
   assert.deepEqual(controller.boxOverride(0, currentGroup).hitbox.offset, { x: 50, y: 60 });
   assert.deepEqual(controller.frameBox("hurtbox", 0, currentGroup).size, { x: 120, y: 160 });
   assert.deepEqual(controller.frameBox("hurtbox", 0, currentGroup, []).size, { x: 1, y: 1 });
+  assert.throws(
+    () => controller.frameBox({ offset: { x: 0, y: -80 }, size: { x: 120, y: 160 } }),
+    /box name string|not a box object/i,
+  );
 });
 
 test("box model enforces editability and paired previews", () => {
