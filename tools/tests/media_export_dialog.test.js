@@ -361,6 +361,7 @@ test("the disabled GIF/MP4 reason is not hidden with display:none", () => {
   );
   for (const selector of [
     /\.mediaExportLocalHint[^{]*\{[^}]*display:\s*none/u,
+    /\.mediaExportFormatSection[^{]*\.mediaExportLocalHint[^{]*\{[^}]*display:\s*none/u,
     /\.mediaExportNotices\s*\{[^}]*display:\s*none/u,
     /\.mediaExportFooter\s*>\s*span\s*\{[^}]*display:\s*none/u,
   ]) {
@@ -370,6 +371,30 @@ test("the disabled GIF/MP4 reason is not hidden with display:none", () => {
       "ORG-023 needs a visible FFmpeg reason; display:none on the hint, notices, or footer span hides it",
     );
   }
+});
+
+test("the FFmpeg reason lives under the export format row, not only in the notices strip", () => {
+  const html = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const formatSection = html.match(/<section class="mediaExportFormatSection">[\s\S]*?<\/section>/u);
+  assert.ok(formatSection, "export format section is missing");
+  assert.match(formatSection[0], /class="mediaExportFormats"/u);
+  assert.match(
+    formatSection[0],
+    /id="mediaExportLocalHint"/u,
+    "ORG-023 needs #mediaExportLocalHint immediately under ZIP/GIF/MP4, not in the clipped notices strip",
+  );
+  assert.ok(
+    formatSection[0].indexOf('class="mediaExportFormats"') <
+      formatSection[0].indexOf('id="mediaExportLocalHint"'),
+    "the FFmpeg reason must follow the format pills",
+  );
+  const notices = html.match(/<div class="mediaExportNotices">[\s\S]*?<\/div>/u);
+  assert.ok(notices);
+  assert.doesNotMatch(
+    notices[0],
+    /id="mediaExportLocalHint"/u,
+    "leaving the only reason in .mediaExportNotices keeps it clipped below the workspace",
+  );
 });
 
 test("media export dialog consumes Escape and restores trigger focus", () => {
