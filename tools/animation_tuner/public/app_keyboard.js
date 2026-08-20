@@ -226,13 +226,7 @@
         setStageZoom(getStageZoom() * 0.92);
         return;
       }
-      if (
-        !interactiveTarget &&
-        !command &&
-        !event.altKey &&
-        !event.repeat &&
-        event.code === "Space"
-      ) {
+      if (!interactiveTarget && !command && !event.altKey && !event.repeat && event.code === "Space") {
         event.preventDefault?.();
         setStageSpacePan(true);
         setStageSpacePanConsumed(false);
