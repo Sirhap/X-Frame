@@ -228,12 +228,7 @@
         }
         state.frames.push(...additions);
         dependencies.setDefaultAnimationName?.(acceptedEntries[0].item.name);
-        dependencies.renderGrid();
         dependencies.restartPreview();
-        dependencies.elements.organizerGrid.lastElementChild?.scrollIntoView({
-          block: "nearest",
-          inline: "nearest",
-        });
         dependencies.setStatus(
           skipped
             ? text("importPartial", { count: additions.length, failed: skipped })
@@ -244,7 +239,11 @@
         dependencies.setStatus(normalizeError(error, text("importInvalid")).message, "error");
       } finally {
         state.busy = false;
-        dependencies.renderCounts();
+        dependencies.renderGrid();
+        dependencies.elements.organizerGrid.lastElementChild?.scrollIntoView({
+          block: "nearest",
+          inline: "nearest",
+        });
       }
     }
 

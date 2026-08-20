@@ -39,6 +39,107 @@ test("video controller rejects missing integration dependencies", () => {
   assert.throws(() => createController({ elements: {} }), /dependencies are required/);
 });
 
+/**
+ * Builds a video-extract fixture that records whether the last grid paint was idle.
+ * @returns {{
+ *   controller:ReturnType<typeof createController>,
+ *   state:Record<string,any>,
+ *   gridBusySnapshots:boolean[],
+ *   elements:Record<string,any>
+ * }}
+ */
+function createExtractFixture() {
+  const gridBusySnapshots = [];
+  const state = {
+    busy: false,
+    videoExtracting: false,
+    videoDuration: 0.5,
+    videoWidth: 32,
+    videoHeight: 32,
+    videoFileName: "clip.webm",
+    videoUrl: "blob:clip",
+    frames: [],
+    nextImportBatchIndex: 0,
+  };
+  const video = {
+    currentTime: 0,
+    readyState: 2,
+    pause() {},
+    removeAttribute() {},
+    load() {},
+    addEventListener(type, handler) {
+      if (type === "seeked") queueMicrotask(handler);
+    },
+    removeEventListener() {},
+  };
+  const elements = {
+    organizerVideoStatus: { textContent: "", dataset: {} },
+    organizerVideoStart: { value: "0" },
+    organizerVideoEnd: { value: "0.5" },
+    organizerVideoStartRange: { value: "0", max: "" },
+    organizerVideoEndRange: { value: "0.5", max: "" },
+    organizerVideoFps: { value: "4" },
+    organizerVideoFpsNumber: { value: "4" },
+    organizerVideoDuration: { textContent: "" },
+    organizerVideoEstimate: { textContent: "" },
+    organizerVideoExtract: { disabled: false },
+    organizerVideoElement: video,
+    organizerVideoInput: { value: "" },
+    organizerVideoName: { textContent: "" },
+    organizerVideoMeta: { textContent: "" },
+    organizerVideoPanel: { hidden: false },
+    organizerApply: { parentElement: { querySelector: () => null } },
+  };
+  const controller = createController({
+    elements,
+    state,
+    text: (key, variables = {}) => `${key}:${variables.current ?? variables.count ?? ""}`,
+    createFrame: (_image, options) => ({ uid: options.name, ...options }),
+    renderCounts() {},
+    renderGrid() {
+      gridBusySnapshots.push(state.busy);
+    },
+    restartPreview() {},
+    setStatus() {},
+    document: {
+      createElement() {
+        return {
+          width: 0,
+          height: 0,
+          getContext() {
+            return { drawImage() {} };
+          },
+        };
+      },
+    },
+    window: {
+      setTimeout(handler, delay) {
+        if (!delay) handler();
+        return 1;
+      },
+      clearTimeout() {},
+    },
+    urlApi: { revokeObjectURL() {} },
+  });
+  return { controller, state, gridBusySnapshots, elements };
+}
+
+test("video extract re-renders the grid after clearing busy so ORG-013 cards can drag", async () => {
+  const { controller, state, gridBusySnapshots } = createExtractFixture();
+
+  await controller.extract();
+
+  assert.equal(state.busy, false);
+  assert.equal(state.videoExtracting, false);
+  assert.equal(state.frames.length, 2);
+  assert.ok(gridBusySnapshots.length >= 1);
+  assert.equal(
+    gridBusySnapshots.at(-1),
+    false,
+    `last renderGrid ran while busy=${gridBusySnapshots.at(-1)}; idle paint is required`,
+  );
+});
+
 test("video controller allows selections above the former frame and decoded-pixel budgets", () => {
   const elements = {
     organizerVideoStatus: { textContent: "", dataset: {} },
