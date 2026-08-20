@@ -63,16 +63,43 @@ test("video controller rejects missing integration dependencies", () => {
 });
 
 /**
+ * Records listeners so tests can click Cancel / X / overlay.
+ * @returns {{addEventListener:Function,click:Function,pointerdown:Function}}
+ */
+function createClickTarget() {
+  const listeners = {};
+  return {
+    addEventListener(type, handler) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(handler);
+    },
+    click(event = {}) {
+      for (const handler of listeners.click || []) handler(event);
+    },
+    pointerdown(event) {
+      for (const handler of listeners.pointerdown || []) handler(event);
+    },
+  };
+}
+
+/**
  * Builds a video-extract fixture that records whether the last grid paint was idle.
+ * @param {{holdSeeks?:boolean}} [options] When true, seeked handlers wait until releaseSeeks().
  * @returns {{
  *   controller:ReturnType<typeof createController>,
  *   state:Record<string,any>,
  *   gridBusySnapshots:boolean[],
- *   elements:Record<string,any>
+ *   elements:Record<string,any>,
+ *   statusMessages:string[],
+ *   releaseSeeks:()=>void,
+ *   restoreReadyVideo:()=>void
  * }}
  */
-function createExtractFixture() {
+function createExtractFixture(options = {}) {
   const gridBusySnapshots = [];
+  const statusMessages = [];
+  const pendingSeeked = [];
+  let holdSeeks = Boolean(options.holdSeeks);
   const state = {
     busy: false,
     videoExtracting: false,
@@ -85,32 +112,38 @@ function createExtractFixture() {
     nextImportBatchIndex: 0,
   };
   const video = {
-    currentTime: 0,
+    currentTime: holdSeeks ? 99 : 0,
     readyState: 2,
     pause() {},
     removeAttribute() {},
     load() {},
     addEventListener(type, handler) {
-      if (type === "seeked") queueMicrotask(handler);
+      if (type !== "seeked") return;
+      if (holdSeeks) pendingSeeked.push(handler);
+      else queueMicrotask(handler);
     },
     removeEventListener() {},
   };
+  const panel = Object.assign(createClickTarget(), { hidden: false });
   const elements = {
     organizerVideoStatus: { textContent: "", dataset: {} },
-    organizerVideoStart: { value: "0" },
-    organizerVideoEnd: { value: "0.5" },
-    organizerVideoStartRange: { value: "0", max: "" },
-    organizerVideoEndRange: { value: "0.5", max: "" },
-    organizerVideoFps: { value: "4" },
-    organizerVideoFpsNumber: { value: "4" },
+    organizerVideoStart: { value: "0", addEventListener() {} },
+    organizerVideoEnd: { value: "0.5", addEventListener() {} },
+    organizerVideoStartRange: { value: "0", max: "", addEventListener() {} },
+    organizerVideoEndRange: { value: "0.5", max: "", addEventListener() {} },
+    organizerVideoFps: { value: "4", addEventListener() {} },
+    organizerVideoFpsNumber: { value: "4", addEventListener() {} },
     organizerVideoDuration: { textContent: "" },
     organizerVideoEstimate: { textContent: "" },
-    organizerVideoExtract: { disabled: false },
+    organizerVideoExtract: Object.assign(createClickTarget(), { disabled: false }),
     organizerVideoElement: video,
-    organizerVideoInput: { value: "" },
+    organizerVideoInput: { value: "", files: [], addEventListener() {}, click() {} },
     organizerVideoName: { textContent: "" },
     organizerVideoMeta: { textContent: "" },
-    organizerVideoPanel: { hidden: false },
+    organizerVideoPanel: panel,
+    organizerVideoClose: createClickTarget(),
+    organizerVideoCancel: createClickTarget(),
+    organizerVideoReselect: createClickTarget(),
     organizerApply: { parentElement: { querySelector: () => null } },
   };
   const controller = createController({
@@ -123,7 +156,9 @@ function createExtractFixture() {
       gridBusySnapshots.push(state.busy);
     },
     restartPreview() {},
-    setStatus() {},
+    setStatus(message) {
+      statusMessages.push(String(message || ""));
+    },
     document: {
       createElement() {
         return {
@@ -144,7 +179,33 @@ function createExtractFixture() {
     },
     urlApi: { revokeObjectURL() {} },
   });
-  return { controller, state, gridBusySnapshots, elements };
+  return {
+    controller,
+    state,
+    gridBusySnapshots,
+    elements,
+    statusMessages,
+    releaseSeeks() {
+      holdSeeks = false;
+      const pending = pendingSeeked.splice(0);
+      for (const handler of pending) handler();
+    },
+    restoreReadyVideo() {
+      state.videoDuration = 0.5;
+      state.videoWidth = 32;
+      state.videoHeight = 32;
+      state.videoFileName = "clip.webm";
+      state.videoUrl = "blob:clip";
+      video.currentTime = 0;
+      video.readyState = 2;
+      elements.organizerVideoPanel.hidden = false;
+      elements.organizerVideoStart.value = "0";
+      elements.organizerVideoEnd.value = "0.5";
+      elements.organizerVideoFps.value = "4";
+      elements.organizerVideoFpsNumber.value = "4";
+      elements.organizerVideoExtract.disabled = false;
+    },
+  };
 }
 
 test("video extract re-renders the grid after clearing busy so ORG-013 cards can drag", async () => {
@@ -192,4 +253,82 @@ test("video controller allows selections above the former frame and decoded-pixe
   assert.equal(elements.organizerVideoExtract.disabled, false);
   assert.equal(elements.organizerVideoEstimate.textContent, "310");
   assert.equal(elements.organizerVideoStatus.textContent, "videoLoaded");
+});
+
+/**
+ * Starts a held extract, dismisses it, then lets seeks finish so an ignored
+ * cancel would still commit frames.
+ * @param {"close"|"cancel"|"overlay"} dismiss How the user leaves the dialog.
+ * @returns {Promise<{state:Record<string,any>,statusMessages:string[],elements:Record<string,any>}>}
+ */
+async function cancelHeldExtract(dismiss) {
+  const fixture = createExtractFixture({ holdSeeks: true });
+  fixture.controller.bindEvents();
+  const existing = fixture.state.frames.length;
+  const done = fixture.controller.extract();
+  assert.equal(fixture.state.videoExtracting, true);
+  assert.equal(existing, 0);
+
+  if (dismiss === "cancel") fixture.elements.organizerVideoCancel.click();
+  else if (dismiss === "overlay") {
+    fixture.elements.organizerVideoPanel.pointerdown({
+      target: fixture.elements.organizerVideoPanel,
+    });
+  } else fixture.controller.close();
+
+  assert.equal(
+    fixture.elements.organizerVideoPanel.hidden,
+    true,
+    "cancel must close the extract dialog immediately",
+  );
+  fixture.releaseSeeks();
+  await done;
+  return fixture;
+}
+
+test("ORG-040 cancel mid-extract closes the dialog and leaves the workset unchanged", async () => {
+  const { state, statusMessages } = await cancelHeldExtract("cancel");
+
+  assert.equal(state.frames.length, 0);
+  assert.equal(state.videoExtracting, false);
+  assert.equal(state.busy, false);
+  assert.ok(
+    statusMessages.includes("videoCancelled:"),
+    `expected cancel status, got: ${statusMessages.join(" | ")}`,
+  );
+  assert.equal(
+    statusMessages.some((message) => message.startsWith("videoImported:")),
+    false,
+    `cancelled extract still committed: ${statusMessages.join(" | ")}`,
+  );
+});
+
+test("ORG-040 closing extract via X or overlay aborts the same way as Cancel", async () => {
+  for (const dismiss of ["close", "overlay"]) {
+    const { state, statusMessages, elements } = await cancelHeldExtract(dismiss);
+    assert.equal(state.frames.length, 0, `${dismiss} still appended frames`);
+    assert.equal(elements.organizerVideoPanel.hidden, true);
+    assert.equal(
+      statusMessages.some((message) => message.startsWith("videoImported:")),
+      false,
+      `${dismiss} still reported videoImported`,
+    );
+  }
+});
+
+test("ORG-040 a later extract on the same video still commits after a cancel", async () => {
+  const fixture = createExtractFixture({ holdSeeks: true });
+  fixture.controller.bindEvents();
+  const cancelled = fixture.controller.extract();
+  fixture.elements.organizerVideoCancel.click();
+  fixture.releaseSeeks();
+  await cancelled;
+  assert.equal(fixture.state.frames.length, 0);
+
+  fixture.restoreReadyVideo();
+  await fixture.controller.extract();
+
+  assert.equal(fixture.state.frames.length, 2);
+  assert.equal(fixture.state.videoExtracting, false);
+  assert.ok(fixture.statusMessages.some((message) => message === "videoImported:2"));
 });
