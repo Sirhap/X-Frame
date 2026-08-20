@@ -1502,7 +1502,7 @@ const saveController = saveControllerModule.createController({
   },
   getActiveProjectId: activeProjectId,
   updateSaveState,
-  updateAdjustmentFromInputs: () => updateAdjustmentFromInputs(),
+  updateAdjustmentFromInputs: () => flushFocusedAdjustmentEdit(),
   pruneNoopFrameOverrides,
   collectFrameAudioBindingsForSave,
   getProjectKind: () => config?.projectKind || "godot",
@@ -1647,7 +1647,7 @@ adjustmentInputsController = adjustmentInputsModule.createController({
   updateWorkbenchHud,
   syncBoxInputs,
   syncFrameAudioInputs,
-  updateAdjustmentFromInputs: () => updateAdjustmentFromInputs(),
+  updateAdjustmentFromInputs: (editedInput) => updateAdjustmentFromInputs(editedInput),
   pushUndo,
   createBoxEditSnapshot,
   setBaseEditSnapshot: (value) => {
@@ -2178,6 +2178,10 @@ function markAdjustmentFieldEdited(...args) {
 
 function releaseAdjustmentField(...args) {
   return adjustmentInputsCall("releaseAdjustmentField", ...args);
+}
+
+function flushFocusedAdjustmentEdit(...args) {
+  return adjustmentInputsCall("flushFocusedAdjustmentEdit", ...args);
 }
 
 function beginWorkbenchClickGuard(...args) {
@@ -4137,20 +4141,18 @@ async function persistBrowserSessionProject() {
 /** Returns the current browser project including unsaved in-memory binding state. */
 function browserProjectSnapshot(projectId) {
   if (!config || projectId !== activeProjectId()) return browserRuntime.getSessionProjectConfig(projectId);
-  return {
-    ...structuredClone(config),
-    tuning: {
-      ...(config?.tuning || {}),
-      reference_frame: serializeReferenceFrame(),
-      frame_visual_overrides: structuredClone(frameOverrides),
-      frame_playback_overrides: structuredClone(framePlaybackOverrides),
-      frame_box_overrides: structuredClone(frameBoxOverrides),
-    },
+  return browserRuntime.mergeLiveTuningIntoConfig(config, {
+    values,
+    referenceFrame: serializeReferenceFrame(),
+    frameVisualOverrides: frameOverrides,
+    framePlaybackOverrides: framePlaybackOverrides,
+    frameBoxOverrides: frameBoxOverrides,
+    sceneSettings,
     frameAudioBindings: structuredClone(frameAudioBindings),
     frameImageAttachments: structuredClone(frameImageAttachments),
     attachmentAssets: structuredClone(attachmentAssets),
     attackTrails: attackTrailEditor?.snapshot() || { schemaVersion: 8, bindings: {} },
-  };
+  });
 }
 
 const handoffAdapter = browserOnlyMode

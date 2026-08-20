@@ -498,6 +498,52 @@
   }
 
   /**
+   * Overlays live workbench stores onto a project config for IndexedDB persist.
+   * config.tuning is the load-time copy; typed offset/scale live in `values`.
+   * @param {object} config Project config captured at load.
+   * @param {{
+   *   values?:object,
+   *   referenceFrame?:unknown,
+   *   frameVisualOverrides?:object,
+   *   framePlaybackOverrides?:object,
+   *   frameBoxOverrides?:object,
+   *   sceneSettings?:object,
+   *   frameAudioBindings?:object,
+   *   frameImageAttachments?:object,
+   *   attachmentAssets?:object,
+   *   attackTrails?:object,
+   * }} [state] Live workbench stores.
+   * @returns {object} Config that persist must write.
+   */
+  function mergeLiveTuningIntoConfig(config, state = {}) {
+    const next = cloneValue(config) || {};
+    const liveValues = state.values && typeof state.values === "object" ? cloneValue(state.values) : {};
+    next.tuning = {
+      ...(next.tuning || {}),
+      ...liveValues,
+    };
+    if (state.referenceFrame !== undefined) next.tuning.reference_frame = cloneValue(state.referenceFrame);
+    if (state.frameVisualOverrides !== undefined) {
+      next.tuning.frame_visual_overrides = cloneValue(state.frameVisualOverrides);
+    }
+    if (state.framePlaybackOverrides !== undefined) {
+      next.tuning.frame_playback_overrides = cloneValue(state.framePlaybackOverrides);
+    }
+    if (state.frameBoxOverrides !== undefined) {
+      next.tuning.frame_box_overrides = cloneValue(state.frameBoxOverrides);
+    }
+    if (state.sceneSettings !== undefined) next.tuning.scene_settings = cloneValue(state.sceneSettings);
+    if (state.frameAudioBindings !== undefined)
+      next.frameAudioBindings = cloneValue(state.frameAudioBindings);
+    if (state.frameImageAttachments !== undefined) {
+      next.frameImageAttachments = cloneValue(state.frameImageAttachments);
+    }
+    if (state.attachmentAssets !== undefined) next.attachmentAssets = cloneValue(state.attachmentAssets);
+    if (state.attackTrails !== undefined) next.attackTrails = cloneValue(state.attackTrails);
+    return next;
+  }
+
+  /**
    * Detects the static browser-only production runtime.
    * @returns {boolean} Whether server-backed project operations must be disabled.
    */
@@ -1176,6 +1222,7 @@
     commitSessionProjectConfig,
     createRuntime,
     createSessionExportSnapshot,
+    mergeLiveTuningIntoConfig,
     createEmptyConfig,
     createSessionAnimationGroup,
     createSessionProject,

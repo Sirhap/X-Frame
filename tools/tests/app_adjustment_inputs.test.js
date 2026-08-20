@@ -446,3 +446,34 @@ test("focused adjustment input keeps typed 1.5 after the first appended keystrok
   controller.applyAdjustmentNumberInput(elements.baseX);
   assert.equal(elements.baseX.value, "1.5");
 });
+
+test("SAV-004 typed baseX 0→1 stays 1 after autosave flush and persist snapshot", () => {
+  const elements = createElements();
+  elements.baseX.value = "0";
+  elements.baseY.value = "0";
+  const { controller, store, applied } = createSteppingController(elements, { offset: { x: 0, y: 0 } });
+  const persistSnapshots = [];
+
+  controller.beginAdjustmentNumberEdit(elements.baseX);
+  elements.baseX.value = "01";
+  assert.equal(controller.applyAdjustmentNumberInput(elements.baseX), true);
+  assert.equal(elements.baseX.value, "1");
+  controller.markAdjustmentFieldEdited(elements.baseX);
+  controller.commitAdjustmentField(elements.baseX);
+  assert.equal(store.offset.x, 1, "typing 1 must write the store before autosave");
+  assert.equal(store.offset.y, 0);
+
+  elements.baseY.value = "-1";
+  const flushed = controller.flushFocusedAdjustmentEdit(elements.baseX);
+  persistSnapshots.push({
+    offset: { x: flushed.offset.x, y: flushed.offset.y },
+    field: Number(elements.baseX.value),
+  });
+
+  assert.equal(Number(elements.baseX.value), 1, "autosave must not snap the typed field back to 0");
+  assert.equal(store.offset.x, 1, "autosave must not overwrite the typed store with 0");
+  assert.equal(store.offset.y, 0, "an X type+flush must not rewrite a stale Y display");
+  assert.equal(persistSnapshots[0].offset.x, 1);
+  assert.equal(persistSnapshots[0].field, 1);
+  assert.ok(applied.length >= 1);
+});
