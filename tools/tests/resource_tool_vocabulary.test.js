@@ -63,3 +63,16 @@ test("HTML fallbacks use the same commit verbs as the shared text tables", () =>
   assert.match(buttonFallback(html, "scatterAddProject"), new RegExp(handoffLabel, "u"));
   assert.match(html, /data-organizer-i18n="moreTools"/);
 });
+
+test("deleted A/B compare leaves no leftover cutout UI", () => {
+  const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
+  const cutoutTextSource = fs.readFileSync(path.join(PUBLIC_DIR, "batch_cutout_text.js"), "utf8");
+  for (const leftover of ["智能对比", "方案 A", "方案 B", "生成候选", "compareSplit", "cutoutCompareSplit"]) {
+    assert.doesNotMatch(html, new RegExp(leftover, "u"), `index.html still has leftover A/B UI: ${leftover}`);
+    assert.doesNotMatch(
+      cutoutTextSource,
+      new RegExp(leftover, "u"),
+      `batch_cutout_text.js still has leftover A/B copy: ${leftover}`,
+    );
+  }
+});

@@ -502,13 +502,13 @@ body.mediaExportOpen {
   border-top: 3px solid var(--line);
 }
 
-.mediaExportLocalHint,
 .mediaExportNotices {
   display: none;
 }
 
-.mediaExportNotices:has(.mediaExportStatus:not([data-tone="idle"])) {
-  display: block;
+.mediaExportNotices:has(.mediaExportStatus:not([data-tone="idle"])),
+.mediaExportNotices:has(.mediaExportLocalHint:not(:empty)) {
+  display: grid;
 }
 
 .mediaExportFooter > span {

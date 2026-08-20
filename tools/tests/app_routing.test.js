@@ -199,6 +199,25 @@ test("applying the workspace URL keeps the frame editor route active", async () 
   assert.equal(windowRef.location.pathname, "/workspace");
 });
 
+test("same-stage workspace tab switches do not ask about unsaved edits", async () => {
+  const events = [];
+  const windowRef = createWindow("http://localhost/workspace/animation/boxes");
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => {
+      events.push("prompt");
+      return "cancel";
+    },
+    activateWorkspaceRoute: (route) => events.push(`activate:${route}`),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.deepEqual(events, ["activate:boxes"]);
+  assert.equal(windowRef.location.pathname, "/workspace/animation/boxes");
+});
+
 test("skipDirtyPrompt opens a contextual tool without asking about unsaved edits", async () => {
   const windowRef = createWindow("http://localhost/workspace/resources/cutout");
   const events = [];

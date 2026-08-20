@@ -57,6 +57,17 @@
     "codex-pet": "/workspace/delivery/codex-pet",
   });
   const WORKSPACE_PATH = "/workspace";
+  const SAME_STAGE_WORKSPACE_ROUTES = new Set([
+    "overview",
+    "animation",
+    "boxes",
+    "trails",
+    "audio",
+    "attachments",
+    "export",
+    "godot",
+    "codex-pet",
+  ]);
   const VALID_ROUTES = new Set([
     "cutout",
     "import",
@@ -299,7 +310,13 @@
         const visibleRoute = visibleWorkbenchRoute(batchCutout, frameOrganizer);
         const temporarySessionActive =
           currentNavigationContext() === "standalone" && Boolean(getTemporaryWorkset()?.frames?.length);
-        if (route && !visibleRoute && getWorkspaceDirty() && !options.skipDirtyPrompt) {
+        if (
+          route &&
+          !SAME_STAGE_WORKSPACE_ROUTES.has(route) &&
+          !visibleRoute &&
+          getWorkspaceDirty() &&
+          !options.skipDirtyPrompt
+        ) {
           const decision = await requestWorkspaceDecision();
           if (decision === "cancel") {
             syncWorkbenchRoute("", { context: "project" });

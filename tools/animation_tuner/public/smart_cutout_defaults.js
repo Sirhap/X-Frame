@@ -161,10 +161,7 @@
     const current = existing && typeof existing === "object" ? existing : {};
     const resolved = resolveSmartCutoutParameters(color);
     const next = { ...current, backgroundColor: resolved.backgroundColor };
-    if (
-      isBlackPlate(color) &&
-      Number(current.tolerance) <= PLATE_SMART_OVERRIDES.tolerance
-    ) {
+    if (isBlackPlate(color) && Number(current.tolerance) <= PLATE_SMART_OVERRIDES.tolerance) {
       next.tolerance = resolved.tolerance;
     }
     return next;

@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 const { createController } = require("../animation_tuner/public/media_export_dialog");
 
@@ -344,9 +346,23 @@ test("disabled GIF and MP4 explain that the web build cannot encode them", async
     assert.equal(elements.mediaExportGif.disabled, true);
     assert.match(elements.mediaExportGif.title, /local app with FFmpeg|web/i);
     assert.equal(elements.mediaExportMp4.title, elements.mediaExportGif.title);
+    assert.match(elements.mediaExportLocalHint.textContent, /GIF|FFmpeg|local app/i);
   } finally {
     global.document = originalDocument;
   }
+});
+
+test("the disabled GIF/MOV reason stays visible instead of display:none", () => {
+  const css = fs.readFileSync(
+    path.join(__dirname, "../animation_tuner/public/media_export_dialog.css"),
+    "utf8",
+  );
+  const hiddenHint = css.match(/\.mediaExportLocalHint[^{]*\{[^}]*display:\s*none/u);
+  assert.equal(
+    hiddenHint,
+    null,
+    "ORG-023 needs a visible FFmpeg reason; hiding .mediaExportLocalHint with display:none hides it",
+  );
 });
 
 test("media export dialog consumes Escape and restores trigger focus", () => {

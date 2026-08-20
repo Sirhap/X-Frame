@@ -204,6 +204,26 @@ test("organizer primary action sits above the preview canvas", async ({ page }) 
   expect(geometry.actionsBottom).toBeLessThanOrEqual(geometry.previewTop);
 });
 
+test("online-disabled GIF and MOV keep a visible FFmpeg reason", async ({ page }) => {
+  await page.route("**/api/media-export/capabilities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ mode: "cloudflare-static", ffmpeg: { available: false, version: "" } }),
+    });
+  });
+  await page.goto("/workspace/delivery/export");
+
+  const hint = page.locator("#mediaExportLocalHint");
+  await expect(page.locator("#mediaExportDialog")).toBeVisible();
+  await expect(page.locator("#mediaExportGif")).toBeDisabled();
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText(/FFmpeg|GIF|本地/);
+  await expect
+    .poll(async () => hint.evaluate((element) => getComputedStyle(element).display))
+    .not.toBe("none");
+});
+
 test("file delivery embeds the complete export workbench without a second dialog", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/workspace/delivery/export");

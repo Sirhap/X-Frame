@@ -623,6 +623,17 @@ test("tool rail keeps the active animation when opening contextual processing to
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
 });
 
+test("same-stage workbench tabs do not ask about unsaved edits", async ({ page }) => {
+  await page.goto("/workspace/animation/transform");
+  await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
+  await expect(page.locator("#saveState")).toContainText("未保存");
+
+  await page.locator('a[data-workbench-route="boxes"]').click();
+  await expect(page).toHaveURL(/\/workspace\/animation\/boxes/);
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+  await expect(page.locator("#saveState")).toContainText("未保存");
+});
+
 test("contextual tools preserve auto-saved tuning when switching", async ({ page }) => {
   await page.goto("/workspace/animation/transform");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();

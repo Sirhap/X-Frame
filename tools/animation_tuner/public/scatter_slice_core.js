@@ -453,30 +453,34 @@
       segments.push({ start: cursor, end: counts.length });
     }
     if (segments.length < 2) return [box];
-    return segments.map((segment) => {
-      const x = box.x + segment.start;
-      const w = segment.end - segment.start;
-      let minY = box.y + box.h;
-      let maxY = box.y;
-      let pixels = 0;
-      for (let y = box.y; y < box.y + box.h && y < height; y += 1) {
-        const row = y * width;
-        for (let column = 0; column < w; column += 1) {
-          const index = row + x + column;
-          if (index < 0 || index >= mask.length || !mask[index]) continue;
-          pixels += 1;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
+    return segments
+      .map((segment) => {
+        const x = box.x + segment.start;
+        const w = segment.end - segment.start;
+        let minY = box.y + box.h;
+        let maxY = box.y;
+        let pixels = 0;
+        for (let y = box.y; y < box.y + box.h && y < height; y += 1) {
+          const row = y * width;
+          for (let column = 0; column < w; column += 1) {
+            const index = row + x + column;
+            if (index < 0 || index >= mask.length || !mask[index]) continue;
+            pixels += 1;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
         }
-      }
-      return {
-        x,
-        y: minY <= maxY ? minY : box.y,
-        w,
-        h: minY <= maxY ? maxY - minY + 1 : box.h,
-        pixels,
-      };
-    }).filter((next) => next.pixels >= options.minPixels && next.w >= options.minSide && next.h >= options.minSide);
+        return {
+          x,
+          y: minY <= maxY ? minY : box.y,
+          w,
+          h: minY <= maxY ? maxY - minY + 1 : box.h,
+          pixels,
+        };
+      })
+      .filter(
+        (next) => next.pixels >= options.minPixels && next.w >= options.minSide && next.h >= options.minSide,
+      );
   }
 
   /**
