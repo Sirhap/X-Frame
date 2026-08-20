@@ -817,3 +817,35 @@ test("browser runtime exports tuned animation metadata and attachment assets", a
   assert.equal(manifest.workbench.tuning.values.scale, 1.2);
   assert.deepEqual(manifest.workbench.premiumFeatures, ["tuner.collision-boxes"]);
 });
+
+test("SAV-004 persist snapshot keeps typed offset 1 instead of the stale loaded 0", () => {
+  const offsetKey = "profiles.hero.groups.jump.offset";
+  const scaleKey = "profiles.hero.groups.jump.visual_size";
+  const config = {
+    tuning: {
+      [offsetKey]: { x: 0, y: 0 },
+      [scaleKey]: 1,
+    },
+  };
+  const values = {
+    [offsetKey]: { x: 1, y: 0 },
+    [scaleKey]: 1,
+  };
+
+  const snapshot = browserRuntime.mergeLiveTuningIntoConfig(config, {
+    values,
+    referenceFrame: { profile_id: "hero", animation_id: "jump", frame_index: 4 },
+    frameVisualOverrides: {},
+    framePlaybackOverrides: {},
+    frameBoxOverrides: {},
+  });
+
+  assert.equal(
+    snapshot.tuning[offsetKey].x,
+    1,
+    "autosave must persist the live typed 水平位置, not config.tuning's leftover 0",
+  );
+  assert.equal(snapshot.tuning[offsetKey].y, 0);
+  assert.equal(snapshot.tuning[scaleKey], 1);
+  assert.equal(snapshot.tuning.reference_frame.frame_index, 4);
+});

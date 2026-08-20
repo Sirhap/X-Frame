@@ -299,6 +299,25 @@
       return stored;
     }
 
+    /**
+     * Commits the focused typed field for autosave without re-reading siblings.
+     * An unedited focus leaves the store alone; blur is what may restore it.
+     * @param {{dataset?:{adjustmentEdited?:string,numberEditConsumed?:string},value?:unknown}|null} [active]
+     *   Field that currently has focus.
+     * @returns {object} Transform that persist must write.
+     */
+    function flushFocusedAdjustmentEdit(active = documentRef?.activeElement) {
+      if (!active || !adjustmentNumberInputs().includes(active)) {
+        return adjustmentTransform();
+      }
+      applyAdjustmentNumberInput(active);
+      if (isIncompleteNumberInput(active.value)) return adjustmentTransform();
+      const typed = active.dataset?.adjustmentEdited === "1" || active.dataset?.numberEditConsumed === "1";
+      if (!typed) return adjustmentTransform();
+      markAdjustmentFieldEdited(active);
+      return commitAdjustmentField(active);
+    }
+
     /** Starts a short window that ignores leftover stepper/nav clicks. */
     function beginWorkbenchClickGuard() {
       if (documentRef?.body?.dataset) documentRef.body.dataset.workbenchClickGuard = "1";
@@ -606,6 +625,7 @@
       commitAdjustmentField,
       markAdjustmentFieldEdited,
       releaseAdjustmentField,
+      flushFocusedAdjustmentEdit,
       beginWorkbenchClickGuard,
       endWorkbenchClickGuard,
       isWorkbenchClickGuarded,

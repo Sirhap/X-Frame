@@ -138,3 +138,44 @@ test("SAV-011 imported frame WAV survives hard reload on the audio page", async 
   await expect(page.locator("#clearFrameAudio")).toBeEnabled();
   await expect(page.locator(".thumb.primary")).toHaveClass(/hasSfx/);
 });
+
+test("SAV-004 typed horizontal 0→1 stays 1 after autosave and hard reload", async ({ page }) => {
+  await page.addInitScript(() => {
+    globalThis.__XSXB_PRODUCTION__ = true;
+    document.documentElement.dataset.runtimeMode = "browser";
+  });
+  page.once("dialog", (dialog) => dialog.accept("P0TEST2"));
+
+  await page.goto("/projects");
+  await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);
+  await page.locator("#projectHubNew").click();
+  await expect(page).toHaveURL(/\/workspace\/resources\/import\?project=p0test2(?:$|&)/);
+
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "jump_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "jump_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await page.locator("#organizerApply").click();
+  await page.locator("#organizerConfirmAccept").click();
+  await expect(page.locator("#organizerModal")).toBeHidden();
+
+  await page.goto("/workspace/animation/transform?project=p0test2");
+  await page.locator("#adjustGroup").check();
+  const baseX = page.locator("#baseX");
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
+
+  await baseX.click();
+  await page.keyboard.type("1");
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(1);
+  await expect(page.locator("#workspaceSaveIndicator")).toHaveText(/等待保存|保存中/);
+
+  await expect(page.locator("#workspaceSaveIndicator")).toHaveText(/已保存/, { timeout: 8000 });
+  await expect
+    .poll(async () => Number(await baseX.inputValue()))
+    .toBe(1, { timeoutMessage: "autosave snapped typed 水平位置 back to 0 before reload" });
+
+  await page.reload({ waitUntil: "load" });
+  await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(1);
+});
