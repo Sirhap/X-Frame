@@ -9,11 +9,13 @@ test("organizer text keeps language fallback and interpolation behavior", () => 
   const text = createTranslator(() => language);
 
   assert.equal(text("loaded", { name: "待机", count: 3 }), "已载入 待机，共 3 帧");
+  assert.equal(text("loopStartOutOfRange", { max: 10 }), "起始帧必须在 1 到 10 之间");
   assert.equal(text("missing"), "missing");
 
   language = "en";
   assert.equal(text("loaded", { name: "idle", count: 3 }), "Loaded idle (3 frames)");
   assert.equal(text("loopStartSuffix"), "帧开始搜索");
+  assert.equal(text("loopStartOutOfRange", { max: 10 }), "Start frame must be between 1 and 10");
 });
 
 test("organizer text exposes the original bilingual keys", () => {
