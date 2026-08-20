@@ -54,3 +54,33 @@ test("EXP-005 output-size pill updates preview canvas and estimate", async ({ pa
   await expect.poll(previewSize).toBe("512x512");
   await expect(page.locator("#mediaExportEstimate")).toContainText("512 × 512");
 });
+
+test("EXP-006 export PNG matches the 128 pill and sidecar toggle keeps it", async ({ page }) => {
+  await page.goto(`/workspace/delivery/export?${SEED_QUERY}`);
+  await expect(page.locator("#mediaExportDialog")).toBeVisible();
+  await expect(page.locator("#mediaExportPreviewMeta")).not.toHaveText("导入帧后可预览导出结果。");
+
+  await page.locator('.mediaExportResolutionSection label:has(input[value="128"])').click();
+  await expect(page.locator('input[name="mediaExportResolution"][value="128"]')).toBeChecked();
+  await expect(page.locator("#mediaExportEstimate")).toContainText("128 × 128");
+
+  const estimate = await page.locator("#mediaExportEstimate").innerText();
+  await page.locator("#mediaExportMetadataGodot").check();
+  await expect(page.locator('input[name="mediaExportResolution"][value="128"]')).toBeChecked();
+  await expect(page.locator("#mediaExportEstimate")).toHaveText(estimate);
+  await expect(page.locator("#mediaExportDialog")).toBeVisible();
+
+  await page.locator("#mediaExportMetadataJson").uncheck();
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#mediaExportSubmit").click();
+  const download = await downloadPromise;
+  const downloadPath = await download.path();
+  expect(downloadPath).toBeTruthy();
+  const png = require("node:fs").readFileSync(downloadPath);
+  expect(png.subarray(1, 4).toString("ascii")).toBe("PNG");
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  expect(width).toBe(128);
+  expect(height).toBe(128);
+  expect(download.suggestedFilename()).toMatch(/\.png$/i);
+});

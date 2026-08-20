@@ -4344,6 +4344,10 @@ function renderDeliveryExportEmpty(mount, message) {
 async function mountDeliveryExportWorkbench() {
   const mount = document.querySelector("#deliveryExportMount");
   if (!mount || currentWorkbenchRoute() !== "export") return;
+  const dialog = document.querySelector("#mediaExportDialog");
+  const exportKey = `${currentGroup?.uiId || ""}:${currentGroup?.frames?.length || 0}`;
+  if (dialog && mount.contains(dialog) && !dialog.hidden && mount.dataset.exportKey === exportKey) return;
+  mount.dataset.exportKey = exportKey;
   const source = modeHubsModule.resolveDeliveryExportSource({
     navigationContext: currentNavigationContext(),
     temporaryWorkset: temporaryWorksetStore?.getSnapshot(),

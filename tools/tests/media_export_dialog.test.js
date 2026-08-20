@@ -721,3 +721,165 @@ test("EXP-005 output-size pill updates preview canvas and estimate, not leftover
     global.requestAnimationFrame = originalRaf;
   }
 });
+
+/** Plans the encode path with the same recipe the download uses. */
+function planExportRecipe(recipe, frames) {
+  const options =
+    typeof MediaExportCore.sheetPlanOptions === "function"
+      ? MediaExportCore.sheetPlanOptions(recipe)
+      : {
+          columns: recipe.sheetColumns,
+          gap: recipe.sheetGap,
+          maxTextureSize: recipe.maxTextureSize,
+          fixedPageSize: recipe.sheetFixedSize,
+          powerOfTwo: recipe.sheetPowerOfTwo,
+        };
+  return MediaExportCore.planSpriteSheets(frames, options);
+}
+
+test("EXP-006 export recipe encodes the selected 128 pill, not leftover 2048", async () => {
+  const originalDocument = global.document;
+  const originalRecipeCore = global.ExportRecipeCore;
+  const originalExportCore = global.MediaExportCore;
+  const originalRaf = global.requestAnimationFrame;
+  global.ExportRecipeCore = ExportRecipeCore;
+  global.MediaExportCore = MediaExportCore;
+  global.requestAnimationFrame = (callback) => {
+    callback();
+    return 0;
+  };
+  global.document = {
+    activeElement: null,
+    addEventListener() {},
+    body: { classList: { add() {}, remove() {} } },
+    createElement: () => createPreviewImage(1, 1),
+  };
+  try {
+    const elements = createElements();
+    elements.mediaExportCanvasMode.value = "custom";
+    const frames = Array.from({ length: 12 }, (_, index) => {
+      const image = createPreviewImage(64, 64);
+      return { name: `jump_${index}.png`, image, width: 64, height: 64, durationMs: 80 };
+    });
+    let captured = null;
+    const controller = createController({
+      elements,
+      getLanguage: () => "zh",
+      getSummary: () => ({ frameCount: 12, fps: 12, canvas: "64×64", width: 64, height: 64 }),
+      getPreviewItems: () => frames,
+      onExport: async (options) => {
+        captured = options;
+        return { downloads: [] };
+      },
+      fetchImpl: async () => ({ ok: false, json: async () => ({}) }),
+    });
+
+    selectOutputSize(elements, "128");
+    elements.mediaExportMetadataJson.checked = false;
+    await controller.submit();
+
+    assert.ok(captured?.recipe, "export must send the dialog recipe to the encoder");
+    const rendered = frames.map((frame) => ({ ...frame, width: 128, height: 128 }));
+    const plan = planExportRecipe(captured.recipe, rendered);
+    assert.equal(plan.pages.length, 1);
+    assert.equal(plan.pages[0].width, 128);
+    assert.equal(plan.pages[0].height, 128);
+    assert.notEqual(
+      plan.pages[0].width,
+      2048,
+      "EXP-006 downloaded atlas must follow the 128 estimate, not the leftover 2048 page",
+    );
+
+    selectOutputSize(elements, "512");
+    await controller.submit();
+    const large = planExportRecipe(
+      captured.recipe,
+      frames.map((frame) => ({ ...frame, width: 512, height: 512 })),
+    );
+    assert.equal(large.pages[0].width, 512);
+    assert.equal(large.pages[0].height, 512);
+  } finally {
+    global.document = originalDocument;
+    global.ExportRecipeCore = originalRecipeCore;
+    global.MediaExportCore = originalExportCore;
+    global.requestAnimationFrame = originalRaf;
+  }
+});
+
+test("EXP-006 sidecar checkbox does not reset the selected resolution pill", async () => {
+  const originalDocument = global.document;
+  const originalRecipeCore = global.ExportRecipeCore;
+  const originalExportCore = global.MediaExportCore;
+  const originalRaf = global.requestAnimationFrame;
+  global.ExportRecipeCore = ExportRecipeCore;
+  global.MediaExportCore = MediaExportCore;
+  global.requestAnimationFrame = (callback) => {
+    callback();
+    return 0;
+  };
+  global.document = {
+    activeElement: null,
+    addEventListener() {},
+    body: { classList: { add() {}, remove() {} } },
+    createElement: () => createPreviewImage(1, 1),
+    querySelector: () => null,
+  };
+  try {
+    const elements = createElements();
+    elements.mediaExportCanvasMode.value = "custom";
+    let remounts = 0;
+    const mount = {
+      contains: () => remounts > 0,
+      replaceChildren() {
+        remounts += 1;
+        if (remounts > 1) {
+          elements.mediaExportResolution512.checked = true;
+          elements.mediaExportResolution128.checked = false;
+          elements.mediaExportWidth.value = "512";
+          elements.mediaExportHeight.value = "512";
+        }
+      },
+    };
+    const source = createPreviewImage(64, 64);
+    const controller = createController({
+      elements,
+      getLanguage: () => "zh",
+      getSummary: () => ({ frameCount: 1, fps: 12, canvas: "64×64", width: 64, height: 64, name: "jump" }),
+      getPreviewItems: () => [
+        { name: "frame_0001.png", image: source, width: 64, height: 64, durationMs: 80 },
+      ],
+      onExport: async () => ({ downloads: [] }),
+      fetchImpl: async () => ({ ok: false, json: async () => ({}) }),
+    });
+
+    controller.open({ mount });
+    selectOutputSize(elements, "128");
+    assert.equal(elements.mediaExportResolution128.checked, true);
+    assert.equal(elements.mediaExportWidth.value, "128");
+
+    elements.mediaExportMetadataGodot.checked = true;
+    elements.mediaExportMetadataGodot.dispatch("input");
+    elements.mediaExportMetadataGodot.dispatch("change");
+    assert.equal(
+      elements.mediaExportResolution128.checked,
+      true,
+      "toggling tpsheet must not change 导出分辨率",
+    );
+    assert.equal(elements.mediaExportWidth.value, "128");
+    assert.equal(elements.mediaExportResolution512.checked, false);
+
+    controller.open({ mount });
+    assert.equal(
+      elements.mediaExportResolution128.checked,
+      true,
+      "re-opening an already mounted export dialog must not restore the default 512 pill",
+    );
+    assert.equal(elements.mediaExportWidth.value, "128");
+    assert.equal(remounts, 1);
+  } finally {
+    global.document = originalDocument;
+    global.ExportRecipeCore = originalRecipeCore;
+    global.MediaExportCore = originalExportCore;
+    global.requestAnimationFrame = originalRaf;
+  }
+});
