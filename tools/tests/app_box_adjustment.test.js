@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
+const { BOX_NUDGE_STEP, nudgeFrameBox } = require("../animation_tuner/public/app_box_geometry");
 const { createController } = require("../animation_tuner/public/app_box_adjustment");
 
 function rotateVector(value, radians) {
@@ -20,6 +21,7 @@ function createFixture() {
   const choices = [];
   const overrides = [];
   const classState = [];
+  const events = [];
   const choice = {
     dataset: { boxChoice: "hitbox" },
     closest: () => ({
@@ -86,10 +88,12 @@ function createFixture() {
     cloneVector: (value) => ({ x: value.x, y: value.y }),
     collisionOffsetYForHeight: (height) => -height / 2,
     setBoxOverride: (...args) => overrides.push(args),
+    nudgeFrameBox,
+    pushUndo: (label) => events.push(["undo", label]),
     renderFilmstrip: () => {},
-    draw: () => {},
+    draw: () => events.push("draw"),
   });
-  return { controller, elements, group, overrides, classState };
+  return { controller, elements, group, overrides, classState, events };
 }
 
 test("box adjustment calculates screen rects and hit-tests selected boxes", () => {
@@ -111,6 +115,20 @@ test("box adjustment calculates screen rects and hit-tests selected boxes", () =
   );
   const hit = controller.hitTestBoxes({ clientX: 112, clientY: 222 });
   assert.deepEqual(hit, { boxName: "hitbox", mode: "box-move" });
+  assert.deepEqual(controller.hitTestBoxes({ clientX: 132, clientY: 222 }), {
+    boxName: "hitbox",
+    mode: "box-resize",
+    handle: "e",
+  });
+});
+
+test("selected box arrow nudge writes x/y by one step and does not require Alt", () => {
+  const { controller, overrides, events } = createFixture();
+  assert.equal(controller.nudgeSelectedBox(BOX_NUDGE_STEP, -BOX_NUDGE_STEP), true);
+  assert.deepEqual(events[0], ["undo", "nudge box"]);
+  assert.equal(overrides.length, 2);
+  assert.deepEqual(overrides[0][1].offset, { x: 2, y: 1 });
+  assert.deepEqual(overrides[0][1].size, { x: 10, y: 20 });
 });
 
 test("box adjustment filters collision handles and synchronizes controls", () => {

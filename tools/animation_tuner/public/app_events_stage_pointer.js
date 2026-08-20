@@ -47,7 +47,7 @@
       normalizeAttachmentTransform,
       pushUndo,
       renderFilmstrip,
-      rotateVector,
+      resizeFrameBox,
       selectedFrameIndexes,
       setBoxOverride,
       stagePoint,
@@ -224,68 +224,13 @@
           return;
         }
         if (state.drag.mode === "box-resize") {
-          const minSize = 4;
           for (const entry of state.drag.boxes || []) {
-            if (isCollisionBox(state.drag.boxName)) {
-              const localDelta = boxOffsetDeltaFromScreenDelta({ x: dx, y: dy }, entry.index);
-              let left = -entry.box.size.x / 2;
-              let right = entry.box.size.x / 2;
-              if (state.drag.handle.includes("w")) left += localDelta.x;
-              if (state.drag.handle.includes("e")) right += localDelta.x;
-              if (right - left < minSize) {
-                if (state.drag.handle.includes("w")) left = right - minSize;
-                else right = left + minSize;
-              }
-              const width = right - left;
-              const heightDelta = state.drag.handle.includes("n") ? -localDelta.y : 0;
-              const height = Math.max(minSize, entry.box.size.y + heightDelta);
-              setBoxOverride(
-                state.drag.boxName,
-                {
-                  offset: {
-                    x: entry.box.offset.x + (left + right) / 2,
-                    y: collisionOffsetYForHeight(height),
-                  },
-                  size: { x: width, y: height },
-                  rotation: 0,
-                  enabled: entry.box.enabled,
-                },
-                entry.index,
-              );
-              continue;
-            }
-            const rotation = (Number(entry.box.rotation || 0) * Math.PI) / 180;
-            const localDelta = boxResizeDeltaFromScreenDelta(
-              { x: dx, y: dy },
-              entry.box.rotation,
-              entry.index,
-            );
-            let left = -entry.box.size.x / 2;
-            let right = entry.box.size.x / 2;
-            let top = -entry.box.size.y / 2;
-            let bottom = entry.box.size.y / 2;
-            if (state.drag.handle.includes("w")) left += localDelta.x;
-            if (state.drag.handle.includes("e")) right += localDelta.x;
-            if (state.drag.handle.includes("n")) top += localDelta.y;
-            if (state.drag.handle.includes("s")) bottom += localDelta.y;
-            if (right - left < minSize) {
-              if (state.drag.handle.includes("w")) left = right - minSize;
-              else right = left + minSize;
-            }
-            if (bottom - top < minSize) {
-              if (state.drag.handle.includes("n")) top = bottom - minSize;
-              else bottom = top + minSize;
-            }
-            const localCenter = { x: (left + right) / 2, y: (top + bottom) / 2 };
-            const worldCenter = rotateVector(localCenter, rotation);
+            const localDelta = isCollisionBox(state.drag.boxName)
+              ? boxOffsetDeltaFromScreenDelta({ x: dx, y: dy }, entry.index)
+              : boxResizeDeltaFromScreenDelta({ x: dx, y: dy }, entry.box.rotation, entry.index);
             setBoxOverride(
               state.drag.boxName,
-              {
-                offset: { x: entry.box.offset.x + worldCenter.x, y: entry.box.offset.y + worldCenter.y },
-                size: { x: right - left, y: bottom - top },
-                rotation: entry.box.rotation,
-                enabled: entry.box.enabled,
-              },
+              resizeFrameBox(state.drag.boxName, entry.box, state.drag.handle, localDelta),
               entry.index,
             );
           }
