@@ -7,6 +7,21 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
+  /** Same cap as 导入设置 → 角色名称 maxlength. */
+  const MAX_NAME_LENGTH = 80;
+
+  /**
+   * Trims a project label and drops characters past the shared name cap.
+   * Empty/whitespace-only input stays empty so callers can reject it.
+   * @param {unknown} label Raw prompt or form value.
+   * @returns {string} Persistable label, or "" when the name is missing.
+   */
+  function normalizeProjectName(label) {
+    return String(label || "")
+      .trim()
+      .slice(0, MAX_NAME_LENGTH);
+  }
+
   /**
    * Summarizes current-animation and whole-project delivery scopes without mutating project state.
    * @param {object|null} config Active project configuration.
@@ -273,7 +288,7 @@
       elements.newProject?.addEventListener("click", async (event) => {
         event.preventDefault?.();
         const promptImpl = dependencies.prompt || windowRef.prompt?.bind(windowRef);
-        const label = String(promptImpl?.(translate("newProjectPrompt")) || "").trim();
+        const label = normalizeProjectName(promptImpl?.(translate("newProjectPrompt")) || "");
         if (!label) return;
         if (typeof dependencies.createProject === "function") {
           try {
@@ -301,7 +316,9 @@
   }
 
   return Object.freeze({
+    MAX_NAME_LENGTH,
     createController,
+    normalizeProjectName,
     resolveDeliveryExportSource,
     summarizeDeliveryReadiness,
     summarizeDeliveryScope,

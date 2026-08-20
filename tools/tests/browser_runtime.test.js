@@ -38,6 +38,57 @@ function memoryProjectStorage() {
   };
 }
 
+test("ORG-005 createSessionProject does not persist a name longer than the role-name cap", async () => {
+  const html = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "../animation_tuner/public/index.html"),
+    "utf8",
+  );
+  const maxLength = Number(html.match(/id="organizerProfileName"[\s\S]*?maxlength="(\d+)"/u)[1]);
+  const memory = memoryProjectStorage();
+  const runtime = browserRuntime.createRuntime({ projectStorage: memory.store });
+  try {
+    const longName = "a".repeat(maxLength + 1);
+    let created;
+    try {
+      created = await runtime.createSessionProject(longName);
+    } catch (error) {
+      assert.match(String(error.message), /name|length|required/i);
+      assert.equal(
+        memory.snapshot()?.registry?.projects?.some((project) => project.label === longName),
+        false,
+      );
+      return;
+    }
+    const config = runtime.getSessionProjectConfig(created.projectId);
+    assert.ok(config?.activeProject?.label);
+    assert.ok(
+      config.activeProject.label.length <= maxLength,
+      `ORG-005 stored ${config.activeProject.label.length} chars; cap is ${maxLength}`,
+    );
+    assert.notEqual(config.activeProject.label, longName);
+  } finally {
+    browserRuntime.createRuntime();
+  }
+});
+
+test("ORG-005 createSessionProject accepts an 80-character name and still rejects whitespace", async () => {
+  const html = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "../animation_tuner/public/index.html"),
+    "utf8",
+  );
+  const maxLength = Number(html.match(/id="organizerProfileName"[\s\S]*?maxlength="(\d+)"/u)[1]);
+  const memory = memoryProjectStorage();
+  const runtime = browserRuntime.createRuntime({ projectStorage: memory.store });
+  try {
+    const label = "c".repeat(maxLength);
+    const created = await runtime.createSessionProject(label);
+    assert.equal(runtime.getSessionProjectConfig(created.projectId).activeProject.label, label);
+    await assert.rejects(() => runtime.createSessionProject("   "), /Project name is required/);
+  } finally {
+    browserRuntime.createRuntime();
+  }
+});
+
 test("createSessionProject persists so a rehydrated runtime keeps the project label", async () => {
   const memory = memoryProjectStorage();
   const runtime = browserRuntime.createRuntime({ projectStorage: memory.store });
