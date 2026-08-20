@@ -2299,6 +2299,7 @@ async function bindFrameAudioFile(file, index = selectedFrame, group = currentGr
   const frameIndex = clampFrameIndex(index, group);
   await setFrameAudioBinding(file, frameIndex, group);
   markDirty();
+  await persistBrowserSessionProject();
   await syncFrameAudioBindingsToGame().catch((error) => {
     status(t("boxSyncFailed", { message: error.message }));
   });
@@ -2336,6 +2337,7 @@ async function removeFrameAudioFromCard(index = selectedFrame, group = currentGr
     return false;
   await clearFrameAudioBinding(frameIndex, group);
   markDirty();
+  await persistBrowserSessionProject();
   await syncFrameAudioBindingsToGame().catch((error) => {
     status(t("frameSfxDeleteFailed", { message: error.message }));
   });
@@ -4039,11 +4041,33 @@ if (!handoffRuntimeModule || !handoffDialogModule) {
   throw new Error("Workset handoff modules are required.");
 }
 
-/** Writes the in-memory browser project, including frame list and reference, to IndexedDB. */
+/** Serializes in-memory frame SFX so the project blob can restore them after reload. */
+async function frameAudioBindingsForProjectSnapshot() {
+  try {
+    return await collectFrameAudioBindingsForSave();
+  } catch (_error) {
+    return Object.entries(frameAudioBindings || {})
+      .map(([key, binding]) => ({
+        key,
+        name: binding?.name || "audio",
+        type: binding?.type || "",
+        size: Number(binding?.size || 0),
+        metadata: binding?.metadata,
+        ...(binding?.data ? { data: binding.data } : {}),
+        ...(binding?.path || binding?.file ? { path: binding.path || binding.file } : {}),
+        ...(binding?.blob ? { blob: binding.blob } : {}),
+      }))
+      .filter((entry) => entry.data || entry.path || entry.blob);
+  }
+}
+
+/** Writes the in-memory browser project, including frame list, reference, and imported WAV, to IndexedDB. */
 async function persistBrowserSessionProject() {
   const projectId = activeProjectId();
   if (!browserOnlyMode || !projectId) return;
-  await browserRuntime.commitSessionProjectConfig(projectId, browserProjectSnapshot(projectId));
+  const snapshot = browserProjectSnapshot(projectId);
+  snapshot.frameAudioBindings = await frameAudioBindingsForProjectSnapshot();
+  await browserRuntime.commitSessionProjectConfig(projectId, snapshot);
 }
 
 /** Returns the current browser project including unsaved in-memory binding state. */
@@ -4060,6 +4084,7 @@ function browserProjectSnapshot(projectId) {
     },
     frameAudioBindings: structuredClone(frameAudioBindings),
     frameImageAttachments: structuredClone(frameImageAttachments),
+    attachmentAssets: structuredClone(attachmentAssets),
     attackTrails: attackTrailEditor?.snapshot() || { schemaVersion: 8, bindings: {} },
   };
 }

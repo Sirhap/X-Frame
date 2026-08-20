@@ -630,21 +630,40 @@
     }
 
     /**
+     * Normalizes persisted frame-audio records from either an array or keyed object.
+     * Browser project snapshots clone the in-memory map, while /api/save stores an array.
+     * @param {unknown} raw Persisted bindings.
+     * @returns {object[]} Binding records.
+     */
+    function frameAudioRecordsFromConfig(raw) {
+      if (Array.isArray(raw)) return raw;
+      if (raw && typeof raw === "object") {
+        return Object.entries(raw).map(([key, value]) => ({
+          key,
+          ...(value && typeof value === "object" ? value : {}),
+        }));
+      }
+      return [];
+    }
+
+    /**
      * Loads persisted frame-audio bindings for the active project.
      * @returns {void}
      */
     function loadFrameAudioBindingsFromProject() {
       const config = state.config;
-      const bindings = Array.isArray(config?.frameAudioBindings) ? config.frameAudioBindings : [];
+      const bindings = frameAudioRecordsFromConfig(config?.frameAudioBindings);
       const target = readState("frameAudioBindings", {});
       for (const rawBinding of bindings) {
         const binding = rawBinding && typeof rawBinding === "object" ? rawBinding : null;
         if (!binding) continue;
         const key = frameAudioKeyFromBinding(binding);
-        if (!key || (!binding.data && !binding.path && !binding.file)) continue;
+        if (!key || (!binding.data && !binding.path && !binding.file && !binding.blob)) continue;
         const metadata = binding.metadata || frameAudioMetadataFromKey(key);
         if (metadata?.projectId && metadata.projectId !== getActiveProjectId()) continue;
         revokeFrameAudioBinding(target[key]);
+        const blob = binding.blob || null;
+        const url = blob && root?.URL?.createObjectURL ? root.URL.createObjectURL(blob) : "";
         target[key] = {
           key,
           name: binding.name || "audio",
@@ -653,6 +672,8 @@
           metadata,
           data: binding.data || "",
           path: binding.path || binding.file || "",
+          ...(blob ? { blob } : {}),
+          ...(url ? { url } : {}),
         };
       }
       state.frameAudioBindings = target;

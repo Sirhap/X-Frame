@@ -100,3 +100,93 @@ test("frame audio controller rejects unavailable FileReader for Blob export", as
 
   await assert.rejects(() => controller.collectForSave(), /FileReader is unavailable/);
 });
+
+/** Builds an in-memory IndexedDB that matches the frame-audio controller's request API. */
+function createMemoryIndexedDb() {
+  const records = new Map();
+
+  function succeed(target, result) {
+    target.result = result;
+    queueMicrotask(() => target.onsuccess?.({ target }));
+  }
+
+  return {
+    records,
+    open() {
+      const request = {
+        result: {
+          objectStoreNames: { contains: () => true },
+          transaction() {
+            const tx = { oncomplete: null, onerror: null };
+            queueMicrotask(() => tx.oncomplete?.());
+            tx.objectStore = () => ({
+              put(value) {
+                records.set(value.key, value);
+                const putRequest = { result: value, onsuccess: null, onerror: null };
+                succeed(putRequest, value);
+                return putRequest;
+              },
+              delete(key) {
+                records.delete(key);
+                const deleteRequest = { result: undefined, onsuccess: null, onerror: null };
+                succeed(deleteRequest, undefined);
+                return deleteRequest;
+              },
+              getAll() {
+                const getRequest = { result: [...records.values()], onsuccess: null, onerror: null };
+                succeed(getRequest, [...records.values()]);
+                return getRequest;
+              },
+            });
+            return tx;
+          },
+        },
+        error: null,
+        onupgradeneeded: null,
+        onsuccess: null,
+        onerror: null,
+        onblocked: null,
+      };
+      queueMicrotask(() => request.onsuccess?.());
+      return request;
+    },
+  };
+}
+
+test("SAV-011 loadFromDb restores imported WAV after reload with empty bindings", async () => {
+  const indexedDb = createMemoryIndexedDb();
+  const blob = { name: "beep.wav", type: "audio/wav", size: 24 };
+  const bindings = {};
+  const { controller } = createAudioController({
+    getBindings: () => bindings,
+    getActiveProjectId: () => "p0test2",
+    getFrameAudioMetadataFromKey: (key) => ({
+      projectId: "p0test2",
+      animation: "assassin_jump",
+      frame: 0,
+      key,
+    }),
+    indexedDBRef: indexedDb,
+    urlApi: {
+      createObjectURL: (value) => `blob:restored/${value.name || "audio"}`,
+      revokeObjectURL() {},
+    },
+  });
+
+  await controller.saveToDb("p0test2:player:actor:assassin_jump::0", {
+    name: "beep.wav",
+    type: "audio/wav",
+    size: 24,
+    metadata: { projectId: "p0test2", animation: "assassin_jump", frame: 0 },
+    blob,
+  });
+  assert.equal(indexedDb.records.size, 1);
+
+  await controller.loadFromDb();
+
+  const restored = bindings["p0test2:player:actor:assassin_jump::0"];
+  assert.ok(restored, "reload must restore the imported WAV without a pre-existing binding");
+  assert.equal(restored.name, "beep.wav");
+  assert.equal(restored.blob, blob);
+  assert.equal(restored.url, "blob:restored/beep.wav");
+});
