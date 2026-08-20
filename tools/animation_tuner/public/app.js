@@ -1912,7 +1912,7 @@ function commitPendingAdjustmentEdits() {
   if (!active || !adjustmentNumberInputs().includes(active)) return;
   applyAdjustmentNumberInput(active);
   normalizeAdjustmentInputDisplay(active);
-  updateAdjustmentFromInputs();
+  releaseAdjustmentField(active);
   if (typeof active.blur === "function") active.blur();
 }
 
@@ -2166,6 +2166,34 @@ function retainAdjustmentNumberSelection(...args) {
 
 function applyAdjustmentNumberInput(...args) {
   return adjustmentInputsCall("applyAdjustmentNumberInput", ...args);
+}
+
+function commitAdjustmentField(...args) {
+  return adjustmentInputsCall("commitAdjustmentField", ...args);
+}
+
+function markAdjustmentFieldEdited(...args) {
+  return adjustmentInputsCall("markAdjustmentFieldEdited", ...args);
+}
+
+function releaseAdjustmentField(...args) {
+  return adjustmentInputsCall("releaseAdjustmentField", ...args);
+}
+
+function beginWorkbenchClickGuard(...args) {
+  return adjustmentInputsCall("beginWorkbenchClickGuard", ...args);
+}
+
+function endWorkbenchClickGuard(...args) {
+  return adjustmentInputsCall("endWorkbenchClickGuard", ...args);
+}
+
+function handleAdjustmentStepClick(...args) {
+  return adjustmentInputsCall("handleAdjustmentStepClick", ...args);
+}
+
+function endAdjustmentStepActivation(...args) {
+  return adjustmentInputsCall("endAdjustmentStepActivation", ...args);
 }
 
 function syncAdjustmentModeInputs(...args) {
@@ -3253,8 +3281,8 @@ function updateBaseFromInputs(transform = transformFromAdjustmentInputs()) {
   draw();
 }
 
-function updateAdjustmentFromInputs() {
-  const transform = transformFromAdjustmentInputs();
+function updateAdjustmentFromInputs(editedInput) {
+  const transform = transformFromAdjustmentInputs(editedInput);
   if (adjustmentMode === "character") {
     updateCharacterFromInputs(transform);
   } else if (adjustmentMode === "frame") {
@@ -3578,6 +3606,13 @@ const appEvents = appEventsModule.createController({
     beginAdjustmentNumberEdit,
     retainAdjustmentNumberSelection,
     applyAdjustmentNumberInput,
+    commitAdjustmentField,
+    markAdjustmentFieldEdited,
+    releaseAdjustmentField,
+    beginWorkbenchClickGuard,
+    endWorkbenchClickGuard,
+    handleAdjustmentStepClick,
+    endAdjustmentStepActivation,
     stagePoint,
     syncAdjustmentInputs,
     syncAdjustmentModeInputs,

@@ -115,7 +115,7 @@ function createFixture(options = {}) {
     element.dataset.appMode = route;
     return element;
   });
-  const workbenchRouteItems = ["cutout", "import", "scatter"].map((route) => {
+  const workbenchRouteItems = ["cutout", "import", "scatter", "animation", "export"].map((route) => {
     const element = createElement();
     element.dataset.workbenchRoute = route;
     return element;
@@ -256,6 +256,27 @@ test("quick tool cards use in-app workbench navigation", async () => {
   await Promise.resolve();
 
   assert.deepEqual(routes, ["cutout"]);
+});
+
+test("a queued workbench click after a route change does not jump to delivery", async () => {
+  const routes = [];
+  const fixture = createFixture({
+    pathname: "/workspace/animation/transform",
+    navigate: async (route) => routes.push(route),
+  });
+  fixture.controller.bind();
+
+  const transformTab = fixture.workbenchRouteItems.find(
+    (item) => item.dataset.workbenchRoute === "animation",
+  );
+  const deliveryTab = fixture.workbenchRouteItems.find((item) => item.dataset.workbenchRoute === "export");
+  transformTab.dispatch("click");
+  await Promise.resolve();
+  deliveryTab.dispatch("click");
+  await Promise.resolve();
+
+  assert.deepEqual(routes, ["animation"], "laggy second click must not open 交付与导出");
+  assert.equal(fixture.elements.body.dataset.workbenchClickGuard, "1");
 });
 
 test("context tools keep the active animation in the workbench and delegate the selected tool", async () => {

@@ -60,6 +60,12 @@ test("the frame editor is visible before application initialization", () => {
   assert.ok(offsetInput);
   assert.doesNotMatch(scaleInput[0], /\breadonly\b/);
   assert.doesNotMatch(offsetInput[0], /\breadonly\b/);
+  assert.match(html, /<div class="number stepNumber"/);
+  assert.doesNotMatch(
+    html,
+    /<label class="number stepNumber"[\s\S]*data-step-target="baseX"/,
+    "stepper buttons must not sit inside a label that retargets clicks",
+  );
 });
 
 test("delivery summary does not touch the later modeHubsModule binding", () => {

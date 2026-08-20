@@ -132,6 +132,18 @@
       beginAdjustmentNumberEdit = () => {},
       retainAdjustmentNumberSelection = () => {},
       applyAdjustmentNumberInput = () => true,
+      commitAdjustmentField = (input) => updateAdjustmentFromInputs(input),
+      markAdjustmentFieldEdited = () => {},
+      releaseAdjustmentField = (input) => commitAdjustmentField(input),
+      beginWorkbenchClickGuard = () => {},
+      endWorkbenchClickGuard = () => {},
+      handleAdjustmentStepClick = (button) => {
+        const input = document.querySelector(`#${button?.dataset?.stepTarget || ""}`);
+        if (!input) return false;
+        stepAdjustmentInput(input, Number(button.dataset.stepDir || 0));
+        return true;
+      },
+      endAdjustmentStepActivation = () => {},
       stagePoint,
       syncAdjustmentInputs,
       syncAdjustmentModeInputs,
@@ -429,11 +441,23 @@
       });
 
       document.querySelectorAll(".numberStep").forEach((button) => {
+        button.addEventListener("pointerdown", () => {
+          button.dataset.stepFromPointer = "1";
+        });
         button.addEventListener("click", (event) => {
           event.preventDefault();
-          const input = document.querySelector(`#${button.dataset.stepTarget}`);
-          stepAdjustmentInput(input, Number(button.dataset.stepDir || 0));
-          input?.focus({ preventScroll: true });
+          event.stopPropagation();
+          handleAdjustmentStepClick(button);
+        });
+        button.addEventListener("pointerup", () => {
+          document.defaultView?.setTimeout?.(() => {
+            endAdjustmentStepActivation(button);
+            delete button.dataset.stepFromPointer;
+          }, 0);
+        });
+        button.addEventListener("pointercancel", () => {
+          endAdjustmentStepActivation(button);
+          delete button.dataset.stepFromPointer;
         });
       });
 
@@ -461,7 +485,7 @@
         input.addEventListener("blur", () => {
           applyAdjustmentNumberInput(input);
           normalizeAdjustmentInputDisplay(input);
-          updateAdjustmentFromInputs();
+          releaseAdjustmentField(input);
           state.baseEditSnapshot = null;
           state.boxEditSnapshot = null;
         });
@@ -521,7 +545,8 @@
         if (input !== els.baseScale) {
           input.addEventListener("input", () => {
             if (!applyAdjustmentNumberInput(input) || isIncompleteNumberInput(input.value)) return;
-            updateAdjustmentFromInputs();
+            markAdjustmentFieldEdited(input);
+            commitAdjustmentField(input);
           });
         }
       }
@@ -758,6 +783,11 @@
       stagePointerController.bind();
 
       keyboardController.bind();
+
+      const windowRef = document.defaultView;
+      windowRef?.addEventListener?.("xsxb:routechange", (event) => {
+        if (event?.detail?.route === "animation") syncAdjustmentInputs();
+      });
 
       return unbind;
     }

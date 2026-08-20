@@ -207,20 +207,133 @@
       return Number.isFinite(number) ? number : Number(fallback) || 0;
     }
 
-    /** Reads the base transform fields from the adjustment panel. */
-    function transformFromAdjustmentInputs() {
+    /**
+     * Reads adjustment fields from the panel, or only the edited field when one
+     * input is provided so a sibling stepper cannot cross-write the other axis.
+     * @param {{id?:string}|null} [editedInput] Field that the user just changed.
+     * @returns {object} Transform assembled from the edited field plus store siblings.
+     */
+    function transformFromAdjustmentInputs(editedInput = null) {
       const last = adjustmentTransform();
-      const uniformScale = parseAdjustmentNumber(elements.baseScale.value, last.scale);
+      const shouldRead = (input) => !editedInput || input === editedInput;
+      const read = (input, fallback) => {
+        if (!shouldRead(input)) {
+          const stored = Number(fallback);
+          return Number.isFinite(stored) ? stored : 0;
+        }
+        return parseAdjustmentNumber(input?.value, fallback);
+      };
+      const uniformScale = read(elements.baseScale, last.scale);
+      const scaleX =
+        editedInput === elements.baseScale
+          ? uniformScale
+          : read(elements.baseScaleX, last.scaleX ?? uniformScale);
+      const scaleY =
+        editedInput === elements.baseScale
+          ? uniformScale
+          : read(elements.baseScaleY, last.scaleY ?? uniformScale);
       return {
         scale: uniformScale,
-        scaleX: parseAdjustmentNumber(elements.baseScaleX.value, last.scaleX ?? uniformScale),
-        scaleY: parseAdjustmentNumber(elements.baseScaleY.value, last.scaleY ?? uniformScale),
+        scaleX,
+        scaleY,
         offset: {
-          x: parseAdjustmentNumber(elements.baseX.value, last.offset?.x ?? 0),
-          y: parseAdjustmentNumber(elements.baseY.value, last.offset?.y ?? 0),
+          x: read(elements.baseX, last.offset?.x ?? 0),
+          y: read(elements.baseY, last.offset?.y ?? 0),
         },
-        rotation: parseAdjustmentNumber(elements.baseRotation.value, last.rotation ?? 0),
+        rotation: read(elements.baseRotation, last.rotation ?? 0),
       };
+    }
+
+    /** Writes store-backed siblings so a stale X/Y display cannot leak into apply. */
+    function writeAdjustmentInputsFromTransform(transform, exceptInput = null) {
+      const writeValue = (input, value) => {
+        if (!input || input === exceptInput) return;
+        input.value = round(value);
+      };
+      writeValue(elements.baseScale, transform.scale);
+      writeValue(elements.baseScaleX, transform.scaleX);
+      writeValue(elements.baseScaleY, transform.scaleY);
+      writeValue(elements.baseX, transform.offset.x);
+      writeValue(elements.baseY, transform.offset.y);
+      writeValue(elements.baseRotation, transform.rotation || 0);
+    }
+
+    /**
+     * Applies one edited adjustment field without re-reading sibling steppers.
+     * @param {{id?:string}|null} input Field the user just changed.
+     * @returns {object} Transform that was applied.
+     */
+    function commitAdjustmentField(input) {
+      const previous = adjustmentTransform();
+      const transform = transformFromAdjustmentInputs(input);
+      writeAdjustmentInputsFromTransform(transform, input);
+      const unchanged =
+        Number(previous.offset?.x || 0) === Number(transform.offset?.x || 0) &&
+        Number(previous.offset?.y || 0) === Number(transform.offset?.y || 0) &&
+        Number(previous.scale) === Number(transform.scale) &&
+        Number(previous.scaleX) === Number(transform.scaleX) &&
+        Number(previous.scaleY) === Number(transform.scaleY) &&
+        Number(previous.rotation || 0) === Number(transform.rotation || 0);
+      if (!unchanged) updateAdjustmentFromInputs(input);
+      return transform;
+    }
+
+    /** Marks a field so blur will commit it instead of restoring the store. */
+    function markAdjustmentFieldEdited(input) {
+      if (input?.dataset) input.dataset.adjustmentEdited = "1";
+    }
+
+    /**
+     * Commits a user edit, or restores store values when the field was not edited.
+     * Tab hide/show must not persist a glitched 水平/垂直 display.
+     * @param {{dataset?:{adjustmentEdited?:string}}|null} input Field losing focus.
+     * @returns {object} Transform left in the store.
+     */
+    function releaseAdjustmentField(input) {
+      if (input?.dataset?.adjustmentEdited === "1") {
+        delete input.dataset.adjustmentEdited;
+        return commitAdjustmentField(input);
+      }
+      const stored = adjustmentTransform();
+      writeAdjustmentInputsFromTransform(stored);
+      return stored;
+    }
+
+    /** Starts a short window that ignores leftover stepper/nav clicks. */
+    function beginWorkbenchClickGuard() {
+      if (documentRef?.body?.dataset) documentRef.body.dataset.workbenchClickGuard = "1";
+    }
+
+    /** Ends the leftover-click window. */
+    function endWorkbenchClickGuard() {
+      if (documentRef?.body?.dataset) delete documentRef.body.dataset.workbenchClickGuard;
+    }
+
+    /** @returns {boolean} Whether leftover clicks should be ignored. */
+    function isWorkbenchClickGuarded() {
+      return documentRef?.body?.dataset?.workbenchClickGuard === "1";
+    }
+
+    /**
+     * Applies one stepper click. A second event from the same activation is ignored.
+     * @param {{dataset?:{stepTarget?:string,stepDir?:string,stepApplied?:string}}|null} button Stepper button.
+     * @returns {boolean} Whether a step was applied.
+     */
+    function handleAdjustmentStepClick(button) {
+      if (!button) return false;
+      if (isWorkbenchClickGuarded() && button.dataset?.stepFromPointer !== "1") return false;
+      if (button.dataset?.stepApplied === "1") return false;
+      const input = documentRef?.querySelector?.(`#${button.dataset?.stepTarget || ""}`);
+      if (!input || input.disabled) return false;
+      button.dataset.stepApplied = "1";
+      markAdjustmentFieldEdited(input);
+      stepAdjustmentInput(input, Number(button.dataset.stepDir || 0));
+      return true;
+    }
+
+    /** Clears the one-activation lock so the next real click can step again. */
+    function endAdjustmentStepActivation(button) {
+      if (button?.dataset) delete button.dataset.stepApplied;
     }
 
     /** Returns numeric inputs controlled by the adjustment panel. */
@@ -273,12 +386,13 @@
       const nextValue = current + Number(direction || 0) * step * multiplier;
       pushUndo("adjustment step");
       beginStepAdjustmentEdit();
+      markAdjustmentFieldEdited(input);
       input.value = round(nextValue);
       if (input === elements.baseScale) {
         elements.baseScaleX.value = input.value;
         elements.baseScaleY.value = input.value;
       }
-      updateAdjustmentFromInputs();
+      commitAdjustmentField(input);
       endStepAdjustmentEdit();
     }
 
@@ -321,7 +435,7 @@
     }
 
     /** Writes a normalized number back into one focused adjustment field. */
-    function normalizeAdjustmentInputDisplay(input, transform = transformFromAdjustmentInputs()) {
+    function normalizeAdjustmentInputDisplay(input, transform = transformFromAdjustmentInputs(input)) {
       if (!input) return transform;
       const values = {
         [elements.baseScale?.id]: round(transform.scale),
@@ -489,6 +603,14 @@
       normalizeAdjustmentMode,
       adjustmentTransform,
       transformFromAdjustmentInputs,
+      commitAdjustmentField,
+      markAdjustmentFieldEdited,
+      releaseAdjustmentField,
+      beginWorkbenchClickGuard,
+      endWorkbenchClickGuard,
+      isWorkbenchClickGuarded,
+      handleAdjustmentStepClick,
+      endAdjustmentStepActivation,
       compactDisplayedNumber,
       isIncompleteNumberInput,
       sanitizeAdjustmentNumberInput,
