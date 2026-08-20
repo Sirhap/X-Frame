@@ -534,6 +534,9 @@ function createMediaExportService(options) {
     }
     if (job.status === "cancelled") throw mediaExportError(409, "Media export was cancelled.");
     const concatInput = ["-f", "concat", "-safe", "0", "-i", writeConcatManifest(job)];
+    // Concat already holds one extra last-frame copy for duration. Without
+    // passthrough, FFmpeg 6 defaults MOV/MP4 to 25 fps and duplicates frames.
+    const timingArgs = ["-fps_mode", "passthrough"];
     if (job.formats.includes("gif")) {
       const recipe = job.recipe || {};
       const preprocessing = [];
@@ -597,7 +600,18 @@ function createMediaExportService(options) {
       const output = pathApi.join(job.directory, `${job.stem}.mov`);
       await runProcess(
         ffmpegBinary,
-        ["-y", ...concatInput, "-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuva444p10le", output],
+        [
+          "-y",
+          ...concatInput,
+          ...timingArgs,
+          "-c:v",
+          "prores_ks",
+          "-profile:v",
+          "4",
+          "-pix_fmt",
+          "yuva444p10le",
+          output,
+        ],
         job,
       );
       if (job.status === "cancelled") throw mediaExportError(409, "Media export was cancelled.");
@@ -616,6 +630,7 @@ function createMediaExportService(options) {
         [
           "-y",
           ...concatInput,
+          ...timingArgs,
           "-c:v",
           "libx264",
           "-crf",

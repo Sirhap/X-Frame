@@ -471,8 +471,10 @@ test("export_gif paints a trailing smear behind a rotating blade", async () => {
       // Start blade is vertical at (32, 6)–(32, 50). End blade is horizontal
       // through y=28. A 拖影 sits on the mid-arc behind the blade; a filled
       // pie still paints the start tip; a 4px edge paints only the new blade.
+      // The mid-arc sample is the upper-right quadrant of that sweep, not a
+      // 16×16 sliver that one rasterizer can miss by a pixel.
       startArcOnLast = countGoldInBox(last.data, last.width, 30, 4, 35, 10);
-      midArcOnLast = countGoldInBox(last.data, last.width, 40, 10, 56, 26);
+      midArcOnLast = countGoldInBox(last.data, last.width, 36, 8, 60, 32);
       fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
     },
   });

@@ -255,6 +255,35 @@ test("media export reports missing FFmpeg and isolates encoder failures", async 
   fs.rmSync(failureRoot, { recursive: true, force: true });
 });
 
+test("media export keeps concat frame timing instead of duplicating MOV to 25fps", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-media-export-"));
+  const encodeArgs = [];
+  const spawnImpl = (command, args, options) => {
+    if (args.includes("-version") || args.includes("-encoders")) {
+      return successfulSpawn(command, args, options);
+    }
+    encodeArgs.push(args);
+    return successfulSpawn(command, args, options);
+  };
+  const service = createMediaExportService({
+    root,
+    randomUUID: () => "timing-job",
+    spawnImpl,
+  });
+  const job = service.createJob({ formats: ["mov"], frameCount: 1, width: 8, height: 8 });
+  service.uploadFrame({ jobId: job.id, index: 0, data: pngDataUrl(8, 8) });
+  service.finishJob({ jobId: job.id });
+  const status = await waitForStatus(service, job.id, ["completed", "failed"]);
+  assert.equal(status.status, "completed", status.error);
+  const movArgs = encodeArgs.find((args) => args.includes("prores_ks"));
+  assert.ok(movArgs, "MOV encode should invoke prores_ks");
+  const modeIndex = movArgs.indexOf("-fps_mode");
+  assert.notEqual(modeIndex, -1, "MOV encode must set fps_mode");
+  assert.equal(movArgs[modeIndex + 1], "passthrough");
+  service.dispose();
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test("media export cancellation terminates active FFmpeg and removes temporary files", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-media-export-"));
   const signals = [];
