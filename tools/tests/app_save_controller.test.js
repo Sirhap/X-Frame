@@ -198,6 +198,40 @@ test("save locks before asynchronous preparation and shares the active request",
   );
 });
 
+test("saveAfterIdle waits for the in-flight request then persists the latest values", async () => {
+  let releaseFirst;
+  const firstReady = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
+  let collected = { scale: 3 };
+  let fetchCount = 0;
+  const fixture = createFixture({
+    collectTuningValues: () => collected,
+    collectFrameAudioBindingsForSave: async () => [],
+    fetchImpl: async (url, options) => {
+      fetchCount += 1;
+      fixture.requests.push({ url, options });
+      if (fetchCount === 1) await firstReady;
+      return response({ dataRevision: `r${fetchCount + 1}` });
+    },
+  });
+
+  const firstSave = fixture.controller.save();
+  const startedAt = Date.now();
+  while (fetchCount < 1 && Date.now() - startedAt < 1000) await Promise.resolve();
+  assert.equal(fetchCount, 1);
+  collected = { scale: 2 };
+  const afterIdle = fixture.controller.saveAfterIdle();
+  assert.notEqual(afterIdle, firstSave);
+  releaseFirst();
+  await firstSave;
+  await afterIdle;
+
+  assert.equal(fixture.requests.length, 2);
+  assert.equal(JSON.parse(fixture.requests[0].options.body).values.scale, 3);
+  assert.equal(JSON.parse(fixture.requests[1].options.body).values.scale, 2);
+});
+
 test("collision box preparation keeps existing values and fills missing fields", async () => {
   const stores = new Map();
   const fixture = createFixture({

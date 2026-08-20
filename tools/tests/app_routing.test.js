@@ -357,6 +357,45 @@ test("workspace route guard saves dirty tuning before opening a tool", async () 
   assert.deepEqual(events, ["decide", "save", "open-cutout"]);
 });
 
+test("confirmWorkspaceLeave asks while the URL is still on the workbench", async () => {
+  const windowRef = createWindow("http://localhost/workspace/animation/transform");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => {
+      events.push(`decide:${windowRef.location.pathname}`);
+      return "cancel";
+    },
+    discardWorkspaceChanges: async () => events.push("discard"),
+    saveWorkspace: async () => events.push("save"),
+  });
+
+  assert.equal(await controller.confirmWorkspaceLeave("tools"), false);
+  assert.deepEqual(events, ["decide:/workspace/animation/transform"]);
+  assert.equal(windowRef.location.pathname, "/workspace/animation/transform");
+});
+
+test("confirmWorkspaceLeave discard restores before the caller may change the URL", async () => {
+  const windowRef = createWindow("http://localhost/workspace/animation/transform");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => {
+      events.push(`decide:${windowRef.location.pathname}`);
+      return "discard";
+    },
+    discardWorkspaceChanges: async () => events.push("discard"),
+  });
+
+  assert.equal(await controller.confirmWorkspaceLeave("tools"), true);
+  assert.deepEqual(events, ["decide:/workspace/animation/transform", "discard"]);
+  assert.equal(windowRef.location.pathname, "/workspace/animation/transform");
+});
+
 test("workspace route guard discards or cancels dirty tuning explicitly", async () => {
   const discardWindow = createWindow("http://localhost/workspace/tools/organizer");
   const discardEvents = [];

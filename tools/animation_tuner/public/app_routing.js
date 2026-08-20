@@ -110,6 +110,7 @@
    *   updateDocumentTitle:()=>void,
    *   syncWorkbenchRoute:(route:string,options?:{push?:boolean})=>void,
    *   applyWorkbenchRoute:()=>Promise<boolean>,
+   *   confirmWorkspaceLeave:(route:string,options?:{skipDirtyPrompt?:boolean})=>Promise<boolean>,
    *   syncUrlState:(options?:{push?:boolean})=>void,
    * }} Route operations.
    */
@@ -290,6 +291,37 @@
     }
 
     /**
+     * Asks about unsaved tuning before a cross-stage leave. Callers that have not
+     * changed the URL yet keep the workbench address until the user decides.
+     * @param {string} route Destination workbench route.
+     * @param {{skipDirtyPrompt?:boolean}} [options] When skipDirtyPrompt is set,
+     *   unsaved tuning does not block a tool that already attempted to save.
+     * @returns {Promise<boolean>} Whether navigation may continue.
+     */
+    async function confirmWorkspaceLeave(route, options = {}) {
+      const visibleRoute = visibleWorkbenchRoute(getBatchCutout(), getFrameOrganizer());
+      if (
+        !route ||
+        SAME_STAGE_WORKSPACE_ROUTES.has(route) ||
+        visibleRoute ||
+        !getWorkspaceDirty() ||
+        options.skipDirtyPrompt
+      ) {
+        return true;
+      }
+      const decision = await requestWorkspaceDecision();
+      if (decision === "save") {
+        await saveWorkspace();
+        return true;
+      }
+      if (decision === "discard") {
+        await discardWorkspaceChanges();
+        return true;
+      }
+      return false;
+    }
+
+    /**
      * Applies the current URL route once. Calls are serialized by the public
      * wrapper so asynchronous close/open operations cannot finish out of order.
      * @returns {Promise<boolean>} Whether the requested route was applied.
@@ -307,27 +339,13 @@
         return false;
       }
       try {
-        const visibleRoute = visibleWorkbenchRoute(batchCutout, frameOrganizer);
         const temporarySessionActive =
           currentNavigationContext() === "standalone" && Boolean(getTemporaryWorkset()?.frames?.length);
-        if (
-          route &&
-          !SAME_STAGE_WORKSPACE_ROUTES.has(route) &&
-          !visibleRoute &&
-          getWorkspaceDirty() &&
-          !options.skipDirtyPrompt
-        ) {
-          const decision = await requestWorkspaceDecision();
-          if (decision === "cancel") {
+        if (!(await confirmWorkspaceLeave(route, options))) {
+          if (currentWorkbenchRoute() === route && !SAME_STAGE_WORKSPACE_ROUTES.has(route)) {
             syncWorkbenchRoute("", { context: "project" });
-            return false;
           }
-          if (decision === "save") await saveWorkspace();
-          else if (decision === "discard") await discardWorkspaceChanges();
-          else {
-            syncWorkbenchRoute("", { context: "project" });
-            return false;
-          }
+          return false;
         }
         if (route === "cutout") {
           if (frameOrganizer?.isOpen()) {
@@ -455,6 +473,7 @@
 
     return {
       applyWorkbenchRoute,
+      confirmWorkspaceLeave,
       currentNavigationContext,
       currentWorkbenchRoute,
       syncUrlState,

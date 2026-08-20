@@ -257,6 +257,23 @@
       return restoreHistory("redo", "undo");
     }
 
+    /**
+     * Cancels a pending autosave and treats the current revision as acknowledged
+     * without writing in-memory dirty values. An already in-flight save still finishes.
+     * @returns {void}
+     */
+    function abandonUnsaved() {
+      clearTimeoutImpl(saveTimer);
+      saveTimer = 0;
+      state = {
+        ...state,
+        lastSavedRevision: state.revision,
+        saveStatus: state.saveStatus === SAVE_STATUS.SAVING ? SAVE_STATUS.SAVING : SAVE_STATUS.IDLE,
+        saveError: "",
+      };
+      emit();
+    }
+
     /** Schedules one delayed project save. */
     function scheduleSave() {
       clearTimeoutImpl(saveTimer);
@@ -312,6 +329,7 @@
     }
 
     return Object.freeze({
+      abandonUnsaved,
       beginToolSession,
       commit,
       endToolSession,

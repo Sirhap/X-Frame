@@ -671,6 +671,18 @@ const clearFrameAudioBinding = frameAudio.clearBinding;
 const playFrameAudio = frameAudio.play;
 const collectFrameAudioBindingsForSave = frameAudio.collectForSave;
 const syncFrameAudioBindingsToGame = frameAudio.syncToGame;
+const workspaceLeaveModule = globalThis.XSXBAppWorkspaceLeave;
+if (!workspaceLeaveModule) throw new Error("XSXBAppWorkspaceLeave is required.");
+const workspaceLeave = workspaceLeaveModule.createController({
+  cloneState,
+  restoreState: (snapshot) => restoreHistoryState(snapshot),
+  abandonUnsaved: () => workspaceStore?.abandonUnsaved?.(),
+  saveAfterIdle: () => saveController.saveAfterIdle(),
+  bumpEditRevision: () => {
+    editRevision += 1;
+  },
+  loadConfigFallback: () => loadConfig(),
+});
 const routing = globalThis.XSXBAppRouting.createController({
   getCurrentGroup: () => currentGroup,
   getSelectedFrame: () => selectedFrame,
@@ -678,8 +690,9 @@ const routing = globalThis.XSXBAppRouting.createController({
   getBatchCutout: () => batchCutout,
   getFrameOrganizer: () => frameOrganizer,
   getWorkspaceDirty: () => dirty,
-  requestWorkspaceDecision: () =>
-    appConfirmation.requestDecision(
+  requestWorkspaceDecision: async () => {
+    workspaceLeave.beginLeaveDecision();
+    const decision = await appConfirmation.requestDecision(
       language === "en"
         ? "Current tuning has unsaved changes. Save them before switching tools, or discard them."
         : "当前调参有未保存改动。请先保存，或放弃改动后切换工具。",
@@ -689,14 +702,15 @@ const routing = globalThis.XSXBAppRouting.createController({
         discardLabel: language === "en" ? "Discard" : "放弃改动",
         cancelLabel: language === "en" ? "Cancel" : "取消",
       },
-    ),
+    );
+    if (decision === "cancel") workspaceLeave.cancelLeaveDecision();
+    return decision;
+  },
   saveWorkspace: () => save(),
   discardWorkspaceChanges: async () => {
-    resetProjectSession();
+    await workspaceLeave.discardChanges();
     dirty = false;
-    editRevision += 1;
     imageCache.clear();
-    await loadConfig();
     resizeCanvas();
   },
   translate: t,
@@ -717,6 +731,7 @@ const routing = globalThis.XSXBAppRouting.createController({
 });
 const {
   applyWorkbenchRoute,
+  confirmWorkspaceLeave,
   currentNavigationContext,
   currentWorkbenchRoute,
   syncUrlState,
@@ -1695,7 +1710,9 @@ function markDirty(...args) {
 }
 function markClean(...args) {
   dirtyPetProfileIds.clear();
-  return projectStateCall("markClean", ...args);
+  const result = projectStateCall("markClean", ...args);
+  workspaceLeave.captureSavedSnapshot();
+  return result;
 }
 
 async function refreshActiveProject(...args) {
@@ -1834,6 +1851,7 @@ async function loadConfig() {
   const addCodexPet = document.querySelector("#addCodexPet");
   if (addCodexPet) addCodexPet.hidden = config?.projectKind !== "codex_pets";
   syncCodexPetLifecycleActions();
+  workspaceLeave.captureSavedSnapshot();
   return result;
 }
 
@@ -4054,8 +4072,9 @@ worksetHandoff.bind();
 globalThis.XSXBOpenWorksetHandoff = (request) => worksetHandoff.open(request);
 /** Navigates an embedded tool without reloading retained browser resources. */
 globalThis.XSXBNavigateWorkbench = async (route, context = currentNavigationContext()) => {
+  if (!(await confirmWorkspaceLeave(route))) return false;
   syncWorkbenchRoute(route, { push: true, context });
-  return applyWorkbenchRoute();
+  return applyWorkbenchRoute({ skipDirtyPrompt: true });
 };
 const appShell = appShellModule.createController({
   documentRef: globalThis.document,
@@ -4064,8 +4083,9 @@ const appShell = appShellModule.createController({
   translate: t,
   navigate: async (route) => {
     if (!(await requestScatterSliceLeave())) return false;
+    if (!(await confirmWorkspaceLeave(route))) return false;
     syncWorkbenchRoute(route, { push: true });
-    return applyWorkbenchRoute();
+    return applyWorkbenchRoute({ skipDirtyPrompt: true });
   },
   openContextTool: async (tool) => {
     const route = tool === "organizer" ? "organizer" : "cutout";

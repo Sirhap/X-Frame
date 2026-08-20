@@ -90,6 +90,23 @@ test("normalization preserves original and current asset references", () => {
   });
 });
 
+test("abandonUnsaved cancels a pending persist so flushSave does not write dirty data", async () => {
+  let saves = 0;
+  const store = createStore({
+    debounceMs: 20,
+    save: async () => {
+      saves += 1;
+    },
+  });
+  store.markDirty();
+  store.abandonUnsaved();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  const result = await store.flushSave();
+  assert.equal(saves, 0);
+  assert.equal(result.status, store.getSnapshot().saveStatus);
+  assert.equal(store.getSnapshot().lastSavedRevision, store.getSnapshot().revision);
+});
+
 test("legacy frames without ids retain identity when their array order changes", () => {
   const first = normalizeFrame({ path: "frames/idle_01.png" }, 0, "demo");
   const second = normalizeFrame({ path: "frames/idle_02.png" }, 1, "demo");

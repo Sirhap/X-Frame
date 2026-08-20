@@ -742,6 +742,44 @@ test("same-stage workbench tabs do not ask about unsaved edits", async ({ page }
   await expect(page.locator("#saveState")).toContainText("未保存");
 });
 
+test("NAV-008 discard rolls back dirty horizontal position after the autosave window", async ({ page }) => {
+  await page.goto("/workspace/animation/transform");
+  const baseX = page.locator("#baseX");
+  const initialValue = await baseX.inputValue();
+
+  await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
+  const dirtyValue = await baseX.inputValue();
+  expect(dirtyValue).not.toBe(initialValue);
+  await expect(page.locator("#saveState")).toContainText("未保存");
+
+  await page.locator("#toolRailTools").click();
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await expect(page.locator("#appConfirmTitle")).toHaveText("未保存的调参");
+  await expect(page.locator("#appConfirmMessage")).toContainText("放弃改动后切换工具");
+  await expect(page.locator("#appConfirmCancel")).toHaveText("取消");
+  await expect(page.locator("#appConfirmAlternate")).toHaveText("保存并切换");
+  await expect(page.locator("#appConfirmAccept")).toHaveText("放弃改动");
+  await expect(page).toHaveURL(/\/workspace\/animation\/transform/);
+
+  await page.locator("#appConfirmCancel").click();
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+  await expect(page).toHaveURL(/\/workspace\/animation\/transform/);
+  await expect(baseX).toHaveValue(dirtyValue);
+
+  await page.locator("#toolRailTools").click();
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await expect(page).toHaveURL(/\/workspace\/animation\/transform/);
+  await page.waitForTimeout(800);
+  await page.locator("#appConfirmAccept").click();
+  await expect(page).toHaveURL(/\/tools$/);
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+
+  await page.goto("/workspace/animation/transform");
+  await expect(baseX).toHaveValue(initialValue);
+  await page.reload();
+  await expect(baseX).toHaveValue(initialValue);
+});
+
 test("contextual tools preserve auto-saved tuning when switching", async ({ page }) => {
   await page.goto("/workspace/animation/transform");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
