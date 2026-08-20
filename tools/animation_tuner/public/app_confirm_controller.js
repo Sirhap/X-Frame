@@ -58,13 +58,24 @@
     let previousAppInert = false;
 
     /**
+     * Returns whether a control can receive Tab focus.
+     * `offsetParent` is null under `position: fixed` ancestors, so layout
+     * visibility uses getClientRects when the DOM provides it.
+     * @param {HTMLElement} element Candidate control.
+     * @returns {boolean} Whether the control should be in the Tab cycle.
+     */
+    function isDisplayedForFocus(element) {
+      if (!element || element.disabled || element.hidden) return false;
+      if (typeof element.getClientRects === "function") return element.getClientRects().length > 0;
+      return true;
+    }
+
+    /**
      * Returns focusable controls inside the visible confirmation card.
      * @returns {HTMLElement[]} Focusable controls.
      */
     function focusableElements() {
-      return Array.from(elements.panel.querySelectorAll(FOCUSABLE_SELECTOR)).filter(
-        (element) => element.offsetParent !== null,
-      );
+      return Array.from(elements.panel.querySelectorAll(FOCUSABLE_SELECTOR)).filter(isDisplayedForFocus);
     }
 
     /**
@@ -203,16 +214,35 @@
       }
       if (event.key !== "Tab") return;
       const focusable = focusableElements();
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && documentRef.activeElement === first) {
+      if (!focusable.length) {
         event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && documentRef.activeElement === last) {
-        event.preventDefault();
-        first.focus();
+        return;
       }
+      const currentIndex = focusable.indexOf(documentRef.activeElement);
+      event.preventDefault();
+      if (event.shiftKey) {
+        const next = currentIndex <= 0 ? focusable[focusable.length - 1] : focusable[currentIndex - 1];
+        next.focus();
+        return;
+      }
+      const next =
+        currentIndex === -1 || currentIndex >= focusable.length - 1
+          ? focusable[0]
+          : focusable[currentIndex + 1];
+      next.focus();
+    }
+
+    /**
+     * Pulls focus back when it lands outside the open confirmation.
+     * @param {FocusEvent} event Focus event.
+     * @returns {void}
+     */
+    function handleFocusIn(event) {
+      if (elements.panel.hidden) return;
+      if (typeof elements.panel.contains === "function" && elements.panel.contains(event.target)) return;
+      const focusable = focusableElements();
+      const fallback = elements.card?.dataset?.tone === "danger" ? elements.cancel : elements.accept;
+      (focusable[0] || fallback)?.focus?.();
     }
 
     /**
@@ -229,6 +259,7 @@
         if (event.target === elements.panel) resolveConfirmation(false);
       });
       documentRef.addEventListener("keydown", handleKeydown);
+      documentRef.addEventListener("focusin", handleFocusIn);
     }
 
     bind();
