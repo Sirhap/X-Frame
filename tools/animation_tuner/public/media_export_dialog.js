@@ -123,13 +123,18 @@
         if (token !== previewRenderToken) return;
         if (previewMode === "sheet") {
           const core = root.MediaExportCore;
-          const plan = core.planSpriteSheets(rendered, {
-            columns: recipe.sheetColumns,
-            gap: recipe.sheetGap,
-            maxTextureSize: recipe.maxTextureSize,
-            fixedPageSize: recipe.sheetFixedSize,
-            powerOfTwo: recipe.sheetPowerOfTwo,
-          });
+          const plan = core.planSpriteSheets(
+            rendered,
+            typeof core.sheetPlanOptions === "function"
+              ? core.sheetPlanOptions(recipe)
+              : {
+                  columns: recipe.sheetColumns,
+                  gap: recipe.sheetGap,
+                  maxTextureSize: recipe.maxTextureSize,
+                  fixedPageSize: recipe.sheetFixedSize,
+                  powerOfTwo: recipe.sheetPowerOfTwo,
+                },
+          );
           const page = plan.pages[Math.min(previewIndex, plan.pages.length - 1)] || plan.pages[0];
           previewIndex = page.index;
           const sheet = root.document.createElement("canvas");
@@ -141,8 +146,8 @@
             .forEach((entry) =>
               context.drawImage(rendered[entry.index].image, entry.x, entry.y, entry.width, entry.height),
             );
-          const outputWidth = plan.cellWidth || rendered[0]?.width || page.width;
-          const outputHeight = plan.cellHeight || rendered[0]?.height || page.height;
+          const outputWidth = page.width;
+          const outputHeight = page.height;
           drawPreviewSource(sheet, outputWidth, outputHeight);
           elements.mediaExportPreviewTitle.textContent = english()
             ? "Sprite Sheet preview"
@@ -360,8 +365,15 @@
 
     /** Opens the export workbench in a modal or an in-page delivery mount. */
     function open(options = {}) {
-      returnFocus = root.document?.activeElement;
       const mount = options.mount || null;
+      const alreadyMounted =
+        !elements.mediaExportDialog.hidden &&
+        (mount
+          ? mount.contains?.(elements.mediaExportDialog) === true ||
+            mount.firstElementChild === elements.mediaExportDialog
+          : elements.mediaExportDialog.dataset.presentation !== "embedded");
+      if (alreadyMounted && mount) return;
+      returnFocus = root.document?.activeElement;
       if (mount?.replaceChildren) mount.replaceChildren(elements.mediaExportDialog);
       else root.document?.body?.append?.(elements.mediaExportDialog);
       elements.mediaExportDialog.dataset.presentation = mount ? "embedded" : "dialog";
@@ -693,11 +705,14 @@
       const textureSize = checkedValue("mediaExportTextureSize", "2048");
       const background = checkedValue("mediaExportBackground", "edge");
       const format = currentFormat();
+      const canvasMode = value("mediaExportCanvasMode", "union");
+      const outputWidth = Math.max(1, Number(value("mediaExportWidth", 512)) || 512);
+      const outputHeight = Math.max(1, Number(value("mediaExportHeight", 512)) || 512);
       const raw = {
         preset: value("mediaExportPreset", "atlas"),
-        canvasMode: value("mediaExportCanvasMode", "union"),
-        width: value("mediaExportWidth", 512),
-        height: value("mediaExportHeight", 512),
+        canvasMode,
+        width: outputWidth,
+        height: outputHeight,
         fit: checkedValue("mediaExportFit", "contain"),
         anchor: value("mediaExportAnchor", "bottom-center"),
         scaleX: value("mediaExportScaleX", 100),
@@ -714,8 +729,13 @@
         timing: speed === "1" ? "keep" : "speed",
         sheetColumns: elements.mediaExportColumnsAuto.checked ? 0 : value("mediaExportColumns", 4),
         sheetGap: value("mediaExportGap", 0),
-        maxTextureSize: textureSize === "max" ? 8192 : textureSize,
-        sheetFixedSize: textureSize !== "max",
+        maxTextureSize:
+          canvasMode === "custom"
+            ? Math.max(outputWidth, outputHeight)
+            : textureSize === "max"
+              ? 8192
+              : textureSize,
+        sheetFixedSize: canvasMode === "custom" ? true : textureSize !== "max",
         sheetPowerOfTwo: elements.mediaExportPowerOfTwo.checked,
         outputName: value("mediaExportFilename", "animation"),
         imageName:
@@ -788,9 +808,20 @@
     elements.mediaExportPreviewFrame.addEventListener("click", () => setPreviewMode("frame"));
     elements.mediaExportPreviewAnimation.addEventListener("click", () => setPreviewMode("animation"));
     elements.mediaExportPreviewSheet.addEventListener("click", () => setPreviewMode("sheet"));
+    const sidecarMetadataIds = new Set([
+      "mediaExportMetadataJson",
+      "mediaExportMetadataGodot",
+      "mediaExportMetadataUnity",
+      "mediaExportMetadataPlist",
+    ]);
     elements.mediaExportDialog
       .querySelectorAll(".mediaExportRecipe input, .mediaExportRecipe select")
       .forEach((control) => {
+        if (sidecarMetadataIds.has(control.id)) {
+          control.addEventListener("input", scheduleRecipeHistory);
+          control.addEventListener("change", commitRecipeHistory);
+          return;
+        }
         control.addEventListener("input", syncReferenceControls);
         control.addEventListener("input", schedulePreview);
         control.addEventListener("input", scheduleRecipeHistory);

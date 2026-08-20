@@ -941,13 +941,18 @@
       ) {
         throw new Error("Sprite-sheet export requires decoded frame canvases.");
       }
-      const plan = mediaExportCore.planSpriteSheets(items, {
-        columns: recipe.sheetColumns,
-        gap: recipe.sheetGap,
-        maxTextureSize: recipe.maxTextureSize,
-        fixedPageSize: recipe.sheetFixedSize,
-        powerOfTwo: recipe.sheetPowerOfTwo,
-      });
+      const plan = mediaExportCore.planSpriteSheets(
+        items,
+        typeof mediaExportCore.sheetPlanOptions === "function"
+          ? mediaExportCore.sheetPlanOptions(recipe)
+          : {
+              columns: recipe.sheetColumns,
+              gap: recipe.sheetGap,
+              maxTextureSize: recipe.maxTextureSize,
+              fixedPageSize: recipe.sheetFixedSize,
+              powerOfTwo: recipe.sheetPowerOfTwo,
+            },
+      );
       const atlas = mediaExportCore.createAtlasManifest(metadata, plan);
       entries.push(
         ...(await mediaExportCore.renderSpriteSheetEntries(items, plan, {

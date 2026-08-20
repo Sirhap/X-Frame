@@ -105,6 +105,29 @@ test("sprite-sheet recipe options preserve gap, per-frame durations, and Godot p
   assert.match(createGodotSpriteFrames({ animationName: "idle" }, plan), /path="idle\.png"/);
 });
 
+test("EXP-006 fitted atlas page follows the selected output size, not leftover 2048", () => {
+  const frames = Array.from({ length: 12 }, (_, index) => ({
+    name: `jump_${index}.png`,
+    width: 128,
+    height: 128,
+  }));
+  const plan = planSpriteSheets(frames, { outputWidth: 128, outputHeight: 128 });
+  assert.equal(plan.pages.length, 1);
+  assert.deepEqual({ width: plan.pages[0].width, height: plan.pages[0].height }, { width: 128, height: 128 });
+  assert.equal(plan.placements.length, 12);
+  assert.ok(
+    plan.placements.every((placement) => placement.page === 0),
+    "12 frames at a 128 output pill must stay on one page",
+  );
+  assert.notEqual(plan.pages[0].width, 2048);
+
+  const large = planSpriteSheets(frames, { outputWidth: 512, outputHeight: 512 });
+  assert.deepEqual(
+    { width: large.pages[0].width, height: large.pages[0].height },
+    { width: 512, height: 512 },
+  );
+});
+
 test("sprite-sheet planning rejects a frame larger than the safe canvas", () => {
   assert.throws(() => planSpriteSheets([{ width: 9000, height: 20 }]), /exceeds the 8192px/);
 });

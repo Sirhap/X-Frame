@@ -25,12 +25,152 @@
   }
 
   /**
+   * Picks a grid that packs every frame onto one output page with the squarest cells.
+   * @param {number} frameCount Frames to place.
+   * @param {number} pageWidth Target page width.
+   * @param {number} pageHeight Target page height.
+   * @param {number} gap Pixel gap between cells.
+   * @param {number} requestedColumns Explicit column count, or 0 for automatic.
+   * @returns {number}
+   */
+  function chooseFittedColumns(frameCount, pageWidth, pageHeight, gap, requestedColumns) {
+    const maxColumns = Math.min(frameCount, Math.max(1, Math.floor((pageWidth + gap) / (1 + gap))));
+    if (requestedColumns > 0) return Math.min(requestedColumns, maxColumns, frameCount);
+    let bestColumns = 1;
+    let bestScore = Infinity;
+    for (let columns = 1; columns <= maxColumns; columns += 1) {
+      const rows = Math.ceil(frameCount / columns);
+      const cellWidth = Math.floor((pageWidth - gap * Math.max(0, columns - 1)) / columns);
+      const cellHeight = Math.floor((pageHeight - gap * Math.max(0, rows - 1)) / rows);
+      if (cellWidth < 1 || cellHeight < 1) continue;
+      const score = Math.abs(cellWidth - cellHeight);
+      if (score < bestScore) {
+        bestScore = score;
+        bestColumns = columns;
+      }
+    }
+    return bestColumns;
+  }
+
+  /**
+   * Packs every frame onto pages whose pixels match the selected output size.
+   * @param {Array<{width:number,height:number,name?:string,frameId?:string,id?:string,assetRevision?:number}>} frames Ordered frames.
+   * @param {{outputWidth:number,outputHeight:number,gap:number,columns:number}} options Fitted-page constraints.
+   */
+  function planFittedOutputSheet(frames, options) {
+    const pageWidth = Math.min(DEFAULT_MAX_TEXTURE_SIZE, Math.max(1, options.outputWidth));
+    const pageHeight = Math.min(DEFAULT_MAX_TEXTURE_SIZE, Math.max(1, options.outputHeight));
+    const gap = options.gap;
+    const maxColumns = Math.max(1, Math.floor((pageWidth + gap) / (1 + gap)));
+    const maxRows = Math.max(1, Math.floor((pageHeight + gap) / (1 + gap)));
+    const pageCapacity = maxColumns * maxRows;
+    const preferredColumns = chooseFittedColumns(
+      Math.min(frames.length, pageCapacity),
+      pageWidth,
+      pageHeight,
+      gap,
+      options.columns,
+    );
+    const pages = [];
+    const placements = [];
+    for (let start = 0; start < frames.length; start += pageCapacity) {
+      const pageFrames = frames.slice(start, start + pageCapacity);
+      const columns = Math.min(preferredColumns, pageFrames.length, maxColumns);
+      const rows = Math.ceil(pageFrames.length / columns);
+      const cellWidth = Math.max(1, Math.floor((pageWidth - gap * Math.max(0, columns - 1)) / columns));
+      const cellHeight = Math.max(1, Math.floor((pageHeight - gap * Math.max(0, rows - 1)) / rows));
+      const pageIndex = pages.length;
+      pages.push({
+        index: pageIndex,
+        start,
+        count: pageFrames.length,
+        columns,
+        rows,
+        width: pageWidth,
+        height: pageHeight,
+      });
+      pageFrames.forEach((frame, localIndex) => {
+        placements.push({
+          index: start + localIndex,
+          page: pageIndex,
+          x: (localIndex % columns) * (cellWidth + gap),
+          y: Math.floor(localIndex / columns) * (cellHeight + gap),
+          width: cellWidth,
+          height: cellHeight,
+          cellWidth,
+          cellHeight,
+          sourceName: String(frame.name || ""),
+          frameId: String(frame.frameId || frame.id || ""),
+          assetRevision: Math.max(0, Number(frame.assetRevision) || 0),
+        });
+      });
+    }
+    return Object.freeze({
+      cellWidth: placements[0]?.cellWidth || pageWidth,
+      cellHeight: placements[0]?.cellHeight || pageHeight,
+      gap,
+      maxTextureSize: Math.max(pageWidth, pageHeight),
+      pages,
+      placements,
+    });
+  }
+
+  /**
+   * Builds planner options from the same recipe the estimate and download share.
+   * Custom output pills become the atlas page; leftover 2048 texture size does not.
+   * @param {object} [recipe] Normalized export recipe.
+   */
+  function sheetPlanOptions(recipe = {}) {
+    const columns = recipe.sheetColumns;
+    const gap = recipe.sheetGap;
+    const powerOfTwo = recipe.sheetPowerOfTwo === true;
+    if (recipe.canvasMode === "custom") {
+      return Object.freeze({
+        outputWidth: Math.max(1, Math.floor(Number(recipe.width) || 512)),
+        outputHeight: Math.max(1, Math.floor(Number(recipe.height) || 512)),
+        columns,
+        gap,
+        powerOfTwo,
+      });
+    }
+    return Object.freeze({
+      columns,
+      gap,
+      maxTextureSize: recipe.maxTextureSize,
+      fixedPageSize: false,
+      powerOfTwo,
+    });
+  }
+
+  /**
    * Creates a page-aware row-major sprite-sheet plan.
    * @param {Array<{width:number,height:number,name?:string}>} frames Ordered frames.
-   * @param {{maxTextureSize?:number,columns?:number,gap?:number,fixedPageSize?:boolean,powerOfTwo?:boolean}} [options] Packing constraints.
+   * @param {{maxTextureSize?:number,columns?:number,gap?:number,fixedPageSize?:boolean,powerOfTwo?:boolean,outputWidth?:number,outputHeight?:number}} [options] Packing constraints.
    */
   function planSpriteSheets(frames, options = {}) {
     if (!Array.isArray(frames) || !frames.length) throw new Error("Sprite sheet requires frames.");
+    const outputWidth = Math.floor(Number(options.outputWidth) || 0);
+    const outputHeight = Math.floor(Number(options.outputHeight) || 0);
+    if (outputWidth > 0 && outputHeight > 0) {
+      const dimensions = frames.map((frame) => ({
+        width: Math.floor(Number(frame?.width)),
+        height: Math.floor(Number(frame?.height)),
+      }));
+      if (
+        dimensions.some(
+          ({ width, height }) =>
+            !Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0,
+        )
+      ) {
+        throw new Error("Sprite sheet frame dimensions are invalid.");
+      }
+      return planFittedOutputSheet(frames, {
+        outputWidth,
+        outputHeight,
+        gap: Math.max(0, Math.min(256, Math.floor(Number(options.gap) || 0))),
+        columns: Math.max(0, Math.floor(Number(options.columns) || 0)),
+      });
+    }
     const requestedTextureSize = Math.floor(Number(options.maxTextureSize) || DEFAULT_MAX_TEXTURE_SIZE);
     const maxTextureSize = Math.min(DEFAULT_MAX_TEXTURE_SIZE, Math.max(1, requestedTextureSize));
     const dimensions = frames.map((frame) => ({
@@ -289,6 +429,7 @@
     createUnityTpsheet,
     createFramesManifest,
     planSpriteSheets,
+    sheetPlanOptions,
     nextPowerOfTwo,
     renderSpriteSheetEntries,
     safeStem,
