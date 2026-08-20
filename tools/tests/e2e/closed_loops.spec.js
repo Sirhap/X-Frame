@@ -205,7 +205,7 @@ test("organizer primary action sits above the preview canvas", async ({ page }) 
 });
 
 /**
- * Asserts the FFmpeg/local-only reason is painted, not display:none with height 0.
+ * Asserts the FFmpeg/local-only reason is painted next to the format pills.
  * @param {import("@playwright/test").Locator} hint Local-export hint paragraph.
  * @returns {Promise<void>}
  */
@@ -215,11 +215,24 @@ async function expectVisibleExportHint(hint) {
   const metrics = await hint.evaluate((element) => {
     const style = getComputedStyle(element);
     const box = element.getBoundingClientRect();
-    return { display: style.display, visibility: style.visibility, height: box.height };
+    const section = element.closest(".mediaExportFormatSection");
+    return {
+      display: style.display,
+      visibility: style.visibility,
+      width: box.width,
+      height: box.height,
+      inFormatSection: Boolean(section),
+      inNoticesOnly: Boolean(element.closest(".mediaExportNotices")) && !section,
+    };
   });
   expect(metrics.display, "ORG-023 forbids hiding the disable reason with display:none").not.toBe("none");
   expect(metrics.visibility).not.toBe("hidden");
+  expect(metrics.width, "ORG-023 needs a painted FFmpeg reason, not width 0").toBeGreaterThan(0);
   expect(metrics.height, "ORG-023 needs a painted FFmpeg reason, not height 0").toBeGreaterThan(0);
+  expect(metrics.inFormatSection, "ORG-023 needs the reason under the format row, not a clipped footer").toBe(
+    true,
+  );
+  expect(metrics.inNoticesOnly).toBe(false);
 }
 
 test("online-disabled GIF and MP4 keep a visible FFmpeg reason", async ({ page }) => {
@@ -232,7 +245,7 @@ test("online-disabled GIF and MP4 keep a visible FFmpeg reason", async ({ page }
   });
   await page.goto("/workspace/delivery/export");
 
-  const hint = page.locator("#mediaExportLocalHint");
+  const hint = page.locator(".mediaExportFormatSection #mediaExportLocalHint");
   await expect(page.locator("#mediaExportDialog")).toBeVisible();
   await expect(page.locator("#mediaExportGif")).toBeDisabled();
   await expect(page.locator("#mediaExportMp4")).toBeDisabled();
@@ -260,7 +273,7 @@ test("organizer export dialog shows a painted FFmpeg reason beside disabled GIF 
   });
   await page.locator("#organizerExport").click();
 
-  const hint = page.locator("#mediaExportLocalHint");
+  const hint = page.locator(".mediaExportFormatSection #mediaExportLocalHint");
   await expect(page.locator("#mediaExportDialog")).toBeVisible();
   await expect(page.locator("#mediaExportGif")).toBeDisabled();
   await expect(page.locator("#mediaExportMp4")).toBeDisabled();

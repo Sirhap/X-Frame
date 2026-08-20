@@ -703,6 +703,11 @@ body.mediaExportOpen {
   padding: 0;
 }
 
+.mediaExportFormatSection .mediaExportLocalHint {
+  display: block;
+  margin: 10px 0 0;
+}
+
 .mediaExportFormat {
   min-height: 38px;
   padding: 7px 15px;
