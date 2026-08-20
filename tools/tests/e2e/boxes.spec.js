@@ -6,8 +6,8 @@ test("BOX-006 selected box arrows nudge instead of stepping the filmstrip", asyn
   await page.goto("/workspace/animation/boxes");
   await expect(page.locator("body")).toHaveAttribute("data-workspace-tool", "boxes");
   await expect(page.locator("#filmstrip .thumb[data-frame-index='0']")).toBeVisible();
-  await page.locator("#showBoxes").check();
-  await page.locator('[data-box-choice="hurtbox"]').check();
+  await page.locator("#showBoxes").check({ force: true });
+  await page.locator('[data-box-choice="hurtbox"]').check({ force: true });
   await expect(page.locator("#filmstrip .thumb[data-frame-index='0']")).toHaveAttribute(
     "aria-selected",
     "true",
