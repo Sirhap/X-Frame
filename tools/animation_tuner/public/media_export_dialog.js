@@ -93,6 +93,15 @@
       return english() ? `about ${size}` : `约 ${size}`;
     }
 
+    /** Writes the shared estimate from the selected output size, not the leftover atlas page. */
+    function writeEstimate(width, height, pages, frames) {
+      if (!elements.mediaExportEstimate) return;
+      const fileSize = estimatedFileSize(width, height, pages);
+      elements.mediaExportEstimate.textContent = english()
+        ? `Estimate: ${width} × ${height} px · ${pages} pages · ${frames} frames · ${fileSize}`
+        : `预估：${width} × ${height} px · ${pages} 张 · ${frames} 帧 · ${fileSize}`;
+    }
+
     /** Renders frame, animation, or atlas preview through the actual export recipe. */
     async function renderPreview() {
       const token = ++previewRenderToken;
@@ -132,19 +141,19 @@
             .forEach((entry) =>
               context.drawImage(rendered[entry.index].image, entry.x, entry.y, entry.width, entry.height),
             );
-          drawPreviewSource(sheet, page.width, page.height);
+          const outputWidth = plan.cellWidth || rendered[0]?.width || page.width;
+          const outputHeight = plan.cellHeight || rendered[0]?.height || page.height;
+          drawPreviewSource(sheet, outputWidth, outputHeight);
           elements.mediaExportPreviewTitle.textContent = english()
             ? "Sprite Sheet preview"
             : "Sprite Sheet 预览";
-          elements.mediaExportPreviewSize.textContent = `${page.width} × ${page.height}`;
+          elements.mediaExportPreviewSize.textContent = `${outputWidth} × ${outputHeight}`;
           elements.mediaExportPreviewPage.textContent = `${page.index + 1} / ${plan.pages.length}`;
-          const fileSize = estimatedFileSize(page.width, page.height, plan.pages.length);
+          const fileSize = estimatedFileSize(outputWidth, outputHeight, plan.pages.length);
           elements.mediaExportPreviewMeta.textContent = english()
             ? `${page.count} frames · ${plan.gap}px gap · ${fileSize}`
             : `本页 ${page.count} 帧 · 间距 ${plan.gap}px · ${fileSize}`;
-          elements.mediaExportEstimate.textContent = english()
-            ? `Estimate: ${page.width} × ${page.height} px · ${plan.pages.length} pages · ${rendered.length} frames · ${fileSize}`
-            : `预估：${page.width} × ${page.height} px · ${plan.pages.length} 张 · ${rendered.length} 帧 · ${fileSize}`;
+          writeEstimate(outputWidth, outputHeight, plan.pages.length, rendered.length);
           if (elements.mediaExportColumnsAuto.checked)
             elements.mediaExportColumns.value = String(page.columns);
           elements.mediaExportColumnsTotal.textContent = `/ ${page.columns}`;
@@ -164,6 +173,7 @@
         elements.mediaExportPreviewSize.textContent = `${frame.width} × ${frame.height}`;
         elements.mediaExportPreviewPage.textContent = `${previewIndex + 1} / ${rendered.length}`;
         elements.mediaExportPreviewMeta.textContent = `${frame.name || `Frame ${previewIndex + 1}`} · ${frame.durationMs}ms · ${recipe.anchor} · ${estimatedFileSize(frame.width, frame.height)}`;
+        writeEstimate(frame.width, frame.height, 1, rendered.length);
         if (previewMode === "animation") {
           previewAnimationTimer = root.setTimeout(() => {
             previewIndex = (previewIndex + 1) % rendered.length;
@@ -787,6 +797,13 @@
         control.addEventListener("change", commitRecipeHistory);
       });
     elements.mediaExportDialog.querySelectorAll('input[name="mediaExportFormat"]').forEach((control) => {
+      control.addEventListener("change", () => {
+        syncReferenceControls();
+        commitRecipeHistory();
+        schedulePreview();
+      });
+    });
+    elements.mediaExportDialog.querySelectorAll('input[name="mediaExportResolution"]').forEach((control) => {
       control.addEventListener("change", () => {
         syncReferenceControls();
         commitRecipeHistory();
