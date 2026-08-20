@@ -756,7 +756,7 @@ test("position stepper incrementing X does not change Y, and tab switch does not
   await expect.poll(async () => Number(await baseY.inputValue())).toBe(1);
   await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
 
-  await page.locator('a[data-workbench-route="animation"]').click();
+  await page.locator('a[data-i18n="stageToolTransform"]').click();
   await expect(page).toHaveURL(/\/workspace\/animation\/transform/);
   await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
   await expect.poll(async () => Number(await baseY.inputValue())).toBe(1);
