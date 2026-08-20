@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
+const { BOX_MIN_SIZE, resizeFrameBox } = require("../animation_tuner/public/app_box_geometry");
 const { createController } = require("../animation_tuner/public/app_events_stage_pointer");
 
 function createStage() {
@@ -224,6 +225,54 @@ test("Space drag past threshold consumes pan and marks the view custom", () => {
   assert.equal(state.stageSpacePanConsumed, true);
   assert.equal(state.stageViewMode, "custom");
   assert.equal(state.view.x, 12);
+});
+
+test("east-handle drag cannot shrink a box below 1x1 or emit non-finite values", () => {
+  const stage = createStage();
+  const state = { view: { x: 0, y: 0, zoom: 1 }, selectedBoxes: new Set(["hurtbox"]) };
+  const overrides = [];
+  const box = {
+    offset: { x: 10, y: 20 },
+    size: { x: 40, y: 30 },
+    rotation: 0,
+    enabled: true,
+  };
+  const controller = createController({
+    stage,
+    state,
+    handlers: {
+      stagePoint: () => ({ x: 0, y: 0 }),
+      updateCoordHud: () => {},
+      hitTestBoxes: () => ({ boxName: "hurtbox", mode: "box-resize", handle: "e" }),
+      hitTestDirectManipulationAttachment: () => null,
+      hitTestDirectManipulationFrame: () => null,
+      frameBox: () => box,
+      selectedFrameIndexes: () => [0],
+      cloneVector: (value) => ({ x: value.x, y: value.y }),
+      isCollisionBox: () => false,
+      boxResizeDeltaFromScreenDelta: (delta) => delta,
+      resizeFrameBox,
+      setBoxOverride: (...args) => overrides.push(args),
+      pushUndo: () => {},
+      syncBoxInputs: () => {},
+      draw: () => {},
+    },
+  });
+
+  controller.bind();
+  stage.dispatch("pointerdown", { pointerId: 8, clientX: 80, clientY: 40, button: 0 });
+  stage.dispatch("pointermove", { clientX: -400, clientY: 40 });
+
+  assert.equal(state.drag.mode, "box-resize");
+  assert.equal(state.drag.handle, "e");
+  const next = overrides.at(-1)[1];
+  assert.ok(next.size.x >= BOX_MIN_SIZE);
+  assert.ok(next.size.y >= BOX_MIN_SIZE);
+  assert.ok(Number.isFinite(next.offset.x));
+  assert.ok(Number.isFinite(next.offset.y));
+  assert.ok(Number.isFinite(next.size.x));
+  assert.ok(Number.isFinite(next.size.y));
+  assert.equal(next.size.y, 30);
 });
 
 test("stage pointer controller drags the main frame after attachment hit testing", () => {

@@ -460,6 +460,106 @@ test("Space drag consumption skips play toggle on keyup", () => {
   assert.equal(spacePan, false);
 });
 
+test("arrow keys nudge a selected box on the boxes page without changing the frame", () => {
+  const { BOX_NUDGE_STEP } = require("../animation_tuner/public/app_box_geometry");
+  const box = { x: 10, y: 20 };
+  let selectedFrame = 2;
+  const { controller } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      getCurrentWorkbenchRoute: () => "boxes",
+      getCurrentGroup: () => ({ frames: [{}, {}, {}, {}] }),
+      getSelectedFrame: () => selectedFrame,
+      selectFilmstripFrame: (index) => {
+        selectedFrame = index;
+      },
+      nudgeSelectedBox: (deltaX, deltaY) => {
+        box.x += deltaX;
+        box.y += deltaY;
+        return true;
+      },
+    },
+  });
+
+  for (const [key, deltaX, deltaY] of [
+    ["ArrowRight", BOX_NUDGE_STEP, 0],
+    ["ArrowLeft", -BOX_NUDGE_STEP, 0],
+    ["ArrowUp", 0, -BOX_NUDGE_STEP],
+    ["ArrowDown", 0, BOX_NUDGE_STEP],
+  ]) {
+    const startX = box.x;
+    const startY = box.y;
+    controller.handleEditorKeydown({
+      key,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      target: { tagName: "DIV" },
+      preventDefault() {},
+    });
+    assert.equal(box.x, startX + deltaX, key);
+    assert.equal(box.y, startY + deltaY, key);
+    assert.equal(selectedFrame, 2, key);
+  }
+});
+
+test("transform-page arrows still step frames even if a box is selected in prefs", () => {
+  let selectedFrame = 0;
+  let nudged = false;
+  const { controller } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      getCurrentWorkbenchRoute: () => "animation",
+      getCurrentGroup: () => ({ frames: [{}, {}] }),
+      getSelectedFrame: () => selectedFrame,
+      selectFilmstripFrame: (index) => {
+        selectedFrame = index;
+      },
+      nudgeSelectedBox: () => {
+        nudged = true;
+        return true;
+      },
+    },
+  });
+
+  controller.handleEditorKeydown({
+    key: "ArrowRight",
+    ctrlKey: false,
+    metaKey: false,
+    target: { tagName: "DIV" },
+    preventDefault() {},
+  });
+
+  assert.equal(nudged, false);
+  assert.equal(selectedFrame, 1);
+});
+
+test("arrow keys still step the filmstrip when no box consumes them", () => {
+  let selectedFrame = 1;
+  const { controller } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      getCurrentWorkbenchRoute: () => "boxes",
+      getCurrentGroup: () => ({ frames: [{}, {}, {}] }),
+      getSelectedFrame: () => selectedFrame,
+      selectFilmstripFrame: (index) => {
+        selectedFrame = index;
+      },
+      nudgeSelectedBox: () => false,
+    },
+  });
+
+  controller.handleEditorKeydown({
+    key: "ArrowRight",
+    ctrlKey: false,
+    metaKey: false,
+    target: { tagName: "DIV" },
+    preventDefault() {},
+  });
+
+  assert.equal(selectedFrame, 2);
+});
+
 test("Ctrl+/- zooms the stage around the center", () => {
   let zoom = 1;
   const zooms = [];

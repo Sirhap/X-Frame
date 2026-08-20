@@ -43,10 +43,12 @@
    *   cloneVector:(value:object,fallback?:object)=>{x:number,y:number},
    *   collisionOffsetYForHeight:(height:number)=>number,
    *   setBoxOverride:(boxName:string,box:object,index:number,group:object|null)=>void,
+   *   nudgeFrameBox?:(boxName:string,box:object,deltaX:number,deltaY:number)=>object,
+   *   pushUndo?:(label:string)=>void,
    *   renderFilmstrip:()=>void,
    *   draw:()=>void,
    * }} dependencies Controller dependencies.
-   * @returns {{boxScreenRect:function,boxHandleRects:function,editableBoxHandleRects:function,stagePoint:function,hitTestBoxes:function,syncBoxInputs:function,updateSelectedBoxFromInputs:function}} Box helpers.
+   * @returns {{boxScreenRect:function,boxHandleRects:function,editableBoxHandleRects:function,nudgeSelectedBox:function,stagePoint:function,hitTestBoxes:function,syncBoxInputs:function,updateSelectedBoxFromInputs:function}} Box helpers.
    */
   function createController(dependencies) {
     const {
@@ -78,6 +80,14 @@
       cloneVector,
       collisionOffsetYForHeight,
       setBoxOverride,
+      nudgeFrameBox = (boxName, box, deltaX, deltaY) => ({
+        ...box,
+        offset: {
+          x: Number(box?.offset?.x || 0) + Number(deltaX || 0),
+          y: Number(box?.offset?.y || 0) + Number(deltaY || 0),
+        },
+      }),
+      pushUndo = () => {},
       renderFilmstrip,
       draw,
     } = dependencies;
@@ -205,26 +215,30 @@
         .slice()
         .reverse()
         .filter((name) => getSelectedBoxes().has(name));
-      if (event.altKey) {
-        for (const boxName of boxNames) {
-          const rect = boxScreenRect(boxName);
-          if (!rect) continue;
-          const handle = editableBoxHandleRects(boxName, rect).find((entry) => pointInRect(point, entry));
-          if (handle) return { boxName, mode: "box-resize", handle: handle.name };
+      for (const boxName of boxNames) {
+        const rect = boxScreenRect(boxName);
+        if (!rect) continue;
+        let nearest = null;
+        let nearestDistance = Infinity;
+        for (const handle of editableBoxHandleRects(boxName, rect)) {
+          if (!pointInRect(point, handle)) continue;
+          const centerX = handle.x + handle.width / 2;
+          const centerY = handle.y + handle.height / 2;
+          const distance = (point.x - centerX) ** 2 + (point.y - centerY) ** 2;
+          if (distance < nearestDistance) {
+            nearest = handle;
+            nearestDistance = distance;
+          }
         }
-        for (const boxName of boxNames) {
-          const rect = boxScreenRect(boxName);
-          if (!rect) continue;
-          const padding = Math.max(10 * getDevicePixelRatio(), 10);
-          if (pointInBoxRect(point, rect, padding)) return { boxName, mode: "box-alt-block" };
-        }
-        return null;
+        if (nearest) return { boxName, mode: "box-resize", handle: nearest.name };
       }
       for (const boxName of boxNames) {
         const rect = boxScreenRect(boxName);
         if (!rect) continue;
         const padding = Math.max(10 * getDevicePixelRatio(), 10);
-        if (pointInBoxRect(point, rect, padding)) return { boxName, mode: "box-move" };
+        if (!pointInBoxRect(point, rect, padding)) continue;
+        if (event.altKey) return { boxName, mode: "box-alt-block" };
+        return { boxName, mode: "box-move" };
       }
       return null;
     }
@@ -269,6 +283,34 @@
      * Writes the selected box input values to every selected frame.
      * @returns {void}
      */
+    /**
+     * Nudges the selected box on every selected frame.
+     * @param {number} deltaX Local X step.
+     * @param {number} deltaY Local Y step.
+     * @param {{repeat?:boolean}} [options] Keyboard repeat flag; skips extra undo points.
+     * @returns {boolean} Whether a selected editable box consumed the nudge.
+     */
+    function nudgeSelectedBox(deltaX, deltaY, options = {}) {
+      const selectedBox = getSelectedBox();
+      if (!canEditBox(selectedBox) || !selectedBox) return false;
+      const dx = Number(deltaX);
+      const dy = Number(deltaY);
+      if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return false;
+      if (!options.repeat) pushUndo("nudge box");
+      for (const frameIndex of selectedFrameIndexes()) {
+        const current = frameBox(selectedBox, frameIndex, getCurrentGroup());
+        setBoxOverride(
+          selectedBox,
+          nudgeFrameBox(selectedBox, current, dx, dy),
+          frameIndex,
+          getCurrentGroup(),
+        );
+      }
+      syncBoxInputs();
+      draw();
+      return true;
+    }
+
     function updateSelectedBoxFromInputs() {
       const selectedBox = getSelectedBox();
       if (!canEditBox(selectedBox) || !selectedBox) return;
@@ -295,6 +337,7 @@
       boxScreenRect,
       editableBoxHandleRects,
       hitTestBoxes,
+      nudgeSelectedBox,
       stagePoint,
       syncBoxInputs,
       updateSelectedBoxFromInputs,

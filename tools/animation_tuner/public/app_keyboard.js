@@ -60,6 +60,7 @@
       getCurrentWorkbenchRoute = () => "",
       syncWorkbenchRoute = () => {},
       applyWorkbenchRoute = () => Promise.resolve(),
+      nudgeSelectedBox = () => false,
       status = () => {},
       translate = (_key, vars = {}) => vars.message || "Operation failed",
     } = dependencies;
@@ -200,6 +201,26 @@
         syncFrameInputs();
         renderFilmstrip();
         draw();
+        return;
+      }
+      const arrowDelta = {
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1],
+      }[event.key];
+      // A selected box on the boxes page is the editor target. Filmstrip
+      // frame-step must not steal Left/Right (or ignore Up) in that state.
+      if (
+        canHandleApplicationShortcut &&
+        !command &&
+        !event.altKey &&
+        !frameCardTarget &&
+        arrowDelta &&
+        getCurrentWorkbenchRoute() === "boxes" &&
+        nudgeSelectedBox(arrowDelta[0], arrowDelta[1], { repeat: Boolean(event.repeat) })
+      ) {
+        event.preventDefault?.();
         return;
       }
       if (
