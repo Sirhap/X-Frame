@@ -99,6 +99,18 @@ test("landing localizes visible copy only after an explicit language choice", ()
   assert.match(html, /id="adminOpenButton"[^>]+href="\/admin\/licenses"/u);
 });
 
+test("factory hero h1 line-height stays at least 1.2 so the two title lines do not collide", () => {
+  const css = fs.readFileSync(
+    new URL("../animation_tuner/public/animation_factory.css", `file://${__dirname}/`),
+    "utf8",
+  );
+  const heroTitle = css.match(/^h1\s*\{([^}]+)\}/mu);
+  assert.ok(heroTitle, "factory landing hero title uses the bare h1 rule");
+  const lineHeight = heroTitle[1].match(/line-height:\s*([0-9.]+)/u);
+  assert.ok(lineHeight, "LND-001: factory hero h1 must set a unitless line-height");
+  assert.ok(Number(lineHeight[1]) >= 1.2, `LND-001 needs hero h1 line-height ~1.22, not ${lineHeight[1]}`);
+});
+
 test("factory account entry opens an inline email dialog", () => {
   const html = fs.readFileSync(
     new URL("../animation_tuner/public/animation_factory.html", `file://${__dirname}/`),
