@@ -310,6 +310,21 @@ async function expectDownstreamActionsHittable(page, options = {}) {
 }
 
 /**
+ * Scrolls a control into the cutout parameter pane without moving the page.
+ * @param {import("@playwright/test").Locator} locator Target inside #cutoutSidebarParametersPanel.
+ * @returns {Promise<void>}
+ */
+async function revealInCutoutParams(locator) {
+  await locator.evaluate((element) => {
+    const pane = element.closest("#cutoutSidebarParametersPanel");
+    if (!pane) return;
+    const paneRect = pane.getBoundingClientRect();
+    const elRect = element.getBoundingClientRect();
+    pane.scrollTop += elRect.top - paneRect.top - 24;
+  });
+}
+
+/**
  * Measures the unused strip between the organizer body and its workbench bottom.
  * @param {import("@playwright/test").Page} page Browser page.
  * @returns {Promise<{gap:number,bodyHeight:number}>}
@@ -1417,10 +1432,14 @@ test("cutout parameters follow the regular post-processing advanced layout", asy
   await expect(page.locator("#cutoutProtectSample")).toBeHidden();
   await expect(page.locator("#cutoutAdvancedSummary")).toHaveText("未设置");
   await expect(page.locator("#cutoutAdvancedSummary")).not.toHaveText(/0 — 0 \/ T 0/);
-  await page.locator(".cutoutAdvancedDisclosure").first().locator("summary").click();
+  const firstDisclosure = page.locator(".cutoutAdvancedDisclosure").first().locator("summary");
+  await revealInCutoutParams(firstDisclosure);
+  await firstDisclosure.click();
   await expect(page.locator("#cutoutFeather")).toBeVisible();
   await expect(page.locator("#cutoutAlphaLow")).toBeVisible();
-  await page.locator(".cutoutProtectionDisclosure summary").click();
+  const protectionDisclosure = page.locator(".cutoutProtectionDisclosure summary");
+  await revealInCutoutParams(protectionDisclosure);
+  await protectionDisclosure.click();
   await expect(page.locator("#cutoutProtectSample")).toBeVisible();
 });
 
@@ -1582,15 +1601,18 @@ test("desktop cutout removes smart comparison and keeps every parameter scrollab
   expect(panelBox).not.toBeNull();
   expect(settingsBox).not.toBeNull();
   expect(settingsBox.y).toBeGreaterThanOrEqual(panelBox.y);
-  expect(settingsBox.y + settingsBox.height).toBeLessThanOrEqual(panelBox.y + panelBox.height + 1);
 
   const automaticSettings = page.locator("#cutoutAutomaticSettings");
   await expect(automaticSettings).toBeVisible();
   await page.locator("#cutoutTabAdvanced").click();
-  await page.locator(".cutoutAdvancedDisclosure").first().locator("summary").click();
-  await page.locator(".cutoutProtectionDisclosure summary").click();
+  const firstDisclosure = page.locator(".cutoutAdvancedDisclosure").first().locator("summary");
+  await revealInCutoutParams(firstDisclosure);
+  await firstDisclosure.click();
+  const protectionDisclosure = page.locator(".cutoutProtectionDisclosure summary");
+  await revealInCutoutParams(protectionDisclosure);
+  await protectionDisclosure.click();
 
-  const pane = page.locator(".cutoutControls");
+  const pane = page.locator("#cutoutSidebarParametersPanel");
   const paneMetrics = await pane.evaluate((element) => ({
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
@@ -1605,7 +1627,7 @@ test("desktop cutout removes smart comparison and keeps every parameter scrollab
   const paneBefore = await pane.evaluate((element) => element.scrollTop);
   const paneBox = await pane.boundingBox();
   expect(paneBox).not.toBeNull();
-  await page.mouse.move(paneBox.x + paneBox.width / 2, paneBox.y + Math.min(120, paneBox.height / 3));
+  await page.mouse.move(paneBox.x + paneBox.width / 2, paneBox.y + Math.min(80, paneBox.height / 4));
   await page.mouse.wheel(0, 480);
   await expect.poll(() => pane.evaluate((element) => element.scrollTop)).toBeGreaterThan(paneBefore);
   expect(await page.evaluate(() => window.scrollY)).toBe(windowBefore);

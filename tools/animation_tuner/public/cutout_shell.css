@@ -166,12 +166,10 @@ body.cutoutOpen .cutoutClose {
 .cutoutControls {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto auto auto;
-  align-content: start;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 10px;
   padding: 12px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   border-right: 4px solid var(--line);
@@ -225,12 +223,16 @@ body.cutoutOpen .cutoutClose {
 .cutoutSidebarPanel {
   min-width: 0;
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .cutoutSidebarParametersPanel {
   min-height: 0;
-  height: auto;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .cutoutSidebarParametersPanel > .cutoutSettings {
@@ -299,8 +301,7 @@ body.cutoutOpen .cutoutClose {
 /* The organizer pencil opens a focused single-image session. The control
    column keeps its width so switching tools cannot resize or auto-zoom the canvas. */
 .cutoutModal.singleEditSession .cutoutControls {
-  grid-template-rows: auto auto auto;
-  align-content: start;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .cutoutModal.singleEditSession .cutoutDropzone,
@@ -421,6 +422,11 @@ body.cutoutOpen .cutoutClose {
   }
 
   body.cutoutOpen .cutoutModal .cutoutControls {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.cutoutOpen .cutoutModal .cutoutSidebarParametersPanel {
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
