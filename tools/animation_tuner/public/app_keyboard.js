@@ -115,7 +115,7 @@
       const target = event?.target;
       return Boolean(
         target?.matches?.('.thumb[role="option"]') ||
-        (target?.classList?.contains?.("thumb") && target?.getAttribute?.("role") === "option"),
+          (target?.classList?.contains?.("thumb") && target?.getAttribute?.("role") === "option"),
       );
     }
 
