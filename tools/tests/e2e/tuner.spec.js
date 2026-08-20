@@ -803,7 +803,8 @@ test("SAV-014 discard of a typed scale edit reloads the last saved 1.000", async
   await expect.poll(async () => Number(await baseScale.inputValue())).toBeCloseTo(Number(savedScale), 3);
   await page.reload({ waitUntil: "load" });
   await expect.poll(async () => Number(await baseScale.inputValue())).toBeCloseTo(1, 3);
-  await expect(page.locator("#saveState")).toContainText("已保存");
+  await expect(page.locator("#workspaceSaveIndicator")).toHaveText(/已保存|没有改动/);
+  await expect(page.locator("#saveState")).not.toContainText("未保存");
   expect(Number(await baseScale.inputValue())).not.toBe(11.5);
 });
 
