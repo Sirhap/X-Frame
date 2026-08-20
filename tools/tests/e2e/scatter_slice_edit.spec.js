@@ -215,6 +215,33 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   expect(pageErrors).toEqual([]);
 });
 
+test("detected scatter boxes survive a delayed workbench hydrate without routing to organizer", async ({
+  page,
+}) => {
+  test.setTimeout(45_000);
+  await page.goto("/tools/scatter-slice");
+  await loadGeneratedScatterImage(page, "scatter-sheet.png");
+  await page.locator("#scatterDetect").click();
+  await expect.poll(() => page.locator(".sliceCard").count()).toBeGreaterThan(0);
+  const boxCount = await page.locator(".sliceCard").count();
+  const groupCount = await page.locator(".sliceGroup").count();
+  expect(boxCount).toBeGreaterThan(0);
+  expect(groupCount).toBeGreaterThan(0);
+
+  await page.waitForTimeout(11_000);
+  await page.evaluate(() => {
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect.poll(() => page.evaluate(() => window.location.pathname)).not.toMatch(/organizer|import/u);
+
+  await expect(page).toHaveURL(/\/tools\/scatter-slice(?:[?#].*)?$/u);
+  await expect(page.locator("#scatterSliceSurface")).toBeVisible();
+  await expect(page.locator("#organizerModal")).toBeHidden();
+  await expect(page.locator(".sliceCard")).toHaveCount(boxCount);
+  await expect(page.locator(".sliceGroup")).toHaveCount(groupCount);
+  await expect(page.locator("#scatterPreview")).toBeVisible();
+});
+
 test("standalone scatter slices enter the shared temporary organizer workset", async ({ page }) => {
   await page.goto("/tools/scatter-slice");
   await loadGeneratedScatterImage(page, "temporary-scatter.png");

@@ -453,6 +453,78 @@ test("project cutout route copies the current animation frames into the batch", 
   assert.deepEqual(events, ["open", "load-current"]);
 });
 
+test("scatter route stays put when a leftover organizer refuses to close", async () => {
+  const windowRef = createWindow("http://localhost/tools/scatter-slice");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => {
+      events.push("prompt");
+      return "cancel";
+    },
+    getFrameOrganizer: () => ({
+      isOpen: () => true,
+      getMode: () => "import",
+      async requestClose(closeOptions) {
+        events.push(closeOptions?.force ? "force-close" : "cancel-close");
+        return false;
+      },
+      openImport: () => events.push("open-import"),
+      openWorkset: () => events.push("open-workset"),
+    }),
+    getTemporaryWorkset: () => ({ name: "leftover", frames: [{ id: "a" }] }),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.equal(windowRef.location.pathname, "/tools/scatter-slice");
+  assert.deepEqual(events, ["force-close"]);
+});
+
+test("choosing scatter from a dirty workspace still asks before leaving tuning", async () => {
+  const events = [];
+  const controller = createController({
+    windowRef: createWindow("http://localhost/workspace/animation/transform"),
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => {
+      events.push("prompt");
+      return "cancel";
+    },
+  });
+
+  assert.equal(await controller.confirmWorkspaceLeave("scatter"), false);
+  assert.deepEqual(events, ["prompt"]);
+});
+
+test("reconciling scatter after a slow config load does not open organizer", async () => {
+  const windowRef = createWindow("http://localhost/tools/scatter-slice");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => {
+      events.push("prompt");
+      return "discard";
+    },
+    discardWorkspaceChanges: async () => events.push("discard"),
+    getFrameOrganizer: () => ({
+      isOpen: () => false,
+      getMode: () => "import",
+      openImport: () => events.push("open-import"),
+      openWorkset: () => events.push("open-workset"),
+    }),
+    getTemporaryWorkset: () => ({ name: "leftover", frames: [{ id: "a" }] }),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.equal(windowRef.location.pathname, "/tools/scatter-slice");
+  assert.deepEqual(events, []);
+});
+
 test("standalone cutout stays empty when there is no temporary workset", async () => {
   const windowRef = createWindow("http://localhost/tools/cutout");
   const events = [];

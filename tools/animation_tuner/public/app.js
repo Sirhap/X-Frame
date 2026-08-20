@@ -401,7 +401,20 @@ const appConfirmation = appConfirmModule.createController({
 
 /** Confirms leaving a populated slice session through app-shell navigation. */
 async function requestScatterSliceLeave() {
-  return true;
+  const pathname = String(globalThis.location.pathname || "");
+  if (pathname !== "/tools/scatter-slice" && pathname !== "/workspace/resources/scatter") return true;
+  const session = globalThis.XSXBScatterSliceSession;
+  if (!session?.hasUnsavedChanges?.()) return true;
+  const accepted = await requestAppConfirmation(
+    "当前零散切片结果只保留在本次会话。离开将丢弃源图、检测框和分组结果。",
+    {
+      title: "离开零散切片？",
+      confirmLabel: "放弃并离开",
+      tone: "danger",
+    },
+  );
+  if (accepted) session.allowDiscard?.();
+  return accepted;
 }
 
 /** Protects browser back/forward transitions that bypass app-shell click navigation. */
@@ -3648,7 +3661,10 @@ navigationGuardModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
   hasUnsavedChanges: () =>
-    dirty || frameOrganizer?.hasUnsavedChanges?.() || batchCutout?.hasUnsavedChanges?.(),
+    dirty ||
+    frameOrganizer?.hasUnsavedChanges?.() ||
+    batchCutout?.hasUnsavedChanges?.() ||
+    Boolean(globalThis.XSXBScatterSliceSession?.hasUnsavedChanges?.()),
   requestNavigation: async () => {
     const hasToolChanges = frameOrganizer?.hasUnsavedChanges?.() || batchCutout?.hasUnsavedChanges?.();
     if (hasToolChanges) {
