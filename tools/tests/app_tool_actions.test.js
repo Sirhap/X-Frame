@@ -158,6 +158,7 @@ test("app tool actions delete browser-session frames without calling a local API
     confirm: async () => true,
     translate: (key) => key,
     deleteBrowserSessionFrames: async (indexes) => deletedIndexes.push(...indexes),
+    persistBrowserSessionProject: async () => {},
     fetchImpl: async () => {
       fetchCalls += 1;
       throw new Error("browser deletion must not fetch");
@@ -167,6 +168,41 @@ test("app tool actions delete browser-session frames without calling a local API
   assert.equal(await controller.deleteSelectedAnimationFrames(), true);
   assert.deepEqual(deletedIndexes, [1]);
   assert.equal(fetchCalls, 0);
+});
+
+test("TUN-021 browser frame delete persists the project before returning", async () => {
+  const group = {
+    profileId: "hero",
+    animationId: "assassin_jump",
+    frames: [
+      { path: "a.png", name: "a.png" },
+      { path: "b.png", name: "b.png" },
+      { path: "c.png", name: "c.png" },
+    ],
+  };
+  const events = [];
+  const controller = createController({
+    browserOnly: true,
+    getCurrentGroup: () => group,
+    getSelectedFrameIndexes: () => [2],
+    confirm: async () => true,
+    translate: (key) => key,
+    clearReferenceForDeletedFrames: (indexes) => events.push(["clear-reference", [...indexes]]),
+    deleteBrowserSessionFrames: async (indexes) => events.push(["delete-memory", [...indexes]]),
+    persistBrowserSessionProject: async () => events.push(["persist-project"]),
+    onFramesChanged: (change) => events.push(["frames-changed", change]),
+    fetchImpl: async () => {
+      throw new Error("browser deletion must persist locally, not fetch /api/save");
+    },
+  });
+
+  assert.equal(await controller.deleteSelectedAnimationFrames(), true);
+  assert.deepEqual(events, [
+    ["clear-reference", [2]],
+    ["delete-memory", [2]],
+    ["persist-project"],
+    ["frames-changed", { type: "frames-reorganized" }],
+  ]);
 });
 
 test("app tool actions delete a complete browser-session animation without calling a local API", async () => {

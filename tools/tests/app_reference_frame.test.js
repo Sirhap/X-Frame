@@ -74,3 +74,21 @@ test("reference frame rejects stale persisted identities without throwing", asyn
   assert.equal(restored, false);
   assert.equal(getReferenceFrame(), null);
 });
+
+test("TUN-021 deleting the reference frame clears the descriptor instead of retargeting", () => {
+  const { controller, group, getReferenceFrame } = createFixture();
+  controller.setReferenceFrameEnabled(true);
+  assert.equal(controller.serializeReferenceFrame().frame_index, 1);
+
+  controller.forgetDeletedFrames([1], group);
+  assert.equal(getReferenceFrame(), null);
+  assert.equal(controller.serializeReferenceFrame(), null);
+});
+
+test("TUN-021 surviving reference index remaps when earlier frames are deleted", () => {
+  const { controller, group, getReferenceFrame } = createFixture();
+  controller.setReferenceFrameEnabled(true);
+  controller.forgetDeletedFrames([0], group);
+  assert.equal(getReferenceFrame().index, 0);
+  assert.equal(controller.serializeReferenceFrame().frame_index, 0);
+});
