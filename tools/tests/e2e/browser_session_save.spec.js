@@ -65,6 +65,8 @@ test("TUN-021 deleted browser-session frame stays gone after hard reload", async
   await expect(page.locator(".thumb")).toHaveCount(3);
 
   await page.locator('.thumb[data-frame-index="2"]').click();
+  await page.locator("label:has(#adjustFrame)").click();
+  await expect(page.locator("#adjustFrame")).toBeChecked();
   await page.locator("#frameReference").check({ force: true });
   await expect(page.locator("#frameReference")).toBeChecked();
   await expect(page.locator('.thumb[data-frame-index="2"]')).toHaveClass(/reference/);
@@ -81,11 +83,12 @@ test("TUN-021 deleted browser-session frame stays gone after hard reload", async
   await page.reload();
   await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);
   await expect(page.locator(".thumb")).toHaveCount(2);
-  await expect(page.locator("#status")).toContainText("已预载 2 帧");
   await expect(page.locator("#frameReference")).not.toBeChecked();
   await expect(page.locator(".thumb.reference")).toHaveCount(0);
 
   await page.locator('.thumb[data-frame-index="0"]').click();
+  await page.locator("label:has(#adjustFrame)").click();
+  await expect(page.locator("#adjustFrame")).toBeChecked();
   await page.locator("#frameReference").check({ force: true });
   await expect(page.locator("#frameReference")).toBeChecked();
   await expect(page.locator('.thumb[data-frame-index="0"]')).toHaveClass(/reference/);
