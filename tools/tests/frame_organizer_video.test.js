@@ -26,6 +26,29 @@ test("video selection normalizes range, FPS, and output dimensions", () => {
   );
 });
 
+test("ORG-005 video extract FPS clamps 0 to 1, 121 to 60, and rejects non-numeric", () => {
+  const base = { duration: 2, width: 64, height: 64, start: 0, end: 1 };
+  assert.equal(calculateSelection({ ...base, fps: 0 }).fps, 1);
+  assert.equal(calculateSelection({ ...base, fps: 121 }).fps, 60);
+  assert.equal(calculateSelection({ ...base, fps: "abc" }).fps, 1);
+
+  const { controller, elements } = createExtractFixture();
+  elements.organizerVideoFpsNumber.value = "0";
+  controller.syncControls("fps");
+  assert.equal(elements.organizerVideoFpsNumber.value, "1");
+
+  elements.organizerVideoFpsNumber.value = "121";
+  controller.syncControls("fps");
+  assert.equal(elements.organizerVideoFpsNumber.value, "60");
+
+  elements.organizerVideoFpsNumber.value = "nope";
+  controller.syncControls("fps");
+  const clamped = Number(elements.organizerVideoFpsNumber.value);
+  assert.ok(Number.isFinite(clamped));
+  assert.ok(clamped >= 1 && clamped <= 60);
+  assert.notEqual(elements.organizerVideoFpsNumber.value, "nope");
+});
+
 test("video selection returns an empty count for reversed or missing ranges", () => {
   assert.equal(
     calculateSelection({ duration: 5, width: 1920, height: 1080, start: 4, end: 2, fps: 30 }).count,

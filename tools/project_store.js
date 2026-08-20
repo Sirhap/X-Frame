@@ -3,6 +3,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const DEFAULT_PROJECT_ID = "default";
+const PROJECT_LABEL_MAX_LENGTH = 80;
 
 const EMPTY_MANIFEST = { schemaVersion: 1, profiles: [] };
 const EMPTY_TUNING = {
@@ -334,7 +335,7 @@ function createProjectStore(root) {
       }
     }
 
-    const label =
+    const label = (
       String(
         payload.label ||
           payload.name ||
@@ -342,7 +343,8 @@ function createProjectStore(root) {
           godotProjectName(projectRoot) ||
           (projectRoot ? path.basename(projectRoot) : "") ||
           "New Project",
-      ).trim() || "New Project";
+      ).trim() || "New Project"
+    ).slice(0, PROJECT_LABEL_MAX_LENGTH);
     const usedIds = new Set(registry.projects.map((project) => project.id));
     const id = uniqueId(payload.id || label, usedIds);
     const project = {

@@ -11,6 +11,7 @@
   "use strict";
 
   const FRAME_NAME_PADDING = 4;
+  const PROJECT_NAME_MAX_LENGTH = 80;
   const sessionProjects = new Map();
   const sessionRegistry = {
     activeProjectId: "browser-session",
@@ -654,7 +655,9 @@
   async function createSessionProject(label) {
     await hydrateSessionProjects();
     ensureSessionProjects();
-    const normalizedLabel = String(label || "").trim();
+    const normalizedLabel = String(label || "")
+      .trim()
+      .slice(0, PROJECT_NAME_MAX_LENGTH);
     if (!normalizedLabel) throw new Error("Project name is required.");
     const baseId = safeFilename(normalizedLabel).toLowerCase() || "project";
     const usedIds = new Set(sessionRegistry.projects.map((project) => project.id));

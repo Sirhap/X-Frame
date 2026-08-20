@@ -1,13 +1,28 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 const {
+  MAX_NAME_LENGTH,
   createController,
   resolveDeliveryExportSource,
   summarizeDeliveryReadiness,
   summarizeDeliveryScope,
 } = require("../animation_tuner/public/app_mode_hubs");
+
+/**
+ * Reads the role-name maxlength already enforced on 导入设置.
+ * Project create must use this same cap — do not copy a second number.
+ * @returns {number} Inclusive maximum name length.
+ */
+function sharedNameMaxLength() {
+  const html = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const match = html.match(/id="organizerProfileName"[\s\S]*?maxlength="(\d+)"/u);
+  assert.ok(match, "角色名称 must declare maxlength");
+  return Number(match[1]);
+}
 
 test("delivery scope separates the active animation from the whole project", () => {
   const summary = summarizeDeliveryScope(
@@ -277,6 +292,69 @@ test("New Project asks for a name before creating and opening import", async () 
 
   assert.deepEqual(created, ["QA Temp"]);
   assert.deepEqual(assigned, ["/workspace/resources/import?project=qa-temp"]);
+});
+
+test("ORG-005 New Project does not pass an 81-character name through to create", async () => {
+  const maxLength = sharedNameMaxLength();
+  assert.equal(MAX_NAME_LENGTH, maxLength);
+  const fixture = createFixture();
+  const created = [];
+  const assigned = [];
+  const controller = createController({
+    documentRef: fixture.documentRef,
+    windowRef: {
+      location: { origin: "http://localhost", assign: (url) => assigned.push(url) },
+    },
+    prompt: () => "a".repeat(maxLength + 1),
+    createProject: async (label) => {
+      created.push(label);
+      return { projectId: "too-long" };
+    },
+    translate: (key) => key,
+  });
+
+  controller.bind();
+  fixture.elements["#projectHubNew"].dispatch("click");
+  await Promise.resolve();
+
+  assert.equal(
+    created.every((label) => String(label).length <= maxLength),
+    true,
+    `ORG-005: createProject received ${created.map((label) => label.length)} chars; cap is ${maxLength}`,
+  );
+  if (created.length) {
+    assert.equal(created[0], "a".repeat(maxLength));
+    assert.ok(assigned.length > 0, "clamped 80-char names must still open import");
+  } else {
+    assert.deepEqual(assigned, [], "rejected 81-char names must stay on the hub");
+  }
+});
+
+test("ORG-005 New Project still creates an 80-character name", async () => {
+  const maxLength = sharedNameMaxLength();
+  const fixture = createFixture();
+  const created = [];
+  const assigned = [];
+  const label = "b".repeat(maxLength);
+  const controller = createController({
+    documentRef: fixture.documentRef,
+    windowRef: {
+      location: { origin: "http://localhost", assign: (url) => assigned.push(url) },
+    },
+    prompt: () => label,
+    createProject: async (name) => {
+      created.push(name);
+      return { projectId: "eighty" };
+    },
+    translate: (key) => key,
+  });
+
+  controller.bind();
+  fixture.elements["#projectHubNew"].dispatch("click");
+  await Promise.resolve();
+
+  assert.deepEqual(created, [label]);
+  assert.deepEqual(assigned, ["/workspace/resources/import?project=eighty"]);
 });
 
 test("empty New Project name does not navigate away from the hub", async () => {
