@@ -1078,6 +1078,53 @@ test("organizer confirms before discarding an imported workset", async ({ page }
   await expect(page).toHaveURL(/\/tools$/);
 });
 
+test("imported organizer checks agree with 选中 count and 删除选中", async ({ page }) => {
+  await page.goto("/tools/organizer");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await expect(page.locator(".organizerFrameInclude input:checked")).toHaveCount(2);
+  await expect(page.locator("#organizerCount")).toContainText("2 / 2");
+  await expect(page.locator("#organizerSelection")).toContainText(/选中 [1-9]/);
+  await expect(page.locator("#organizerSelection")).not.toContainText("选中 0");
+  await expect(page.locator("#organizerDeleteSelected")).toBeEnabled();
+});
+
+test("inverting the organizer workset flips include checks without touching the other pair", async ({
+  page,
+}) => {
+  await page.goto("/tools/organizer");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0004.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator(".organizerFrame")).toHaveCount(4);
+  await page.locator(".organizerFrameInclude input").nth(1).click();
+  await page.locator(".organizerFrameInclude input").nth(3).click();
+  await expect(page.locator(".organizerFrameInclude input").nth(0)).toBeChecked();
+  await expect(page.locator(".organizerFrameInclude input").nth(1)).not.toBeChecked();
+  await expect(page.locator(".organizerFrameInclude input").nth(2)).toBeChecked();
+  await expect(page.locator(".organizerFrameInclude input").nth(3)).not.toBeChecked();
+  await expect(page.locator("#organizerCount")).toContainText("2 / 4");
+
+  await page.locator("#organizerInvert").click();
+
+  await expect(page.locator(".organizerFrameInclude input").nth(0)).not.toBeChecked();
+  await expect(page.locator(".organizerFrameInclude input").nth(1)).toBeChecked();
+  await expect(page.locator(".organizerFrameInclude input").nth(2)).not.toBeChecked();
+  await expect(page.locator(".organizerFrameInclude input").nth(3)).toBeChecked();
+  await expect(page.locator("#organizerCount")).toContainText("2 / 4");
+  await expect(page.locator(".organizerFrame").nth(0)).toHaveClass(/excluded/);
+  await expect(page.locator(".organizerFrame").nth(1)).toHaveClass(/included/);
+  await expect(page.locator(".organizerFrame").nth(2)).toHaveClass(/excluded/);
+  await expect(page.locator(".organizerFrame").nth(3)).toHaveClass(/included/);
+});
+
 test("compact organizer keeps undo clear of preview controls", async ({ page }) => {
   await page.setViewportSize({ width: 1114, height: 674 });
   await page.goto("/tools/import");

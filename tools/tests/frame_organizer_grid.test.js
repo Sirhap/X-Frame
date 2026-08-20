@@ -1,11 +1,22 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 const {
   createController,
   createThumbnailDataUrl,
 } = require("../animation_tuner/public/frame_organizer_grid");
+
+const ORGANIZER_SOURCE = fs.readFileSync(
+  path.join(__dirname, "../animation_tuner/public/frame_organizer.js"),
+  "utf8",
+);
+const ORGANIZER_UI_SOURCE = fs.readFileSync(
+  path.join(__dirname, "../animation_tuner/public/frame_organizer_ui.js"),
+  "utf8",
+);
 
 /**
  * Creates the minimal state and element fixture used by count rendering tests.
@@ -116,7 +127,7 @@ function createFixture(options = {}) {
     },
     elements,
     state,
-    text: (key) => key,
+    text: (key, variables) => (variables ? `${key} ${JSON.stringify(variables)}` : key),
     getCurrentAnimation: () => null,
     canAddAssets: () => options.canAddAssets !== false,
     canExport: () => options.canExport !== false,
@@ -285,6 +296,70 @@ test("organizer grid reorders frames when one card is dropped onto another", () 
   );
 });
 
+test("createFrame and temporary workset install use the imported membership helpers", () => {
+  assert.match(ORGANIZER_SOURCE, /selected:\s*gridModule\.importedFrameStartsSelected\(options\)/);
+  assert.match(ORGANIZER_SOURCE, /gridModule\.applyImportedWorksetMembership\(frame,\s*item\.enabled\)/);
+  assert.match(ORGANIZER_UI_SOURCE, /invertWorksetMembership\(state\.frames\)/);
+});
+
+test("a fully included imported workset starts selected so 选中 and 删除选中 agree with the checks", () => {
+  const {
+    importedFrameStartsSelected,
+    applyImportedWorksetMembership,
+  } = require("../animation_tuner/public/frame_organizer_grid");
+  assert.equal(importedFrameStartsSelected({ imported: true }), true);
+  assert.equal(importedFrameStartsSelected({ imported: false }), false);
+  assert.equal(importedFrameStartsSelected({}), false);
+
+  const fixture = createFixture({ mode: "import" });
+  fixture.state.frames = [
+    applyImportedWorksetMembership(
+      {
+        included: true,
+        selected: importedFrameStartsSelected({ imported: true }),
+        hasEditedResult: false,
+      },
+      true,
+    ),
+    applyImportedWorksetMembership(
+      {
+        included: true,
+        selected: importedFrameStartsSelected({ imported: true }),
+        hasEditedResult: false,
+      },
+      true,
+    ),
+  ];
+
+  fixture.controller.renderCounts();
+
+  assert.match(fixture.elements.organizerCount.textContent, /"included":2/);
+  assert.match(fixture.elements.organizerSelection.textContent, /"count":2/);
+  assert.equal(fixture.elements.organizerDeleteSelected.disabled, false);
+  assert.equal(fixture.elements.organizerDeleteExcluded.disabled, true);
+});
+
+test("inverting the workset flips included only so ORG-009 stays independent of selection", () => {
+  const { invertWorksetMembership } = require("../animation_tuner/public/frame_organizer_grid");
+  const frames = [
+    { included: true, selected: true },
+    { included: false, selected: false },
+    { included: true, selected: true },
+    { included: false, selected: false },
+  ];
+
+  invertWorksetMembership(frames);
+
+  assert.deepEqual(
+    frames.map((frame) => frame.included),
+    [false, true, false, true],
+  );
+  assert.deepEqual(
+    frames.map((frame) => frame.selected),
+    [true, false, true, false],
+  );
+});
+
 test("secondary removal actions stay visible and disable when they are not actionable", () => {
   const fixture = createFixture({ mode: "import" });
   fixture.state.frames = [
@@ -342,8 +417,8 @@ test("organizer thumbnails encode a downscaled canvas instead of the full frame"
 test("cutout scope copy comes from the organizer translator", () => {
   const fixture = createFixture();
   fixture.controller.renderCounts();
-  assert.equal(fixture.cutoutScope.textContent, "cutoutScopeWorkset");
+  assert.equal(fixture.cutoutScope.textContent, 'cutoutScopeWorkset {"count":1}');
   fixture.state.frames[0].selected = true;
   fixture.controller.renderCounts();
-  assert.equal(fixture.cutoutScope.textContent, "cutoutScopeSelection");
+  assert.equal(fixture.cutoutScope.textContent, 'cutoutScopeSelection {"count":1}');
 });
