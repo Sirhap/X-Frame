@@ -7,6 +7,8 @@ const {
   applyReduceIncludedFlags,
   bindSimilarityThreshold,
   confirmReduceIncludedFlags,
+  cycleTabFocus,
+  listFocusableElements,
 } = require("../animation_tuner/public/frame_organizer_ui");
 const { createTranslator } = require("../animation_tuner/public/frame_organizer_text");
 
@@ -57,6 +59,100 @@ test("ORG-035 canceling reduce confirmation leaves included flags unchanged", as
     frames.map((frame) => frame.included),
     [true, true, true, true],
   );
+});
+
+test("ENV-008 confirm buttons stay in the Tab cycle when getClientRects is empty", () => {
+  const cancel = {
+    hidden: false,
+    disabled: false,
+    offsetParent: null,
+    getClientRects: () => [],
+  };
+  const accept = {
+    hidden: false,
+    disabled: false,
+    offsetParent: null,
+    getClientRects: () => [],
+  };
+  const container = {
+    querySelectorAll() {
+      return [cancel, accept];
+    },
+  };
+  assert.deepEqual(listFocusableElements(container), [cancel, accept]);
+  assert.deepEqual(listFocusableElements(container, [cancel, accept]), [cancel, accept]);
+});
+
+test("ENV-008 Tab cycles inside a confirm dialog even when offsetParent is null", () => {
+  const documentRef = { activeElement: null };
+  const cancel = {
+    hidden: false,
+    disabled: false,
+    offsetParent: null,
+    focus() {
+      documentRef.activeElement = this;
+    },
+  };
+  const accept = {
+    hidden: false,
+    disabled: false,
+    offsetParent: null,
+    focus() {
+      documentRef.activeElement = this;
+    },
+  };
+  const container = {
+    querySelectorAll() {
+      return [cancel, accept];
+    },
+  };
+  documentRef.activeElement = cancel;
+
+  assert.deepEqual(listFocusableElements(container), [cancel, accept]);
+  let prevented = false;
+  cycleTabFocus(
+    {
+      key: "Tab",
+      shiftKey: false,
+      preventDefault() {
+        prevented = true;
+      },
+    },
+    container,
+    documentRef,
+  );
+  assert.equal(prevented, true);
+  assert.equal(documentRef.activeElement, accept);
+
+  prevented = false;
+  cycleTabFocus(
+    {
+      key: "Tab",
+      shiftKey: false,
+      preventDefault() {
+        prevented = true;
+      },
+    },
+    container,
+    documentRef,
+  );
+  assert.equal(prevented, true);
+  assert.equal(documentRef.activeElement, cancel);
+
+  prevented = false;
+  cycleTabFocus(
+    {
+      key: "Tab",
+      shiftKey: true,
+      preventDefault() {
+        prevented = true;
+      },
+    },
+    container,
+    documentRef,
+  );
+  assert.equal(prevented, true);
+  assert.equal(documentRef.activeElement, accept);
 });
 
 test("ORG-035 accepting reduce confirmation applies keep-1-of-N flags", async () => {

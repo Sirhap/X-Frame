@@ -17,6 +17,61 @@
   (root, defaultSequenceOrder, similarityThreshold) => {
     "use strict";
 
+    const FOCUSABLE_SELECTOR =
+      'button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), select:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])';
+
+    /**
+     * Returns whether a control can receive Tab focus.
+     * Do not use `offsetParent` or `getClientRects`: fixed overlays report
+     * `offsetParent === null`, and a just-opened dialog can have empty rects
+     * for one frame — both made the trap see zero buttons so the first Tab left.
+     * @param {HTMLElement} element Candidate control.
+     * @returns {boolean} Whether the control should be in the Tab cycle.
+     */
+    function isDisplayedForFocus(element) {
+      return Boolean(element) && !element.disabled && !element.hidden;
+    }
+
+    /**
+     * Lists Tab targets inside a dialog or organizer layer.
+     * @param {HTMLElement} container Active layer.
+     * @param {HTMLElement[]} [explicit] Known controls to cycle when provided.
+     * @returns {HTMLElement[]} Focusable controls.
+     */
+    function listFocusableElements(container, explicit) {
+      if (Array.isArray(explicit) && explicit.length) return explicit.filter(isDisplayedForFocus);
+      if (!container?.querySelectorAll) return [];
+      return Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR)).filter(isDisplayedForFocus);
+    }
+
+    /**
+     * Keeps Tab inside `container` and reports whether the event was handled.
+     * @param {KeyboardEvent} event Keyboard event.
+     * @param {HTMLElement} container Active layer.
+     * @param {Document} documentRef Document that owns activeElement.
+     * @param {HTMLElement[]} [explicit] Known controls to cycle when provided.
+     * @returns {boolean} Whether Tab was consumed.
+     */
+    function cycleTabFocus(event, container, documentRef, explicit) {
+      if (event?.key !== "Tab") return false;
+      const focusable = listFocusableElements(container, explicit);
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      if (!focusable.length) return true;
+      const currentIndex = focusable.indexOf(documentRef?.activeElement);
+      if (event.shiftKey) {
+        const next = currentIndex <= 0 ? focusable[focusable.length - 1] : focusable[currentIndex - 1];
+        next.focus();
+        return true;
+      }
+      const next =
+        currentIndex === -1 || currentIndex >= focusable.length - 1
+          ? focusable[0]
+          : focusable[currentIndex + 1];
+      next.focus();
+      return true;
+    }
+
     /**
      * Writes the exported organizer range onto the duplicate-threshold slider.
      * @param {{organizerThreshold?:HTMLInputElement,organizerThresholdValue?:HTMLElement}} elements Slider nodes.
@@ -206,6 +261,7 @@
       let createProjectIntentConsumed = false;
       let createProjectIntentActive = false;
       let clipboardPasteBusy = false;
+      let confirmInertedSurfaces = [];
       if (!sequenceOrder?.restoreImportOrder) throw new Error("FrameSequenceOrder is required.");
 
       /** Renders segmented ordering controls from the current strategy. @returns {void} */
@@ -277,11 +333,44 @@
         offerDeleteUndo(snapshot);
       }
 
+      /** Restores organizer surfaces that were locked while a confirm dialog was open. @returns {void} */
+      function unlockOrganizerForConfirm() {
+        confirmInertedSurfaces.forEach((surface) => {
+          surface.inert = false;
+        });
+        confirmInertedSurfaces = [];
+      }
+
+      /**
+       * Makes sibling organizer chrome unfocusable so Tab cannot leave the confirm dialog.
+       * @returns {void}
+       */
+      function lockOrganizerForConfirm() {
+        unlockOrganizerForConfirm();
+        const parent = elements.organizerConfirmPanel.parentElement;
+        if (!parent?.children) return;
+        confirmInertedSurfaces = Array.from(parent.children).filter((child) => {
+          if (child === elements.organizerConfirmPanel || child.inert) return false;
+          child.inert = true;
+          return true;
+        });
+      }
+
+      /** Closes open organizer disclosure menus so they cannot sit above the dialog. @returns {void} */
+      function closeOrganizerMenus() {
+        const root = elements.organizerModal;
+        if (!root?.querySelectorAll) return;
+        root.querySelectorAll("details[open]").forEach((details) => {
+          details.open = false;
+        });
+      }
+
       /** Resolves and closes the organizer confirmation layer. @param {boolean} accepted Whether accepted. @returns {void} */
       function resolveConfirmation(accepted) {
         if (elements.organizerConfirmPanel.hidden) return;
         elements.organizerConfirmPanel.hidden = true;
         elements.organizerConfirmPanel.querySelector?.(".organizerConfirmCard")?.removeAttribute("data-tone");
+        unlockOrganizerForConfirm();
         const resolver = state.confirmResolver;
         state.confirmResolver = null;
         const returnFocus = state.confirmReturnFocus;
@@ -319,10 +408,14 @@
         const card = elements.organizerConfirmPanel.querySelector?.(".organizerConfirmCard");
         if (card) card.dataset.tone = options.tone === "danger" ? "danger" : "warning";
         state.confirmReturnFocus = documentApi.activeElement;
+        closeOrganizerMenus();
+        lockOrganizerForConfirm();
         elements.organizerConfirmPanel.hidden = false;
         const initialControl =
           options.tone === "danger" ? elements.organizerConfirmCancel : elements.organizerConfirmAccept;
-        initialControl.focus();
+        const focusInitialControl = () => initialControl?.focus?.();
+        if (typeof windowApi.setTimeout === "function") windowApi.setTimeout(focusInitialControl, 0);
+        else focusInitialControl();
         return new Promise((resolve) => {
           state.confirmResolver = resolve;
         });
@@ -334,24 +427,19 @@
         elements.organizerUndoDelete.hidden = false;
       }
 
+      /** Returns the confirm actions that must stay in the Tab cycle. @returns {HTMLElement[]} */
+      function confirmFocusableElements() {
+        return listFocusableElements(elements.organizerConfirmPanel, [
+          elements.organizerConfirmCancel,
+          elements.organizerConfirmAccept,
+        ]);
+      }
+
       /** Keeps keyboard focus inside the active organizer layer. @param {KeyboardEvent} event Keyboard event. @param {HTMLElement} container Active layer. @returns {void} */
       function trapFocus(event, container) {
-        if (event.key !== "Tab") return;
-        const focusable = Array.from(
-          container.querySelectorAll(
-            'button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), select:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])',
-          ),
-        ).filter((element) => element.offsetParent !== null);
-        if (!focusable.length) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && documentApi.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && documentApi.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
+        const explicit =
+          container === elements.organizerConfirmPanel ? confirmFocusableElements() : undefined;
+        cycleTabFocus(event, container, documentApi, explicit);
       }
 
       /** Makes the main editor inert while the organizer owns interaction. @param {boolean} inert Whether disabled. @returns {void} */
@@ -686,6 +774,20 @@
         elements.organizerConfirmPanel.addEventListener("click", (event) => {
           if (event.target === elements.organizerConfirmPanel) resolveConfirmation(false);
         });
+        documentApi.addEventListener(
+          "keydown",
+          (event) => {
+            if (elements.organizerConfirmPanel.hidden || event.key !== "Tab") return;
+            trapFocus(event, elements.organizerConfirmPanel);
+          },
+          true,
+        );
+        documentApi.addEventListener("focusin", (event) => {
+          if (elements.organizerConfirmPanel.hidden) return;
+          if (elements.organizerConfirmPanel.contains?.(event.target)) return;
+          const focusable = confirmFocusableElements();
+          (focusable[0] || elements.organizerConfirmCancel)?.focus?.();
+        });
         elements.organizerThreshold.addEventListener("input", () => {
           elements.organizerThresholdValue.textContent = elements.organizerThreshold.value;
         });
@@ -830,6 +932,8 @@
       bindSimilarityThreshold,
       confirmReduceIncludedFlags,
       createController,
+      cycleTabFocus,
+      listFocusableElements,
       normalizeReduceStep,
       openCurrentAnimation,
     };

@@ -82,6 +82,12 @@ function createFixture() {
   };
   elements.panel.hidden = true;
   elements.alternate.hidden = true;
+  elements.panel.contains = (node) =>
+    node === elements.panel ||
+    node === elements.card ||
+    node === elements.cancel ||
+    node === elements.alternate ||
+    node === elements.accept;
   elements.panel.querySelectorAll = () => [elements.cancel, elements.alternate, elements.accept];
   documentRef.activeElement = origin;
   const controller = createController({
@@ -144,6 +150,59 @@ test("app confirmation cancels with Escape and resolves an existing request safe
   assert.equal(await secondPromise, false);
   assert.equal(prevented, true);
   assert.equal(fixture.app.inert, false);
+});
+
+test("app confirmation traps Tab when offsetParent is null and does not dismiss", async () => {
+  const fixture = createFixture();
+  fixture.elements.cancel.offsetParent = null;
+  fixture.elements.alternate.offsetParent = null;
+  fixture.elements.accept.offsetParent = null;
+  fixture.elements.cancel.getClientRects = () => [];
+  fixture.elements.alternate.getClientRects = () => [];
+  fixture.elements.accept.getClientRects = () => [];
+  const resultPromise = fixture.controller.requestConfirmation("Clear the workset?", [], {
+    tone: "danger",
+  });
+
+  assert.equal(fixture.documentRef.activeElement, fixture.elements.cancel);
+  let prevented = false;
+  fixture.documentRef.dispatch("keydown", {
+    key: "Tab",
+    shiftKey: false,
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(fixture.controller.isOpen(), true);
+  assert.equal(prevented, true);
+  assert.equal(fixture.documentRef.activeElement, fixture.elements.accept);
+
+  prevented = false;
+  fixture.documentRef.dispatch("keydown", {
+    key: "Tab",
+    shiftKey: false,
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(fixture.controller.isOpen(), true);
+  assert.equal(prevented, true);
+  assert.equal(fixture.documentRef.activeElement, fixture.elements.cancel);
+
+  prevented = false;
+  fixture.documentRef.dispatch("keydown", {
+    key: "Tab",
+    shiftKey: true,
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(fixture.controller.isOpen(), true);
+  assert.equal(prevented, true);
+  assert.equal(fixture.documentRef.activeElement, fixture.elements.accept);
+
+  fixture.elements.cancel.dispatch("click");
+  assert.equal(await resultPromise, false);
 });
 
 test("app confirmation returns save, discard, and cancel navigation decisions", async () => {
