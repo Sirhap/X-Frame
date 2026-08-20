@@ -1,7 +1,6 @@
 "use strict";
 
 const fs = require("node:fs");
-const { URL } = require("node:url");
 
 /** HTTP-safe application error carrying a response status. */
 class HttpError extends Error {

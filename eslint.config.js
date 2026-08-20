@@ -8,6 +8,7 @@ const browserGlobals = {
   console: "readonly",
   crypto: "readonly",
   DOMException: "readonly",
+  Event: "readonly",
   File: "readonly",
   FileReader: "readonly",
   fetch: "readonly",

@@ -126,7 +126,6 @@
       setStageZoom,
       status,
       stepAdjustmentInput,
-      stepOffsetByArrowKey,
       normalizeAdjustmentInputDisplay = (input) => input,
       isIncompleteNumberInput = () => false,
       stagePoint,
