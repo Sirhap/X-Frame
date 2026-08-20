@@ -771,6 +771,7 @@
       open,
       openWorkset,
       autoApplyWorkset,
+      loadCurrentGroup,
       close,
       requestClose,
       isOpen: () => !elements.cutoutModal.hidden,
