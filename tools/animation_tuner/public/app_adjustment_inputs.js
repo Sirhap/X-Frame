@@ -8,6 +8,70 @@
   "use strict";
 
   /**
+   * Returns whether a number field is still being typed and is not a complete value.
+   * @param {unknown} value Raw input value.
+   * @returns {boolean} Whether the value should not be committed yet.
+   */
+  function isIncompleteNumberInput(value) {
+    const text = String(value ?? "").trim();
+    if (text === "" || text === "-" || text === "+" || text === "." || text === "-." || text === "+.") {
+      return true;
+    }
+    if (/^[+-]?\d+\.$/.test(text) || /[eE][+-]?$/.test(text)) return true;
+    return false;
+  }
+
+  /**
+   * Compacts a displayed number so 1.000 and 1 compare the same.
+   * @param {unknown} value Displayed field value.
+   * @returns {string} Canonical numeric text, or the trimmed original when incomplete.
+   */
+  function compactDisplayedNumber(value) {
+    const text = String(value ?? "").trim();
+    if (!text || isIncompleteNumberInput(text)) return text;
+    const number = Number(text);
+    return Number.isFinite(number) ? String(number) : text;
+  }
+
+  /**
+   * Returns whether text is a number the user could be typing.
+   * @param {unknown} value Candidate token.
+   * @returns {boolean} Whether the token is a numeric prefix.
+   */
+  function isTypedNumberToken(value) {
+    return /^[+-]?(?:\d+\.?\d*|\.\d*)(?:[eE][+-]?\d*)?$/.test(String(value ?? "").trim());
+  }
+
+  /**
+   * Recovers the number the user meant when a focused field still holds the
+   * previous complete value. Typing 1.5 into 1 or 1.000 must become 1.5, never
+   * 11.5, and typing 1.500 must keep the leading 1.
+   * @param {unknown} origin Value captured when the field was focused.
+   * @param {unknown} incoming Current raw field value.
+   * @param {{firstEdit?:boolean}} [options] Whether this is the first keystroke.
+   * @returns {string} Sanitized field text.
+   */
+  function sanitizeAdjustmentNumberInput(origin, incoming, options = {}) {
+    const next = String(incoming ?? "");
+    const originText = String(origin ?? "").trim();
+    if (next === originText) return next;
+    if (options.firstEdit === false) return next;
+
+    if (originText && next.startsWith(originText) && next.length > originText.length) {
+      const suffix = next.slice(originText.length);
+      if (/^[+-]?\d/.test(suffix) && isTypedNumberToken(suffix)) return suffix;
+    }
+
+    const compactOrigin = compactDisplayedNumber(originText);
+    if (compactOrigin && next.startsWith(compactOrigin) && next.length > compactOrigin.length) {
+      const suffix = next.slice(compactOrigin.length);
+      if (/^[+-]?\d/.test(suffix) && isTypedNumberToken(suffix)) return suffix;
+    }
+
+    return next;
+  }
+
+  /**
    * Creates the adjustment-panel input and synchronization helpers.
    * @param {{
    *   elements: Record<string, any>,
@@ -136,12 +200,6 @@
       return baseTransform();
     }
 
-    /** Returns whether a number field is still being typed and is not a complete value. */
-    function isIncompleteNumberInput(value) {
-      const text = String(value ?? "").trim();
-      return text === "" || text === "-" || text === "+" || text === "." || text === "-." || text === "+.";
-    }
-
     /** Parses one adjustment number and falls back when the field is empty or invalid. */
     function parseAdjustmentNumber(value, fallback) {
       if (isIncompleteNumberInput(value)) return Number(fallback) || 0;
@@ -222,6 +280,44 @@
       }
       updateAdjustmentFromInputs();
       endStepAdjustmentEdit();
+    }
+
+    /** Stores the focus-time value and selects the field so the next keystroke replaces. */
+    function beginAdjustmentNumberEdit(input) {
+      if (!input) return;
+      input.dataset.numberEditOrigin = String(input.value ?? "");
+      delete input.dataset.numberEditConsumed;
+      try {
+        input.select();
+      } catch (_error) {
+        // type=number can reject selection APIs
+      }
+    }
+
+    /** Keeps the origin selected until the first keystroke so a click does not append. */
+    function retainAdjustmentNumberSelection(event, input) {
+      if (!input || input.dataset.numberEditConsumed === "1") return;
+      event?.preventDefault?.();
+      try {
+        input.select();
+      } catch (_error) {
+        // type=number can reject selection APIs
+      }
+    }
+
+    /**
+     * Unwraps an appended first keystroke and reports whether the value can be committed.
+     * @param {{value?:unknown,dataset?:{numberEditOrigin?:string,numberEditConsumed?:string}}} input Focused field.
+     * @returns {boolean} Whether the sanitized value is complete enough to apply.
+     */
+    function applyAdjustmentNumberInput(input) {
+      if (!input) return false;
+      const origin = input.dataset?.numberEditOrigin ?? "";
+      const firstEdit = input.dataset?.numberEditConsumed !== "1";
+      const sanitized = sanitizeAdjustmentNumberInput(origin, input.value, { firstEdit });
+      if (String(input.value ?? "") !== sanitized) input.value = sanitized;
+      if (input.dataset) input.dataset.numberEditConsumed = "1";
+      return !isIncompleteNumberInput(input.value);
     }
 
     /** Writes a normalized number back into one focused adjustment field. */
@@ -393,7 +489,12 @@
       normalizeAdjustmentMode,
       adjustmentTransform,
       transformFromAdjustmentInputs,
+      compactDisplayedNumber,
       isIncompleteNumberInput,
+      sanitizeAdjustmentNumberInput,
+      beginAdjustmentNumberEdit,
+      retainAdjustmentNumberSelection,
+      applyAdjustmentNumberInput,
       parseAdjustmentNumber,
       normalizeAdjustmentInputDisplay,
       adjustmentNumberInputs,
@@ -411,5 +512,10 @@
     };
   }
 
-  return { createController };
+  return {
+    compactDisplayedNumber,
+    createController,
+    isIncompleteNumberInput,
+    sanitizeAdjustmentNumberInput,
+  };
 });

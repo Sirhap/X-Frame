@@ -129,6 +129,9 @@
       stepAdjustmentInput,
       normalizeAdjustmentInputDisplay = (input) => input,
       isIncompleteNumberInput = () => false,
+      beginAdjustmentNumberEdit = () => {},
+      retainAdjustmentNumberSelection = () => {},
+      applyAdjustmentNumberInput = () => true,
       stagePoint,
       syncAdjustmentInputs,
       syncAdjustmentModeInputs,
@@ -418,7 +421,9 @@
         });
       }
       els.baseScale.addEventListener("input", () => {
-        if (isIncompleteNumberInput(els.baseScale.value)) return;
+        if (!applyAdjustmentNumberInput(els.baseScale) || isIncompleteNumberInput(els.baseScale.value)) {
+          return;
+        }
         syncBaseAxisScaleToUniform();
         updateAdjustmentFromInputs();
       });
@@ -435,6 +440,7 @@
       for (const input of adjustmentNumberInputs()) {
         armInputUndo(input, "base input");
         input.addEventListener("focus", () => {
+          beginAdjustmentNumberEdit(input);
           if (selectedFrameAttachment()) {
             state.baseEditSnapshot = null;
             state.boxEditSnapshot = null;
@@ -449,13 +455,18 @@
             };
           }
         });
+        input.addEventListener("mouseup", (event) => {
+          retainAdjustmentNumberSelection(event, input);
+        });
         input.addEventListener("blur", () => {
+          applyAdjustmentNumberInput(input);
           normalizeAdjustmentInputDisplay(input);
           updateAdjustmentFromInputs();
           state.baseEditSnapshot = null;
           state.boxEditSnapshot = null;
         });
         input.addEventListener("change", () => {
+          applyAdjustmentNumberInput(input);
           normalizeAdjustmentInputDisplay(input);
           state.baseEditSnapshot = null;
           state.boxEditSnapshot = null;
@@ -509,7 +520,7 @@
         input.addEventListener("drop", (event) => event.preventDefault());
         if (input !== els.baseScale) {
           input.addEventListener("input", () => {
-            if (isIncompleteNumberInput(input.value)) return;
+            if (!applyAdjustmentNumberInput(input) || isIncompleteNumberInput(input.value)) return;
             updateAdjustmentFromInputs();
           });
         }

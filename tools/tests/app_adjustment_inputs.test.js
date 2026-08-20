@@ -2,11 +2,16 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createController } = require("../animation_tuner/public/app_adjustment_inputs");
+const {
+  compactDisplayedNumber,
+  createController,
+  isIncompleteNumberInput,
+  sanitizeAdjustmentNumberInput,
+} = require("../animation_tuner/public/app_adjustment_inputs");
 
 /** Creates the minimal adjustment panel fixture used by the controller test. */
 function createElements() {
-  const input = (id, value = "") => ({ id, value, step: "1", disabled: false });
+  const input = (id, value = "") => ({ id, value, step: "1", disabled: false, dataset: {} });
   return {
     baseScale: input("baseScale", "2"),
     baseScaleX: input("baseScaleX", "2"),
@@ -185,6 +190,7 @@ test("adjustment inputs keep the last valid number when the field is empty or in
   });
 
   assert.equal(controller.isIncompleteNumberInput("-"), true);
+  assert.equal(controller.isIncompleteNumberInput("1."), true);
   assert.deepEqual(controller.transformFromAdjustmentInputs(), {
     scale: 1.5,
     scaleX: 2,
@@ -192,4 +198,92 @@ test("adjustment inputs keep the last valid number when the field is empty or in
     offset: { x: 8, y: 4 },
     rotation: 12,
   });
+});
+
+/**
+ * Simulates typing into a focused number field that still shows the origin,
+ * including the FAIL path where the browser appends instead of replacing.
+ * @param {string} origin Displayed value at focus time.
+ * @param {string} typed Keys the user presses.
+ * @returns {string[]} Display after each keystroke.
+ */
+function typeAdjustmentNumber(origin, typed) {
+  let value = String(origin);
+  const steps = [];
+  for (let index = 0; index < typed.length; index += 1) {
+    value = sanitizeAdjustmentNumberInput(origin, `${value}${typed[index]}`, {
+      firstEdit: index === 0,
+    });
+    steps.push(value);
+  }
+  return steps;
+}
+
+test("SAV-014 sanitizer turns a 1.000 field + typed 1.5 into 1.5, never 11.5", () => {
+  assert.equal(compactDisplayedNumber("1.000"), "1");
+  assert.equal(sanitizeAdjustmentNumberInput("1.000", "1.5"), "1.5");
+  assert.equal(sanitizeAdjustmentNumberInput("1", "1.5"), "1.5");
+  assert.equal(sanitizeAdjustmentNumberInput("1.000", "11.5", { firstEdit: true }), "1.5");
+  assert.equal(sanitizeAdjustmentNumberInput("1", "11.5", { firstEdit: true }), "1.5");
+  assert.deepEqual(typeAdjustmentNumber("1", "1.5"), ["1", "1.", "1.5"]);
+  assert.deepEqual(typeAdjustmentNumber("1.000", "1.5"), ["1", "1.", "1.5"]);
+  assert.equal(typeAdjustmentNumber("1", "1.5").includes("11.5"), false);
+});
+
+test("SAV-014 sanitizer keeps the leading 1 while typing 1.500", () => {
+  const steps = typeAdjustmentNumber("1.000", "1.500");
+  assert.deepEqual(steps, ["1", "1.", "1.5", "1.50", "1.500"]);
+  for (const step of steps) {
+    assert.equal(step.startsWith("1"), true, `lost leading 1 at ${step}`);
+    assert.notEqual(step, ".500");
+    assert.notEqual(step, "11.5");
+  }
+  assert.equal(sanitizeAdjustmentNumberInput("1.000", "1.500"), "1.500");
+  assert.equal(sanitizeAdjustmentNumberInput("1", "1.500"), "1.500");
+  assert.equal(isIncompleteNumberInput("1.500"), false);
+});
+
+test("SAV-014 sanitizer unwraps concat on other transform number fields", () => {
+  assert.equal(sanitizeAdjustmentNumberInput("0", "01.5", { firstEdit: true }), "1.5");
+  assert.equal(sanitizeAdjustmentNumberInput("0", "1.5"), "1.5");
+  assert.equal(sanitizeAdjustmentNumberInput("-12", "-12.5"), "-12.5");
+  assert.equal(sanitizeAdjustmentNumberInput("0", "10", { firstEdit: true }), "10");
+  assert.deepEqual(typeAdjustmentNumber("0", "1.5"), ["1", "1.", "1.5"]);
+  assert.deepEqual(typeAdjustmentNumber("90", "1.5"), ["1", "1.", "1.5"]);
+});
+
+test("focused adjustment input keeps typed 1.5 after the first appended keystroke", () => {
+  const elements = createElements();
+  elements.baseScale.value = "1.000";
+  elements.baseScale.dataset = {};
+  const controller = createController({
+    elements,
+    adjustmentModes: ["group"],
+    getAdjustmentMode: () => "group",
+    getCurrentGroup: () => ({ uiId: "group-1" }),
+    canEditGroupTransform: () => true,
+    groupSupports: () => true,
+    baseTransform: () => ({ scale: 1, scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 }),
+    frameTransform: () => ({ scale: 1, scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 }),
+    characterTransform: () => ({ scale: 1, scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 }),
+    framePlayback: () => ({ disabled: false }),
+    frameDurationMs: () => 100,
+    groupPlaybackFps: () => 12,
+    groupRootMotion: () => ({ x: 0, y: 0 }),
+    documentRef: { querySelectorAll: () => [] },
+    localStorageRef: { setItem() {} },
+    round: (value) => value,
+  });
+
+  controller.beginAdjustmentNumberEdit(elements.baseScale);
+  elements.baseScale.value = "11.5";
+  assert.equal(controller.applyAdjustmentNumberInput(elements.baseScale), true);
+  assert.equal(elements.baseScale.value, "1.5");
+
+  elements.baseX.value = "0";
+  elements.baseX.dataset = {};
+  controller.beginAdjustmentNumberEdit(elements.baseX);
+  elements.baseX.value = "01.5";
+  controller.applyAdjustmentNumberInput(elements.baseX);
+  assert.equal(elements.baseX.value, "1.5");
 });
