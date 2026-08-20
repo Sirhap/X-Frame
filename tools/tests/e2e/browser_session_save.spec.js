@@ -9,13 +9,15 @@ const ONE_PIXEL_PNG = Buffer.from(
 
 test("SAV-005 new browser project persists first import and survives hard reload", async ({ page }) => {
   await page.addInitScript(() => {
+    globalThis.__XSXB_PRODUCTION__ = true;
     document.documentElement.dataset.runtimeMode = "browser";
   });
   page.once("dialog", (dialog) => dialog.accept("P0test1"));
 
   await page.goto("/projects");
+  await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);
   await page.locator("#projectHubNew").click();
-  await expect(page).toHaveURL(/\/workspace\/resources\/import\?project=p0test1/);
+  await expect(page).toHaveURL(/\/workspace\/resources\/import\?project=p0test1(?:$|&)/);
   await expect(page.locator("#status")).not.toContainText("Project not found");
 
   await page.locator("#organizerFileInput").setInputFiles([
