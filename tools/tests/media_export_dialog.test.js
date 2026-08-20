@@ -5,6 +5,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const { createController } = require("../animation_tuner/public/media_export_dialog");
+const ExportRecipeCore = require("../animation_tuner/public/export_recipe_core");
+const MediaExportCore = require("../animation_tuner/public/media_export_core");
 
 /** Creates a minimal event-capable element for dialog controller tests. */
 function element(overrides = {}) {
@@ -191,6 +193,14 @@ function createElements() {
   elements.mediaExportMaxTexture.value = "2048";
   elements.mediaExportMaxTexture.checked = true;
   const resolution = element({ checked: true, name: "mediaExportResolution", type: "radio", value: "512" });
+  const resolution128 = element({
+    checked: false,
+    name: "mediaExportResolution",
+    type: "radio",
+    value: "128",
+  });
+  elements.mediaExportResolution512 = resolution;
+  elements.mediaExportResolution128 = resolution128;
   const solidBackground = element({ name: "mediaExportBackground", type: "radio", value: "color" });
   const recipeControlIds = [
     "mediaExportFrames",
@@ -267,10 +277,11 @@ function createElements() {
     elements.mediaExportGifSoften,
     elements.mediaExportMp4Quality,
     resolution,
+    resolution128,
   ];
   elements.mediaExportDialog.querySelectorAll = (selector) => {
     if (selector === ".mediaExportRecipe input, .mediaExportRecipe select")
-      return [...recipeControlIds.map((id) => elements[id]), resolution, solidBackground];
+      return [...recipeControlIds.map((id) => elements[id]), resolution, resolution128, solidBackground];
     if (selector === 'input[name="mediaExportFormat"]')
       return [
         elements.mediaExportFrames,
@@ -278,6 +289,8 @@ function createElements() {
         elements.mediaExportGif,
         elements.mediaExportMp4,
       ];
+    if (selector === 'input[name="mediaExportResolution"]')
+      return [elements.mediaExportResolution512, elements.mediaExportResolution128];
     return [];
   };
   elements.mediaExportDialog.querySelector = (selector) => {
@@ -611,5 +624,100 @@ test("media export dialog exposes recovered task cancellation", async () => {
     assert.match(elements.mediaExportStatus.textContent, /cancelled/i);
   } finally {
     global.document = originalDocument;
+  }
+});
+
+/** Builds a canvas-like object that export preview rendering can draw into. */
+function createPreviewImage(width, height) {
+  return {
+    width,
+    height,
+    getContext: () => ({
+      clearRect() {},
+      drawImage() {},
+      fillRect() {},
+      getImageData: () => ({ data: new Uint8ClampedArray(Math.max(1, width * height * 4)) }),
+      putImageData() {},
+      imageSmoothingEnabled: true,
+      filter: "none",
+      globalAlpha: 1,
+      fillStyle: "#000000",
+    }),
+    toDataURL: () => "data:image/png;base64,preview",
+  };
+}
+
+/** Selects one output-size pill the way a label click updates the radio group. */
+function selectOutputSize(elements, size) {
+  elements.mediaExportResolution512.checked = size === "512";
+  elements.mediaExportResolution128.checked = size === "128";
+  const selected = size === "128" ? elements.mediaExportResolution128 : elements.mediaExportResolution512;
+  selected.dispatch("change");
+}
+
+test("EXP-005 output-size pill updates preview canvas and estimate, not leftover 2048", async () => {
+  const originalDocument = global.document;
+  const originalRecipeCore = global.ExportRecipeCore;
+  const originalExportCore = global.MediaExportCore;
+  const originalRaf = global.requestAnimationFrame;
+  global.ExportRecipeCore = ExportRecipeCore;
+  global.MediaExportCore = MediaExportCore;
+  global.requestAnimationFrame = (callback) => {
+    callback();
+    return 0;
+  };
+  global.document = {
+    activeElement: null,
+    addEventListener() {},
+    body: { classList: { add() {}, remove() {} } },
+    createElement: () => createPreviewImage(1, 1),
+  };
+  try {
+    const elements = createElements();
+    elements.mediaExportCanvasMode.value = "custom";
+    elements.mediaExportEstimate.textContent = "预估：2048 × 2048 px · 1 张 · 0 帧";
+    const source = createPreviewImage(64, 64);
+    const controller = createController({
+      elements,
+      getLanguage: () => "zh",
+      getSummary: () => ({ frameCount: 1, fps: 12, canvas: "64×64", width: 64, height: 64 }),
+      getPreviewItems: () => [
+        { name: "frame_0001.png", image: source, width: 64, height: 64, durationMs: 80 },
+      ],
+      onExport: async () => ({ downloads: [] }),
+      fetchImpl: async () => ({ ok: false, json: async () => ({}) }),
+    });
+
+    elements.mediaExportPreviewSheet.dispatch("click");
+    selectOutputSize(elements, "512");
+    await controller.renderPreview();
+    assert.equal(elements.mediaExportPreviewCanvas.width, 512);
+    assert.equal(elements.mediaExportPreviewCanvas.height, 512);
+    assert.match(elements.mediaExportEstimate.textContent, /512/);
+    assert.doesNotMatch(elements.mediaExportEstimate.textContent, /2048/);
+
+    selectOutputSize(elements, "128");
+    await controller.renderPreview();
+
+    assert.equal(elements.mediaExportPreviewCanvas.width, 128);
+    assert.equal(elements.mediaExportPreviewCanvas.height, 128);
+    assert.match(elements.mediaExportEstimate.textContent, /128\s*×\s*128/);
+    assert.doesNotMatch(
+      elements.mediaExportEstimate.textContent,
+      /2048/,
+      "EXP-005 estimate must follow the 128 output size, not the leftover 2048 atlas page",
+    );
+
+    selectOutputSize(elements, "512");
+    await controller.renderPreview();
+
+    assert.equal(elements.mediaExportPreviewCanvas.width, 512);
+    assert.equal(elements.mediaExportPreviewCanvas.height, 512);
+    assert.match(elements.mediaExportEstimate.textContent, /512\s*×\s*512/);
+  } finally {
+    global.document = originalDocument;
+    global.ExportRecipeCore = originalRecipeCore;
+    global.MediaExportCore = originalExportCore;
+    global.requestAnimationFrame = originalRaf;
   }
 });

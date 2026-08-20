@@ -33,3 +33,24 @@ test("NAV-014 delivery export deep-link estimates the current animation frames",
   await expect(page.locator("#mediaExportEstimate")).toContainText("2 帧");
   await expect(page.locator("#mediaExportPreviewMeta")).not.toHaveText("导入帧后可预览导出结果。");
 });
+
+test("EXP-005 output-size pill updates preview canvas and estimate", async ({ page }) => {
+  await page.goto(`/workspace/delivery/export?${SEED_QUERY}`);
+  await expect(page.locator("#mediaExportDialog")).toBeVisible();
+  await expect(page.locator("#mediaExportPreviewMeta")).not.toHaveText("导入帧后可预览导出结果。");
+  await expect(page.locator('input[name="mediaExportResolution"][value="512"]')).toBeChecked();
+
+  const previewSize = () =>
+    page.locator("#mediaExportPreviewCanvas").evaluate((canvas) => `${canvas.width}x${canvas.height}`);
+
+  await page.locator('.mediaExportResolutionSection label:has(input[value="128"])').click();
+  await expect(page.locator('input[name="mediaExportResolution"][value="128"]')).toBeChecked();
+  await expect.poll(previewSize).toBe("128x128");
+  await expect(page.locator("#mediaExportEstimate")).toContainText("128 × 128");
+  await expect(page.locator("#mediaExportEstimate")).not.toContainText("2048");
+
+  await page.locator('.mediaExportResolutionSection label:has(input[value="512"])').click();
+  await expect(page.locator('input[name="mediaExportResolution"][value="512"]')).toBeChecked();
+  await expect.poll(previewSize).toBe("512x512");
+  await expect(page.locator("#mediaExportEstimate")).toContainText("512 × 512");
+});
