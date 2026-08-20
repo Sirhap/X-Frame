@@ -8,9 +8,12 @@ const {
   createController,
   normalizePreviewBackground,
   resolveAutomaticControlDependencies,
+  resolveAutomaticSettingsHintKey,
   resolveRepairPropagationState,
   syncAutomaticControlDependencies,
 } = require("../animation_tuner/public/batch_cutout_settings.js");
+const { TEXT } = require("../animation_tuner/public/batch_cutout_text.js");
+const { applyCutout, applyProductCutout } = require("../animation_tuner/public/batch_cutout_core.js");
 
 /**
  * Creates a DOM-like preview background button for state synchronization tests.
@@ -55,6 +58,7 @@ function createFixture() {
     cutoutTolerance: { value: "24" },
     cutoutAlphaLow: { value: "8" },
     cutoutAlphaHigh: { value: "240" },
+    cutoutToleranceClosedHint: { hidden: true, textContent: "" },
   };
   const events = [];
   const controller = createController({
@@ -225,6 +229,7 @@ test("batch settings warns when automatic parameters cannot take effect", () => 
   elements.cutoutTolerance.value = "100";
   controller.setSettingsMode("automatic");
   assert.match(elements.cutoutActiveToolHint.textContent, /toleranceAggressiveHint/);
+  assert.equal(elements.cutoutToleranceClosedHint.hidden, true);
 
   elements.cutoutTolerance.value = "24";
   elements.cutoutAlphaHigh.value = "4";
@@ -250,6 +255,9 @@ test("batch cutout text keeps the alpha-window label and range warning on differ
   );
   assert.equal([...source.matchAll(/^\s+alphaWindowRangeHint:/gmu)].length, 2);
   assert.match(html, /data-cutout-i18n="alphaWindowHint"/);
+  assert.equal([...source.matchAll(/^\s+toleranceClosedHint:/gmu)].length, 2);
+  assert.match(html, /id="cutoutToleranceClosedHint"/);
+  assert.match(html, /data-cutout-i18n="toleranceClosedHint"/);
 });
 
 test("batch settings explains that automatic parameters are already shared", () => {
@@ -270,4 +278,120 @@ test("batch settings explains that automatic parameters are already shared", () 
     }).enabled,
     true,
   );
+});
+
+/**
+ * Paints a flat background with a centered opaque subject. A 1×1 or solid plate
+ * cannot tell "matching off" from "algorithm returned the source unchanged".
+ * @param {number} size Square edge.
+ * @param {[number,number,number]} background Background RGB.
+ * @param {[number,number,number]} subject Subject RGB.
+ * @returns {Uint8ClampedArray} RGBA pixels.
+ */
+function paintSubjectOnBackground(size, background, subject) {
+  const rgba = new Uint8ClampedArray(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const inside = x >= size / 4 && x < (size * 3) / 4 && y >= size / 4 && y < (size * 3) / 4;
+      const color = inside ? subject : background;
+      rgba.set([color[0], color[1], color[2], 255], (y * size + x) * 4);
+    }
+  }
+  return rgba;
+}
+
+test("CUT-035 tolerance -1 shows closed matching copy and does not auto-estimate or rewrite pixels", () => {
+  const { controller, item, elements } = createFixture();
+  item.backgroundSamples = [{ hex: "#ffffff", r: 255, g: 255, b: 255 }];
+  elements.cutoutTolerance.value = "-1";
+
+  controller.setSettingsMode("automatic");
+
+  assert.equal(
+    resolveAutomaticSettingsHintKey({
+      itemAvailable: true,
+      automatic: true,
+      hasBackgroundSample: true,
+      tolerance: -1,
+      alphaLow: 0,
+      alphaHigh: 0,
+    }),
+    "toleranceClosedHint",
+  );
+  assert.match(elements.cutoutActiveToolHint.textContent, /toleranceClosedHint/);
+  assert.equal(elements.cutoutToleranceClosedHint.hidden, false);
+  assert.match(elements.cutoutToleranceClosedHint.textContent, /toleranceClosedHint/);
+
+  for (const language of ["zh", "en"]) {
+    const copy = TEXT[language].toleranceClosedHint;
+    assert.match(copy, /关闭|off|closed/iu, `${language} must say matching is closed/off`);
+    assert.match(copy, /像素|pixels do not move/iu, `${language} must say pixels stay put`);
+    assert.match(
+      copy,
+      /不会自动估算|does not auto-estimate/iu,
+      `${language} must deny auto-estimate instead of promising it`,
+    );
+    assert.doesNotMatch(copy, /将自动估算|auto-estimates/iu, `${language} must not claim auto-estimate`);
+  }
+
+  const size = 32;
+  const source = paintSubjectOnBackground(size, [255, 255, 255], [210, 36, 42]);
+  const workbenchIdle = {
+    connected: false,
+    perceptual: false,
+    feather: 0,
+    alphaThreshold: 0,
+    edgeBoost: 10,
+    blendStrength: 0,
+    despillStrength: 0,
+    alphaLow: 0,
+    alphaHigh: 0,
+  };
+
+  const closedWithoutSample = applyCutout(source, size, size, {
+    ...workbenchIdle,
+    tolerance: -1,
+  });
+  assert.deepEqual(
+    [...closedWithoutSample.data],
+    [...source],
+    "tolerance -1 must not estimate a key color and rewrite pixels as a match",
+  );
+  assert.equal(closedWithoutSample.removedPixels, 0);
+  assert.equal(closedWithoutSample.partialPixels, 0);
+
+  const estimatedAtZero = applyCutout(source, size, size, {
+    ...workbenchIdle,
+    tolerance: 0,
+  });
+  assert.ok(
+    estimatedAtZero.data[3] < 255,
+    "tolerance 0 still auto-keys the estimated white plate, so -1 is not a silent no-op default",
+  );
+
+  const closedReference = applyProductCutout(
+    source,
+    size,
+    size,
+    {
+      ...workbenchIdle,
+      automaticCutout: true,
+      referenceChromaKey: true,
+      backgroundColor: { r: 255, g: 255, b: 255, a: 255 },
+      backgroundColors: [{ r: 255, g: 255, b: 255, a: 255 }],
+      tolerance: -1,
+    },
+    [],
+  );
+  assert.deepEqual([...closedReference.data], [...source], "reference matching at -1 must leave every pixel");
+
+  const closedPlate = applyCutout(source, size, size, {
+    ...workbenchIdle,
+    referenceChromaKey: false,
+    perceptual: true,
+    backgroundColor: { r: 255, g: 255, b: 255 },
+    backgroundColors: [{ r: 255, g: 255, b: 255 }],
+    tolerance: -1,
+  });
+  assert.deepEqual([...closedPlate.data], [...source], "plate path at -1 must not clamp into an exact match");
 });

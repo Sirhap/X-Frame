@@ -26,6 +26,7 @@
     "cutoutColor",
     "cutoutTolerance",
     "cutoutToleranceValue",
+    "cutoutToleranceClosedHint",
     "cutoutFeather",
     "cutoutFeatherValue",
     "cutoutChromaFeather",

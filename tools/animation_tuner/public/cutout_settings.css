@@ -315,6 +315,10 @@
   padding-top: 0;
 }
 
+.cutoutKeyCard > .cutoutRange + .cutoutPanelHint {
+  margin-top: -6px;
+}
+
 .cutoutComplexKeyCard .cutoutCheck {
   min-height: 38px;
 }
