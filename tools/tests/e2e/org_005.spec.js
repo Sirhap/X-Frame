@@ -55,6 +55,11 @@ test("ORG-005 an 80-character project name is still created", async ({ page }) =
 
 test("ORG-005 role name and video FPS bounds stay constrained", async ({ page }) => {
   await page.goto("/tools/import");
+  const setup = page.locator("#organizerImportSetup");
+  if (await setup.isHidden()) {
+    await page.locator("#organizerToggleImportSetup").click();
+  }
+  await expect(setup).toBeVisible();
   const profile = page.locator("#organizerProfileName");
   await expect(profile).toHaveAttribute("maxlength", String(NAME_MAX_LENGTH));
   await profile.fill(`${"c".repeat(NAME_MAX_LENGTH)}X`);
