@@ -242,6 +242,14 @@ body.cutoutOpen .cutoutClose {
 
 .cutoutSidebarBatchPanel {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cutoutSidebarBatchPanel:not([hidden]) {
+  height: 100%;
 }
 
 .cutoutSidebarBatchEmpty {

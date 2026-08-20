@@ -32,17 +32,31 @@
   position: relative;
   inset: auto;
   z-index: auto;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
   max-height: none;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, auto) minmax(168px, 1fr);
   padding: 8px;
   overflow: hidden;
   box-shadow: none;
 }
 
+.cutoutSidebarBatchPanel .cutoutBatchTrayHeader {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.cutoutSidebarBatchPanel .cutoutQueue {
+  min-height: 168px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .cutoutModal.batchTrayCollapsed .cutoutSidebarBatchPanel .cutoutBatchTray {
   max-height: none;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, auto) minmax(168px, 1fr);
   padding-bottom: 8px;
 }
 
