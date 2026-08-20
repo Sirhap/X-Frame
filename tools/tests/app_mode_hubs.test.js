@@ -7,6 +7,7 @@ const test = require("node:test");
 const {
   MAX_NAME_LENGTH,
   createController,
+  resolveCurrentAnimationSource,
   resolveDeliveryExportSource,
   summarizeDeliveryReadiness,
   summarizeDeliveryScope,
@@ -377,6 +378,45 @@ test("empty New Project name does not navigate away from the hub", async () => {
   await Promise.resolve();
 
   assert.deepEqual(assigned, []);
+});
+
+test("current animation source copies frames without requiring profile or animation ids", () => {
+  const currentGroup = {
+    name: "assassin_jump",
+    profileLabel: "新角色",
+    type: "actor",
+    speed: 12,
+    frames: [{ id: "a" }, { id: "b" }],
+  };
+  const images = [{ width: 8 }, { width: 8 }];
+  assert.deepEqual(
+    resolveCurrentAnimationSource({
+      currentGroup,
+      images,
+      groupLabel: (group) => `${group.profileLabel} - ${group.name}`,
+    }),
+    {
+      name: "新角色 - assassin_jump",
+      profileId: undefined,
+      animationId: undefined,
+      profileLabel: "新角色",
+      profileKind: undefined,
+      animationType: "actor",
+      fps: 12,
+      anchorMode: undefined,
+      frames: currentGroup.frames,
+      images,
+      loop: false,
+    },
+  );
+  assert.equal(
+    resolveCurrentAnimationSource({
+      currentGroup: { name: "assassin_jump", frames: [{ id: "a" }] },
+      images: [],
+    }),
+    null,
+  );
+  assert.equal(resolveCurrentAnimationSource({ currentGroup: { frames: [] }, images: [] }), null);
 });
 
 test("standalone export falls back to the current animation when the temp workset is empty", () => {

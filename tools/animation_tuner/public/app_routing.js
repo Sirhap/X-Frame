@@ -347,7 +347,14 @@
             const openedTemporary = temporaryWorkset?.frames?.length
               ? openTemporaryCutout(temporaryWorkset)
               : false;
-            if (!openedTemporary) batchCutout?.open({ syncRoute: false });
+            if (!openedTemporary) {
+              batchCutout?.open({ syncRoute: false });
+              const shouldLoadCurrent =
+                currentNavigationContext() === "project" &&
+                Boolean(getCurrentGroup()?.frames?.length) &&
+                typeof batchCutout?.loadCurrentGroup === "function";
+              if (shouldLoadCurrent) await batchCutout.loadCurrentGroup();
+            }
           }
           return true;
         }

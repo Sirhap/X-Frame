@@ -102,6 +102,10 @@
         elements.mediaExportPreviewMeta.textContent = english()
           ? "Import frames to preview the export."
           : "导入帧后可预览导出结果。";
+        if (elements.mediaExportEstimate) {
+          elements.mediaExportEstimate.textContent = english() ? "Estimate: — · 0 frames" : "预估：— · 0 帧";
+        }
+        elements.mediaExportFrameCount.textContent = "0";
         return;
       }
       try {

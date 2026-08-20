@@ -105,7 +105,36 @@
   }
 
   /**
+   * Copies the tuner animation into a resource-tool workset when frames and images match.
+   * Profile and animation ids are optional: they are write-back keys, not a load gate.
+   * @param {{currentGroup?:{frames?:object[],name?:string,profileId?:string,animationId?:string,profileLabel?:string,profileKind?:string,type?:string,speed?:number,anchorMode?:string,loop?:boolean,loopMode?:string}|null,images?:object[],groupLabel?:(group:object)=>string}} input Tuner store snapshot.
+   * @returns {{name:string,profileId?:string,animationId?:string,profileLabel?:string,profileKind?:string,animationType?:string,fps?:number,anchorMode?:string,frames:object[],images:object[],loop:boolean}|null} Workset source or null.
+   */
+  function resolveCurrentAnimationSource(input = {}) {
+    const group = input.currentGroup;
+    const images = Array.isArray(input.images) ? input.images : [];
+    const frames = Array.isArray(group?.frames) ? group.frames : [];
+    if (!frames.length || images.length !== frames.length) return null;
+    return {
+      name: typeof input.groupLabel === "function" ? input.groupLabel(group) : String(group?.name || ""),
+      profileId: group.profileId,
+      animationId: group.animationId,
+      profileLabel: group.profileLabel,
+      profileKind: group.profileKind,
+      animationType: group.type,
+      fps: group.speed,
+      anchorMode: group.anchorMode,
+      frames,
+      images,
+      loop: group.loop === true || group.loopMode === "loop",
+    };
+  }
+
+  /**
    * Chooses the export workset for the delivery page without inventing frames.
+   * Standalone /tools/export is the same page: it inherits the current session
+   * animation when one exists, and only shows the empty state when there are
+   * truly no frames in either the temp workset or the current animation.
    * @param {{navigationContext?:string,temporaryWorkset?:{frames?:object[]}|null,currentGroup?:{frames?:object[]}|null}} input Visible sources.
    * @returns {{kind:"temporary"|"current"|"empty",workset?:object,message?:string}} Mount source.
    */
@@ -319,6 +348,7 @@
     MAX_NAME_LENGTH,
     createController,
     normalizeProjectName,
+    resolveCurrentAnimationSource,
     resolveDeliveryExportSource,
     summarizeDeliveryReadiness,
     summarizeDeliveryScope,

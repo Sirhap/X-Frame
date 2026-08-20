@@ -3604,19 +3604,12 @@ batchCutout =
   window.BatchCutout?.createController({
     getLanguage: () => language,
     getCurrentAnimation: () =>
-      currentNavigationContext() === "project" && currentGroup?.frames?.length
-        ? {
-            name: groupLabel(currentGroup),
-            profileId: currentGroup.profileId,
-            profileLabel: currentGroup.profileLabel,
-            profileKind: currentGroup.profileKind,
-            animationType: currentGroup.type,
-            fps: currentGroup.speed,
-            anchorMode: currentGroup.anchorMode,
-            frames: currentGroup.frames,
+      currentNavigationContext() === "project"
+        ? globalThis.XSXBModeHubs?.resolveCurrentAnimationSource?.({
+            currentGroup,
             images,
-            loop: currentGroup.loop === true || currentGroup.loopMode === "loop",
-          }
+            groupLabel,
+          }) || null
         : null,
     applyToCurrentAnimation: browserOnlyMode
       ? applyBrowserCutoutOutputs
@@ -3663,19 +3656,11 @@ frameOrganizer =
       godotHandoff: config?.godotHandoff || null,
     }),
     getCurrentAnimation: () =>
-      currentGroup?.frames?.length && currentGroup.profileId && currentGroup.animationId
-        ? {
-            name: groupLabel(currentGroup),
-            profileId: currentGroup.profileId,
-            animationId: currentGroup.animationId,
-            profileLabel: currentGroup.profileLabel,
-            animationType: currentGroup.type,
-            fps: currentGroup.speed,
-            anchorMode: currentGroup.anchorMode,
-            frames: currentGroup.frames,
-            images,
-          }
-        : null,
+      globalThis.XSXBModeHubs?.resolveCurrentAnimationSource?.({
+        currentGroup,
+        images,
+        groupLabel,
+      }) || null,
     commitImportToCurrent: () => Boolean(currentGroup?.animationId && currentGroup.profileId),
     applyPlan: browserOnlyMode ? applyBrowserFrameOrganizerPlan : applyFrameOrganizerPlan,
     createAnimation: browserOnlyMode ? exportBrowserAnimation : createAnimationFromOrganizer,

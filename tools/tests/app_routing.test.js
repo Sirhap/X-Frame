@@ -386,3 +386,52 @@ test("workspace route guard discards or cancels dirty tuning explicitly", async 
   assert.equal(await cancelController.applyWorkbenchRoute(), false);
   assert.equal(cancelWindow.location.pathname, "/workspace");
 });
+
+test("project cutout route copies the current animation frames into the batch", async () => {
+  const windowRef = createWindow(
+    "http://localhost/workspace/resources/cutout?project=p0test2&group=player%3Aactor%3Aassassin_jump%3A0&frame=0",
+  );
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getCurrentGroup: () => ({
+      name: "assassin_jump",
+      frames: Array.from({ length: 72 }, (_, index) => ({ id: `frame-${index}` })),
+    }),
+    getBatchCutout: () => ({
+      isOpen: () => false,
+      open() {
+        events.push("open");
+      },
+      async loadCurrentGroup() {
+        events.push("load-current");
+      },
+    }),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.deepEqual(events, ["open", "load-current"]);
+});
+
+test("standalone cutout stays empty when there is no temporary workset", async () => {
+  const windowRef = createWindow("http://localhost/tools/cutout");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getCurrentGroup: () => ({ frames: [{ id: "idle-1" }, { id: "idle-2" }] }),
+    getBatchCutout: () => ({
+      isOpen: () => false,
+      open() {
+        events.push("open");
+      },
+      async loadCurrentGroup() {
+        events.push("load-current");
+      },
+    }),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.deepEqual(events, ["open"]);
+});
