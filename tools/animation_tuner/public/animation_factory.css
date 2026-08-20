@@ -612,7 +612,7 @@ h2 {
 h1 {
   margin-bottom: 28px;
   font-size: clamp(64px, 6vw, 104px);
-  line-height: 0.91;
+  line-height: 1.22;
 }
 
 h1 span {
