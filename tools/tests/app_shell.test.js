@@ -81,6 +81,7 @@ function createFixture(options = {}) {
     brandMark: createElement(),
     browserModeBanner: createElement(),
     attackTrailPanel: Object.assign(createElement(), { hidden: true }),
+    projectContext: Object.assign(createElement(), { hidden: true }),
     filmstripPanel: createElement(),
     actionFeedback: createElement(),
     actionButtons: createElement(),
@@ -89,6 +90,7 @@ function createFixture(options = {}) {
     status: createElement(),
     exportButton: createElement(),
     projectProcessingActions: createElement(),
+    overviewPanel: Object.assign(createElement(), { hidden: true }),
     cutoutCurrentFrame: createElement(),
     cutoutOpen: createElement(),
     organizerOpen: createElement(),
@@ -130,6 +132,8 @@ function createFixture(options = {}) {
     ["#brandMark", elements.brandMark],
     ["#browserModeBanner", elements.browserModeBanner],
     ["#attackTrailPanel", elements.attackTrailPanel],
+    ["#projectContext", elements.projectContext],
+    ['.panel[data-shell-category="overview"]', elements.overviewPanel],
     [".contextActionFeedback", elements.actionFeedback],
     [".contextActionBarActions", elements.actionButtons],
     ["#save", elements.save],
@@ -421,6 +425,17 @@ test("sidebar panels are addressed by workspace tool, with no second tab row to 
     undefined,
     "the animation being edited stays switchable from every tool",
   );
+});
+
+test("overview reveals the project panel without unhiding leftover projectContext", () => {
+  const fixture = createFixture({ pathname: "/workspace/animation/overview" });
+  fixture.controller.bind();
+
+  assert.equal(fixture.elements.body.dataset.workspaceTool, "overview");
+  assert.equal(fixture.elements.projectContext.hidden, true);
+  assert.equal(fixture.elements.projectContext.open, false);
+  assert.equal(fixture.elements.overviewPanel.hidden, false);
+  assert.equal(fixture.elements.overviewPanel.open, true);
 });
 
 test("every client route is served by both the local server and the Cloudflare worker", () => {

@@ -120,6 +120,7 @@ function createFixture(options = {}) {
     getCurrentAnimation: () => null,
     canAddAssets: () => options.canAddAssets !== false,
     canExport: () => options.canExport !== false,
+    commitImportToCurrent: () => options.commitImportToCurrent === true,
     editImportCutout: async () => {},
     renderPreview: () => {},
     restartPreview: () => {},
@@ -191,7 +192,24 @@ test("clearing an imported workset restores import settings", () => {
   fixture.controller.renderCounts();
 
   assert.equal(fixture.state.showImportSetup, true);
+  assert.equal(fixture.elements.organizerToggleImportSetup.hidden, false);
+  assert.equal(fixture.elements.organizerImportSetup.hidden, false);
   assert.equal(fixture.elements.organizerToggleImportSetup.attributes["aria-expanded"], "true");
+});
+
+test("writing into the current animation still leaves import settings togglable", () => {
+  const fixture = createFixture({ mode: "import", commitImportToCurrent: true });
+  fixture.controller.renderCounts();
+
+  assert.equal(fixture.elements.organizerToggleImportSetup.hidden, false);
+  assert.equal(fixture.state.showImportSetup, false);
+
+  fixture.state.frames = [];
+  fixture.controller.renderCounts();
+
+  assert.equal(fixture.state.showImportSetup, true);
+  assert.equal(fixture.elements.organizerToggleImportSetup.hidden, false);
+  assert.equal(fixture.elements.organizerImportSetup.hidden, false);
 });
 
 test("loaded worksets collapse low-frequency controls and disable missing edited results", () => {

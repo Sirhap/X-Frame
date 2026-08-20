@@ -271,7 +271,7 @@
      */
     function revealToolPanel(tool) {
       const panel = documentRef.querySelector(
-        tool === "trails" ? "#attackTrailPanel" : `[data-shell-category="${tool}"]`,
+        tool === "trails" ? "#attackTrailPanel" : `.panel[data-shell-category="${tool}"]`,
       );
       if (!panel) return;
       panel.hidden = false;

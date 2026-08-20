@@ -134,6 +134,8 @@
 }
 
 .adjustModeCopy {
+  min-width: 0;
+  width: 100%;
   display: grid;
   gap: 3px;
   justify-items: center;
@@ -141,6 +143,11 @@
 }
 
 .adjustModeCopy strong {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: inherit;
   font-size: 14px;
   line-height: 1;

@@ -243,13 +243,13 @@ test("file delivery embeds the complete export workbench without a second dialog
   await expect(exportWorkbench).toBeVisible();
 });
 
-test("standalone export does not fall through to the active project", async ({ page }) => {
+test("standalone export uses the current animation when no temporary workset exists", async ({ page }) => {
   await page.goto("/tools/export");
 
-  await expect(page.locator("#deliveryExportMount .deliveryExportLoading")).toContainText(
-    "请先导入需要导出的图片序列",
-  );
-  await expect(page.locator("#mediaExportDialog")).toBeHidden();
+  await expect(page.locator("#deliveryExportMount")).not.toContainText("请先导入需要导出的图片序列");
+  await expect(
+    page.locator("#mediaExportDialog, #deliveryExportMount .mediaExportDialog").first(),
+  ).toBeVisible();
 });
 
 test("delivery tabs expose only their peer panel", async ({ page }) => {

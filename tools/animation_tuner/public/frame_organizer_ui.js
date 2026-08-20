@@ -473,7 +473,7 @@
         elements.organizerGodotPlaceholder.textContent = text("importSession");
         elements.organizerReset.textContent = text(state.mode === "import" ? "clearWorkset" : "reset");
         elements.organizerClearWorkset.hidden = state.mode === "import";
-        elements.organizerImportSetup.hidden = state.mode !== "import" || writeCurrent;
+        elements.organizerImportSetup.hidden = state.mode !== "import";
         elements.organizerImportSetup
           .closest(".organizerWorkbench")
           ?.classList.toggle("importMode", state.mode === "import");

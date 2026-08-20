@@ -70,9 +70,9 @@
           .filter(Boolean),
       ).size;
       const writeCurrent = dependencies.commitImportToCurrent?.() === true && groupedSources <= 1;
-      elements.organizerToggleImportSetup.hidden = state.mode !== "import" || writeCurrent;
+      elements.organizerToggleImportSetup.hidden = state.mode !== "import";
       if (elements.organizerImportSetup) {
-        elements.organizerImportSetup.hidden = state.mode !== "import" || writeCurrent;
+        elements.organizerImportSetup.hidden = state.mode !== "import" || !state.showImportSetup;
       }
       elements.organizerToggleImportSetup.setAttribute(
         "aria-expanded",

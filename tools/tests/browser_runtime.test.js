@@ -251,8 +251,8 @@ test("browser runtime builds a sprite-sheet-only package without dangling PNG pa
     },
   );
 
-  assert.equal(zipBuilds, 0);
-  assert.match(result.filename, /\.png$/i);
+  assert.equal(zipBuilds, 1);
+  assert.match(result.filename, /-xsxb\.zip$/i);
   assert.equal(downloads[0].download, result.filename);
   assert.deepEqual(drawCalls[0], [{ id: "idle" }, 0, 0, 32, 24]);
 });

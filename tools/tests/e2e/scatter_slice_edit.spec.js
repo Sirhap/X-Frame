@@ -94,12 +94,13 @@ test("detected slices can be moved, resized, edited, and deleted before export",
   await expect(tool.locator("#scatterSample")).toHaveCount(0);
   await expect(
     tool.locator(
-      "#scatterThreshold, #scatterMergeGap, #scatterMinPixels, #scatterMinSide, #scatterBoxX, #scatterBoxY, #scatterBoxW, #scatterBoxH, #scatterPadding, #scatterColumns",
+      "#scatterMergeGap, #scatterMinPixels, #scatterMinSide, #scatterBoxX, #scatterBoxY, #scatterBoxW, #scatterBoxH, #scatterPadding, #scatterColumns",
     ),
   ).toHaveCount(0);
+  await expect(tool.locator("#scatterThreshold")).toHaveCount(1);
   await tool.locator("#scatterDetect").click();
   await expect.poll(() => tool.locator(".sliceCard").count()).toBeGreaterThan(0);
-  await expect(tool.locator("#scatterDetect")).toHaveText("智能识别主体");
+  await expect(tool.locator("#scatterDetect")).toHaveText(/智能识别主体|Detect subjects/);
   await expect(tool.locator("#scatterEditMode")).toHaveAttribute("aria-pressed", "true");
 
   const playbackButton = tool.locator(".sliceGroupPlay").first();

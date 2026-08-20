@@ -935,7 +935,7 @@
     throwIfExportCancelled(dependencies.signal);
     const documentApi = dependencies.document || root.document;
     const urlApi = dependencies.urlApi || root.URL;
-    if (formats.spritesheet && !formats.frames) {
+    if (formats.spritesheet && !formats.frames && recipe.metadataJson === false) {
       const sheetEntries = entries.filter(
         (entry) => typeof entry?.name === "string" && /\.png$/i.test(entry.name) && entry.data,
       );

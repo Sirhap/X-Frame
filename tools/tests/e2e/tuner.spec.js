@@ -330,6 +330,8 @@ async function measureOrganizerFill(page) {
 test("organizer workbench fills its surface in every toolbar state", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto("/tools/import");
+  await expect(page.locator(".organizerWorkbench")).toBeVisible();
+  await expect(page.locator(".organizerBody")).toBeVisible();
 
   const empty = await measureOrganizerFill(page);
   expect(empty.bodyHeight).toBeGreaterThan(400);

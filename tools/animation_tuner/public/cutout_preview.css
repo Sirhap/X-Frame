@@ -17,6 +17,11 @@
   flex: 0 0 auto;
 }
 
+.cutoutPreview > .cutoutCompare {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .cutoutFrameNavigation {
   min-width: 270px;
   display: grid;

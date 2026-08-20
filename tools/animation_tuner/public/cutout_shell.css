@@ -398,3 +398,16 @@ body.cutoutOpen .cutoutClose {
   min-height: 38px;
   font-size: 18px;
 }
+
+@media (min-width: 1121px) {
+  body.cutoutOpen .cutoutWorkbench {
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+
+  body.cutoutOpen .cutoutBody {
+    min-height: 0;
+    overflow: hidden;
+  }
+}
