@@ -42,6 +42,46 @@ function createFixture() {
   };
 }
 
+test("history commits a pending field edit before snapshotting undo and redo", async () => {
+  const commits = [];
+  let current = { value: 4 };
+  let pending = null;
+  let undoStack = [];
+  let redoStack = [];
+  const controller = createController({
+    getUndoStack: () => undoStack,
+    setUndoStack: (value) => {
+      undoStack = value;
+    },
+    getRedoStack: () => redoStack,
+    setRedoStack: (value) => {
+      redoStack = value;
+    },
+    getSnapshot: () => ({ ...current }),
+    restoreSnapshot: async (snapshot) => {
+      current = { ...snapshot };
+    },
+    commitPending: () => {
+      if (pending != null) current = { value: pending };
+      commits.push(current.value);
+    },
+    markDirty: () => {},
+    status: () => {},
+    translate: (key) => key,
+  });
+
+  controller.pushUndo("position");
+  assert.deepEqual(commits, [4]);
+  assert.equal(undoStack[0].state.value, 4);
+
+  current = { value: 5 };
+  pending = 6;
+  await controller.undo();
+  assert.deepEqual(commits, [4, 6]);
+  assert.equal(redoStack[0].state.value, 6);
+  assert.equal(current.value, 4);
+});
+
 test("history pushes snapshots, clears redo, and enforces depth", () => {
   const { controller, elements, getRedoStack, getUndoStack, state } = createFixture();
   getRedoStack().push({ label: "old", state: { value: -1 } });

@@ -615,8 +615,23 @@
      * Rebuilds the active and chained frame filmstrip.
      * @returns {void}
      */
+    /** Returns a selector that can restore focus after the filmstrip is rebuilt. */
+    function filmstripFocusSelector(element) {
+      if (!element || !filmstrip?.contains?.(element)) return "";
+      const thumb = element.closest?.(".thumb");
+      const frameIndex = thumb?.dataset?.frameIndex;
+      if (frameIndex == null) return "";
+      const thumbSelector = `.thumb[data-frame-index="${frameIndex}"]`;
+      if (element.classList?.contains?.("durationStep") && element.dataset?.delta != null) {
+        return `${thumbSelector} .durationStep[data-delta="${element.dataset.delta}"]`;
+      }
+      if (element.classList?.contains?.("frameSfxBadge")) return `${thumbSelector} .frameSfxBadge`;
+      return thumbSelector;
+    }
+
     function renderFilmstrip() {
       if (!filmstrip) return;
+      const restoreSelector = filmstripFocusSelector(documentRef?.activeElement);
       filmstrip.innerHTML = "";
       renderAttachmentAssetTray();
       syncFrameActions();
@@ -626,6 +641,10 @@
       renderGroup(currentGroup, translate("mainLabel"));
       const chain = getPlaybackChainGroup();
       if (chain && chain.uiId !== currentGroup.uiId) renderGroup(chain, translate("thenLabel"));
+      if (!restoreSelector) return;
+      const restoreTarget =
+        filmstrip.querySelector?.(restoreSelector) || documentRef?.querySelector?.(restoreSelector);
+      restoreTarget?.focus?.({ preventScroll: true });
     }
 
     return {

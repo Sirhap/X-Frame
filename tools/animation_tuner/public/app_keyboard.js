@@ -91,6 +91,19 @@
       });
     }
 
+    /** Returns whether editor undo/redo should win over the focused control. */
+    function shouldHandleHistoryShortcut(typing, event) {
+      return !typing || Boolean(isNumberInputTarget(event));
+    }
+
+    /** Returns whether Space should arm stage pan / play instead of a control. */
+    function isStagePlayTarget(event) {
+      const target = event?.target;
+      if (!target) return false;
+      if (target.id === "stage") return true;
+      return Boolean(target.closest?.("#stage"));
+    }
+
     /** Returns whether the event target owns native keyboard interaction. */
     function isInteractiveShortcutTarget(event) {
       const target = event?.target;
@@ -114,7 +127,7 @@
       const target = event?.target;
       return Boolean(
         target?.matches?.('.thumb[role="option"]') ||
-          (target?.classList?.contains?.("thumb") && target?.getAttribute?.("role") === "option"),
+        (target?.classList?.contains?.("thumb") && target?.getAttribute?.("role") === "option"),
       );
     }
 
@@ -130,13 +143,13 @@
         runAsync(save, "saveFailed");
         return;
       }
-      if (!typing && command && key === "z") {
+      if (shouldHandleHistoryShortcut(typing, event) && command && key === "z") {
         event.preventDefault?.();
         if (event.shiftKey) redo();
         else undo();
         return;
       }
-      if (!typing && command && key === "y") {
+      if (shouldHandleHistoryShortcut(typing, event) && command && key === "y") {
         event.preventDefault?.();
         redo();
         return;
@@ -226,7 +239,14 @@
         setStageZoom(getStageZoom() * 0.92);
         return;
       }
-      if (!interactiveTarget && !command && !event.altKey && !event.repeat && event.code === "Space") {
+      if (
+        !interactiveTarget &&
+        isStagePlayTarget(event) &&
+        !command &&
+        !event.altKey &&
+        !event.repeat &&
+        event.code === "Space"
+      ) {
         event.preventDefault?.();
         setStageSpacePan(true);
         setStageSpacePanConsumed(false);

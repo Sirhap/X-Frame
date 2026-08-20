@@ -405,6 +405,52 @@ test("editor tuning, frame attachment, and audio survive save and reload", async
   await expect(page.locator(".thumb.primary")).not.toHaveClass(/hasSfx/);
 });
 
+test("TUN-013 Space after clicking a non-play control does not start playback", async ({ page }) => {
+  await page.goto("/workspace");
+  await expect.poll(() => page.locator(".thumb").count()).toBeGreaterThan(1);
+  await expect(page.locator("#playPause")).toHaveText("播放");
+
+  const secondFrame = page.locator('.thumb[data-frame-index="1"]');
+  await secondFrame.click();
+  await expect(secondFrame).toHaveAttribute("aria-selected", "true");
+  const afterThumb = await page.evaluate(() => ({
+    tag: document.activeElement?.tagName || "",
+    id: document.activeElement?.id || "",
+    role: document.activeElement?.getAttribute?.("role") || "",
+    frame: document.activeElement?.dataset?.frameIndex || "",
+  }));
+  expect(
+    afterThumb.role === "option" || afterThumb.frame === "1",
+    `thumb click left focus on ${afterThumb.tag}#${afterThumb.id}`,
+  ).toBe(true);
+  await page.keyboard.press("Space");
+  await expect(page.locator("#playPause")).toHaveText("播放");
+
+  await page.locator("#stageZoomFit").click();
+  await page.keyboard.press("Space");
+  await expect(page.locator("#playPause")).toHaveText("播放");
+
+  await page.goto("/workspace/animation/trails");
+  const trailPanel = page.locator("#attackTrailPanel");
+  if (await trailPanel.count()) {
+    await trailPanel.evaluate((panel) => {
+      panel.hidden = false;
+      panel.open = true;
+    });
+  }
+  const addStick = page.locator("#attackTrailAddStick");
+  if (await addStick.isVisible()) {
+    await page.locator("#attackTrailMode").check();
+    await addStick.click();
+    await page.keyboard.press("Space");
+    await expect(page.locator("#playPause")).toHaveText("播放");
+  }
+
+  await page.locator("#stage").click();
+  await page.keyboard.press("Space");
+  await expect(page.locator("#playPause")).toHaveText("暂停");
+});
+
 test("focused controls keep native Space behavior without starting playback", async ({ page }) => {
   await page.goto("/workspace");
   const secondFrame = page.locator('.thumb[data-frame-index="1"]');

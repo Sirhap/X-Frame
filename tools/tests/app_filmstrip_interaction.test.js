@@ -91,6 +91,42 @@ test("filmstrip layer controls move by one slot and restore focus", () => {
   assert.equal(undoCalls, 1);
 });
 
+test("filmstrip rebuild restores focus to the clicked thumb", () => {
+  const group = { uiId: "main", frames: [{ name: "one" }, { name: "two" }] };
+  const focused = [];
+  const thumb = {
+    classList: { contains: (name) => name === "thumb" },
+    dataset: { frameIndex: "1" },
+    closest: (selector) => (selector === ".thumb" ? thumb : null),
+  };
+  const restored = {
+    focus: (options) => {
+      focused.push(options);
+    },
+  };
+  const filmstrip = {
+    innerHTML: "stale",
+    contains: (element) => element === thumb,
+    querySelector: (selector) => (selector === '.thumb[data-frame-index="1"]' ? restored : null),
+  };
+  const controller = createController({
+    elements: { filmstrip },
+    documentRef: { activeElement: thumb, querySelector: () => null },
+    state: { getCurrentGroup: () => group },
+    handlers: {
+      renderAttachmentAssetTray: () => {},
+      syncFrameActions: () => {},
+      getPlaybackChainGroup: () => null,
+      renderFilmstripGroup: () => {},
+    },
+    utils: { translate: (key) => key },
+  });
+
+  controller.renderFilmstrip();
+
+  assert.deepEqual(focused, [{ preventScroll: true }]);
+});
+
 test("filmstrip cards leave Enter and Space to nested buttons", () => {
   const controller = createController();
   let clickCalls = 0;

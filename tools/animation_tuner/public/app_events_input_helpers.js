@@ -83,6 +83,17 @@
      * @returns {void}
      */
     function armInputUndo(input, label) {
+      /** Pushes the focus-time snapshot once for a committed field edit. */
+      function commitArmedInputUndo() {
+        if (!state.inputEditSnapshots.has(input) || input.dataset.undoUsed) return;
+        const snapshot = state.inputEditSnapshots.get(input);
+        state.undoStack.push(snapshot);
+        if (state.undoStack.length > 80) state.undoStack.shift();
+        state.redoStack = [];
+        updateHistoryControls();
+        input.dataset.undoUsed = "1";
+      }
+
       input.addEventListener("focus", () =>
         state.inputEditSnapshots.set(input, { label, state: cloneState() }),
       );
@@ -91,16 +102,10 @@
         delete input.dataset.undoUsed;
       });
       input.addEventListener("input", () => {
-        if (state.inputEditSnapshots.has(input) && !input.dataset.undoUsed) {
-          const snapshot = state.inputEditSnapshots.get(input);
-          state.undoStack.push(snapshot);
-          if (state.undoStack.length > 80) state.undoStack.shift();
-          state.redoStack = [];
-          updateHistoryControls();
-          input.dataset.undoUsed = "1";
-        }
+        commitArmedInputUndo();
       });
       input.addEventListener("change", () => {
+        commitArmedInputUndo();
         delete input.dataset.undoUsed;
         state.inputEditSnapshots.delete(input);
       });

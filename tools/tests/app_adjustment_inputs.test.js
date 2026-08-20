@@ -106,6 +106,48 @@ test("adjustment input controller preserves mode, transform, and step semantics"
   assert.equal(adjustmentUpdates, 1);
 });
 
+test("position stepper commits an undo snapshot before applying the offset", () => {
+  const elements = createElements();
+  const undoLabels = [];
+  const controller = createController({
+    elements,
+    adjustmentModes: ["group"],
+    getAdjustmentMode: () => "group",
+    getCurrentGroup: () => ({ uiId: "group-1" }),
+    canEditGroupTransform: () => true,
+    groupSupports: () => true,
+    baseTransform: () => ({ scale: 1, scaleX: 1, scaleY: 1, offset: { x: 4, y: 0 }, rotation: 0 }),
+    frameTransform: () => ({ scale: 1, scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 }),
+    characterTransform: () => ({ scale: 1, scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 }),
+    framePlayback: () => ({ disabled: false }),
+    frameDurationMs: () => 100,
+    groupPlaybackFps: () => 12,
+    groupRootMotion: () => ({ x: 0, y: 0 }),
+    canEditFramePlayback: () => true,
+    canUseReferenceFrame: () => true,
+    syncGroupTimeInputs: () => {},
+    updateCanvasTitle: () => {},
+    updateWorkbenchHud: () => {},
+    syncBoxInputs: () => {},
+    syncFrameAudioInputs: () => {},
+    updateAdjustmentFromInputs: () => {},
+    pushUndo: (label) => {
+      undoLabels.push(label);
+    },
+    createBoxEditSnapshot: () => ({}),
+    overrideStore: () => ({}),
+    cloneValue: (value) => JSON.parse(JSON.stringify(value)),
+    round: (value) => value,
+    documentRef: { querySelectorAll: () => [] },
+    localStorageRef: { setItem() {} },
+  });
+
+  controller.stepAdjustmentInput(elements.baseX, 1);
+  controller.stepAdjustmentInput(elements.baseX, 1);
+  assert.deepEqual(undoLabels, ["adjustment step", "adjustment step"]);
+  assert.equal(elements.baseX.value, 5);
+});
+
 test("adjustment inputs keep the last valid number when the field is empty or invalid", () => {
   const elements = createElements();
   elements.baseScale.value = "-";

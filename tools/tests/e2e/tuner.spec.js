@@ -1997,6 +1997,59 @@ test("English workbench copy drops the leftover Chinese resource labels", async 
   await expect(page.locator("#scatterResultsTitle")).toHaveText("Animation groups and slices");
 });
 
+test("TUN-012 position stepper edits undo without reverting stretch", async ({ page }) => {
+  await page.goto("/workspace/animation/transform");
+  await page.locator("#adjustGroup").check();
+  await page.locator(".advancedAdjustments").evaluate((details) => {
+    details.open = true;
+  });
+
+  await page.locator("#baseScaleY").fill("0.6");
+  await page.locator("#baseScaleX").fill("1.6");
+  await page.locator("#stage").click();
+  await expect.poll(async () => Number(await page.locator("#baseScaleY").inputValue())).toBeCloseTo(0.6, 3);
+  await expect.poll(async () => Number(await page.locator("#baseScaleX").inputValue())).toBeCloseTo(1.6, 3);
+
+  const offsetBefore = Number(await page.locator("#baseX").inputValue());
+  await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
+  await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
+  await expect.poll(async () => Number(await page.locator("#baseX").inputValue())).toBe(offsetBefore + 2);
+  await expect(page.locator("#workspaceSaveIndicator")).toHaveText(/已保存|等待保存|保存中/, {
+    timeout: 4000,
+  });
+
+  const stretchStillApplied = async () => {
+    expect(Number(await page.locator("#baseScaleY").inputValue())).toBeCloseTo(0.6, 3);
+    expect(Number(await page.locator("#baseScaleX").inputValue())).toBeCloseTo(1.6, 3);
+  };
+
+  for (let step = 0; step < 2; step += 1) {
+    if (Number(await page.locator("#baseX").inputValue()) === offsetBefore) break;
+    await page.keyboard.press("Control+z");
+    await stretchStillApplied();
+  }
+  await expect.poll(async () => Number(await page.locator("#baseX").inputValue())).toBe(offsetBefore);
+  await stretchStillApplied();
+
+  await page.keyboard.press("Control+Shift+z");
+  await expect
+    .poll(async () => Number(await page.locator("#baseX").inputValue()))
+    .toBeGreaterThan(offsetBefore);
+  await stretchStillApplied();
+
+  for (let step = 0; step < 2; step += 1) {
+    if (Number(await page.locator("#baseX").inputValue()) === offsetBefore) break;
+    await page.keyboard.press("Control+z");
+    await stretchStillApplied();
+  }
+  await expect.poll(async () => Number(await page.locator("#baseX").inputValue())).toBe(offsetBefore);
+  await page.locator("#stage").click();
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(async () => Number(await page.locator("#baseScaleX").inputValue()))
+    .not.toBeCloseTo(1.6, 3);
+});
+
 test("narrow English chrome keeps scatter and cutout tab labels readable", async ({ page }) => {
   await page.goto("/");
   await page.locator('[data-factory-language="en"]').click();

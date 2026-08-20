@@ -272,6 +272,30 @@ test("frame option retains select-all and route shortcuts while focused", () => 
   assert.equal(routeEvent.prevented, true);
 });
 
+test("Ctrl+Z on a number input undoes the editor action", () => {
+  const { controller, state } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      isTypingTarget: () => true,
+      isNumberInputTarget: () => true,
+    },
+  });
+  const event = {
+    key: "z",
+    ctrlKey: true,
+    metaKey: false,
+    target: { tagName: "INPUT", type: "number" },
+    preventDefault() {
+      this.prevented = true;
+    },
+  };
+
+  controller.handleEditorKeydown(event);
+
+  assert.equal(event.prevented, true);
+  assert.equal(state.undoCalls, 1);
+});
+
 test("native text editing keeps undo and copy shortcuts", () => {
   const { controller, state } = createFixture({
     dependencies: {
@@ -340,6 +364,13 @@ test("Space tap arms pan then toggles play on keyup when unused", () => {
     },
   });
 
+  const stageTarget = {
+    id: "stage",
+    tagName: "CANVAS",
+    closest(selector) {
+      return selector === "#stage" ? this : null;
+    },
+  };
   controller.handleEditorKeydown({
     key: " ",
     code: "Space",
@@ -347,7 +378,7 @@ test("Space tap arms pan then toggles play on keyup when unused", () => {
     metaKey: false,
     altKey: false,
     repeat: false,
-    target: { tagName: "DIV" },
+    target: stageTarget,
     preventDefault() {},
   });
   assert.equal(spacePan, true);
@@ -356,6 +387,55 @@ test("Space tap arms pan then toggles play on keyup when unused", () => {
   controller.handleKeyup({ code: "Space" });
   assert.equal(spacePan, false);
   assert.equal(state.playCalls, 1);
+});
+
+test("Space on the workbench or body after a control click does not start playback", () => {
+  let spacePan = false;
+  const { controller, state } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      setStageSpacePan: (value) => {
+        spacePan = Boolean(value);
+      },
+      getStageSpacePan: () => spacePan,
+      getStageSpacePanConsumed: () => false,
+      setStageSpacePanConsumed: () => {},
+    },
+  });
+  const mainTarget = {
+    id: "mainWorkbench",
+    tagName: "MAIN",
+    closest(selector) {
+      return selector === "#mainWorkbench" ? this : null;
+    },
+  };
+
+  controller.handleEditorKeydown({
+    key: " ",
+    code: "Space",
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    repeat: false,
+    target: mainTarget,
+    preventDefault() {},
+  });
+  controller.handleKeyup({ code: "Space" });
+  assert.equal(spacePan, false);
+  assert.equal(state.playCalls, 0);
+
+  controller.handleEditorKeydown({
+    key: " ",
+    code: "Space",
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    repeat: false,
+    target: { tagName: "BODY" },
+    preventDefault() {},
+  });
+  controller.handleKeyup({ code: "Space" });
+  assert.equal(state.playCalls, 0);
 });
 
 test("Space drag consumption skips play toggle on keyup", () => {
