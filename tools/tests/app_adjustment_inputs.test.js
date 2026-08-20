@@ -111,6 +111,105 @@ test("adjustment input controller preserves mode, transform, and step semantics"
   assert.equal(adjustmentUpdates, 1);
 });
 
+/**
+ * Builds a group-scope controller whose apply path writes the full transform
+ * the way the workbench does after a stepper click.
+ * @param {ReturnType<typeof createElements>} elements Panel fixture.
+ * @param {{offset?:{x:number,y:number}}} [store] Live transform store.
+ * @returns {{controller:object,store:object,applied:object[]}} Controller and apply log.
+ */
+function createSteppingController(elements, store = { offset: { x: 0, y: 0 } }) {
+  const applied = [];
+  const transform = () => ({
+    scale: 1,
+    scaleX: 1,
+    scaleY: 1,
+    offset: { x: store.offset.x, y: store.offset.y },
+    rotation: 0,
+  });
+  const controller = createController({
+    elements,
+    adjustmentModes: ["group"],
+    getAdjustmentMode: () => "group",
+    getCurrentGroup: () => ({ uiId: "group-1" }),
+    canEditGroupTransform: () => true,
+    groupSupports: () => true,
+    baseTransform: transform,
+    frameTransform: transform,
+    characterTransform: transform,
+    framePlayback: () => ({ disabled: false }),
+    frameDurationMs: () => 100,
+    groupPlaybackFps: () => 12,
+    groupRootMotion: () => ({ x: 0, y: 0 }),
+    updateAdjustmentFromInputs: (editedInput) => {
+      const next = controller.transformFromAdjustmentInputs(editedInput);
+      store.offset = { x: next.offset.x, y: next.offset.y };
+      applied.push({ offset: { ...store.offset }, editedInput: editedInput?.id || null });
+    },
+    pushUndo: () => {},
+    createBoxEditSnapshot: () => ({}),
+    overrideStore: () => ({}),
+    cloneValue: (value) => JSON.parse(JSON.stringify(value)),
+    round: (value) => value,
+    documentRef: { querySelectorAll: () => [] },
+    localStorageRef: { setItem() {} },
+  });
+  return { controller, store, applied };
+}
+
+test("incrementing offset.x does not change offset.y", () => {
+  const elements = createElements();
+  elements.baseX.value = "0";
+  elements.baseY.value = "0";
+  const { controller, store, applied } = createSteppingController(elements, { offset: { x: 0, y: 0 } });
+
+  controller.stepAdjustmentInput(elements.baseX, 1);
+
+  assert.equal(store.offset.x, 1);
+  assert.equal(store.offset.y, 0);
+  assert.equal(Number(elements.baseY.value), 0);
+  assert.equal(applied.at(-1).offset.y, 0);
+});
+
+test("incrementing offset.x does not commit a stale or cross-written offset.y", () => {
+  const elements = createElements();
+  elements.baseX.value = "0";
+  elements.baseY.value = "-1";
+  const { controller, store } = createSteppingController(elements, { offset: { x: 0, y: 0 } });
+
+  controller.stepAdjustmentInput(elements.baseX, 1);
+
+  assert.equal(store.offset.x, 1);
+  assert.equal(store.offset.y, 0, "shared stepper / sibling field must not cross-write Y");
+  assert.equal(Number(elements.baseY.value), 0);
+});
+
+test("incrementing offset.y does not change offset.x", () => {
+  const elements = createElements();
+  elements.baseX.value = "4";
+  elements.baseY.value = "0";
+  const { controller, store } = createSteppingController(elements, { offset: { x: 4, y: 0 } });
+
+  controller.stepAdjustmentInput(elements.baseY, 1);
+
+  assert.equal(store.offset.x, 4);
+  assert.equal(store.offset.y, 1);
+  assert.equal(Number(elements.baseX.value), 4);
+});
+
+test("committing one position field after a tab hide does not nudge the other axis", () => {
+  const elements = createElements();
+  elements.baseX.value = "2";
+  elements.baseY.value = "1";
+  const { controller, store } = createSteppingController(elements, { offset: { x: 2, y: 0 } });
+
+  controller.commitAdjustmentField(elements.baseX);
+
+  assert.equal(store.offset.x, 2);
+  assert.equal(store.offset.y, 0, "blur/tab apply must not read a stale Y");
+  assert.equal(Number(elements.baseY.value), 0);
+});
+
 test("position stepper commits an undo snapshot before applying the offset", () => {
   const elements = createElements();
   const undoLabels = [];

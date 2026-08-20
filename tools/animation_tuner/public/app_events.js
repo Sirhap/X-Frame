@@ -132,6 +132,7 @@
       beginAdjustmentNumberEdit = () => {},
       retainAdjustmentNumberSelection = () => {},
       applyAdjustmentNumberInput = () => true,
+      commitAdjustmentField = (input) => updateAdjustmentFromInputs(input),
       stagePoint,
       syncAdjustmentInputs,
       syncAdjustmentModeInputs,
@@ -431,9 +432,11 @@
       document.querySelectorAll(".numberStep").forEach((button) => {
         button.addEventListener("click", (event) => {
           event.preventDefault();
+          event.stopPropagation();
           const input = document.querySelector(`#${button.dataset.stepTarget}`);
+          if (!input) return;
           stepAdjustmentInput(input, Number(button.dataset.stepDir || 0));
-          input?.focus({ preventScroll: true });
+          input.focus({ preventScroll: true });
         });
       });
 
@@ -461,7 +464,7 @@
         input.addEventListener("blur", () => {
           applyAdjustmentNumberInput(input);
           normalizeAdjustmentInputDisplay(input);
-          updateAdjustmentFromInputs();
+          commitAdjustmentField(input);
           state.baseEditSnapshot = null;
           state.boxEditSnapshot = null;
         });
@@ -521,7 +524,7 @@
         if (input !== els.baseScale) {
           input.addEventListener("input", () => {
             if (!applyAdjustmentNumberInput(input) || isIncompleteNumberInput(input.value)) return;
-            updateAdjustmentFromInputs();
+            commitAdjustmentField(input);
           });
         }
       }

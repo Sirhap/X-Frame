@@ -1912,7 +1912,7 @@ function commitPendingAdjustmentEdits() {
   if (!active || !adjustmentNumberInputs().includes(active)) return;
   applyAdjustmentNumberInput(active);
   normalizeAdjustmentInputDisplay(active);
-  updateAdjustmentFromInputs();
+  commitAdjustmentField(active);
   if (typeof active.blur === "function") active.blur();
 }
 
@@ -2166,6 +2166,10 @@ function retainAdjustmentNumberSelection(...args) {
 
 function applyAdjustmentNumberInput(...args) {
   return adjustmentInputsCall("applyAdjustmentNumberInput", ...args);
+}
+
+function commitAdjustmentField(...args) {
+  return adjustmentInputsCall("commitAdjustmentField", ...args);
 }
 
 function syncAdjustmentModeInputs(...args) {
@@ -3253,8 +3257,8 @@ function updateBaseFromInputs(transform = transformFromAdjustmentInputs()) {
   draw();
 }
 
-function updateAdjustmentFromInputs() {
-  const transform = transformFromAdjustmentInputs();
+function updateAdjustmentFromInputs(editedInput) {
+  const transform = transformFromAdjustmentInputs(editedInput);
   if (adjustmentMode === "character") {
     updateCharacterFromInputs(transform);
   } else if (adjustmentMode === "frame") {
@@ -3578,6 +3582,7 @@ const appEvents = appEventsModule.createController({
     beginAdjustmentNumberEdit,
     retainAdjustmentNumberSelection,
     applyAdjustmentNumberInput,
+    commitAdjustmentField,
     stagePoint,
     syncAdjustmentInputs,
     syncAdjustmentModeInputs,

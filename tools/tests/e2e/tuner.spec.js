@@ -731,6 +731,37 @@ test("tool rail keeps the active animation when opening contextual processing to
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
 });
 
+test("position stepper incrementing X does not change Y, and tab switch does not nudge", async ({ page }) => {
+  await page.goto("/workspace/animation/transform");
+  await page.locator("#adjustGroup").check();
+  const baseX = page.locator("#baseX");
+  const baseY = page.locator("#baseY");
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
+  await expect.poll(async () => Number(await baseY.inputValue())).toBe(0);
+
+  await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(1);
+  await expect.poll(async () => Number(await baseY.inputValue())).toBe(0);
+
+  await page.locator('[data-step-target="baseX"][data-step-dir="-1"]').click();
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
+  await expect.poll(async () => Number(await baseY.inputValue())).toBe(0);
+
+  await page.locator('[data-step-target="baseY"][data-step-dir="1"]').click();
+  await expect.poll(async () => Number(await baseY.inputValue())).toBe(1);
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
+
+  await page.locator('a[data-workbench-route="boxes"]').click();
+  await expect(page).toHaveURL(/\/workspace\/animation\/boxes/);
+  await expect.poll(async () => Number(await baseY.inputValue())).toBe(1);
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
+
+  await page.locator('a[data-workbench-route="animation"]').click();
+  await expect(page).toHaveURL(/\/workspace\/animation\/transform/);
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
+  await expect.poll(async () => Number(await baseY.inputValue())).toBe(1);
+});
+
 test("same-stage workbench tabs do not ask about unsaved edits", async ({ page }) => {
   await page.goto("/workspace/animation/transform");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();

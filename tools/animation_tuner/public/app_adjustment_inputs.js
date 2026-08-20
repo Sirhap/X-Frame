@@ -207,20 +207,67 @@
       return Number.isFinite(number) ? number : Number(fallback) || 0;
     }
 
-    /** Reads the base transform fields from the adjustment panel. */
-    function transformFromAdjustmentInputs() {
+    /**
+     * Reads adjustment fields from the panel, or only the edited field when one
+     * input is provided so a sibling stepper cannot cross-write the other axis.
+     * @param {{id?:string}|null} [editedInput] Field that the user just changed.
+     * @returns {object} Transform assembled from the edited field plus store siblings.
+     */
+    function transformFromAdjustmentInputs(editedInput = null) {
       const last = adjustmentTransform();
-      const uniformScale = parseAdjustmentNumber(elements.baseScale.value, last.scale);
+      const shouldRead = (input) => !editedInput || input === editedInput;
+      const read = (input, fallback) => {
+        if (!shouldRead(input)) {
+          const stored = Number(fallback);
+          return Number.isFinite(stored) ? stored : 0;
+        }
+        return parseAdjustmentNumber(input?.value, fallback);
+      };
+      const uniformScale = read(elements.baseScale, last.scale);
+      const scaleX =
+        editedInput === elements.baseScale
+          ? uniformScale
+          : read(elements.baseScaleX, last.scaleX ?? uniformScale);
+      const scaleY =
+        editedInput === elements.baseScale
+          ? uniformScale
+          : read(elements.baseScaleY, last.scaleY ?? uniformScale);
       return {
         scale: uniformScale,
-        scaleX: parseAdjustmentNumber(elements.baseScaleX.value, last.scaleX ?? uniformScale),
-        scaleY: parseAdjustmentNumber(elements.baseScaleY.value, last.scaleY ?? uniformScale),
+        scaleX,
+        scaleY,
         offset: {
-          x: parseAdjustmentNumber(elements.baseX.value, last.offset?.x ?? 0),
-          y: parseAdjustmentNumber(elements.baseY.value, last.offset?.y ?? 0),
+          x: read(elements.baseX, last.offset?.x ?? 0),
+          y: read(elements.baseY, last.offset?.y ?? 0),
         },
-        rotation: parseAdjustmentNumber(elements.baseRotation.value, last.rotation ?? 0),
+        rotation: read(elements.baseRotation, last.rotation ?? 0),
       };
+    }
+
+    /** Writes store-backed siblings so a stale X/Y display cannot leak into apply. */
+    function writeAdjustmentInputsFromTransform(transform, exceptInput = null) {
+      const writeValue = (input, value) => {
+        if (!input || input === exceptInput) return;
+        input.value = round(value);
+      };
+      writeValue(elements.baseScale, transform.scale);
+      writeValue(elements.baseScaleX, transform.scaleX);
+      writeValue(elements.baseScaleY, transform.scaleY);
+      writeValue(elements.baseX, transform.offset.x);
+      writeValue(elements.baseY, transform.offset.y);
+      writeValue(elements.baseRotation, transform.rotation || 0);
+    }
+
+    /**
+     * Applies one edited adjustment field without re-reading sibling steppers.
+     * @param {{id?:string}|null} input Field the user just changed.
+     * @returns {object} Transform that was applied.
+     */
+    function commitAdjustmentField(input) {
+      const transform = transformFromAdjustmentInputs(input);
+      writeAdjustmentInputsFromTransform(transform, input);
+      updateAdjustmentFromInputs(input);
+      return transform;
     }
 
     /** Returns numeric inputs controlled by the adjustment panel. */
@@ -278,7 +325,7 @@
         elements.baseScaleX.value = input.value;
         elements.baseScaleY.value = input.value;
       }
-      updateAdjustmentFromInputs();
+      commitAdjustmentField(input);
       endStepAdjustmentEdit();
     }
 
@@ -321,7 +368,7 @@
     }
 
     /** Writes a normalized number back into one focused adjustment field. */
-    function normalizeAdjustmentInputDisplay(input, transform = transformFromAdjustmentInputs()) {
+    function normalizeAdjustmentInputDisplay(input, transform = transformFromAdjustmentInputs(input)) {
       if (!input) return transform;
       const values = {
         [elements.baseScale?.id]: round(transform.scale),
@@ -489,6 +536,7 @@
       normalizeAdjustmentMode,
       adjustmentTransform,
       transformFromAdjustmentInputs,
+      commitAdjustmentField,
       compactDisplayedNumber,
       isIncompleteNumberInput,
       sanitizeAdjustmentNumberInput,
