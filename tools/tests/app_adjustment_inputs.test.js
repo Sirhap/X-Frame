@@ -477,3 +477,43 @@ test("SAV-004 typed baseX 0→1 stays 1 after autosave flush and persist snapsho
   assert.equal(persistSnapshots[0].field, 1);
   assert.ok(applied.length >= 1);
 });
+
+test("SAV-004 idle flush does not mutate a clean 0/0 offset", () => {
+  const elements = createElements();
+  elements.baseX.value = "0";
+  elements.baseY.value = "0";
+  const { controller, store, applied } = createSteppingController(elements, { offset: { x: 0, y: 0 } });
+
+  const flushed = controller.flushFocusedAdjustmentEdit(null);
+
+  assert.deepEqual(store.offset, { x: 0, y: 0 });
+  assert.equal(Number(elements.baseX.value), 0);
+  assert.equal(Number(elements.baseY.value), 0);
+  assert.deepEqual(flushed.offset, { x: 0, y: 0 });
+  assert.equal(applied.length, 0);
+});
+
+test("SAV-004 wheel over a number field does not change 0 or 1.000", () => {
+  const elements = createElements();
+  elements.baseX.value = "0";
+  elements.baseScale.value = "1.000";
+  const { controller, store, applied } = createSteppingController(elements, { offset: { x: 0, y: 0 } });
+  const prevented = [];
+
+  for (const input of [elements.baseX, elements.baseScale]) {
+    const event = {
+      preventDefault() {
+        prevented.push(input.id);
+      },
+      stopPropagation() {},
+      target: input,
+    };
+    assert.equal(controller.guardAdjustmentNumberWheel(event, input), false);
+  }
+
+  assert.deepEqual(prevented, ["baseX", "baseScale"]);
+  assert.equal(elements.baseX.value, "0");
+  assert.equal(elements.baseScale.value, "1.000");
+  assert.deepEqual(store.offset, { x: 0, y: 0 });
+  assert.equal(applied.length, 0);
+});

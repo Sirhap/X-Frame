@@ -2184,6 +2184,10 @@ function flushFocusedAdjustmentEdit(...args) {
   return adjustmentInputsCall("flushFocusedAdjustmentEdit", ...args);
 }
 
+function guardAdjustmentNumberWheel(...args) {
+  return adjustmentInputsCall("guardAdjustmentNumberWheel", ...args);
+}
+
 function beginWorkbenchClickGuard(...args) {
   return adjustmentInputsCall("beginWorkbenchClickGuard", ...args);
 }
@@ -3613,6 +3617,8 @@ const appEvents = appEventsModule.createController({
     commitAdjustmentField,
     markAdjustmentFieldEdited,
     releaseAdjustmentField,
+    flushFocusedAdjustmentEdit,
+    guardAdjustmentNumberWheel,
     beginWorkbenchClickGuard,
     endWorkbenchClickGuard,
     handleAdjustmentStepClick,

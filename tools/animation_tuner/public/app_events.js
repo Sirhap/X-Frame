@@ -135,6 +135,10 @@
       commitAdjustmentField = (input) => updateAdjustmentFromInputs(input),
       markAdjustmentFieldEdited = () => {},
       releaseAdjustmentField = (input) => commitAdjustmentField(input),
+      guardAdjustmentNumberWheel = (event) => {
+        event?.preventDefault?.();
+        return false;
+      },
       beginWorkbenchClickGuard = () => {},
       endWorkbenchClickGuard = () => {},
       handleAdjustmentStepClick = (button) => {
@@ -356,6 +360,13 @@
       ]) {
         armInputUndo(input, "frame input");
         input.addEventListener("input", updateSelectedFromInputs);
+        input.addEventListener(
+          "wheel",
+          (event) => {
+            guardAdjustmentNumberWheel(event, input);
+          },
+          { passive: false },
+        );
       }
       armInputUndo(els.frameDuration, "frame duration");
       els.frameDuration.addEventListener("input", () => {
@@ -436,8 +447,9 @@
         if (!applyAdjustmentNumberInput(els.baseScale) || isIncompleteNumberInput(els.baseScale.value)) {
           return;
         }
+        markAdjustmentFieldEdited(els.baseScale);
         syncBaseAxisScaleToUniform();
-        updateAdjustmentFromInputs();
+        commitAdjustmentField(els.baseScale);
       });
 
       document.querySelectorAll(".numberStep").forEach((button) => {
@@ -542,6 +554,13 @@
           if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(text)) event.preventDefault();
         });
         input.addEventListener("drop", (event) => event.preventDefault());
+        input.addEventListener(
+          "wheel",
+          (event) => {
+            guardAdjustmentNumberWheel(event, input);
+          },
+          { passive: false },
+        );
         if (input !== els.baseScale) {
           input.addEventListener("input", () => {
             if (!applyAdjustmentNumberInput(input) || isIncompleteNumberInput(input.value)) return;
