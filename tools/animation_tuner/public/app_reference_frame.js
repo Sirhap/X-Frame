@@ -130,7 +130,38 @@
       }
     }
 
+    /**
+     * Clears a deleted reference frame or remaps a surviving one after a
+     * same-group deletion. Other groups are left untouched.
+     * @param {Iterable<number>} removedIndexes Zero-based indexes that were removed.
+     * @param {object|null} [group] Animation that lost frames.
+     * @returns {void}
+     */
+    function forgetDeletedFrames(removedIndexes, group = getCurrentGroup()) {
+      const referenceFrame = getReferenceFrame();
+      const refIndex = referenceFrameIndex(group);
+      if (refIndex == null || !referenceFrame) return;
+      const removed = new Set(
+        Array.from(removedIndexes || []).filter((index) => Number.isInteger(index) && index >= 0),
+      );
+      if (!removed.size) return;
+      if (removed.has(refIndex)) {
+        setReferenceFrame(null);
+        markDirty();
+        renderFilmstrip();
+        draw();
+        return;
+      }
+      const shift = Array.from(removed).filter((index) => index < refIndex).length;
+      if (!shift) return;
+      setReferenceFrame({ ...referenceFrame, index: refIndex - shift });
+      markDirty();
+      renderFilmstrip();
+      draw();
+    }
+
     return {
+      forgetDeletedFrames,
       isReferenceFrame,
       referenceFrameIndex,
       restoreReferenceFrame,

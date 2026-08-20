@@ -43,6 +43,8 @@
       selectGroup = async () => {},
       deleteBrowserSessionFrames = async () => {},
       deleteBrowserSessionAnimation = async () => {},
+      clearReferenceForDeletedFrames = () => {},
+      persistBrowserSessionProject = async () => {},
       clearImageCache = () => {},
       clearImageElements = () => {},
       setOpaqueRectCache = () => {},
@@ -179,8 +181,12 @@
         }));
       setFrameMutationPending(true);
       try {
-        if (browserOnly) await deleteBrowserSessionFrames(indexes);
-        else await applyFrameOrganizerPlan(items);
+        if (browserOnly) {
+          clearReferenceForDeletedFrames(indexes);
+          await deleteBrowserSessionFrames(indexes);
+          await persistBrowserSessionProject();
+          onFramesChanged({ type: "frames-reorganized" });
+        } else await applyFrameOrganizerPlan(items);
         status(translate("framesDeleted", { count: indexes.length }));
         return true;
       } finally {

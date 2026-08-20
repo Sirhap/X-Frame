@@ -518,7 +518,10 @@ test("mobile frame deletion and animation clearing remain explicit and bounded",
   await page.locator("#deleteSelectedFrames").click();
   await page.locator("#appConfirmAccept").click();
   await expect(page.locator(".thumb")).toHaveCount(2);
+  await page.reload();
+  await expect(page.locator(".thumb")).toHaveCount(2);
 
+  await page.locator(".frameActionsMenu > summary").click();
   await page.locator("#clearAnimation").click();
   await expect(page.locator("#appConfirmCancel")).toBeFocused();
   await expect(page.locator("#appConfirmAccept")).toHaveText("删除当前动画");

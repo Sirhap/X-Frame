@@ -642,6 +642,7 @@ const referenceFrameController = globalThis.XSXBReferenceFrame.createController(
   draw,
 });
 const {
+  forgetDeletedFrames,
   isReferenceFrame,
   referenceFrameIndex,
   restoreReferenceFrame,
@@ -1527,7 +1528,18 @@ const saveController = saveControllerModule.createController({
   getAttackTrails: () => attackTrailEditor?.serialize(),
   premiumFeatures,
   ensurePremiumActivated,
-  fetchImpl: globalThis.fetch,
+  fetchImpl: browserOnlyMode
+    ? async (url, options) => {
+        if (String(url).startsWith("/api/save")) {
+          await persistBrowserSessionProject();
+          return {
+            ok: true,
+            json: async () => ({ ok: true, dataRevision: "browser-session" }),
+          };
+        }
+        return globalThis.fetch(url, options);
+      }
+    : globalThis.fetch,
   markClean,
   status,
   translate: t,
@@ -2483,6 +2495,7 @@ async function applyBrowserFrameOrganizerPlan(items, options = {}) {
   });
   markDirty();
   publishWorkspaceFrameChanges({ type: "frames-reorganized" });
+  await persistBrowserSessionProject();
 }
 
 /**
@@ -2578,6 +2591,7 @@ async function deleteBrowserSessionAnimation(group) {
     }
     resizeCanvas();
     markDirty();
+    await persistBrowserSessionProject();
   } catch (error) {
     status(
       language === "zh"
@@ -2672,6 +2686,8 @@ appToolActionsController = appToolActionsModule.createController({
   selectGroup,
   deleteBrowserSessionFrames,
   deleteBrowserSessionAnimation,
+  clearReferenceForDeletedFrames: forgetDeletedFrames,
+  persistBrowserSessionProject,
   clearImageCache: () => imageCache.clear(),
   clearImageElements: () => imageElements.clear(),
   setOpaqueRectCache: (value) => {
@@ -4021,6 +4037,13 @@ const handoffRuntimeModule = globalThis.XSXBWorksetHandoffRuntime;
 const handoffDialogModule = globalThis.XSXBWorksetHandoffDialog;
 if (!handoffRuntimeModule || !handoffDialogModule) {
   throw new Error("Workset handoff modules are required.");
+}
+
+/** Writes the in-memory browser project, including frame list and reference, to IndexedDB. */
+async function persistBrowserSessionProject() {
+  const projectId = activeProjectId();
+  if (!browserOnlyMode || !projectId) return;
+  await browserRuntime.commitSessionProjectConfig(projectId, browserProjectSnapshot(projectId));
 }
 
 /** Returns the current browser project including unsaved in-memory binding state. */

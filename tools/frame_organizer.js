@@ -97,6 +97,25 @@ function remapIndexedDictionary(source, prefix, items, mirrorFrameBoxes = false)
 }
 
 /**
+ * Remaps or clears a persisted reference-frame descriptor after a frame plan.
+ * @param {object|null|undefined} descriptor Saved reference-frame descriptor.
+ * @param {string} profileId Animation profile.
+ * @param {string} animationId Animation id.
+ * @param {Array<{sourceIndex?:number|null}>} items New frame plan.
+ * @returns {object|null} Remapped descriptor, or null when the referenced frame was removed.
+ */
+function remapReferenceFrame(descriptor, profileId, animationId, items) {
+  if (!descriptor || typeof descriptor !== "object") return null;
+  if (String(descriptor.profile_id || "") !== String(profileId || "")) return clone(descriptor);
+  if (String(descriptor.animation_id || "") !== String(animationId || "")) return clone(descriptor);
+  const oldIndex = Number(descriptor.frame_index);
+  if (!Number.isInteger(oldIndex) || oldIndex < 0) return null;
+  const newIndex = Array.from(items || []).findIndex((item) => item?.sourceIndex === oldIndex);
+  if (newIndex < 0) return null;
+  return { ...clone(descriptor), frame_index: newIndex };
+}
+
+/**
  * Returns a binding's stable animation and frame metadata.
  * @param {object} binding Audio or image attachment binding.
  * @returns {{animation:string,frame:number|null}}
@@ -549,6 +568,7 @@ function reorganizeAnimation(options) {
   const nextAudioBindings = remapBindings(frameAudioBindings, animationKey, items);
   const nextImageAttachments = remapBindings(frameImageAttachments, animationKey, items);
   const nextAttackTrails = remapAttackTrails(attackTrails, animationKey, items);
+  tuning.reference_frame = remapReferenceFrame(tuning.reference_frame, profileId, animationId, items);
   animation.frames = nextFrames;
   animation.source = reslash(path.relative(root, targetDir));
 
@@ -596,5 +616,6 @@ module.exports = {
   remapBindings,
   remapAttackTrails,
   remapIndexedDictionary,
+  remapReferenceFrame,
   reorganizeAnimation,
 };

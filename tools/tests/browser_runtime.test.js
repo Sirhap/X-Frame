@@ -553,6 +553,49 @@ test("browser runtime reorganizes one session group and remaps its frame-owned s
   assert.deepEqual(group.premiumFeatures, ["organizer.sequence-analysis"]);
 });
 
+test("TUN-021 committed session frame delete survives reload with the reference cleared", async () => {
+  const memory = memoryProjectStorage();
+  const runtime = browserRuntime.createRuntime({ projectStorage: memory.store });
+  try {
+    const group = runtime.createSessionAnimationGroup(
+      { animationName: "assassin_jump", profileLabel: "新角色" },
+      [
+        { name: "one.png", data: "data:image/png;base64,AQ==" },
+        { name: "two.png", data: "data:image/png;base64,Ag==" },
+        { name: "three.png", data: "data:image/png;base64,Aw==" },
+      ],
+      [],
+    );
+    await runtime.commitSessionProjectConfig("p0test2", {
+      groups: [group],
+      profiles: [{ id: group.profileId, label: group.profileLabel }],
+      tuning: {
+        reference_frame: {
+          profile_id: group.profileId,
+          animation_id: group.animationId,
+          frame_index: 2,
+          transform: {},
+        },
+      },
+    });
+
+    const working = runtime.getSessionProjectConfig("p0test2");
+    runtime.deleteSessionAnimationFrames(working.groups[0], [2]);
+    await runtime.commitSessionProjectConfig("p0test2", {
+      ...working,
+      tuning: { ...working.tuning, reference_frame: null },
+    });
+
+    const reloaded = browserRuntime.createRuntime({ projectStorage: memory.store });
+    const restored = await reloaded.fetchConfig("/api/config?project=p0test2");
+    const config = await restored.json();
+    assert.equal(config.groups[0].frames.length, 2);
+    assert.equal(config.tuning.reference_frame, null);
+  } finally {
+    browserRuntime.createRuntime();
+  }
+});
+
 test("browser runtime deletes selected session frames and remaps owned bindings and trails", () => {
   const group = browserRuntime.createSessionAnimationGroup(
     { animationName: "Attack", profileLabel: "Hero" },

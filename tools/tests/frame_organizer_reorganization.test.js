@@ -2,7 +2,29 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { remapAttackTrails } = require("../frame_organizer");
+const { remapAttackTrails, remapReferenceFrame } = require("../frame_organizer");
+
+test("TUN-021 remapping a deleted reference frame clears the persisted descriptor", () => {
+  const descriptor = {
+    profile_id: "player",
+    animation_id: "assassin_jump",
+    frame_index: 2,
+    transform: { scale: 1 },
+  };
+  assert.equal(
+    remapReferenceFrame(descriptor, "player", "assassin_jump", [
+      { sourceIndex: 0 },
+      { sourceIndex: 1 },
+      { sourceIndex: 3 },
+    ]),
+    null,
+  );
+  assert.deepEqual(
+    remapReferenceFrame(descriptor, "player", "assassin_jump", [{ sourceIndex: 0 }, { sourceIndex: 2 }]),
+    { profile_id: "player", animation_id: "assassin_jump", frame_index: 1, transform: { scale: 1 } },
+  );
+  assert.deepEqual(remapReferenceFrame(descriptor, "other", "idle", [{ sourceIndex: 0 }]), descriptor);
+});
 
 test("frame organizer chronologically remaps attack trails with duplicate and removed frames", () => {
   const source = {
