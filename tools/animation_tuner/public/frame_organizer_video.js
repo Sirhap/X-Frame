@@ -302,7 +302,6 @@
           }
         }
         state.frames.push(...extractedFrames);
-        dependencies.renderGrid();
         dependencies.restartPreview();
         close(true);
         dependencies.setStatus(text("videoImported", { count: extractedFrames.length }), "success");
@@ -311,7 +310,7 @@
       } finally {
         state.videoExtracting = false;
         state.busy = false;
-        dependencies.renderCounts();
+        dependencies.renderGrid();
         syncControls();
       }
     }

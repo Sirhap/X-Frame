@@ -130,6 +130,9 @@
       elements.organizerFindJump.disabled = included < 3 || state.busy || state.sequenceAnalyzing;
       elements.organizerFindDuplicate.disabled = included < 3 || state.busy || state.sequenceAnalyzing;
       elements.organizerFindLoop.disabled = included < 4 || state.busy || state.sequenceAnalyzing;
+      elements.organizerGrid.querySelectorAll(".organizerFrame").forEach((card) => {
+        card.draggable = !state.busy;
+      });
       elements.organizerGrid.querySelectorAll(".organizerFrameCutout").forEach((button) => {
         button.disabled = state.busy;
       });

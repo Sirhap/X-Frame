@@ -2,7 +2,9 @@
 
 const { expect, test } = require("./fixtures");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 const zlib = require("node:zlib");
 
 const ONE_PIXEL_PNG = Buffer.from(
@@ -70,6 +72,81 @@ function subjectOnBackgroundPng(size, shift, background) {
     pngChunk("IDAT", zlib.deflateSync(raw)),
     pngChunk("IEND", Buffer.alloc(0)),
   ]);
+}
+
+/**
+ * Writes a short VP9 clip so ORG-013 can extract frames on /tools/organizer.
+ * @returns {string} Absolute path to the generated WebM file.
+ */
+function writeOrganizerExtractVideo() {
+  const videoPath = path.join(os.tmpdir(), `xsxb-org013-${process.pid}-${Date.now()}.webm`);
+  const generated = spawnSync(
+    "ffmpeg",
+    [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc=size=64x64:rate=8:duration=1",
+      "-c:v",
+      "libvpx-vp9",
+      "-b:v",
+      "200k",
+      "-y",
+      videoPath,
+    ],
+    { encoding: "utf8" },
+  );
+  expect(generated.status, generated.stderr).toBe(0);
+  return videoPath;
+}
+
+/**
+ * Reads organizer card names in visual order.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @returns {Promise<string[]>} Frame names.
+ */
+function organizerFrameNames(page) {
+  return page.locator(".organizerFrameName").allTextContents();
+}
+
+/**
+ * HTML5-drags one organizer card onto another so the drop inserts before or after.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @param {number} sourceIndex Dragged card index.
+ * @param {number} targetIndex Drop-target index.
+ * @param {boolean} after Whether to insert after the target.
+ * @returns {Promise<void>}
+ */
+async function dragOrganizerFrame(page, sourceIndex, targetIndex, after) {
+  await page
+    .locator(".organizerFrame")
+    .nth(sourceIndex)
+    .evaluate(
+      (sourceCard, args) => {
+        if (!sourceCard.draggable) {
+          throw new Error("ORG-013 source card is not draggable");
+        }
+        const cards = [...document.querySelectorAll(".organizerFrame")];
+        const target = cards[args.targetIndex];
+        const dataTransfer = new DataTransfer();
+        const rect = target.getBoundingClientRect();
+        const clientX = args.after ? rect.right - 1 : rect.left + 1;
+        sourceCard.dispatchEvent(
+          new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer }),
+        );
+        target.dispatchEvent(
+          new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer, clientX }),
+        );
+        target.dispatchEvent(
+          new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer, clientX }),
+        );
+        sourceCard.dispatchEvent(new DragEvent("dragend", { bubbles: true, cancelable: true, dataTransfer }));
+      },
+      { targetIndex, after },
+    );
 }
 
 /**
@@ -675,6 +752,68 @@ test("contextual tools preserve auto-saved tuning when switching", async ({ page
   await expect(page).toHaveURL(/\/workspace\/resources\/cutout/);
   await expect(page.locator("#cutoutModal")).toBeVisible();
   await expect(page.locator("#appConfirmPanel")).toBeHidden();
+});
+
+test("ORG-013 organizer cards become draggable after video extract and keep a reorder", async ({ page }) => {
+  test.setTimeout(60000);
+  const videoPath = writeOrganizerExtractVideo();
+  try {
+    await page.goto("/tools/organizer");
+    await page.locator("#organizerVideoInput").setInputFiles(videoPath);
+    await expect(page.locator("#organizerVideoPanel")).toBeVisible();
+    await expect(page.locator("#organizerVideoExtract")).toBeEnabled();
+    await page.locator("#organizerVideoFpsNumber").fill("8");
+    await page.locator("#organizerVideoExtract").click();
+    await expect(page.locator("#organizerStatus")).toContainText("已从视频提取", { timeout: 20000 });
+    await expect(page.locator("#organizerVideoPanel")).toBeHidden();
+    await expect
+      .poll(() => page.locator(".organizerFrame").count(), { timeout: 20000 })
+      .toBeGreaterThanOrEqual(2);
+    await expect(page.locator("#organizerFileInput")).toBeEnabled();
+
+    const cards = page.locator(".organizerFrame");
+    await expect(cards.first()).toHaveAttribute("draggable", "true");
+    const dragStates = await cards.evaluateAll((nodes) => nodes.map((node) => node.draggable));
+    expect(
+      dragStates.every((value) => value === true),
+      `cards still blocked: ${dragStates}`,
+    ).toBe(true);
+
+    const before = await organizerFrameNames(page);
+    await dragOrganizerFrame(page, 0, 1, true);
+    const afterDrag = await organizerFrameNames(page);
+    expect(afterDrag[0]).toBe(before[1]);
+    expect(afterDrag[1]).toBe(before[0]);
+
+    await cards.nth(1).locator(".organizerFrameSelect").click();
+    await expect(cards.nth(1)).toHaveClass(/selected/);
+    await expect.poll(() => organizerFrameNames(page)).toEqual(afterDrag);
+    const stillDraggable = await cards.evaluateAll((nodes) => nodes.map((node) => node.draggable));
+    expect(stillDraggable.every((value) => value === true)).toBe(true);
+  } finally {
+    fs.rmSync(videoPath, { force: true });
+  }
+});
+
+test("ORG-013 import-page image cards stay draggable and reorder", async ({ page }) => {
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "import_a.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "import_b.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator("#organizerStatus")).toContainText("已导入 2 张图片");
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await expect(page.locator("#organizerFileInput")).toBeEnabled();
+  await expect(page.locator(".organizerFrame").first()).toHaveAttribute("draggable", "true");
+  const dragStates = await page
+    .locator(".organizerFrame")
+    .evaluateAll((nodes) => nodes.map((node) => node.draggable));
+  expect(dragStates).toEqual([true, true]);
+
+  const before = await organizerFrameNames(page);
+  await dragOrganizerFrame(page, 0, 1, true);
+  const afterDrag = await organizerFrameNames(page);
+  expect(afterDrag).toEqual([before[1], before[0]]);
 });
 
 test("native image import accepts valid files and reports unsupported input", async ({ page }) => {

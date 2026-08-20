@@ -422,3 +422,151 @@ test("cutout scope copy comes from the organizer translator", () => {
   fixture.controller.renderCounts();
   assert.equal(fixture.cutoutScope.textContent, 'cutoutScopeSelection {"count":1}');
 });
+
+/**
+ * Builds a grid fixture that keeps real card nodes so draggable can be asserted.
+ * @returns {{controller:ReturnType<typeof createController>,state:object,cards:object[]}}
+ */
+function createCardGridFixture() {
+  const cards = [];
+  const fakeNode = () => ({
+    dataset: {},
+    className: "",
+    draggable: false,
+    innerHTML: "",
+    textContent: "",
+    hidden: false,
+    disabled: false,
+    src: "",
+    checked: false,
+    classList: { toggle() {}, add() {}, remove() {} },
+    addEventListener() {},
+    setAttribute() {},
+    querySelector() {
+      return fakeNode();
+    },
+  });
+  const grid = {
+    children: cards,
+    querySelectorAll(selector) {
+      if (selector === ".organizerFrame") return cards;
+      if (selector === ".organizerFrameCutout") return cards.map(() => fakeNode());
+      return [];
+    },
+    querySelector: () => null,
+    replaceChildren(fragment) {
+      cards.length = 0;
+      cards.push(...(fragment.childNodes || []));
+    },
+  };
+  const button = () => ({
+    disabled: false,
+    hidden: false,
+    title: "",
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    },
+    classList: { toggle() {} },
+  });
+  const state = {
+    mode: "import",
+    busy: false,
+    sequenceAnalyzing: false,
+    viewMode: "edited",
+    showImportSetup: false,
+    hadFrames: false,
+    frames: [
+      {
+        uid: "frame-a",
+        name: "a.png",
+        tag: "",
+        included: true,
+        selected: false,
+        analysisMatch: "",
+        hasEditedResult: false,
+        thumbnails: { edited: "data:a" },
+      },
+      {
+        uid: "frame-b",
+        name: "b.png",
+        tag: "",
+        included: true,
+        selected: false,
+        analysisMatch: "",
+        hasEditedResult: false,
+        thumbnails: { edited: "data:b" },
+      },
+    ],
+  };
+  const elements = {
+    organizerCount: { textContent: "" },
+    organizerSelection: { textContent: "" },
+    organizerApply: button(),
+    organizerGodotPlaceholder: button(),
+    organizerDeleteSelected: button(),
+    organizerClearWorkset: button(),
+    organizerBatchCutout: button(),
+    organizerInvert: button(),
+    organizerInvertSelection: button(),
+    organizerFlip: button(),
+    organizerDeleteExcluded: button(),
+    organizerFileInput: button(),
+    organizerVideoInput: button(),
+    organizerAddAssets: button(),
+    organizerExport: button(),
+    organizerReduce: button(),
+    organizerAutoSort: button(),
+    organizerFindJump: button(),
+    organizerFindDuplicate: button(),
+    organizerFindLoop: button(),
+    organizerToggleImportSetup: button(),
+    organizerViewOriginal: button(),
+    organizerViewEdited: button(),
+    organizerImportSetup: { closest: () => ({ classList: { toggle() {} } }) },
+    organizerGrid: grid,
+  };
+  const controller = createController({
+    document: {
+      createDocumentFragment: () => {
+        const childNodes = [];
+        return {
+          childNodes,
+          appendChild(node) {
+            childNodes.push(node);
+            return node;
+          },
+        };
+      },
+      createElement: () => fakeNode(),
+      querySelector: () => ({ textContent: "", hidden: false }),
+    },
+    elements,
+    state,
+    text: (key) => key,
+    getCurrentAnimation: () => null,
+    canAddAssets: () => true,
+    canExport: () => true,
+    editImportCutout: async () => {},
+    renderPreview: () => {},
+    restartPreview: () => {},
+    setStatus: () => {},
+  });
+  return { controller, state, cards };
+}
+
+test("ORG-013 renderCounts restores card.draggable after a busy extract paint", () => {
+  const fixture = createCardGridFixture();
+  fixture.state.busy = true;
+  fixture.controller.renderGrid();
+  assert.equal(fixture.cards.length, 2);
+  assert.equal(fixture.cards[0].draggable, false);
+  assert.equal(fixture.cards[1].draggable, false);
+
+  fixture.state.busy = false;
+  fixture.controller.renderCounts();
+
+  assert.equal(fixture.state.busy, false);
+  assert.equal(fixture.cards[0].draggable, true);
+  assert.equal(fixture.cards[1].draggable, true);
+});
