@@ -502,23 +502,6 @@ body.mediaExportOpen {
   border-top: 3px solid var(--line);
 }
 
-.mediaExportNotices {
-  display: none;
-}
-
-.mediaExportNotices:has(.mediaExportStatus:not([data-tone="idle"])),
-.mediaExportNotices:has(.mediaExportLocalHint:not(:empty)) {
-  display: grid;
-}
-
-.mediaExportFooter > span {
-  display: none;
-}
-
-.mediaExportFooter {
-  justify-content: flex-end;
-}
-
 .mediaExportStatus[data-tone="error"] {
   border-color: var(--danger);
   color: var(--danger);

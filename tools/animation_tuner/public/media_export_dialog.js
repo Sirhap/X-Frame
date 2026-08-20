@@ -275,7 +275,7 @@
     /** @returns {string} Why GIF/MP4 stay disabled in the web build. */
     function localEncodeUnavailableReason() {
       return english()
-        ? "GIF/MP4/MOV need the local app with FFmpeg. This web page cannot encode them."
+        ? "GIF/MP4 need the local app with FFmpeg. This web page cannot encode them."
         : "网页版不能编码 GIF/MP4。请使用安装了 FFmpeg 的本地版。";
     }
 
@@ -335,16 +335,12 @@
           ? english()
             ? `FFmpeg ${payload.ffmpeg.version || "ready"} · local encoding available`
             : `FFmpeg ${payload.ffmpeg.version || "已就绪"} · 可使用本地编码`
-          : english()
-            ? "Install FFmpeg and use the local app for GIF or transparent MOV."
-            : "GIF 和透明 MOV 需要在本地版安装 FFmpeg。";
+          : localEncodeUnavailableReason();
       } catch (_error) {
         if (request !== capabilityRequest) return;
         localExportAvailable = false;
         renderSubmittingState();
-        elements.mediaExportLocalHint.textContent = english()
-          ? "GIF and transparent MOV require the local app with FFmpeg."
-          : "GIF 和透明 MOV 需要本地版与 FFmpeg。";
+        elements.mediaExportLocalHint.textContent = localEncodeUnavailableReason();
       }
     }
 

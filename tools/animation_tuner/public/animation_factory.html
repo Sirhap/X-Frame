@@ -865,7 +865,14 @@
             if (value) node.setAttribute("aria-label", value);
           }
           const workstationCount = document.querySelector("[data-workstation-count]");
-          if (workstationCount) workstationCount.textContent = language === "en" ? "SIX" : "六个";
+          if (workstationCount) {
+            const count = document.querySelectorAll("a.tool-card").length;
+            const labels =
+              language === "en"
+                ? ["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE"]
+                : ["零", "一", "两", "三", "四", "五", "六", "七", "八", "九"];
+            workstationCount.textContent = labels[count] || String(count);
+          }
           for (const button of buttons) {
             button.setAttribute("aria-pressed", String(button.dataset.factoryLanguage === language));
           }

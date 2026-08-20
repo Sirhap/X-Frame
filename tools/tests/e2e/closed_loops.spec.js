@@ -204,7 +204,25 @@ test("organizer primary action sits above the preview canvas", async ({ page }) 
   expect(geometry.actionsBottom).toBeLessThanOrEqual(geometry.previewTop);
 });
 
-test("online-disabled GIF and MOV keep a visible FFmpeg reason", async ({ page }) => {
+/**
+ * Asserts the FFmpeg/local-only reason is painted, not display:none with height 0.
+ * @param {import("@playwright/test").Locator} hint Local-export hint paragraph.
+ * @returns {Promise<void>}
+ */
+async function expectVisibleExportHint(hint) {
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText(/GIF|MP4|FFmpeg|本地/);
+  const metrics = await hint.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const box = element.getBoundingClientRect();
+    return { display: style.display, visibility: style.visibility, height: box.height };
+  });
+  expect(metrics.display, "ORG-023 forbids hiding the disable reason with display:none").not.toBe("none");
+  expect(metrics.visibility).not.toBe("hidden");
+  expect(metrics.height, "ORG-023 needs a painted FFmpeg reason, not height 0").toBeGreaterThan(0);
+}
+
+test("online-disabled GIF and MP4 keep a visible FFmpeg reason", async ({ page }) => {
   await page.route("**/api/media-export/capabilities", async (route) => {
     await route.fulfill({
       status: 200,
@@ -217,11 +235,37 @@ test("online-disabled GIF and MOV keep a visible FFmpeg reason", async ({ page }
   const hint = page.locator("#mediaExportLocalHint");
   await expect(page.locator("#mediaExportDialog")).toBeVisible();
   await expect(page.locator("#mediaExportGif")).toBeDisabled();
-  await expect(hint).toBeVisible();
-  await expect(hint).toContainText(/FFmpeg|GIF|本地/);
-  await expect
-    .poll(async () => hint.evaluate((element) => getComputedStyle(element).display))
-    .not.toBe("none");
+  await expect(page.locator("#mediaExportMp4")).toBeDisabled();
+  await expectVisibleExportHint(hint);
+});
+
+test("organizer export dialog shows a painted FFmpeg reason beside disabled GIF and MP4", async ({
+  page,
+}) => {
+  await page.route("**/api/media-export/capabilities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ mode: "cloudflare-static", ffmpeg: { available: false, version: "" } }),
+    });
+  });
+  await page.goto("/tools/organizer");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await page.locator(".organizerDownstreamMenu").evaluate((element) => {
+    element.open = true;
+  });
+  await page.locator("#organizerExport").click();
+
+  const hint = page.locator("#mediaExportLocalHint");
+  await expect(page.locator("#mediaExportDialog")).toBeVisible();
+  await expect(page.locator("#mediaExportGif")).toBeDisabled();
+  await expect(page.locator("#mediaExportMp4")).toBeDisabled();
+  await expectVisibleExportHint(hint);
+  await expect(page.locator(".mediaExportFooter > span")).toBeVisible();
 });
 
 test("file delivery embeds the complete export workbench without a second dialog", async ({ page }) => {

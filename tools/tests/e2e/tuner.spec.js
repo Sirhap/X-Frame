@@ -453,6 +453,20 @@ test("the website home, import flow, and tuning workbench use separate URLs", as
   await expect(page.locator("#filmstrip")).toBeVisible();
 });
 
+test("factory workstation count follows visible tool cards instead of advertising SIX", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("a.tool-card")).toHaveCount(6);
+  await expect(page.locator("[data-workstation-count]")).toHaveText(/^(SIX|六)$/);
+
+  await page.evaluate(() => {
+    document.querySelector("a.tool-card[href='/tools/watermark']")?.remove();
+  });
+  await page.locator('[data-factory-language="en"]').click();
+  await expect(page.locator("a.tool-card")).toHaveCount(5);
+  await expect(page.locator("a.tool-card[href='/tools/watermark']")).toHaveCount(0);
+  await expect(page.locator("[data-workstation-count]")).toHaveText("FIVE");
+});
+
 test("homepage language selector persists the workbench language", async ({ page }) => {
   await page.goto("/");
   const english = page.locator('[data-factory-language="en"]');

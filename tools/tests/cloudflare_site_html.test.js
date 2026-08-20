@@ -40,6 +40,24 @@ test("Cloudflare landing removes local-server-only tool cards", () => {
   assert.match(output, /data-workstation-count>ONE</u);
 });
 
+test("factory copy counts remaining workstation cards instead of advertising SIX", () => {
+  const html = fs.readFileSync(
+    new URL("../animation_tuner/public/animation_factory.html", `file://${__dirname}/`),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    html,
+    /workstationCount\.textContent = language === "en" \? "SIX" : "六个"/u,
+    "NAV-005: cloud landing strips the watermark station; do not keep advertising SIX",
+  );
+  assert.match(html, /querySelectorAll\([^)]*tool-card/u);
+
+  const cloud = prepareCloudflareLanding(html);
+  assert.doesNotMatch(cloud, /tools\/watermark/u);
+  assert.match(cloud, /data-workstation-count>FIVE</u);
+  assert.doesNotMatch(cloud, /data-workstation-count>SIX</u);
+});
+
 test("Cloudflare landing rejects an unclosed local-only marker", () => {
   assert.throws(
     () =>
