@@ -15,11 +15,91 @@ test("browser runtime creates an isolated empty project shell", async () => {
   assert.deepEqual(config.scenes, []);
 });
 
-test("browser runtime discards an abandoned transient project", () => {
-  const created = browserRuntime.createSessionProject("Throwaway");
+test("browser runtime discards an abandoned transient project", async () => {
+  const created = await browserRuntime.createSessionProject("Throwaway");
   assert.ok(browserRuntime.getSessionProjectConfig(created.projectId));
-  assert.equal(browserRuntime.discardSessionProject(created.projectId), true);
+  assert.equal(await browserRuntime.discardSessionProject(created.projectId), true);
   assert.equal(browserRuntime.getSessionProjectConfig(created.projectId), null);
+});
+
+/** Builds an in-memory project snapshot store for isolated runtime tests. */
+function memoryProjectStorage() {
+  let persisted = null;
+  return {
+    snapshot: () => persisted,
+    store: require("../animation_tuner/public/browser_project_storage").createStore({
+      adapter: {
+        read: async () => persisted,
+        write: async (snapshot) => {
+          persisted = snapshot;
+        },
+      },
+    }),
+  };
+}
+
+test("createSessionProject persists so a rehydrated runtime keeps the project label", async () => {
+  const memory = memoryProjectStorage();
+  const runtime = browserRuntime.createRuntime({ projectStorage: memory.store });
+  try {
+    const created = await runtime.createSessionProject("P0test1");
+    assert.equal(created.projectId, "p0test1");
+    assert.ok(
+      memory.snapshot()?.registry?.projects?.some((project) => project.id === "p0test1"),
+      "createSessionProject must write the shell into the snapshot store",
+    );
+
+    const reloaded = browserRuntime.createRuntime({ projectStorage: memory.store });
+    const response = await reloaded.fetchConfig("/api/config?project=p0test1");
+    assert.equal(response.ok, true);
+    const config = await response.json();
+    assert.equal(config.activeProjectId, "p0test1");
+    assert.equal(config.activeProject.label, "P0test1");
+    assert.deepEqual(config.groups, []);
+  } finally {
+    browserRuntime.createRuntime();
+  }
+});
+
+test("fetchConfig auto-creates and persists an unregistered project instead of 404", async () => {
+  const memory = memoryProjectStorage();
+  const runtime = browserRuntime.createRuntime({ projectStorage: memory.store });
+  try {
+    const response = await runtime.fetchConfig("/api/config?project=p0test1");
+    assert.equal(response.status, 200);
+    const config = await response.json();
+    assert.equal(config.activeProjectId, "p0test1");
+    assert.ok(Array.isArray(config.groups));
+    assert.equal((await response.text()).includes("Project not found"), false);
+
+    const reloaded = browserRuntime.createRuntime({ projectStorage: memory.store });
+    const again = await reloaded.fetchConfig("/api/config?project=p0test1");
+    assert.equal(again.ok, true);
+    assert.equal((await again.json()).activeProjectId, "p0test1");
+  } finally {
+    browserRuntime.createRuntime();
+  }
+});
+
+test("first commit on an unregistered project auto-creates the session shell and persists frames", async () => {
+  const memory = memoryProjectStorage();
+  const runtime = browserRuntime.createRuntime({ projectStorage: memory.store });
+  try {
+    await runtime.commitSessionProjectConfig("p0test1", {
+      groups: [{ animationId: "jump", frames: [{ name: "jump_0001.png" }] }],
+      profiles: [{ id: "browser-character", label: "新角色" }],
+      tuning: {},
+    });
+
+    const reloaded = browserRuntime.createRuntime({ projectStorage: memory.store });
+    const response = await reloaded.fetchConfig("/api/config?project=p0test1");
+    assert.equal(response.ok, true);
+    const config = await response.json();
+    assert.equal(config.groups[0].animationId, "jump");
+    assert.equal(config.groups[0].frames[0].name, "jump_0001.png");
+  } finally {
+    browserRuntime.createRuntime();
+  }
 });
 
 test("browser runtime exposes animation group counts in project summaries", () => {

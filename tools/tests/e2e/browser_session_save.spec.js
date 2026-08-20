@@ -1,0 +1,42 @@
+"use strict";
+
+const { expect, test } = require("./fixtures");
+
+const ONE_PIXEL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3n0AAAAASUVORK5CYII=",
+  "base64",
+);
+
+test("SAV-005 new browser project persists first import and survives hard reload", async ({ page }) => {
+  await page.addInitScript(() => {
+    globalThis.__XSXB_PRODUCTION__ = true;
+    document.documentElement.dataset.runtimeMode = "browser";
+  });
+  page.once("dialog", (dialog) => dialog.accept("P0test1"));
+
+  await page.goto("/projects");
+  await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);
+  await page.locator("#projectHubNew").click();
+  await expect(page).toHaveURL(/\/workspace\/resources\/import\?project=p0test1(?:$|&)/);
+  await expect(page.locator("#status")).not.toContainText("Project not found");
+
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "jump_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "jump_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await expect(page.locator("#organizerApply")).toHaveText("导入动画组并进入调参");
+  await page.locator("#organizerApply").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
+  await expect(page.locator("#organizerConfirmTitle")).toHaveText("确认应用");
+  await page.locator("#organizerConfirmAccept").click();
+
+  await expect(page.locator("#organizerStatus")).not.toContainText("尚未就绪");
+  await expect(page.locator("#status")).not.toContainText("尚未就绪");
+  await expect(page.locator("#organizerModal")).toBeHidden();
+  await expect(page.locator(".thumb")).toHaveCount(2);
+
+  await page.goto("/workspace/animation/transform?project=p0test1");
+  await expect(page.locator("#status")).not.toContainText("Project not found");
+  await expect(page.locator(".thumb")).toHaveCount(2);
+});
