@@ -43,7 +43,8 @@ test("CUT-035 tolerance -1 shows closed matching copy and leaves pixels unmoved"
   await expect(page.locator("#cutoutTolerance")).toHaveValue("-1");
   await expect(page.locator("#cutoutToleranceClosedHint")).toBeVisible();
   await expect(page.locator("#cutoutToleranceClosedHint")).toContainText(/关闭|已关/);
-  await expect(page.locator("#cutoutToleranceClosedHint")).not.toContainText(/将自动估算|会自动估算/);
+  await expect(page.locator("#cutoutToleranceClosedHint")).toContainText("不会自动估算");
+  await expect(page.locator("#cutoutToleranceClosedHint")).not.toContainText("将自动估算");
   await expect(page.locator("#cutoutStatus")).toContainText("结果已更新");
   await expect(page.locator("#cutoutResult")).toHaveAttribute("aria-busy", "false", { timeout: 20000 });
 
