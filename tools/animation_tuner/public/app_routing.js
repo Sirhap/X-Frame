@@ -68,6 +68,7 @@
     "godot",
     "codex-pet",
   ]);
+  const STICKY_STANDALONE_ROUTES = new Set(["scatter"]);
   const VALID_ROUTES = new Set([
     "cutout",
     "import",
@@ -341,11 +342,30 @@
       try {
         const temporarySessionActive =
           currentNavigationContext() === "standalone" && Boolean(getTemporaryWorkset()?.frames?.length);
-        if (!(await confirmWorkspaceLeave(route, options))) {
-          if (currentWorkbenchRoute() === route && !SAME_STAGE_WORKSPACE_ROUTES.has(route)) {
+        const stickyCurrent = STICKY_STANDALONE_ROUTES.has(route);
+        if (
+          !(await confirmWorkspaceLeave(
+            route,
+            stickyCurrent ? { ...options, skipDirtyPrompt: true } : options,
+          ))
+        ) {
+          if (
+            currentWorkbenchRoute() === route &&
+            !SAME_STAGE_WORKSPACE_ROUTES.has(route) &&
+            !STICKY_STANDALONE_ROUTES.has(route)
+          ) {
             syncWorkbenchRoute("", { context: "project" });
           }
           return false;
+        }
+        if (STICKY_STANDALONE_ROUTES.has(route)) {
+          if (batchCutout?.isOpen()) {
+            await closeWorkbench(batchCutout, null, { syncRoute: false, force: true });
+          }
+          if (frameOrganizer?.isOpen()) {
+            await closeWorkbench(frameOrganizer, { syncRoute: false, force: true });
+          }
+          return true;
         }
         if (route === "cutout") {
           if (frameOrganizer?.isOpen()) {

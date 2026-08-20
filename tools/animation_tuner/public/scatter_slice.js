@@ -1128,6 +1128,8 @@
       }
       const workset = temporaryWorkset();
       temporaryStore.setWorkset(workset);
+      state.suppressBeforeUnload = true;
+      root.XSXBScatterSliceSession?.allowDiscard?.();
       setStatus(`已生成 ${workset.frames.length} 帧，正在进入导入与整理…`, "success");
       await navigate("organizer", "standalone");
     } catch (error) {
