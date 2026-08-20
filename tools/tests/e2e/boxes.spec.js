@@ -193,7 +193,7 @@ test("BOX-006 restore-auto ArrowLeft cannot jump-collapse the hurtbox", async ({
     (before.top + before.bottom) / 2,
   );
   await page.mouse.click(center.x, center.y);
-  await page.keyboard.press("ArrowLeft");
+  for (let step = 0; step < 12; step += 1) await page.keyboard.press("ArrowLeft");
 
   await expect(page.locator("#status")).toContainText("nudge box");
   await expect(page.locator("#filmstrip .thumb[data-frame-index='0']")).toHaveAttribute(
@@ -205,6 +205,33 @@ test("BOX-006 restore-auto ArrowLeft cannot jump-collapse the hurtbox", async ({
   expect(after.width).toBeGreaterThan(before.width * 0.6);
   expect(after.height).toBeGreaterThan(before.height * 0.6);
   expect(Math.abs(after.height - before.height)).toBeLessThan(8);
+  expect(after.left, "undo-label-only is not a successful nudge").toBeLessThan(before.left);
+  expect(after.right).toBeLessThan(before.right);
+  expect(Math.abs(after.width - before.width)).toBeLessThan(8);
+});
+
+test("BOX-006 restore-auto ArrowUp cannot jump-collapse the hurtbox", async ({ page }) => {
+  await openRestoredHurtbox(page);
+  const before = await measureHurtbox(page);
+  expect(before, "restored auto hurtbox should be visible").toBeTruthy();
+  expect(before.height).toBeGreaterThan(20);
+
+  const center = await canvasToClient(
+    page,
+    (before.left + before.right) / 2,
+    (before.top + before.bottom) / 2,
+  );
+  await page.mouse.click(center.x, center.y);
+  for (let step = 0; step < 12; step += 1) await page.keyboard.press("ArrowUp");
+
+  await expect(page.locator("#status")).toContainText("nudge box");
+  const after = await measureHurtbox(page);
+  expect(after, "hurtbox should still be visible after ArrowUp").toBeTruthy();
+  expect(after.width).toBeGreaterThan(before.width * 0.6);
+  expect(after.height).toBeGreaterThan(before.height * 0.6);
+  expect(after.top).toBeLessThan(before.top);
+  expect(after.bottom).toBeLessThan(before.bottom);
+  expect(Math.abs(after.width - before.width)).toBeLessThan(8);
 });
 
 test("BOX-006 west-handle drag after restore-auto moves only the left edge", async ({ page }) => {

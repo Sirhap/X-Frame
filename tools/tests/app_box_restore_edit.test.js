@@ -167,7 +167,7 @@ test("setBoxOverride keeps a restored auto box size instead of writing the 1x1 s
 });
 
 test("stage west-handle drag uses the displayed auto box, not a missing-image stub", () => {
-  const { boxModel, group } = createRestoreAutoWorkbench();
+  const { boxModel, group, images } = createRestoreAutoWorkbench();
   const displayed = boxModel.frameBox("hurtbox", 0, group);
   const stub = boxModel.frameBox("hurtbox", 0, group, []);
   assert.ok(stub.size.x <= 8, "empty image list must still be able to produce the foot stub");
@@ -206,7 +206,10 @@ test("stage west-handle drag uses the displayed auto box, not a missing-image st
       hitTestBoxes: () => ({ boxName: "hurtbox", mode: "box-resize", handle: "w" }),
       hitTestDirectManipulationAttachment: () => null,
       hitTestDirectManipulationFrame: () => null,
-      frameBox: (boxName, index) => boxModel.frameBox(boxName, index, group),
+      frameBox: (boxName, index, target, groupImages) =>
+        boxModel.frameBox(boxName, index, target ?? group, groupImages),
+      getCurrentGroup: () => group,
+      getImages: () => images,
       selectedFrameIndexes: () => [0],
       cloneVector: (value) => ({ x: value.x, y: value.y }),
       isCollisionBox,
@@ -235,6 +238,93 @@ test("stage west-handle drag uses the displayed auto box, not a missing-image st
   assert.ok(Math.abs(next.offset.y - displayed.offset.y) < 0.0001);
 });
 
+/**
+ * Wires nudgeSelectedBox to the real store-backed setBoxOverride / frameBox path.
+ * @param {object} [options] Workbench options.
+ * @returns {object} Workbench plus adjustment controller and undo labels.
+ */
+function createStoreBackedNudgeWorkbench(options = {}) {
+  const workbench = createRestoreAutoWorkbench(options);
+  const { boxModel, frameEdit, group, images } = workbench;
+  const events = [];
+  const adjustment = createBoxAdjustment({
+    elements: {
+      stage: { getBoundingClientRect: () => ({ left: 0, top: 0 }) },
+      showBoxes: {},
+      boxChoiceInputs: [],
+    },
+    getCurrentGroup: () => group,
+    getSelectedFrame: () => 0,
+    getSelectedBox: () => "hurtbox",
+    getSelectedBoxes: () => new Set(["hurtbox"]),
+    getShowBoxes: () => true,
+    getImages: () => images,
+    getView: () => ({ zoom: 1 }),
+    getDevicePixelRatio: () => 1,
+    boxDrawOrder: ["hurtbox"],
+    collisionBoxHandles: new Set(),
+    boxExistsOnFrame: () => true,
+    frameBox: (boxName, index, target, groupImages) => boxModel.frameBox(boxName, index, target, groupImages),
+    boxAutoTransform: () => ({
+      scaleX: 1,
+      scaleY: 1,
+      offset: { x: 0, y: 0 },
+      rotation: 0,
+      facing: 1,
+    }),
+    groupOriginScreen: () => ({ x: 0, y: 0 }),
+    isCollisionBox,
+    rotateVector: (value) => value,
+    rotatePoint: (point, _radians, origin) => ({ x: point.x + origin.x, y: point.y + origin.y }),
+    pointInRect: () => false,
+    pointInBoxRect: () => false,
+    canEditBoxes: () => true,
+    canEditBox: () => true,
+    normalizeBoxSelectionForGroup: () => false,
+    saveBoxViewPrefs: () => {},
+    selectedFrameIndexes: () => [0],
+    cloneVector: (value) => ({ x: value.x, y: value.y }),
+    collisionOffsetYForHeight,
+    setBoxOverride: (boxName, box, index, target) => frameEdit.setBoxOverride(boxName, box, index, target),
+    nudgeFrameBox,
+    pushUndo: (label) => events.push(label),
+    renderFilmstrip: () => {},
+    draw: () => {},
+  });
+  return { ...workbench, adjustment, events };
+}
+
+test("nudgeSelectedBox(-1, 0) changes store-backed offset.x by -1 and keeps size", () => {
+  const { adjustment, boxModel, events, group, images } = createStoreBackedNudgeWorkbench();
+  const before = boxModel.frameBox("hurtbox", 0, group, images);
+  assert.ok(before.size.x > 20, `nudge started from foot stub ${before.size.x}x${before.size.y}`);
+  assert.equal(adjustment.nudgeSelectedBox(-1, 0), true);
+  assert.deepEqual(events, ["nudge box"]);
+  const after = boxModel.frameBox("hurtbox", 0, group, images);
+  assert.equal(
+    after.offset.x,
+    before.offset.x - 1,
+    `undo-label-only is not a successful nudge; offset stayed ${after.offset.x}`,
+  );
+  assert.equal(after.offset.y, before.offset.y);
+  assert.equal(after.size.x, before.size.x);
+  assert.equal(after.size.y, before.size.y);
+  assert.notEqual(after.size.x, BOX_MIN_SIZE);
+});
+
+test("setBoxOverride keeps displayed size when a live wrapper writes only a shallow offset", () => {
+  const { boxModel, frameEdit, group, images } = createRestoreAutoWorkbench();
+  const before = boxModel.frameBox("hurtbox", 0, group, images);
+  assert.ok(before.size.x > 20);
+  frameEdit.setBoxOverride("hurtbox", { offset: { x: before.offset.x - 1, y: before.offset.y } }, 0, group);
+  const after = boxModel.frameBox("hurtbox", 0, group, images);
+  assert.equal(after.offset.x, before.offset.x - 1);
+  assert.equal(after.offset.y, before.offset.y);
+  assert.equal(after.size.x, before.size.x);
+  assert.equal(after.size.y, before.size.y);
+  assert.ok(after.size.x > 20, `shallow offset write collapsed to ${after.size.x}x${after.size.y}`);
+});
+
 test("box adjustment nudge after restore-auto writes image size through nudgeFrameBox", () => {
   const { boxModel, group } = createRestoreAutoWorkbench();
   const before = boxModel.frameBox("hurtbox", 0, group);
@@ -258,7 +348,7 @@ test("box adjustment nudge after restore-auto writes image size through nudgeFra
     boxDrawOrder: ["hurtbox"],
     collisionBoxHandles: new Set(),
     boxExistsOnFrame: () => true,
-    frameBox: (boxName, index, target) => boxModel.frameBox(boxName, index, target),
+    frameBox: (boxName, index, target, groupImages) => boxModel.frameBox(boxName, index, target, groupImages),
     boxAutoTransform: () => ({
       scaleX: 1,
       scaleY: 1,
@@ -303,4 +393,5 @@ test("app.js never resolves frameBox through the frame-edit 1x1 stub", () => {
     source,
     /const boxModel = globalThis\.XSXBBoxModel\.createController\(\{[\s\S]*?getImages:\s*\(\)\s*=>\s*images/,
   );
+  assert.match(source, /if \(name === "frameBox"\)/);
 });

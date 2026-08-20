@@ -38,6 +38,8 @@
       cloneVector,
       draw = () => {},
       frameBox,
+      getCurrentGroup,
+      getImages,
       hitTestBoxes,
       hitTestDirectManipulationAttachment,
       hitTestDirectManipulationFrame = () => null,
@@ -139,7 +141,14 @@
             return;
           }
           pushUndo(boxHit.mode === "box-resize" ? "resize box" : "drag box");
-          const box = frameBox(state.selectedBox);
+          const displayedBox = (boxName, frameIndex) => {
+            const group = typeof getCurrentGroup === "function" ? getCurrentGroup() : undefined;
+            const images = typeof getImages === "function" ? getImages() : undefined;
+            if (images !== undefined) return frameBox(boxName, frameIndex, group, images);
+            if (group !== undefined) return frameBox(boxName, frameIndex, group);
+            return frameBox(boxName, frameIndex);
+          };
+          const box = displayedBox(state.selectedBox);
           beginDrag({
             mode: boxHit.mode,
             handle: boxHit.handle,
@@ -152,7 +161,7 @@
             enabled: box.enabled !== false,
             boxes: selectedFrameIndexes().map((frameIndex) => ({
               index: frameIndex,
-              box: structuredClone(frameBox(state.selectedBox, frameIndex)),
+              box: structuredClone(displayedBox(state.selectedBox, frameIndex)),
             })),
           });
           syncBoxInputs();

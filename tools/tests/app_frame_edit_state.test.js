@@ -86,3 +86,17 @@ test("frame edit state preserves transforms, box overrides, source geometry, and
   assert.deepEqual(transformOverrides, {});
   assert.equal(dirtyCount, 4);
 });
+
+test("frame-edit-state does not export frameBox and the default resolver throws", () => {
+  const boxOverrides = {};
+  const controller = createController({
+    boxOverrideStore: () => boxOverrides,
+    normalizeFrameBox: (_name, box) => box,
+    tuningFrameKey: (index) => String(index),
+  });
+  assert.equal("frameBox" in controller, false);
+  assert.throws(
+    () => controller.setBoxOverride("hurtbox", { offset: { x: 1, y: 2 } }, 0, { uiId: "group-1" }),
+    /frameBox|inject|box-model/i,
+  );
+});

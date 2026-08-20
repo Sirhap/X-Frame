@@ -275,7 +275,7 @@
         if (elements.boxEnabled) elements.boxEnabled.checked = false;
         return;
       }
-      const box = frameBox(getSelectedBox());
+      const box = frameBox(getSelectedBox(), getSelectedFrame(), getCurrentGroup(), getImages());
       if (elements.boxEnabled) elements.boxEnabled.checked = box.enabled !== false;
     }
 
@@ -298,7 +298,7 @@
       if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return false;
       if (!options.repeat) pushUndo("nudge box");
       for (const frameIndex of selectedFrameIndexes()) {
-        const current = frameBox(selectedBox, frameIndex, getCurrentGroup());
+        const current = frameBox(selectedBox, frameIndex, getCurrentGroup(), getImages());
         setBoxOverride(
           selectedBox,
           nudgeFrameBox(selectedBox, current, dx, dy),
@@ -314,7 +314,7 @@
     function updateSelectedBoxFromInputs() {
       const selectedBox = getSelectedBox();
       if (!canEditBox(selectedBox) || !selectedBox) return;
-      const current = frameBox(selectedBox);
+      const current = frameBox(selectedBox, getSelectedFrame(), getCurrentGroup(), getImages());
       const collision = isCollisionBox(selectedBox);
       const box = {
         offset: {
