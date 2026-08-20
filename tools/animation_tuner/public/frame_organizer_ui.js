@@ -34,6 +34,72 @@
     }
 
     /**
+     * Clamps the keep-1-of-N interval used by organizer reduce.
+     * @param {unknown} rawValue Slider or typed value.
+     * @returns {number}
+     */
+    function normalizeReduceStep(rawValue) {
+      return Math.max(2, Math.min(20, Number.parseInt(rawValue, 10) || 2));
+    }
+
+    /**
+     * Applies keep-1-of-N included flags in place.
+     * @param {Array<{included?:boolean,uid?:string}>} frames Workset frames.
+     * @param {number} step Keep one included frame out of every `step`.
+     * @param {Set<string>|null} [selectedUids] Limit to selected frames when set.
+     * @returns {void}
+     */
+    function applyReduceIncludedFlags(frames, step, selectedUids = null) {
+      let cursor = 0;
+      frames.forEach((frame) => {
+        if (!frame.included || (selectedUids && !selectedUids.has(frame.uid))) return;
+        frame.included = cursor % step === 0;
+        cursor += 1;
+      });
+    }
+
+    /**
+     * Asks for confirmation, then applies keep-1-of-N included flags.
+     * Cancel leaves the workset unchanged.
+     * @param {{
+     *   frames:Array<{included?:boolean,uid?:string}>,
+     *   step:number,
+     *   selectedUids?:Set<string>|null,
+     *   requestConfirmation:(message:string,details:Array<[string,string|number]>,options:object)=>Promise<boolean>,
+     *   text:(key:string,variables?:Record<string,string|number>)=>string
+     * }} options Reduce confirmation inputs.
+     * @returns {Promise<boolean>} Whether the flags were changed.
+     */
+    async function confirmReduceIncludedFlags(options) {
+      const frames = options?.frames || [];
+      const step = normalizeReduceStep(options?.step);
+      const selectedUids = options?.selectedUids || null;
+      const text = options?.text;
+      const requestConfirmation = options?.requestConfirmation;
+      if (typeof requestConfirmation !== "function" || typeof text !== "function") {
+        throw new TypeError("Reduce confirmation requires requestConfirmation and text.");
+      }
+      const targetCount = frames.filter(
+        (frame) => frame.included && (!selectedUids || selectedUids.has(frame.uid)),
+      ).length;
+      const accepted = await requestConfirmation(
+        text("reduceConfirm", { step }),
+        [
+          [text("detailFrames"), targetCount],
+          [text("reduceEvery"), step],
+        ],
+        {
+          title: text("reduceTitle"),
+          confirmLabel: text("reduce"),
+          tone: "warning",
+        },
+      );
+      if (!accepted) return false;
+      applyReduceIncludedFlags(frames, step, selectedUids);
+      return true;
+    }
+
+    /**
      * Opens the existing animation workset from the current-animation launcher.
      * @param {()=>Promise<void>} open Existing-animation loader.
      * @returns {Promise<void>} Completed open operation.
@@ -482,6 +548,25 @@
         renderCounts();
       }
 
+      /** Confirms, then keeps 1 of every N included frames. Cancel is a no-op. @returns {Promise<void>} */
+      async function reduceWorkset() {
+        const step = normalizeReduceStep(elements.organizerReduceStep.value);
+        elements.organizerReduceStep.value = String(step);
+        const selected = selectedFrames();
+        const selectedUids = selected.length ? new Set(selected.map((frame) => frame.uid)) : null;
+        const accepted = await confirmReduceIncludedFlags({
+          frames: state.frames,
+          step,
+          selectedUids,
+          requestConfirmation,
+          text,
+        });
+        if (!accepted) return;
+        renderGrid();
+        restartPreview();
+        setStatus(text("reduced", { step, count: includedFrames().length }), "success");
+      }
+
       /** Binds organizer DOM events to injected host callbacks in original order. @returns {void} */
       function bindEvents() {
         bindSimilarityThreshold(elements);
@@ -516,23 +601,7 @@
           renderGrid();
         });
         elements.organizerReduce.addEventListener("click", () => {
-          const step = Math.max(
-            2,
-            Math.min(20, Number.parseInt(elements.organizerReduceStep.value, 10) || 2),
-          );
-          elements.organizerReduceStep.value = String(step);
-          const targets = selectedFrames().length
-            ? new Set(selectedFrames().map((frame) => frame.uid))
-            : null;
-          let cursor = 0;
-          state.frames.forEach((frame) => {
-            if (!frame.included || (targets && !targets.has(frame.uid))) return;
-            frame.included = cursor % step === 0;
-            cursor += 1;
-          });
-          renderGrid();
-          restartPreview();
-          setStatus(text("reduced", { step, count: includedFrames().length }), "success");
+          reduceWorkset().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
         });
         elements.organizerAutoSort.addEventListener("click", () => {
           state.frames = sequenceOrder.restoreImportOrder(state.frames, state.importOrderStrategy);
@@ -756,6 +825,13 @@
       };
     }
 
-    return { bindSimilarityThreshold, createController, openCurrentAnimation };
+    return {
+      applyReduceIncludedFlags,
+      bindSimilarityThreshold,
+      confirmReduceIncludedFlags,
+      createController,
+      normalizeReduceStep,
+      openCurrentAnimation,
+    };
   },
 );
