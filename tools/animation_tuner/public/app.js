@@ -1232,6 +1232,7 @@ const history = globalThis.XSXBHistory.createController({
   },
   getSnapshot: cloneState,
   restoreSnapshot: restoreHistoryState,
+  commitPending: commitPendingAdjustmentEdits,
   markDirty,
   status,
   translate: t,
@@ -1873,6 +1874,15 @@ function loadCompositeContext(group) {
 
 function loadFrameImageAttachmentsForGroup(group) {
   return projectLifecycle.loadFrameImageAttachmentsForGroup(group);
+}
+
+/** Writes the focused adjustment field into the store before a history snapshot. */
+function commitPendingAdjustmentEdits() {
+  const active = document.activeElement;
+  if (!active || !adjustmentNumberInputs().includes(active)) return;
+  normalizeAdjustmentInputDisplay(active);
+  updateAdjustmentFromInputs();
+  if (typeof active.blur === "function") active.blur();
 }
 
 function cloneState() {
@@ -3184,7 +3194,7 @@ function updateBaseFromInputs(transform = transformFromAdjustmentInputs()) {
   store[currentGroup.scale] = nextBase.scale;
   if (currentGroup.scaleVector)
     store[currentGroup.scaleVector] = { x: Number(nextBase.scaleX), y: Number(nextBase.scaleY) };
-  store[currentGroup.offset] = nextBase.offset;
+  store[currentGroup.offset] = cloneVector(nextBase.offset);
   if (currentGroup.rotation) store[currentGroup.rotation] = Number(nextBase.rotation || 0);
   markDirty();
   syncFrameInputs();

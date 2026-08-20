@@ -89,6 +89,13 @@ test("input helpers preserve adjustment, undo, audio, and panel behavior", () =>
   assert.equal(historyUpdates, 1);
   undoInput.dispatch("blur");
 
+  const changeOnlyInput = createElement();
+  helpers.armInputUndo(changeOnlyInput, "base input");
+  changeOnlyInput.dispatch("focus");
+  changeOnlyInput.dispatch("change");
+  assert.equal(state.undoStack.length, 2);
+  assert.deepEqual(state.undoStack[1], { label: "base input", state: { snapshot: true } });
+
   helpers.initPanelState();
   assert.equal(panel.open, true);
 });

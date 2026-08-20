@@ -17,6 +17,7 @@
    *   setRedoStack?:(value:Array<object>)=>void,
    *   getSnapshot:()=>object,
    *   restoreSnapshot:(state:object)=>Promise<void>|void,
+   *   commitPending?:()=>void,
    *   markDirty?:()=>void,
    *   status?:(message:string)=>void,
    *   translate?:(key:string,variables?:object)=>string,
@@ -38,6 +39,7 @@
       setRedoStack = () => {},
       getSnapshot,
       restoreSnapshot,
+      commitPending = () => {},
       markDirty = () => {},
       status = () => {},
       translate = (key) => key,
@@ -70,6 +72,7 @@
     }
 
     function pushUndo(label = "edit") {
+      commitPending();
       const undoStack = getUndoStack();
       undoStack.push({ label, state: getSnapshot() });
       if (undoStack.length > maxDepth) undoStack.shift();
@@ -84,6 +87,7 @@
      */
     function undo() {
       return enqueueHistory(async () => {
+        commitPending();
         const undoStack = getUndoStack();
         const item = undoStack.pop();
         if (!item) {
@@ -112,6 +116,7 @@
      */
     function redo() {
       return enqueueHistory(async () => {
+        commitPending();
         const redoStack = getRedoStack();
         const item = redoStack.pop();
         if (!item) {
