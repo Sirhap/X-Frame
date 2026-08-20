@@ -833,6 +833,53 @@ test("ORG-013 organizer cards become draggable after video extract and keep a re
   }
 });
 
+test("ORG-040 cancel mid-extract leaves the workset unchanged and a later extract still works", async ({
+  page,
+}) => {
+  test.setTimeout(60000);
+  const videoPath = writeOrganizerExtractVideo();
+  try {
+    await page.goto("/tools/organizer");
+    await page.locator("#organizerVideoInput").setInputFiles(videoPath);
+    await expect(page.locator("#organizerVideoPanel")).toBeVisible();
+    await expect(page.locator("#organizerVideoExtract")).toBeEnabled();
+    await page.locator("#organizerVideoFpsNumber").fill("8");
+    await expect(page.locator("#organizerCount")).toContainText("0 / 0");
+
+    await page.evaluate(() => {
+      const video = document.getElementById("organizerVideoElement");
+      const original = video.addEventListener.bind(video);
+      video.addEventListener = (type, handler, options) => {
+        if (type === "seeked") {
+          return original(type, (event) => window.setTimeout(() => handler(event), 250), options);
+        }
+        return original(type, handler, options);
+      };
+    });
+
+    await page.locator("#organizerVideoExtract").click();
+    await expect(page.locator("#organizerVideoStatus")).toContainText("正在提取");
+    await page.locator("#organizerVideoCancel").click();
+    await expect(page.locator("#organizerVideoPanel")).toBeHidden();
+    await expect(page.locator("#organizerStatus")).toContainText("已取消视频提取");
+    await page.waitForTimeout(3000);
+    await expect(page.locator("#organizerStatus")).not.toContainText("已从视频提取");
+    await expect(page.locator(".organizerFrame")).toHaveCount(0);
+    await expect(page.locator("#organizerCount")).toContainText("0 / 0");
+
+    await page.locator("#organizerVideoInput").setInputFiles(videoPath);
+    await expect(page.locator("#organizerVideoPanel")).toBeVisible();
+    await expect(page.locator("#organizerVideoExtract")).toBeEnabled();
+    await page.locator("#organizerVideoExtract").click();
+    await expect(page.locator("#organizerStatus")).toContainText("已从视频提取", { timeout: 20000 });
+    await expect
+      .poll(() => page.locator(".organizerFrame").count(), { timeout: 20000 })
+      .toBeGreaterThanOrEqual(2);
+  } finally {
+    fs.rmSync(videoPath, { force: true });
+  }
+});
+
 test("ORG-013 import-page image cards stay draggable and reorder", async ({ page }) => {
   await page.goto("/tools/import");
   await page.locator("#organizerFileInput").setInputFiles([

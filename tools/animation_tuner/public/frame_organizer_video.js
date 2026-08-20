@@ -88,6 +88,23 @@
     const windowApi = dependencies.window || root.window;
     const urlApi = dependencies.urlApi || root.URL;
     let eventsBound = false;
+    /** @type {AbortController|null} */
+    let extractAbortController = null;
+
+    /** @returns {Error} */
+    function createAbortError() {
+      if (typeof DOMException === "function") {
+        return new DOMException("Video extract cancelled.", "AbortError");
+      }
+      const error = new Error("Video extract cancelled.");
+      error.name = "AbortError";
+      return error;
+    }
+
+    /** @param {AbortSignal} [signal] @returns {void} */
+    function throwIfExtractAborted(signal) {
+      if (signal?.aborted) throw createAbortError();
+    }
 
     /** @param {string} message @param {string} [tone] @returns {void} */
     function setVideoStatus(message, tone = "idle") {
@@ -137,9 +154,9 @@
       else setVideoStatus(text("videoLoaded"), "success");
     }
 
-    /** @param {boolean} [force] @returns {void} */
+    /** @param {boolean} [force] When true, close after a finished extract without aborting. @returns {void} */
     function close(force = false) {
-      if (state.videoExtracting && !force) return;
+      if (state.videoExtracting && !force) extractAbortController?.abort();
       elements.organizerVideoElement.pause();
       elements.organizerVideoElement.removeAttribute("src");
       elements.organizerVideoElement.load();
@@ -228,8 +245,9 @@
       }
     }
 
-    /** @param {number} time @returns {Promise<void>} */
-    function seekFrame(time) {
+    /** @param {number} time @param {AbortSignal} [signal] @returns {Promise<void>} */
+    function seekFrame(time, signal) {
+      throwIfExtractAborted(signal);
       const video = elements.organizerVideoElement;
       const target = clamp(time, 0, Math.max(0, state.videoDuration - 0.001));
       if (Math.abs(video.currentTime - target) < 0.0005 && video.readyState >= 2) return Promise.resolve();
@@ -238,6 +256,7 @@
           windowApi.clearTimeout(timeout);
           video.removeEventListener("seeked", handleSeeked);
           video.removeEventListener("error", handleError);
+          signal?.removeEventListener("abort", handleAbort);
         };
         const timeout = windowApi.setTimeout(() => {
           cleanup();
@@ -251,8 +270,19 @@
           cleanup();
           reject(new Error(text("videoUnsupported")));
         };
+        const handleAbort = () => {
+          cleanup();
+          reject(createAbortError());
+        };
         video.addEventListener("seeked", handleSeeked, { once: true });
         video.addEventListener("error", handleError, { once: true });
+        if (signal) {
+          if (signal.aborted) {
+            handleAbort();
+            return;
+          }
+          signal.addEventListener("abort", handleAbort, { once: true });
+        }
         video.currentTime = target;
       });
     }
@@ -266,6 +296,9 @@
       }
       state.busy = true;
       state.videoExtracting = true;
+      const abortController = new AbortController();
+      extractAbortController = abortController;
+      const signal = abortController.signal;
       const batchIndex = Number.isInteger(state.nextImportBatchIndex)
         ? state.nextImportBatchIndex
         : sequenceOrder.nextImportBatchIndex(state.frames);
@@ -277,9 +310,11 @@
       const baseName = state.videoFileName.replace(/\.[^.]+$/, "") || "video";
       try {
         for (let index = 0; index < current.count; index += 1) {
+          throwIfExtractAborted(signal);
           setVideoStatus(text("videoExtracting", { current: index + 1, total: current.count }), "busy");
           const time = Math.min(current.end - 0.001, current.start + index / current.fps);
-          await seekFrame(time);
+          await seekFrame(time, signal);
+          throwIfExtractAborted(signal);
           const canvas = documentApi.createElement("canvas");
           canvas.width = current.width;
           canvas.height = current.height;
@@ -299,15 +334,22 @@
           );
           if (index % EXTRACTION_YIELD_INTERVAL === EXTRACTION_YIELD_INTERVAL - 1) {
             await new Promise((resolve) => windowApi.setTimeout(resolve, 0));
+            throwIfExtractAborted(signal);
           }
         }
+        throwIfExtractAborted(signal);
         state.frames.push(...extractedFrames);
         dependencies.restartPreview();
         close(true);
         dependencies.setStatus(text("videoImported", { count: extractedFrames.length }), "success");
       } catch (error) {
-        setVideoStatus(text("failed", { message: error.message }), "error");
+        if (signal.aborted || error?.name === "AbortError") {
+          dependencies.setStatus(text("videoCancelled"));
+        } else {
+          setVideoStatus(text("failed", { message: error.message }), "error");
+        }
       } finally {
+        if (extractAbortController === abortController) extractAbortController = null;
         state.videoExtracting = false;
         state.busy = false;
         dependencies.renderGrid();
