@@ -227,11 +227,17 @@ body.cutoutOpen .cutoutClose {
 }
 
 .cutoutSidebarParametersPanel {
+  min-height: 0;
   height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .cutoutSidebarParametersPanel > .cutoutSettings {
-  height: 100%;
+  min-height: 0;
+  height: auto;
 }
 
 .cutoutSidebarBatchPanel {
@@ -400,14 +406,30 @@ body.cutoutOpen .cutoutClose {
 }
 
 @media (min-width: 1121px) {
-  body.cutoutOpen .cutoutWorkbench {
-    height: 100vh;
-    max-height: 100vh;
+  /* Beat app_shell's later height:auto / overflow:visible contract so the left
+     parameter pane is a real scrollport. Wheel over the column must move the
+     column, not the document (CUT-032). */
+  body.cutoutOpen .cutoutModal .cutoutWorkbench {
+    height: calc(100vh - var(--shell-flow-height, 52px));
+    max-height: calc(100vh - var(--shell-flow-height, 52px));
+    min-height: 0;
     overflow: hidden;
   }
 
-  body.cutoutOpen .cutoutBody {
+  body.cutoutOpen .cutoutModal .cutoutBody {
     min-height: 0;
     overflow: hidden;
+  }
+
+  body.cutoutOpen .cutoutModal .cutoutControls {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.cutoutOpen .cutoutModal .cutoutSidebarParametersPanel {
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 }

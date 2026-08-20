@@ -8,6 +8,24 @@
   "use strict";
 
   /**
+   * Formats the advanced-tab badge. Zeroed alpha controls are "unset", not a
+   * machine dump of `0 — 0 / T 0`.
+   * @param {{alphaLow?:number|string,alphaHigh?:number|string,alphaThreshold?:number|string}} values Alpha window.
+   * @param {(key:string,variables?:Record<string,number|string>)=>string} text Localized interpolator.
+   * @returns {string}
+   */
+  function formatAdvancedSummary(values, text) {
+    if (typeof text !== "function") throw new TypeError("Advanced summary text() is required.");
+    const alphaLow = Number(values?.alphaLow) || 0;
+    const alphaHigh = Number(values?.alphaHigh) || 0;
+    const alphaThreshold = Number(values?.alphaThreshold) || 0;
+    if (alphaLow === 0 && alphaHigh === 0 && alphaThreshold === 0) {
+      return text("advancedUnset");
+    }
+    return text("advancedWindow", { alphaLow, alphaHigh, alphaThreshold });
+  }
+
+  /**
    * Creates the small UI-state controller shared by the batch cutout modal.
    * The controller only forwards existing DOM/state behavior; processing and
    * image algorithms remain owned by the main batch controller and its cores.
@@ -266,7 +284,7 @@
         alphaThreshold: Number(elements.cutoutAlphaThreshold.value),
         protectionTolerance: Number(elements.cutoutProtectionTolerance.value),
       };
-      advancedSummary.textContent = `${values.alphaLow} — ${values.alphaHigh} / T ${values.alphaThreshold}`;
+      advancedSummary.textContent = formatAdvancedSummary(values, text);
       advancedPresetButtons.forEach((button) => {
         const preset = advancedPresets[button.dataset.cutoutPreset];
         const matches = preset && Object.entries(preset).every(([key, value]) => values[key] === value);
@@ -424,5 +442,5 @@
     };
   }
 
-  return { createController };
+  return { createController, formatAdvancedSummary };
 });
