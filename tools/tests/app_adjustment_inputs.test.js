@@ -120,6 +120,7 @@ test("adjustment input controller preserves mode, transform, and step semantics"
  */
 function createSteppingController(elements, store = { offset: { x: 0, y: 0 } }) {
   const applied = [];
+  const body = { dataset: {} };
   const transform = () => ({
     scale: 1,
     scaleX: 1,
@@ -151,10 +152,17 @@ function createSteppingController(elements, store = { offset: { x: 0, y: 0 } }) 
     overrideStore: () => ({}),
     cloneValue: (value) => JSON.parse(JSON.stringify(value)),
     round: (value) => value,
-    documentRef: { querySelectorAll: () => [] },
+    documentRef: {
+      body,
+      querySelector: (selector) => {
+        const id = String(selector || "").replace(/^#/, "");
+        return Object.values(elements).find((element) => element?.id === id) || null;
+      },
+      querySelectorAll: () => [],
+    },
     localStorageRef: { setItem() {} },
   });
-  return { controller, store, applied };
+  return { controller, store, applied, body };
 }
 
 test("incrementing offset.x does not change offset.y", () => {
@@ -208,6 +216,58 @@ test("committing one position field after a tab hide does not nudge the other ax
   assert.equal(store.offset.x, 2);
   assert.equal(store.offset.y, 0, "blur/tab apply must not read a stale Y");
   assert.equal(Number(elements.baseY.value), 0);
+});
+
+test("one stepper activation applies exactly one step, not ±2", () => {
+  const elements = createElements();
+  elements.baseX.value = "0";
+  elements.baseY.value = "0";
+  const { controller, store } = createSteppingController(elements, { offset: { x: 0, y: 0 } });
+  const button = { dataset: { stepTarget: "baseX", stepDir: "1" } };
+
+  assert.equal(controller.handleAdjustmentStepClick(button), true);
+  assert.equal(
+    controller.handleAdjustmentStepClick(button),
+    false,
+    "label/queued second click must not step again",
+  );
+  assert.equal(store.offset.x, 1);
+  assert.equal(store.offset.y, 0);
+
+  controller.endAdjustmentStepActivation(button);
+  assert.equal(controller.handleAdjustmentStepClick(button), true);
+  assert.equal(store.offset.x, 2);
+  assert.equal(store.offset.y, 0);
+});
+
+test("a guarded stepper click after a tab switch does not mutate offset", () => {
+  const elements = createElements();
+  elements.baseX.value = "0";
+  elements.baseY.value = "0";
+  const { controller, store } = createSteppingController(elements, { offset: { x: 0, y: 0 } });
+  const button = { dataset: { stepTarget: "baseY", stepDir: "-1" } };
+
+  controller.beginWorkbenchClickGuard();
+  assert.equal(controller.handleAdjustmentStepClick(button), false);
+  assert.deepEqual(store.offset, { x: 0, y: 0 });
+
+  controller.endWorkbenchClickGuard();
+  assert.equal(controller.handleAdjustmentStepClick(button), true);
+  assert.deepEqual(store.offset, { x: 0, y: -1 });
+});
+
+test("releasing an unedited field after a tab hide restores store Y instead of committing -1", () => {
+  const elements = createElements();
+  elements.baseX.value = "0";
+  elements.baseY.value = "-1";
+  const { controller, store, applied } = createSteppingController(elements, { offset: { x: 0, y: 0 } });
+
+  controller.releaseAdjustmentField(elements.baseY);
+
+  assert.equal(store.offset.x, 0);
+  assert.equal(store.offset.y, 0, "hide/show must not persist a glitched Y");
+  assert.equal(Number(elements.baseY.value), 0);
+  assert.equal(applied.length, 0);
 });
 
 test("position stepper commits an undo snapshot before applying the offset", () => {

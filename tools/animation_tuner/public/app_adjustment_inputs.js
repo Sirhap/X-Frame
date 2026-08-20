@@ -264,10 +264,76 @@
      * @returns {object} Transform that was applied.
      */
     function commitAdjustmentField(input) {
+      const previous = adjustmentTransform();
       const transform = transformFromAdjustmentInputs(input);
       writeAdjustmentInputsFromTransform(transform, input);
-      updateAdjustmentFromInputs(input);
+      const unchanged =
+        Number(previous.offset?.x || 0) === Number(transform.offset?.x || 0) &&
+        Number(previous.offset?.y || 0) === Number(transform.offset?.y || 0) &&
+        Number(previous.scale) === Number(transform.scale) &&
+        Number(previous.scaleX) === Number(transform.scaleX) &&
+        Number(previous.scaleY) === Number(transform.scaleY) &&
+        Number(previous.rotation || 0) === Number(transform.rotation || 0);
+      if (!unchanged) updateAdjustmentFromInputs(input);
       return transform;
+    }
+
+    /** Marks a field so blur will commit it instead of restoring the store. */
+    function markAdjustmentFieldEdited(input) {
+      if (input?.dataset) input.dataset.adjustmentEdited = "1";
+    }
+
+    /**
+     * Commits a user edit, or restores store values when the field was not edited.
+     * Tab hide/show must not persist a glitched 水平/垂直 display.
+     * @param {{dataset?:{adjustmentEdited?:string}}|null} input Field losing focus.
+     * @returns {object} Transform left in the store.
+     */
+    function releaseAdjustmentField(input) {
+      if (input?.dataset?.adjustmentEdited === "1") {
+        delete input.dataset.adjustmentEdited;
+        return commitAdjustmentField(input);
+      }
+      const stored = adjustmentTransform();
+      writeAdjustmentInputsFromTransform(stored);
+      return stored;
+    }
+
+    /** Starts a short window that ignores leftover stepper/nav clicks. */
+    function beginWorkbenchClickGuard() {
+      if (documentRef?.body?.dataset) documentRef.body.dataset.workbenchClickGuard = "1";
+    }
+
+    /** Ends the leftover-click window. */
+    function endWorkbenchClickGuard() {
+      if (documentRef?.body?.dataset) delete documentRef.body.dataset.workbenchClickGuard;
+    }
+
+    /** @returns {boolean} Whether leftover clicks should be ignored. */
+    function isWorkbenchClickGuarded() {
+      return documentRef?.body?.dataset?.workbenchClickGuard === "1";
+    }
+
+    /**
+     * Applies one stepper click. A second event from the same activation is ignored.
+     * @param {{dataset?:{stepTarget?:string,stepDir?:string,stepApplied?:string}}|null} button Stepper button.
+     * @returns {boolean} Whether a step was applied.
+     */
+    function handleAdjustmentStepClick(button) {
+      if (!button) return false;
+      if (isWorkbenchClickGuarded() && button.dataset?.stepFromPointer !== "1") return false;
+      if (button.dataset?.stepApplied === "1") return false;
+      const input = documentRef?.querySelector?.(`#${button.dataset?.stepTarget || ""}`);
+      if (!input || input.disabled) return false;
+      button.dataset.stepApplied = "1";
+      markAdjustmentFieldEdited(input);
+      stepAdjustmentInput(input, Number(button.dataset.stepDir || 0));
+      return true;
+    }
+
+    /** Clears the one-activation lock so the next real click can step again. */
+    function endAdjustmentStepActivation(button) {
+      if (button?.dataset) delete button.dataset.stepApplied;
     }
 
     /** Returns numeric inputs controlled by the adjustment panel. */
@@ -320,6 +386,7 @@
       const nextValue = current + Number(direction || 0) * step * multiplier;
       pushUndo("adjustment step");
       beginStepAdjustmentEdit();
+      markAdjustmentFieldEdited(input);
       input.value = round(nextValue);
       if (input === elements.baseScale) {
         elements.baseScaleX.value = input.value;
@@ -537,6 +604,13 @@
       adjustmentTransform,
       transformFromAdjustmentInputs,
       commitAdjustmentField,
+      markAdjustmentFieldEdited,
+      releaseAdjustmentField,
+      beginWorkbenchClickGuard,
+      endWorkbenchClickGuard,
+      isWorkbenchClickGuarded,
+      handleAdjustmentStepClick,
+      endAdjustmentStepActivation,
       compactDisplayedNumber,
       isIncompleteNumberInput,
       sanitizeAdjustmentNumberInput,

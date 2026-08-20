@@ -86,6 +86,7 @@
     const translate =
       dependencies.translate ||
       ((key) => ({ collapseSidebar: "折叠参数栏", expandSidebar: "展开参数栏" })[key] || key);
+    let lastPointerDownTarget = null;
     if (!documentRef?.querySelector || !documentRef?.querySelectorAll) {
       throw new TypeError("XSXB App Shell requires a document-like query interface.");
     }
@@ -436,6 +437,15 @@
     /** @param {MouseEvent} event Tool-rail navigation event. */
     async function handleRouteClick(event) {
       event.preventDefault();
+      const target = event.currentTarget;
+      const freshPointer =
+        lastPointerDownTarget === target ||
+        (typeof target?.contains === "function" && target.contains(lastPointerDownTarget));
+      if (documentRef.body?.dataset?.workbenchClickGuard === "1" && !freshPointer) return;
+      documentRef.body.dataset.workbenchClickGuard = "1";
+      windowRef.setTimeout?.(() => {
+        delete documentRef.body.dataset.workbenchClickGuard;
+      }, 320);
       const route =
         event.currentTarget.dataset.workbenchRoute || event.currentTarget.dataset.appMode || "projects";
       try {
@@ -462,6 +472,9 @@
         unlockKunkunTheme();
       }
       syncActiveRoute();
+      listen(documentRef, "pointerdown", (event) => {
+        lastPointerDownTarget = event.target;
+      });
 
       for (const button of elements.filmstripButtons) {
         listen(button, "click", () => setFilmstripLayout(button.dataset.filmstripLayout));

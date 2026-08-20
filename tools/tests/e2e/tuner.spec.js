@@ -742,6 +742,7 @@ test("position stepper incrementing X does not change Y, and tab switch does not
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
   await expect.poll(async () => Number(await baseX.inputValue())).toBe(1);
   await expect.poll(async () => Number(await baseY.inputValue())).toBe(0);
+  expect(Number(await baseX.inputValue()), "one click must not double-fire").not.toBe(2);
 
   await page.locator('[data-step-target="baseX"][data-step-dir="-1"]').click();
   await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
@@ -760,6 +761,24 @@ test("position stepper incrementing X does not change Y, and tab switch does not
   await expect(page).toHaveURL(/\/workspace\/animation\/transform/);
   await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
   await expect.poll(async () => Number(await baseY.inputValue())).toBe(1);
+});
+
+test("transform tab return does not mutate a clean 0/0 offset or mark it saved-dirty", async ({ page }) => {
+  await page.goto("/workspace/animation/transform");
+  await page.locator("#adjustGroup").check();
+  const baseX = page.locator("#baseX");
+  const baseY = page.locator("#baseY");
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
+  await expect.poll(async () => Number(await baseY.inputValue())).toBe(0);
+
+  await page.locator('a[data-workbench-route="boxes"]').click();
+  await expect(page).toHaveURL(/\/workspace\/animation\/boxes/);
+  await page.locator('a[data-i18n="stageToolTransform"]').click();
+  await expect(page).toHaveURL(/\/workspace\/animation\/transform/);
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
+  await expect.poll(async () => Number(await baseY.inputValue())).toBe(0);
+  await expect(page.locator("#saveState")).not.toContainText("未保存");
+  await expect(page.locator("#workspaceSaveIndicator")).toHaveText(/已保存|没有改动/);
 });
 
 test("same-stage workbench tabs do not ask about unsaved edits", async ({ page }) => {
