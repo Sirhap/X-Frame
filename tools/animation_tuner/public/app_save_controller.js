@@ -295,6 +295,23 @@
       return inFlightSavePromise;
     }
 
+    /**
+     * Waits for any in-flight save, then starts a new persist of the current memory.
+     * Discard uses this so a dirty autosave that already started cannot stand in for
+     * the restored last-saved snapshot.
+     * @returns {Promise<void|undefined>} Newly started save after the current request.
+     */
+    async function saveAfterIdle() {
+      if (inFlightSavePromise) {
+        try {
+          await inFlightSavePromise;
+        } catch (_error) {
+          // The abandoned in-flight persist must not block writing the restored snapshot.
+        }
+      }
+      return save();
+    }
+
     return {
       collectAct2StatueBossTuningValues,
       collectBossTuningValues,
@@ -304,6 +321,7 @@
       collectYechengPropTuningValues,
       ensureCollisionBoxOverridesForSave,
       save,
+      saveAfterIdle,
     };
   }
 

@@ -125,11 +125,14 @@ test("Edge route guard supports cancel, save, and discard decisions", async ({ p
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();
   await quickToolsLink.click();
   await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await page.waitForTimeout(800);
   await page.locator("#appConfirmAccept").click();
   await expect(page).toHaveURL(/\/tools$/);
 
   await page.goto("/workspace");
   await expect(page).toHaveURL(/\/workspace/);
+  await expect(baseX).toHaveValue(savedValue);
+  await page.reload();
   await expect(baseX).toHaveValue(savedValue);
 });
 
