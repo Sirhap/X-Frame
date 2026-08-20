@@ -31,3 +31,42 @@ test("organizer text exposes the original bilingual keys", () => {
   assert.equal(TEXT.en.previewPrimary.includes("{current}"), true);
   assert.doesNotMatch(TEXT.en.cutoutScopeWorkset, /[\u4e00-\u9fff]/u);
 });
+
+test("ORG-033 loop dialog title uses 段 / Segments, matching the find-loop button", () => {
+  assert.equal(TEXT.zh.findLoop, "寻找循环段");
+  assert.equal(TEXT.zh.loopDialogTitle, "寻找循环段");
+  assert.equal(TEXT.zh.loopDialogTitle, TEXT.zh.findLoop);
+  assert.equal(TEXT.en.loopDialogTitle, "Find Loop Segments");
+  assert.doesNotMatch(TEXT.zh.loopDialogTitle, /循环帧/u);
+  assert.doesNotMatch(TEXT.en.loopDialogTitle, /Frames/u);
+});
+
+test("ORG-034 empty loop search copy is 没有循环段 and keeps the preference hint", () => {
+  assert.equal(TEXT.zh.loopNoResult, "没有循环段");
+  assert.match(TEXT.zh.loopNoResultHint, /循环偏好/);
+  assert.match(TEXT.zh.loopNoResultHint, /起始帧/);
+  assert.equal(TEXT.en.loopNoResult, "No loop segments");
+  assert.match(TEXT.en.loopNoResultHint, /preference/i);
+  assert.match(TEXT.en.loopNoResultHint, /starting frame/i);
+});
+
+test("ORG-033/034 workbench HTML fallbacks match the zh i18n strings", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const html = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const title = html.match(/id="organizerLoopTitle"[^>]*>([^<]+)</u);
+  const empty = html.match(/data-organizer-i18n="loopNoResult"[^>]*>([^<]+)</u);
+  assert.equal(title?.[1].trim(), "寻找循环段");
+  assert.equal(empty?.[1].trim(), "没有循环段");
+  assert.equal(title?.[1].trim(), TEXT.zh.loopDialogTitle);
+  assert.equal(empty?.[1].trim(), TEXT.zh.loopNoResult);
+});
+
+test("ORG-035 reduce confirmation copy names the keep-1-of-N step", () => {
+  const text = createTranslator(() => "zh");
+  const english = createTranslator(() => "en");
+  assert.match(text("reduceConfirm", { step: 3 }), /每 3 帧保留 1 帧/);
+  assert.match(english("reduceConfirm", { step: 3 }), /1 of every 3/);
+  assert.ok(TEXT.zh.reduceTitle);
+  assert.ok(TEXT.en.reduceTitle);
+});

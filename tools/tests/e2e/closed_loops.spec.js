@@ -540,6 +540,8 @@ test("organizer reorders data through the server and reloads the reduced animati
   await expect(page.locator(".organizerFrame")).toHaveCount(4);
   await page.locator("#organizerReduceStep").fill("2");
   await page.locator("#organizerReduce").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
+  await page.locator("#organizerConfirmAccept").click();
   await page.locator("#organizerApply").click();
   await page.locator("#organizerConfirmAccept").click();
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
