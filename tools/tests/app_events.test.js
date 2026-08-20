@@ -146,6 +146,60 @@ test("event controller binds the original listener groups once", () => {
   ]);
 });
 
+test("SAV-004 adjustment number fields bind a non-passive wheel guard", () => {
+  const elements = createElements();
+  const wheelOptions = [];
+  const originalAdd = elements.baseX.addEventListener.bind(elements.baseX);
+  elements.baseX.addEventListener = (type, listener, options) => {
+    if (type === "wheel") wheelOptions.push(options);
+    return originalAdd(type, listener, options);
+  };
+  const state = {
+    config: { groups: [] },
+    currentGroup: null,
+    selectedFrames: new Set([0]),
+    selectedBoxes: new Set(),
+    inputEditSnapshots: new Map(),
+    undoStack: [],
+    redoStack: [],
+    heldAttachmentTransformKeys: new Set(),
+    frameImageAttachments: [],
+    view: { x: 0, y: 0, zoom: 1 },
+  };
+  let guarded = 0;
+  const handlers = new Proxy(
+    {
+      adjustmentNumberInputs: () => [elements.baseX],
+      keyboardController: { bind: () => {} },
+      renderGroupSelect: () => [],
+      selectedFrameAttachment: () => null,
+      guardAdjustmentNumberWheel: () => {
+        guarded += 1;
+        return false;
+      },
+    },
+    {
+      get(target, key) {
+        return key in target ? target[key] : () => {};
+      },
+    },
+  );
+  const controller = createController({
+    elements,
+    state,
+    constants: { ADJUSTMENT_MODE_KEY: "adjustment-mode" },
+    documentRef: { querySelectorAll: () => [] },
+    storage: { getItem: () => null, setItem() {} },
+    handlers,
+  });
+  controller.bind();
+
+  assert.equal(elements.baseX.listenerCount("wheel"), 1);
+  assert.deepEqual(wheelOptions, [{ passive: false }]);
+  elements.baseX.dispatch("wheel", { deltaY: 120 });
+  assert.equal(guarded, 1);
+});
+
 test("event controller restores group transforms and frame overrides without deleting unrelated groups", () => {
   const elements = createElements();
   const group = {

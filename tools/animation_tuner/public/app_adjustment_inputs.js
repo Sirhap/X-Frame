@@ -318,6 +318,20 @@
       return commitAdjustmentField(active);
     }
 
+    /**
+     * Blocks native type=number wheel stepping. Hover + trackpad was writing
+     * 水平 0→1 and 整体大小 1→1.001 with no click. Intentional edits stay
+     * typing, steppers, and focused arrow keys.
+     * @param {{preventDefault?:()=>void,stopPropagation?:()=>void}|null} event Wheel event.
+     * @param {{value?:unknown}|null} [_input] Hovered or focused number field.
+     * @returns {false} Wheel never applies a transform step.
+     */
+    function guardAdjustmentNumberWheel(event, _input) {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      return false;
+    }
+
     /** Starts a short window that ignores leftover stepper/nav clicks. */
     function beginWorkbenchClickGuard() {
       if (documentRef?.body?.dataset) documentRef.body.dataset.workbenchClickGuard = "1";
@@ -626,6 +640,7 @@
       markAdjustmentFieldEdited,
       releaseAdjustmentField,
       flushFocusedAdjustmentEdit,
+      guardAdjustmentNumberWheel,
       beginWorkbenchClickGuard,
       endWorkbenchClickGuard,
       isWorkbenchClickGuarded,

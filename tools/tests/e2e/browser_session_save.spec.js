@@ -163,7 +163,18 @@ test("SAV-004 typed horizontal 0→1 stays 1 after autosave and hard reload", as
   await page.goto("/workspace/animation/transform?project=p0test2");
   await page.locator("#adjustGroup").check();
   const baseX = page.locator("#baseX");
+  const baseScale = page.locator("#baseScale");
   await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
+  await expect.poll(async () => Number(await baseScale.inputValue())).toBeCloseTo(1, 3);
+
+  await baseX.hover();
+  await page.mouse.wheel(0, 400);
+  await baseScale.hover();
+  await page.mouse.wheel(0, 400);
+  await expect.poll(async () => Number(await baseX.inputValue())).toBe(0);
+  await expect.poll(async () => Number(await baseScale.inputValue())).toBeCloseTo(1, 3);
+  await expect(page.locator("#workspaceSaveIndicator")).toHaveText(/已保存|没有改动/);
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
 
   await baseX.click();
   await page.keyboard.type("1");
