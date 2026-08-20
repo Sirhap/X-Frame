@@ -969,7 +969,10 @@
       if (options.referenceChromaKey === true) {
         return applyReferenceCutout(source, width, height, options, backgroundColors);
       }
-      const tolerance = clamp(options.tolerance ?? DEFAULT_CUTOUT_TOLERANCE, 0, PERCENT_SCALE);
+      // -1 is the matching off/closed stop. Do not clamp it to 0 (exact match)
+      // and do not invent a positive tolerance from the estimated background.
+      const tolerance = clamp(options.tolerance ?? DEFAULT_CUTOUT_TOLERANCE, -1, PERCENT_SCALE);
+      const matchingClosed = tolerance < 0;
       const feather = clamp(options.feather ?? 6, 0, 40);
       const alphaThreshold = clamp(options.alphaThreshold ?? 2, 0, 255);
       const edgeBoost = clamp(options.edgeBoost ?? 0, 0, PERCENT_SCALE);
@@ -991,9 +994,9 @@
       // Edge enhancement widens only the connected candidate search. Keeping it
       // out of the opacity curve avoids turning similarly colored foreground
       // details semi-transparent.
-      const keyTolerance = clamp(tolerance, 0, PERCENT_SCALE);
-      const featherLimit = clamp(keyTolerance + feather, 0, PERCENT_SCALE);
-      const maximumDistance = clamp(featherLimit + edgeBoost * 0.12, 0, PERCENT_SCALE);
+      const keyTolerance = matchingClosed ? -1 : clamp(tolerance, 0, PERCENT_SCALE);
+      const featherLimit = matchingClosed ? -1 : clamp(keyTolerance + feather, 0, PERCENT_SCALE);
+      const maximumDistance = matchingClosed ? -1 : clamp(featherLimit + edgeBoost * 0.12, 0, PERCENT_SCALE);
       const perceptual = options.perceptual !== false;
       const compiledBackgroundColors = perceptual
         ? backgroundColors.map((color) => compilePerceptualColor(color))

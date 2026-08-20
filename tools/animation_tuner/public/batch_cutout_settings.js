@@ -47,6 +47,27 @@
   }
 
   /**
+   * Resolves the automatic-panel hint for the current slider combination.
+   * Tolerance -1 is the matching off/closed stop and must not be described as auto-estimate.
+   * @param {{itemAvailable?:boolean,automatic?:boolean,hasBackgroundSample?:boolean,tolerance?:number,alphaLow?:number,alphaHigh?:number}} options Current sidebar state.
+   * @returns {string} Localization key.
+   */
+  function resolveAutomaticSettingsHintKey(options = {}) {
+    const itemAvailable = Boolean(options.itemAvailable);
+    const automatic = Boolean(options.automatic);
+    if (!itemAvailable) return "settingsEmptyHint";
+    if (!automatic) return "toolSettingsHint";
+    if (!options.hasBackgroundSample) return "needsBackgroundSampleHint";
+    const tolerance = Number(options.tolerance);
+    if (Number.isFinite(tolerance) && tolerance <= -1) return "toleranceClosedHint";
+    if (tolerance >= 100) return "toleranceAggressiveHint";
+    const alphaLow = Number(options.alphaLow);
+    const alphaHigh = Number(options.alphaHigh);
+    if (Number.isFinite(alphaHigh) && alphaHigh <= alphaLow) return "alphaWindowRangeHint";
+    return "automaticToolSettingsHint";
+  }
+
+  /**
    * Resolves which automatic controls have no effect under the current parameter combination.
    * @param {{blendStrength?:number,despillStrength?:number,edgeDespillRadius?:number,edgeRecoveryStrength?:number}} parameters Current automatic parameters.
    * @returns {{blendModeDisabled:boolean,despillModeDisabled:boolean,backgroundRadiusDisabled:boolean}} Dependency state.
@@ -256,11 +277,13 @@
      * @returns {{blendModeDisabled:boolean,despillModeDisabled:boolean,backgroundRadiusDisabled:boolean}} Applied state.
      */
     function synchronizeAutomaticControlDependencies() {
-      return syncAutomaticControlDependencies(
+      const dependencies = syncAutomaticControlDependencies(
         elements,
         !selectedItem() || state.busy,
         (range) => numericRangeInputs.get(range) || null,
       );
+      setSettingsMode(state.settingsMode || (state.repairMode === "automatic" ? "automatic" : "tool"));
+      return dependencies;
     }
 
     /**
@@ -461,17 +484,23 @@
         ? text(repairModeTextKey(automatic ? "automatic" : state.repairMode))
         : text("settingsEmptyTitle");
       const hasBackgroundSample = Boolean(selectedItem()?.backgroundSamples?.length);
-      let hintKey = "settingsEmptyHint";
-      if (itemAvailable && automatic && !hasBackgroundSample) hintKey = "needsBackgroundSampleHint";
-      else if (itemAvailable) hintKey = automatic ? "automaticToolSettingsHint" : "toolSettingsHint";
       const tolerance = Number(elements.cutoutTolerance?.value);
       const alphaLow = Number(elements.cutoutAlphaLow?.value);
       const alphaHigh = Number(elements.cutoutAlphaHigh?.value);
-      if (itemAvailable && automatic && tolerance >= 100) hintKey = "toleranceAggressiveHint";
-      else if (itemAvailable && automatic && Number.isFinite(alphaHigh) && alphaHigh <= alphaLow) {
-        hintKey = "alphaWindowRangeHint";
-      }
+      const hintKey = resolveAutomaticSettingsHintKey({
+        itemAvailable,
+        automatic,
+        hasBackgroundSample,
+        tolerance,
+        alphaLow,
+        alphaHigh,
+      });
       elements.cutoutActiveToolHint.textContent = text(hintKey);
+      const matchingClosed = Number.isFinite(tolerance) && tolerance <= -1;
+      if (elements.cutoutToleranceClosedHint) {
+        elements.cutoutToleranceClosedHint.hidden = !matchingClosed;
+        if (matchingClosed) elements.cutoutToleranceClosedHint.textContent = text("toleranceClosedHint");
+      }
     }
 
     /**
@@ -646,6 +675,7 @@
     applyPreviewBackground,
     createController,
     resolveAutomaticControlDependencies,
+    resolveAutomaticSettingsHintKey,
     resolveRepairPropagationState,
     syncAutomaticControlDependencies,
   };
