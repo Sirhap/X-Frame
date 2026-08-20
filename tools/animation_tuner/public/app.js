@@ -938,6 +938,7 @@ const boxModel = globalThis.XSXBBoxModel.createController({
     boxOnlyMode = value;
   },
   getAdjustmentMode: () => adjustmentMode,
+  getImages: () => images,
   getBoxOverrideStore: boxOverrideStore,
   getFrameBoxKey: frameBoxKey,
   defaultHitbox,
@@ -970,6 +971,7 @@ const boxTransform = globalThis.XSXBBoxTransform.createController({
   getSelectedFrame: () => selectedFrame,
   getConfig: () => config,
   getAdjustmentMode: () => adjustmentMode,
+  getImages: () => images,
   getBoxEditSnapshot: () => boxEditSnapshot,
   frameTransform,
   baseTransform,
