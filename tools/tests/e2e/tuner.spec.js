@@ -780,6 +780,33 @@ test("NAV-008 discard rolls back dirty horizontal position after the autosave wi
   await expect(baseX).toHaveValue(initialValue);
 });
 
+test("SAV-014 discard of a typed scale edit reloads the last saved 1.000", async ({ page }) => {
+  await page.goto("/workspace/animation/transform");
+  const baseScale = page.locator("#baseScale");
+  await expect.poll(async () => Number(await baseScale.inputValue())).toBeCloseTo(1, 3);
+  const savedScale = await baseScale.inputValue();
+
+  await baseScale.click();
+  await page.keyboard.press("End");
+  await page.keyboard.type("1.5");
+  await expect.poll(async () => Number(await baseScale.inputValue())).toBeCloseTo(1.5, 3);
+  expect(await baseScale.inputValue()).not.toMatch(/11\.5/);
+  expect(await baseScale.inputValue()).not.toMatch(/^\.500/);
+
+  await page.locator("#toolRailTools").click();
+  await expect(page.locator("#appConfirmPanel")).toBeVisible();
+  await expect(page.locator("#appConfirmTitle")).toHaveText("未保存的调参");
+  await page.locator("#appConfirmAccept").click();
+  await expect(page).toHaveURL(/\/tools$/);
+
+  await page.goto("/workspace/animation/transform");
+  await expect.poll(async () => Number(await baseScale.inputValue())).toBeCloseTo(Number(savedScale), 3);
+  await page.reload({ waitUntil: "load" });
+  await expect.poll(async () => Number(await baseScale.inputValue())).toBeCloseTo(1, 3);
+  await expect(page.locator("#saveState")).toContainText("已保存");
+  expect(Number(await baseScale.inputValue())).not.toBe(11.5);
+});
+
 test("contextual tools preserve auto-saved tuning when switching", async ({ page }) => {
   await page.goto("/workspace/animation/transform");
   await page.locator('[data-step-target="baseX"][data-step-dir="1"]').click();

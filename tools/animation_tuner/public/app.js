@@ -1897,6 +1897,7 @@ function loadFrameImageAttachmentsForGroup(group) {
 function commitPendingAdjustmentEdits() {
   const active = document.activeElement;
   if (!active || !adjustmentNumberInputs().includes(active)) return;
+  applyAdjustmentNumberInput(active);
   normalizeAdjustmentInputDisplay(active);
   updateAdjustmentFromInputs();
   if (typeof active.blur === "function") active.blur();
@@ -2140,6 +2141,18 @@ function normalizeAdjustmentInputDisplay(...args) {
 
 function isIncompleteNumberInput(...args) {
   return adjustmentInputsCall("isIncompleteNumberInput", ...args);
+}
+
+function beginAdjustmentNumberEdit(...args) {
+  return adjustmentInputsCall("beginAdjustmentNumberEdit", ...args);
+}
+
+function retainAdjustmentNumberSelection(...args) {
+  return adjustmentInputsCall("retainAdjustmentNumberSelection", ...args);
+}
+
+function applyAdjustmentNumberInput(...args) {
+  return adjustmentInputsCall("applyAdjustmentNumberInput", ...args);
 }
 
 function syncAdjustmentModeInputs(...args) {
@@ -3547,6 +3560,9 @@ const appEvents = appEventsModule.createController({
     stepOffsetByArrowKey,
     normalizeAdjustmentInputDisplay,
     isIncompleteNumberInput,
+    beginAdjustmentNumberEdit,
+    retainAdjustmentNumberSelection,
+    applyAdjustmentNumberInput,
     stagePoint,
     syncAdjustmentInputs,
     syncAdjustmentModeInputs,
