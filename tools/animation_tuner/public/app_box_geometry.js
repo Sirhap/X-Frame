@@ -31,6 +31,18 @@
   }
 
   /**
+   * Returns whether a box matches the no-image defaultHurtbox template.
+   * Foot-anchored auto boxes clamp to 8×8 when the source rect is 1×1.
+   * @param {object|null|undefined} box Box value.
+   * @returns {boolean} Whether the box is the 1×1 / 8×8 foot stub.
+   */
+  function isDefaultFootStubBox(box) {
+    const width = finiteNumber(box?.size?.x, Number.NaN);
+    const height = finiteNumber(box?.size?.y, Number.NaN);
+    return Number.isFinite(width) && Number.isFinite(height) && width <= 8 && height <= 8;
+  }
+
+  /**
    * Centers a collision box vertically around its body origin.
    * @param {number} height Box height.
    * @returns {number} Collision offset.
@@ -307,6 +319,7 @@
     BOX_NUDGE_STEP,
     collisionOffsetYForHeight,
     isCollisionBox,
+    isDefaultFootStubBox,
     nearlyEqual,
     normalizeFrameBox,
     nudgeFrameBox,

@@ -234,6 +234,7 @@ const groupLabel = (group) => groupLabelBase(group, t);
 const {
   collisionOffsetYForHeight,
   isCollisionBox,
+  isDefaultFootStubBox,
   normalizeFrameBox,
   nudgeFrameBox,
   pointInBoxRect,
@@ -1666,6 +1667,7 @@ frameEditStateController = frameEditStateModule.createController({
   tuningFrameKey,
   groupOwnsFrameKey,
   normalizeFrameBox,
+  isDefaultFootStubBox,
   cloneScaleVector,
   cloneVector,
   scaleVectorFromTransform,

@@ -9,6 +9,7 @@ const {
   BOX_NUDGE_STEP,
   collisionOffsetYForHeight,
   isCollisionBox,
+  isDefaultFootStubBox,
   normalizeFrameBox,
   nudgeFrameBox,
   resizeFrameBox,
@@ -51,6 +52,7 @@ function createRestoreAutoWorkbench(options = {}) {
     frameBox: (...args) => boxModel.frameBox(...args),
     tuningFrameKey: (index) => String(index),
     normalizeFrameBox,
+    isDefaultFootStubBox,
     cloneVector,
     usesCanvasBottomCenterAnchor: (target) => target?.anchorMode === "canvas_bottom_center",
     opaqueRectForImage: () => opaqueRect,
@@ -250,6 +252,7 @@ test("stage west-handle drag uses the displayed auto box, not a missing-image st
 function createStoreBackedNudgeWorkbench(options = {}) {
   const workbench = createRestoreAutoWorkbench(options);
   const { boxModel, frameEdit, group, images } = workbench;
+  const nudgeImages = options.emptyNudgeImages ? [] : images;
   const events = [];
   const adjustment = createBoxAdjustment({
     elements: {
@@ -262,7 +265,7 @@ function createStoreBackedNudgeWorkbench(options = {}) {
     getSelectedBox: () => "hurtbox",
     getSelectedBoxes: () => new Set(["hurtbox"]),
     getShowBoxes: () => true,
-    getImages: () => images,
+    getImages: () => nudgeImages,
     getView: () => ({ zoom: 1 }),
     getDevicePixelRatio: () => 1,
     boxDrawOrder: ["hurtbox"],
@@ -323,20 +326,41 @@ test("nudgeSelectedBox(-1, 0) changes store-backed offset.x by -1 and keeps size
   );
 });
 
-test("naive offset.x+=-1 on the no-image stub is the live jump-collapse", () => {
-  const { boxModel, frameEdit, group, images } = createRestoreAutoWorkbench();
+test("setBoxOverride refuses to persist a 1x1/8x8 foot stub over a restored auto box", () => {
+  const { boxModel, frameEdit, group, images, stores } = createRestoreAutoWorkbench();
   const displayed = boxModel.frameBox("hurtbox", 0, group, images);
   const stub = boxModel.frameBox("hurtbox", 0, group, []);
+  assert.ok(isDefaultFootStubBox(stub));
+  assert.equal(isDefaultFootStubBox(displayed), false);
   const naive = {
     ...stub,
     offset: { x: stub.offset.x - 1, y: stub.offset.y },
     size: stub.size,
   };
-  frameEdit.setBoxOverride("hurtbox", naive, 0, group);
+  assert.equal(frameEdit.setBoxOverride("hurtbox", naive, 0, group), false);
   const after = boxModel.frameBox("hurtbox", 0, group, images);
-  assert.ok(after.size.x <= 8, "this fixture must still reproduce the live foot speck");
-  assert.ok(Math.abs(after.offset.y - displayed.offset.y) > 8);
+  assert.equal(after.size.x, displayed.size.x);
+  assert.equal(after.size.y, displayed.size.y);
+  assert.equal(after.offset.y, displayed.offset.y);
+  assert.equal(stores[group.uiId]["0"]?.hurtbox, undefined);
+});
+
+test("nudge without images cannot write the foot stub over a restored auto box", () => {
+  const { adjustment, boxModel, group, images, stores } = createStoreBackedNudgeWorkbench({
+    emptyNudgeImages: true,
+  });
+  const displayed = boxModel.frameBox("hurtbox", 0, group, images);
   assert.ok(displayed.size.x > 20);
+  assert.equal(adjustment.nudgeSelectedBox(-1, 0), true);
+  const after = boxModel.frameBox("hurtbox", 0, group, images);
+  assert.equal(after.size.x, displayed.size.x);
+  assert.equal(after.size.y, displayed.size.y);
+  assert.equal(after.offset.y, displayed.offset.y);
+  assert.ok(
+    Math.abs(after.offset.y) > 8,
+    `empty-image nudge jumped to the foot ${JSON.stringify(after.offset)}`,
+  );
+  assert.equal(stores[group.uiId]["0"]?.hurtbox, undefined);
 });
 
 test("frameBox rejects a box object so frameBox(box) cannot silently return the foot stub", () => {
@@ -354,7 +378,12 @@ test("nudgeSelectedBox source uses nudgeFrameBox, not a shallow offset.x +=", ()
   assert.ok(match, "nudgeSelectedBox source not found");
   const body = match[0];
   assert.match(body, /nudgeFrameBox\(selectedBox,\s*current,\s*dx,\s*dy\)/);
-  assert.match(body, /frameBox\(selectedBox,\s*frameIndex,\s*getCurrentGroup\(\),\s*getImages\(\)\)/);
+  assert.match(body, /displayedFrameBox\(selectedBox,\s*frameIndex,\s*getCurrentGroup\(\)\)/);
+  assert.match(
+    source,
+    /function displayedFrameBox[\s\S]*frameBox\(boxName,\s*index,\s*group,\s*getImages\(\)\)/,
+  );
+  assert.match(source, /groupImages = getImages\(\)/);
   assert.match(body, /setBoxOverride\(\s*selectedBox,\s*nudgeFrameBox/);
   assert.equal(/\boffset\.x\s*\+=/.test(body), false);
 });

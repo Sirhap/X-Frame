@@ -93,6 +93,17 @@
     } = dependencies;
 
     /**
+     * Resolves the box that boxScreenRect draws, using the same image list.
+     * @param {string} boxName Box name.
+     * @param {number} [index] Frame index.
+     * @param {object|null} [group] Animation group.
+     * @returns {object} Normalized displayed box.
+     */
+    function displayedFrameBox(boxName, index = getSelectedFrame(), group = getCurrentGroup()) {
+      return frameBox(boxName, index, group, getImages());
+    }
+
+    /**
      * Converts one logical box into its rotated screen-space rectangle.
      * @param {string} boxName Box name.
      * @param {number} [index] Frame index.
@@ -275,7 +286,7 @@
         if (elements.boxEnabled) elements.boxEnabled.checked = false;
         return;
       }
-      const box = frameBox(getSelectedBox(), getSelectedFrame(), getCurrentGroup(), getImages());
+      const box = displayedFrameBox(getSelectedBox());
       if (elements.boxEnabled) elements.boxEnabled.checked = box.enabled !== false;
     }
 
@@ -298,7 +309,7 @@
       if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return false;
       if (!options.repeat) pushUndo("nudge box");
       for (const frameIndex of selectedFrameIndexes()) {
-        const current = frameBox(selectedBox, frameIndex, getCurrentGroup(), getImages());
+        const current = displayedFrameBox(selectedBox, frameIndex, getCurrentGroup());
         setBoxOverride(
           selectedBox,
           nudgeFrameBox(selectedBox, current, dx, dy),
@@ -314,7 +325,7 @@
     function updateSelectedBoxFromInputs() {
       const selectedBox = getSelectedBox();
       if (!canEditBox(selectedBox) || !selectedBox) return;
-      const current = frameBox(selectedBox, getSelectedFrame(), getCurrentGroup(), getImages());
+      const current = displayedFrameBox(selectedBox);
       const collision = isCollisionBox(selectedBox);
       const box = {
         offset: {

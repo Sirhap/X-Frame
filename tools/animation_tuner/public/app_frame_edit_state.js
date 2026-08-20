@@ -42,6 +42,11 @@
       tuningFrameKey = (index) => String(index),
       groupOwnsFrameKey = () => false,
       normalizeFrameBox = (_name, box) => box,
+      isDefaultFootStubBox = (box) => {
+        const width = Number(box?.size?.x);
+        const height = Number(box?.size?.y);
+        return Number.isFinite(width) && Number.isFinite(height) && width <= 8 && height <= 8;
+      },
       cloneScaleVector = (value, fallback = 1) => {
         if (value && typeof value === "object")
           return { x: Number(value.x ?? fallback), y: Number(value.y ?? fallback) };
@@ -206,9 +211,16 @@
         rotation: incoming.rotation ?? current.rotation,
         enabled: incoming.enabled ?? current.enabled,
       };
-      entry[boxName] = normalizeFrameBox(boxName, merged);
+      const next = normalizeFrameBox(boxName, merged);
+      const existing = entry[boxName];
+      const existingIsLarge = Number(existing?.size?.x) > 8 || Number(existing?.size?.y) > 8;
+      if (next.enabled !== false && isDefaultFootStubBox(next) && (!existing || existingIsLarge)) {
+        return false;
+      }
+      entry[boxName] = next;
       store[key] = entry;
       markDirty();
+      return true;
     }
 
     /** Disables one box on a frame while retaining its geometry. */
