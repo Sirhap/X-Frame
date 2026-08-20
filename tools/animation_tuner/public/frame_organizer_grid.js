@@ -330,6 +330,47 @@
   }
 
   /**
+   * Imported / extracted frames start selected so the include checks, 选中 count,
+   * and 删除选中 share one set. Edit-mode loads omit `imported` and stay unselected.
+   * @param {{imported?:boolean}|null|undefined} options Frame constructor options.
+   * @returns {boolean}
+   */
+  function importedFrameStartsSelected(options) {
+    return Boolean(options && options.imported);
+  }
+
+  /**
+   * Copies a temporary workset item's include flag and keeps selection aligned.
+   * @param {object} frame Organizer frame.
+   * @param {boolean} [enabled] Workset membership from the source item.
+   * @returns {object} The same frame.
+   */
+  function applyImportedWorksetMembership(frame, enabled) {
+    if (!frame || typeof frame !== "object") {
+      throw new TypeError("Imported workset frame is required.");
+    }
+    frame.included = enabled !== false;
+    frame.selected = frame.included;
+    return frame;
+  }
+
+  /**
+   * Flips workset membership only. Selection stays put so ORG-009 invert does not
+   * rewrite 选中.
+   * @param {Array<{included?:boolean}>} frames Organizer frames.
+   * @returns {Array<{included?:boolean}>}
+   */
+  function invertWorksetMembership(frames) {
+    if (!Array.isArray(frames)) {
+      throw new TypeError("Workset frames are required.");
+    }
+    frames.forEach((frame) => {
+      frame.included = !frame.included;
+    });
+    return frames;
+  }
+
+  /**
    * Encodes a filmstrip-sized PNG so grid cards never re-encode the full frame.
    * @param {{width?:number,height?:number,toDataURL?:Function}} sourceCanvas Source frame canvas.
    * @param {number} [maxEdge=156] Longest thumbnail edge.
@@ -354,5 +395,11 @@
     return canvas.toDataURL("image/png");
   }
 
-  return { createController, createThumbnailDataUrl };
+  return {
+    createController,
+    createThumbnailDataUrl,
+    importedFrameStartsSelected,
+    applyImportedWorksetMembership,
+    invertWorksetMembership,
+  };
 });

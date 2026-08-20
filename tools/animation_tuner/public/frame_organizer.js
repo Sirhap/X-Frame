@@ -532,7 +532,7 @@
         editedCanvas: originalCanvas,
         hasEditedResult: false,
         included: true,
-        selected: false,
+        selected: gridModule.importedFrameStartsSelected(options),
         flipped: false,
         imported: Boolean(options.imported),
         tag: "",
@@ -920,7 +920,7 @@
           sourceIndex: index,
         });
         frame.uid = String(item.id || frame.uid);
-        frame.included = item.enabled !== false;
+        gridModule.applyImportedWorksetMembership(frame, item.enabled);
         frame.hasEditedResult = Number(item.assetRevision || 0) > 0;
         frame.assetRevision = Math.max(0, Number(item.assetRevision) || 0);
         frame.groupId = String(item.groupId || "");

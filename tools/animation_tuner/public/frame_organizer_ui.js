@@ -504,9 +504,7 @@
           }
         });
         elements.organizerInvert.addEventListener("click", () => {
-          state.frames.forEach((frame) => {
-            frame.included = !frame.included;
-          });
+          root.FrameOrganizerGrid.invertWorksetMembership(state.frames);
           renderGrid();
           restartPreview();
         });
