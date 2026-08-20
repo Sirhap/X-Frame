@@ -491,9 +491,15 @@
           }
         });
       });
-      elements.organizerLoopStartInput.addEventListener("focus", selectStartInput);
+      elements.organizerLoopStartInput.addEventListener("focus", () => {
+        selectStartInput();
+        windowApi.requestAnimationFrame(selectStartInput);
+      });
       elements.organizerLoopStartInput.addEventListener("mouseup", (event) => {
         event.preventDefault?.();
+        selectStartInput();
+      });
+      elements.organizerLoopStartInput.addEventListener("click", () => {
         selectStartInput();
       });
       elements.organizerLoopStartInput.addEventListener("input", () => {

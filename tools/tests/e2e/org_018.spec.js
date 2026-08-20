@@ -107,12 +107,8 @@ test("ORG-018 empty start stays safe and focus replaces the current digits", asy
   await page.locator("#organizerLoopRetry").click();
   await page.locator("#organizerLoopStartCustom").check();
   await input.fill(String(WORKSET_SIZE));
+  await expect(input).toHaveValue(String(WORKSET_SIZE));
   await input.click();
-  const selected = await input.evaluate(
-    (element) => element.selectionStart === 0 && element.selectionEnd === String(element.value).length,
-  );
-  expect(
-    selected,
-    "existing start-frame digits must be selected so typing replaces 10 instead of making 1110",
-  ).toBe(true);
+  await page.keyboard.type("2");
+  await expect(input, "typing must replace 10 instead of prepending to 210/102").toHaveValue("2");
 });
