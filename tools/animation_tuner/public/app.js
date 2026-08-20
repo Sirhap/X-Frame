@@ -234,6 +234,7 @@ const groupLabel = (group) => groupLabelBase(group, t);
 const {
   collisionOffsetYForHeight,
   isCollisionBox,
+  isDefaultFootStubBox,
   normalizeFrameBox,
   nudgeFrameBox,
   pointInBoxRect,
@@ -572,7 +573,16 @@ let frameEditStateController = null;
 
 function frameEditStateCall(name, ...args) {
   if (!frameEditStateController) throw new Error("XSXBAppFrameEditState is not initialized.");
-  return frameEditStateController[name](...args);
+  if (name === "frameBox") {
+    throw new Error(
+      "frameBox is owned by XSXBBoxModel; call frameBox(boxName, index, group, images), not frameEditStateCall",
+    );
+  }
+  const method = frameEditStateController[name];
+  if (typeof method !== "function") {
+    throw new Error(`XSXBAppFrameEditState.${name} is not a function`);
+  }
+  return method(...args);
 }
 
 let canvasRenderer = null;
@@ -939,6 +949,7 @@ const boxModel = globalThis.XSXBBoxModel.createController({
     boxOnlyMode = value;
   },
   getAdjustmentMode: () => adjustmentMode,
+  getImages: () => images,
   getBoxOverrideStore: boxOverrideStore,
   getFrameBoxKey: frameBoxKey,
   defaultHitbox,
@@ -971,6 +982,7 @@ const boxTransform = globalThis.XSXBBoxTransform.createController({
   getSelectedFrame: () => selectedFrame,
   getConfig: () => config,
   getAdjustmentMode: () => adjustmentMode,
+  getImages: () => images,
   getBoxEditSnapshot: () => boxEditSnapshot,
   frameTransform,
   baseTransform,
@@ -1667,6 +1679,7 @@ frameEditStateController = frameEditStateModule.createController({
   tuningFrameKey,
   groupOwnsFrameKey,
   normalizeFrameBox,
+  isDefaultFootStubBox,
   cloneScaleVector,
   cloneVector,
   scaleVectorFromTransform,

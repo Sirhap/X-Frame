@@ -201,6 +201,8 @@
         cloneVector,
         draw,
         frameBox,
+        getCurrentGroup: () => state.currentGroup,
+        getImages: () => state.images,
         hitTestBoxes,
         hitTestDirectManipulationAttachment,
         hitTestDirectManipulationFrame,

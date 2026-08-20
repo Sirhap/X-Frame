@@ -20,6 +20,7 @@
    *   getBoxOnlyMode?:()=>boolean,
    *   setBoxOnlyMode?:(value:boolean)=>void,
    *   getAdjustmentMode?:()=>string,
+   *   getImages?:()=>Array<object>,
    *   getBoxOverrideStore:(group:object)=>Record<string,object>,
    *   getFrameBoxKey:(index:number,group:object)=>string,
    *   defaultHitbox:(index:number,group:object,images?:Array<object>)=>object,
@@ -47,6 +48,7 @@
       getBoxOnlyMode = () => false,
       setBoxOnlyMode = () => {},
       getAdjustmentMode = () => "group",
+      getImages = () => [],
       getBoxOverrideStore,
       getFrameBoxKey,
       defaultHitbox,
@@ -76,10 +78,22 @@
      * @param {string} boxName Box name.
      * @param {number} [index] Frame index.
      * @param {object|null} [group] Animation group.
-     * @param {Array<object>} [groupImages] Decoded frame images.
+     * @param {Array<object>} [groupImages] Decoded frame images. Defaults to the
+     * live workbench image list so restore-auto still sees the displayed body.
+     * Passing `[]` keeps the metadata-only stub used to detect a missing image.
      * @returns {object} Normalized frame box.
      */
-    function frameBox(boxName, index = getSelectedFrame(), group = getCurrentGroup(), groupImages = []) {
+    function frameBox(
+      boxName,
+      index = getSelectedFrame(),
+      group = getCurrentGroup(),
+      groupImages = getImages(),
+    ) {
+      if (typeof boxName !== "string" || !boxName) {
+        throw new Error(
+          "frameBox(boxName, index, group, images) requires the box name string, not a box object",
+        );
+      }
       const base =
         boxName === "hitbox"
           ? defaultHitbox(index, group, groupImages)

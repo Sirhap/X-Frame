@@ -86,3 +86,37 @@ test("frame edit state preserves transforms, box overrides, source geometry, and
   assert.deepEqual(transformOverrides, {});
   assert.equal(dirtyCount, 4);
 });
+
+test("setBoxOverride rejects a box object as the first argument", () => {
+  const boxOverrides = {};
+  const controller = createController({
+    boxOverrideStore: () => boxOverrides,
+    normalizeFrameBox: (_name, box) => box,
+    tuningFrameKey: (index) => String(index),
+    frameBox: () => ({ offset: { x: 1, y: 2 }, size: { x: 30, y: 40 }, rotation: 0, enabled: true }),
+  });
+  assert.throws(
+    () =>
+      controller.setBoxOverride(
+        { offset: { x: 1, y: 2 }, size: { x: 30, y: 40 } },
+        { offset: { x: 0, y: 2 }, size: { x: 30, y: 40 } },
+        0,
+        { uiId: "group-1" },
+      ),
+    /box name string|not a box object/i,
+  );
+});
+
+test("frame-edit-state does not export frameBox and the default resolver throws", () => {
+  const boxOverrides = {};
+  const controller = createController({
+    boxOverrideStore: () => boxOverrides,
+    normalizeFrameBox: (_name, box) => box,
+    tuningFrameKey: (index) => String(index),
+  });
+  assert.equal("frameBox" in controller, false);
+  assert.throws(
+    () => controller.setBoxOverride("hurtbox", { offset: { x: 1, y: 2 } }, 0, { uiId: "group-1" }),
+    /frameBox|inject|box-model/i,
+  );
+});

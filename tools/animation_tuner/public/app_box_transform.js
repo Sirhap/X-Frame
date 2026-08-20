@@ -14,6 +14,7 @@
    *   getSelectedFrame?:()=>number,
    *   getConfig?:()=>object|null,
    *   getAdjustmentMode?:()=>string,
+   *   getImages?:()=>Array<object>,
    *   getBoxEditSnapshot?:()=>object|null,
    *   frameTransform:(index:number,group:object)=>object,
    *   baseTransform:(group:object)=>object,
@@ -36,6 +37,7 @@
       getSelectedFrame = () => 0,
       getConfig = () => null,
       getAdjustmentMode = () => "group",
+      getImages = () => [],
       getBoxEditSnapshot = () => null,
       frameTransform,
       baseTransform,
@@ -58,7 +60,11 @@
      * @param {Array<object>} [groupImages] Decoded frame images.
      * @returns {object} Runtime box transform.
      */
-    function boxAutoTransform(index = getSelectedFrame(), group = getCurrentGroup(), groupImages = []) {
+    function boxAutoTransform(
+      index = getSelectedFrame(),
+      group = getCurrentGroup(),
+      groupImages = getImages(),
+    ) {
       const facing = combatBoxFacingForGroup(group);
       const transform = renderTransformForGroup(frameTransform(index, group), group);
       const runtimeBaseScale = Math.max(0.0001, runtimeBaseScaleForGroup(index, group, groupImages));

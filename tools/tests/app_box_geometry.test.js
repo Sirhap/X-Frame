@@ -6,6 +6,7 @@ const {
   BOX_NUDGE_STEP,
   collisionOffsetYForHeight,
   isCollisionBox,
+  isDefaultFootStubBox,
   normalizeFrameBox,
   nudgeFrameBox,
   pointInBoxRect,
@@ -15,6 +16,13 @@ const {
   transformBoxByDelta,
   transformHasDelta,
 } = require("../animation_tuner/public/app_box_geometry");
+
+test("defaultHurtbox 1x1 and 8x8 templates are the foot stub", () => {
+  assert.equal(isDefaultFootStubBox({ size: { x: 1, y: 1 }, offset: { x: 0, y: 0 } }), true);
+  assert.equal(isDefaultFootStubBox({ size: { x: 8, y: 8 }, offset: { x: 0, y: -4 } }), true);
+  assert.equal(isDefaultFootStubBox({ size: { x: 46, y: 106 }, offset: { x: 0, y: -75 } }), false);
+  assert.equal(isDefaultFootStubBox({ enabled: true }), false);
+});
 
 test("box geometry preserves collision-box invariants", () => {
   assert.equal(isCollisionBox("collisionbox"), true);

@@ -38,11 +38,15 @@ function createFixture() {
       boxOnlyMode = value;
     },
     getAdjustmentMode: () => "character",
+    getImages: () => [{ width: 80, height: 160 }],
     getBoxOverrideStore: (group) => stores.get(group.uiId),
     getFrameBoxKey: (index, group) => `${group.uiId}:${index}`,
     defaultHitbox: () => ({ offset: { x: 10, y: 20 }, size: { x: 30, y: 40 }, rotation: 0, enabled: true }),
     defaultCollisionBox: () => ({ offset: { x: 1, y: 2 }, size: { x: 3, y: 4 }, rotation: 0, enabled: true }),
-    defaultHurtbox: () => ({ offset: { x: 5, y: 6 }, size: { x: 7, y: 8 }, rotation: 0, enabled: true }),
+    defaultHurtbox: (_index, _group, groupImages = []) =>
+      groupImages.length
+        ? { offset: { x: 0, y: -80 }, size: { x: 120, y: 160 }, rotation: 0, enabled: true }
+        : { offset: { x: 0, y: 0 }, size: { x: 1, y: 1 }, rotation: 0, enabled: true },
     isCollisionBox: (boxName) => boxName === "collisionbox",
     normalizeFrameBox: (_name, box) => ({ ...box, normalized: true }),
     cloneVector: (value) => ({ x: Number(value?.x || 0), y: Number(value?.y || 0) }),
@@ -67,6 +71,12 @@ test("box model resolves defaults and persisted overrides", () => {
     normalized: true,
   });
   assert.deepEqual(controller.boxOverride(0, currentGroup).hitbox.offset, { x: 50, y: 60 });
+  assert.deepEqual(controller.frameBox("hurtbox", 0, currentGroup).size, { x: 120, y: 160 });
+  assert.deepEqual(controller.frameBox("hurtbox", 0, currentGroup, []).size, { x: 1, y: 1 });
+  assert.throws(
+    () => controller.frameBox({ offset: { x: 0, y: -80 }, size: { x: 120, y: 160 } }),
+    /box name string|not a box object/i,
+  );
 });
 
 test("box model enforces editability and paired previews", () => {
