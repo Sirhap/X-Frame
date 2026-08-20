@@ -88,10 +88,25 @@ async function exportBrowserAnimation(metadata, items, options = {}) {
  * @returns {Promise<object>} Created browser-session animation group.
  */
 async function createBrowserSessionAnimation(metadata, items, options = {}) {
-  if (!browserOnlyMode || !config || !Array.isArray(config.groups)) {
+  if (!browserOnlyMode) {
     throw new Error(
       language === "zh" ? "浏览器动画会话尚未就绪。" : "The browser animation session is not ready.",
     );
+  }
+  if (!config || !Array.isArray(config.groups)) {
+    const projectId =
+      activeProjectId() ||
+      selectedProjectId ||
+      new URLSearchParams(globalThis.location?.search || "").get("project") ||
+      "";
+    if (!projectId || typeof browserRuntime.ensureSessionProject !== "function") {
+      throw new Error(
+        language === "zh" ? "浏览器动画会话尚未就绪。" : "The browser animation session is not ready.",
+      );
+    }
+    const ensured = await browserRuntime.ensureSessionProject(projectId);
+    config = structuredClone(ensured);
+    selectedProjectId = projectId;
   }
   const group = browserRuntime.createSessionAnimationGroup(
     { ...metadata, premiumFeatures: options.premiumFeatures || [] },
@@ -3935,7 +3950,7 @@ modeHubs = modeHubsModule.createController({
   translate: t,
   async createProject(label) {
     if (browserOnlyMode) {
-      const created = browserRuntime.createSessionProject(label);
+      const created = await browserRuntime.createSessionProject(label);
       return { projectId: created.projectId };
     }
     const response = await fetch("/api/projects", {
@@ -3990,7 +4005,7 @@ if (!handoffRuntimeModule || !handoffDialogModule) {
 
 /** Returns the current browser project including unsaved in-memory binding state. */
 function browserProjectSnapshot(projectId) {
-  if (projectId !== activeProjectId()) return browserRuntime.getSessionProjectConfig(projectId);
+  if (!config || projectId !== activeProjectId()) return browserRuntime.getSessionProjectConfig(projectId);
   return {
     ...structuredClone(config),
     tuning: {

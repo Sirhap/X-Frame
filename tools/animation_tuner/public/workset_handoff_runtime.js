@@ -181,25 +181,35 @@
       return group;
     }
 
+    /** Loads a project, auto-creating a persisted browser session shell on first save. */
+    async function resolveProjectConfig(projectId) {
+      let config = dependencies.getProjectConfig(projectId);
+      if (!config && typeof browserRuntime.ensureSessionProject === "function") {
+        await browserRuntime.ensureSessionProject(projectId);
+        config = dependencies.getProjectConfig(projectId);
+      }
+      if (!config) throw new Error(`Project not found: ${projectId}`);
+      return config;
+    }
+
     return {
       async loadProjectConfig(projectId) {
-        const config = dependencies.getProjectConfig(projectId);
-        if (!config) throw new Error(`Project not found: ${projectId}`);
+        const config = await resolveProjectConfig(projectId);
         return cloneValue(config, dependencies.structuredCloneImpl);
       },
       async createProject(label) {
         return dependencies.createProject(label);
       },
       async discardProject(projectId) {
-        dependencies.discardProject?.(projectId);
+        await dependencies.discardProject?.(projectId);
       },
       async plan(payload) {
-        const config = dependencies.getProjectConfig(payload.projectId);
-        if (!config) throw new Error(`Project not found: ${payload.projectId}`);
+        const config = await resolveProjectConfig(payload.projectId);
         const plan = core.planWorksetOperations(planningState(config, payload.operations));
         return { ...plan, baseRevision: revision(payload.projectId) };
       },
       async apply(payload) {
+        await resolveProjectConfig(payload.projectId);
         if (payload.baseRevision !== revision(payload.projectId)) {
           throw new Error(
             "Project data changed after workset preflight. Reload the target project and try again.",

@@ -16,8 +16,9 @@
     activeProjectId: "browser-session",
     projects: [{ id: "browser-session", label: "浏览器临时工作区", projectRoot: "" }],
   };
-  const projectStorage = projectStorageModule?.createStore({ indexedDBRef: root?.indexedDB });
+  let projectStorage = projectStorageModule?.createStore({ indexedDBRef: root?.indexedDB });
   let hydrationPromise = null;
+  let api = null;
 
   /** @param {unknown} value Cloneable value. @returns {any} Independent copy. */
   function cloneValue(value) {
@@ -571,12 +572,44 @@
     return hydrationPromise;
   }
 
+  /** Writes the registry when a snapshot store is bound; returns false when none exists. */
+  async function persistSessionProjectsIfAvailable() {
+    if (!projectStorage) return false;
+    return Boolean(await projectStorage.save(sessionRegistry, sessionProjects));
+  }
+
   /** Persists the complete browser project registry atomically. */
   async function persistSessionProjects() {
-    const saved = await projectStorage?.save(sessionRegistry, sessionProjects);
+    const saved = await persistSessionProjectsIfAvailable();
     if (!saved) {
       throw new Error("浏览器项目存储不可用，无法保证刷新后保留项目。请允许本站使用 IndexedDB。");
     }
+  }
+
+  /**
+   * Creates or returns one browser-session project and persists the shell.
+   * First save / first fetch of an unregistered id must not 404.
+   * @param {string} projectId Stable project identifier from the URL or create flow.
+   * @param {string} [label] Display label; defaults to the identifier.
+   * @returns {Promise<object>} Cloned project config.
+   */
+  async function ensureSessionProject(projectId, label) {
+    await hydrateSessionProjects();
+    ensureSessionProjects();
+    const id = String(projectId || "").trim();
+    if (!id) throw new Error("Project name is required.");
+    const existing = sessionRegistry.projects.find((entry) => entry.id === id);
+    if (existing && sessionProjects.has(id)) return getSessionProjectConfig(id);
+    const project = existing || {
+      id,
+      label: String(label || id).trim() || id,
+      projectRoot: "",
+    };
+    if (!existing) sessionRegistry.projects.push(project);
+    if (!sessionProjects.has(id)) sessionProjects.set(id, createEmptyConfig(project));
+    sessionRegistry.activeProjectId = id;
+    await persistSessionProjectsIfAvailable();
+    return getSessionProjectConfig(id);
   }
 
   /** Returns a cloned browser-session project config by stable identifier. */
@@ -593,8 +626,9 @@
 
   /** Atomically replaces one browser-session project config. */
   async function commitSessionProjectConfig(projectId, nextConfig) {
-    ensureSessionProjects();
-    const id = String(projectId || "");
+    const id = String(projectId || "").trim();
+    if (!id) throw new Error("Project not found: ");
+    await ensureSessionProject(id);
     const project = sessionRegistry.projects.find((entry) => entry.id === id);
     if (!project) throw new Error(`Project not found: ${id}`);
     const previous = sessionProjects.has(id) ? cloneValue(sessionProjects.get(id)) : null;
@@ -616,8 +650,9 @@
     }
   }
 
-  /** Creates an empty browser-session project without persisting image data to disk. */
-  function createSessionProject(label) {
+  /** Creates an empty browser-session project and persists the shell before navigation. */
+  async function createSessionProject(label) {
+    await hydrateSessionProjects();
     ensureSessionProjects();
     const normalizedLabel = String(label || "").trim();
     if (!normalizedLabel) throw new Error("Project name is required.");
@@ -633,17 +668,23 @@
     sessionRegistry.projects.push(project);
     const config = createEmptyConfig(project);
     sessionProjects.set(projectId, config);
+    sessionRegistry.activeProjectId = projectId;
+    await persistSessionProjectsIfAvailable();
     return { projectId, config: getSessionProjectConfig(projectId) };
   }
 
-  /** Deletes an uncommitted browser-session project shell. */
-  function discardSessionProject(projectId) {
+  /** Deletes an uncommitted browser-session project shell and persists the removal. */
+  async function discardSessionProject(projectId) {
     const id = String(projectId || "");
     if (!id || id === "browser-session") return false;
     const index = sessionRegistry.projects.findIndex((project) => project.id === id);
     if (index < 0) return false;
     sessionRegistry.projects.splice(index, 1);
     sessionProjects.delete(id);
+    if (sessionRegistry.activeProjectId === id) {
+      sessionRegistry.activeProjectId = "browser-session";
+    }
+    await persistSessionProjectsIfAvailable();
     return true;
   }
 
@@ -656,7 +697,10 @@
     ensureSessionProjects();
     const parsed = new URL(String(input || "/api/config"), "https://xsxb.local");
     const requestedProjectId = parsed.searchParams.get("project") || sessionRegistry.activeProjectId;
-    const payload = getSessionProjectConfig(requestedProjectId);
+    let payload = getSessionProjectConfig(requestedProjectId);
+    if (!payload && requestedProjectId) {
+      payload = await ensureSessionProject(requestedProjectId);
+    }
     if (!payload) {
       return {
         ok: false,
@@ -1094,8 +1138,35 @@
     return { filename, frameCount: items.length, blob, premiumFeatures: premiumFeatureIds };
   }
 
-  return {
+  /** Restores the empty in-memory session used by isolated runtime tests. */
+  function resetSessionState() {
+    hydrationPromise = null;
+    sessionProjects.clear();
+    sessionRegistry.activeProjectId = "browser-session";
+    sessionRegistry.projects = [{ id: "browser-session", label: "浏览器临时工作区", projectRoot: "" }];
+  }
+
+  /**
+   * Rebuilds the singleton against an injected snapshot store so tests can
+   * prove create/reload persistence without sharing IndexedDB.
+   * @param {{projectStorage?:{load:()=>Promise<object|null>,save:(registry:object,projects:Map<string,object>)=>Promise<boolean>}|null,indexedDBRef?:IDBFactory|null}} [options]
+   * @returns {object} The same runtime API bound to the new store.
+   */
+  function createRuntime(options = {}) {
+    resetSessionState();
+    if (Object.prototype.hasOwnProperty.call(options, "projectStorage")) {
+      projectStorage = options.projectStorage || null;
+    } else {
+      projectStorage = projectStorageModule?.createStore({
+        indexedDBRef: options.indexedDBRef === undefined ? root?.indexedDB : options.indexedDBRef,
+      });
+    }
+    return api;
+  }
+
+  api = {
     commitSessionProjectConfig,
+    createRuntime,
     createSessionExportSnapshot,
     createEmptyConfig,
     createSessionAnimationGroup,
@@ -1103,6 +1174,7 @@
     deleteSessionAnimation,
     deleteSessionAnimationFrames,
     discardSessionProject,
+    ensureSessionProject,
     exportAnimationPackage,
     exportWorkbenchPackage,
     fetchConfig,
@@ -1114,4 +1186,5 @@
     safeFilename,
     projectSummaries,
   };
+  return api;
 });

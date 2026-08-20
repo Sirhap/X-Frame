@@ -7,6 +7,8 @@ const {
   createLocalAdapter,
   manifestFromGroups,
 } = require("../animation_tuner/public/workset_handoff_runtime");
+const browserRuntime = require("../animation_tuner/public/browser_runtime");
+const { createStore } = require("../animation_tuner/public/browser_project_storage");
 
 /** Returns one browser-compatible animation group. */
 function group(animationId = "idle") {
@@ -232,6 +234,53 @@ test("browser adapter invalidates preflight after an external binding edit", asy
     adapter.apply({ projectId: "project-a", baseRevision: plan.baseRevision, operations }),
     /Project data changed/,
   );
+});
+
+test("browser adapter first apply auto-creates an unregistered project and persists it", async () => {
+  let persisted = null;
+  const storage = createStore({
+    adapter: {
+      read: async () => persisted,
+      write: async (snapshot) => {
+        persisted = snapshot;
+      },
+    },
+  });
+  const runtime = browserRuntime.createRuntime({ projectStorage: storage });
+  try {
+    const adapter = createBrowserAdapter({
+      browserRuntime: runtime,
+      getProjectConfig: (projectId) => runtime.getSessionProjectConfig(projectId),
+      commitProjectConfig: (projectId, nextConfig) =>
+        runtime.commitSessionProjectConfig(projectId, nextConfig),
+      createProject: (label) => runtime.createSessionProject(label),
+    });
+    const operations = [
+      {
+        id: "create-jump",
+        type: "create",
+        profileLabel: "Hero",
+        animationName: "jump",
+        items: [{ name: "jump.png", data: "data:image/png;base64,AA==" }],
+      },
+    ];
+    const plan = await adapter.plan({ projectId: "p0test1", operations });
+    const result = await adapter.apply({
+      projectId: "p0test1",
+      baseRevision: plan.baseRevision,
+      operations,
+    });
+    assert.equal(result.ok, true);
+
+    const reloaded = browserRuntime.createRuntime({ projectStorage: storage });
+    const response = await reloaded.fetchConfig("/api/config?project=p0test1");
+    assert.equal(response.ok, true);
+    const config = await response.json();
+    assert.equal(config.groups[0].animationId, "jump");
+    assert.equal(config.groups[0].frames[0].name, "jump.png");
+  } finally {
+    browserRuntime.createRuntime();
+  }
 });
 
 test("local adapter preserves structured API failures", async () => {
