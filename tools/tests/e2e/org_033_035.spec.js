@@ -37,6 +37,8 @@ test("ORG-034 empty loop search shows 没有循环段 and the preference hint", 
   await importWorkset(page, 10);
   await page.locator("#organizerFindLoop").click();
   await expect(page.locator("#organizerLoopPanel")).toBeVisible();
+  await page.locator("#organizerLoopStartCustom").check();
+  await page.locator("#organizerLoopStartInput").fill("10");
   await page.locator("#organizerLoopStartSearch").click();
   await expect(page.locator("#organizerLoopEmpty")).toBeVisible({ timeout: 20000 });
   await expect(page.locator("#organizerLoopEmpty")).toContainText("没有循环段");
