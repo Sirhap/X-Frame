@@ -93,3 +93,48 @@ test("TUN-021 deleted browser-session frame stays gone after hard reload", async
   await expect(page.locator("#frameReference")).toBeChecked();
   await expect(page.locator('.thumb[data-frame-index="0"]')).toHaveClass(/reference/);
 });
+
+const BEEP_WAV = Buffer.from("UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=", "base64");
+
+test("SAV-011 imported frame WAV survives hard reload on the audio page", async ({ page }) => {
+  await page.addInitScript(() => {
+    globalThis.__XSXB_PRODUCTION__ = true;
+    document.documentElement.dataset.runtimeMode = "browser";
+  });
+  page.once("dialog", (dialog) => dialog.accept("P0wav"));
+
+  await page.goto("/projects");
+  await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);
+  await page.locator("#projectHubNew").click();
+  await expect(page).toHaveURL(/\/workspace\/resources\/import\?project=p0wav(?:$|&)/);
+
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "jump_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "jump_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await page.locator("#organizerApply").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
+  await page.locator("#organizerConfirmAccept").click();
+  await expect(page.locator("#organizerModal")).toBeHidden();
+  await expect(page.locator(".thumb")).toHaveCount(2);
+
+  await page.goto("/workspace/animation/audio?project=p0wav");
+  await expect(page.locator("#frameAudioName")).toHaveText("无帧音效");
+  await expect(page.locator("#clearFrameAudio")).toBeDisabled();
+
+  await page.locator("#frameAudioFile").setInputFiles({
+    name: "beep.wav",
+    mimeType: "audio/wav",
+    buffer: BEEP_WAV,
+  });
+  await expect(page.locator("#frameAudioName")).toContainText("beep.wav");
+  await expect(page.locator("#clearFrameAudio")).toBeEnabled();
+  await expect(page.locator(".thumb.primary")).toHaveClass(/hasSfx/);
+
+  await page.reload();
+  await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);
+  await expect(page.locator("#frameAudioName")).toContainText("beep.wav");
+  await expect(page.locator("#clearFrameAudio")).toBeEnabled();
+  await expect(page.locator(".thumb.primary")).toHaveClass(/hasSfx/);
+});

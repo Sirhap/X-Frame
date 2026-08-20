@@ -145,6 +145,91 @@ test("markClean refreshes save controls without an injected UI callback", () => 
   assert.equal(save.textContent, "保存调参");
 });
 
+test("SAV-011 loadFrameAudioBindingsFromProject restores blob-only object bindings", () => {
+  const blob = { type: "audio/wav", size: 24 };
+  const createdUrls = [];
+  const previousUrl = globalThis.URL;
+  globalThis.URL = {
+    createObjectURL(value) {
+      createdUrls.push(value);
+      return "blob:project/beep.wav";
+    },
+    revokeObjectURL() {},
+  };
+  try {
+    const state = {
+      config: {
+        activeProjectId: "p0test2",
+        frameAudioBindings: {
+          "p0test2:player:actor:animation:assassin_jump::0": {
+            key: "p0test2:player:actor:animation:assassin_jump::0",
+            name: "beep.wav",
+            type: "audio/wav",
+            size: 24,
+            metadata: { projectId: "p0test2", animation: "assassin_jump", frame: 0 },
+            blob,
+          },
+        },
+      },
+      frameAudioBindings: {},
+      selectedProjectId: "p0test2",
+    };
+    const controller = createController({
+      state,
+      elements: {},
+      messages: {},
+      documentRef: { body: { classList: { toggle() {} } } },
+      storage: null,
+    });
+
+    controller.loadFrameAudioBindingsFromProject();
+
+    const restored = state.frameAudioBindings["p0test2:player:actor:animation:assassin_jump::0"];
+    assert.ok(restored, "project blob WAV must survive reload even without data/path/file");
+    assert.equal(restored.name, "beep.wav");
+    assert.equal(restored.blob, blob);
+    assert.equal(restored.url, "blob:project/beep.wav");
+    assert.deepEqual(createdUrls, [blob]);
+  } finally {
+    globalThis.URL = previousUrl;
+  }
+});
+
+test("SAV-011 loadFrameAudioBindingsFromProject still accepts saved array data URLs", () => {
+  const state = {
+    config: {
+      activeProjectId: "p0test2",
+      frameAudioBindings: [
+        {
+          key: "p0test2:player:actor:animation:assassin_jump::0",
+          name: "beep.wav",
+          type: "audio/wav",
+          size: 8,
+          projectId: "p0test2",
+          animation: "assassin_jump",
+          frame: 0,
+          data: "data:audio/wav;base64,UklGRg==",
+        },
+      ],
+    },
+    frameAudioBindings: {},
+    selectedProjectId: "p0test2",
+  };
+  const controller = createController({
+    state,
+    elements: {},
+    messages: {},
+    documentRef: { body: { classList: { toggle() {} } } },
+    storage: null,
+  });
+
+  controller.loadFrameAudioBindingsFromProject();
+
+  const restored = state.frameAudioBindings["p0test2:player:actor:animation:assassin_jump::0"];
+  assert.equal(restored.name, "beep.wav");
+  assert.equal(restored.data, "data:audio/wav;base64,UklGRg==");
+});
+
 test("project refresh awaits the injected confirmation before discarding edits", async () => {
   const state = { dirty: true, editRevision: 3, imageCache: new Map(), language: "zh" };
   const events = [];

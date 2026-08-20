@@ -154,20 +154,20 @@
         for (const record of records) {
           if (!record?.key || !record.blob) continue;
           const existing = bindings[record.key];
-          if (!existing) continue;
-          const metadata = existing.metadata || record.metadata || getFrameAudioMetadataFromKey(record.key);
+          const metadata = existing?.metadata || record.metadata || getFrameAudioMetadataFromKey(record.key);
           if (!metadata || (metadata.projectId && metadata.projectId !== getActiveProjectId())) continue;
-          revokeBinding(existing);
+          if (existing) revokeBinding(existing);
           bindings[record.key] = {
-            ...existing,
+            ...(existing || {}),
             key: record.key,
-            name: existing.name || record.name || "audio",
+            name: existing?.name || record.name || "audio",
             url: urlApi.createObjectURL(record.blob),
-            type: existing.type || record.type || "",
-            size: Number(existing.size || record.size || 0),
+            type: existing?.type || record.type || "",
+            size: Number(existing?.size || record.size || 0),
             metadata,
             blob: record.blob,
-            path: existing.path || existing.file || "",
+            path: existing?.path || existing?.file || "",
+            data: existing?.data || "",
           };
         }
       } catch (error) {
