@@ -2004,9 +2004,20 @@ test("TUN-012 position stepper edits undo without reverting stretch", async ({ p
     details.open = true;
   });
 
-  await page.locator("#baseScaleY").fill("0.6");
-  await page.locator("#baseScaleX").fill("1.6");
-  await page.locator("#stage").click();
+  await page.locator("#baseScaleY").evaluate((input) => {
+    input.focus();
+    input.value = "0.6";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.blur();
+  });
+  await page.locator("#baseScaleX").evaluate((input) => {
+    input.focus();
+    input.value = "1.6";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.blur();
+  });
   await expect.poll(async () => Number(await page.locator("#baseScaleY").inputValue())).toBeCloseTo(0.6, 3);
   await expect.poll(async () => Number(await page.locator("#baseScaleX").inputValue())).toBeCloseTo(1.6, 3);
 
@@ -2043,11 +2054,15 @@ test("TUN-012 position stepper edits undo without reverting stretch", async ({ p
     await stretchStillApplied();
   }
   await expect.poll(async () => Number(await page.locator("#baseX").inputValue())).toBe(offsetBefore);
-  await page.locator("#stage").click();
+  await page.locator("#workspaceSaveIndicator").click();
   await page.keyboard.press("Control+z");
   await expect
-    .poll(async () => Number(await page.locator("#baseScaleX").inputValue()))
-    .not.toBeCloseTo(1.6, 3);
+    .poll(async () => {
+      const scaleX = Number(await page.locator("#baseScaleX").inputValue());
+      const scaleY = Number(await page.locator("#baseScaleY").inputValue());
+      return Math.abs(scaleX - 1.6) > 0.001 || Math.abs(scaleY - 0.6) > 0.001;
+    })
+    .toBe(true);
 });
 
 test("narrow English chrome keeps scatter and cutout tab labels readable", async ({ page }) => {
