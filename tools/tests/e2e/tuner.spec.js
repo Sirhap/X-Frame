@@ -1415,6 +1415,8 @@ test("cutout parameters follow the regular post-processing advanced layout", asy
   await expect(page.locator("#cutoutFeather")).toBeHidden();
   await expect(page.locator("#cutoutAlphaLow")).toBeHidden();
   await expect(page.locator("#cutoutProtectSample")).toBeHidden();
+  await expect(page.locator("#cutoutAdvancedSummary")).toHaveText("未设置");
+  await expect(page.locator("#cutoutAdvancedSummary")).not.toHaveText(/0 — 0 \/ T 0/);
   await page.locator(".cutoutAdvancedDisclosure").first().locator("summary").click();
   await expect(page.locator("#cutoutFeather")).toBeVisible();
   await expect(page.locator("#cutoutAlphaLow")).toBeVisible();
@@ -1557,7 +1559,7 @@ test("desktop cutout keeps batch images in the collapsible sidebar", async ({ pa
 });
 
 test("desktop cutout removes smart comparison and keeps every parameter scrollable", async ({ page }) => {
-  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.setViewportSize({ width: 1600, height: 656 });
   await page.addInitScript(() => {
     localStorage.setItem("xsxbFrameTuner.language", "en");
     localStorage.setItem("xsxbFrameTuner.languageExplicit", "true");
@@ -1584,16 +1586,29 @@ test("desktop cutout removes smart comparison and keeps every parameter scrollab
 
   const automaticSettings = page.locator("#cutoutAutomaticSettings");
   await expect(automaticSettings).toBeVisible();
-  const scrollMetrics = await page.evaluate(() => {
-    window.scrollTo(0, document.documentElement.scrollHeight);
-    return {
-      clientHeight: window.innerHeight,
-      scrollHeight: document.documentElement.scrollHeight,
-      scrollTop: window.scrollY,
-    };
-  });
-  expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
-  expect(scrollMetrics.scrollTop).toBeGreaterThan(0);
+  await page.locator("#cutoutTabAdvanced").click();
+  await page.locator(".cutoutAdvancedDisclosure").first().locator("summary").click();
+  await page.locator(".cutoutProtectionDisclosure summary").click();
+
+  const pane = page.locator(".cutoutControls");
+  const paneMetrics = await pane.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    overflowY: getComputedStyle(element).overflowY,
+  }));
+  expect(paneMetrics.scrollHeight, "advanced params must overflow the left pane").toBeGreaterThan(
+    paneMetrics.clientHeight,
+  );
+  expect(["auto", "scroll"]).toContain(paneMetrics.overflowY);
+
+  const windowBefore = await page.evaluate(() => window.scrollY);
+  const paneBefore = await pane.evaluate((element) => element.scrollTop);
+  const paneBox = await pane.boundingBox();
+  expect(paneBox).not.toBeNull();
+  await page.mouse.move(paneBox.x + paneBox.width / 2, paneBox.y + Math.min(120, paneBox.height / 3));
+  await page.mouse.wheel(0, 480);
+  await expect.poll(() => pane.evaluate((element) => element.scrollTop)).toBeGreaterThan(paneBefore);
+  expect(await page.evaluate(() => window.scrollY)).toBe(windowBefore);
 
   for (const tabSelector of ["#cutoutTabRegular", "#cutoutTabPost", "#cutoutTabAdvanced"]) {
     await page.locator(tabSelector).click();

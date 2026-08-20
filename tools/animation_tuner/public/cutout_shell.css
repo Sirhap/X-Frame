@@ -166,10 +166,12 @@ body.cutoutOpen .cutoutClose {
 .cutoutControls {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto;
+  align-content: start;
   gap: 10px;
   padding: 12px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   border-right: 4px solid var(--line);
@@ -223,15 +225,17 @@ body.cutoutOpen .cutoutClose {
 .cutoutSidebarPanel {
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .cutoutSidebarParametersPanel {
-  height: 100%;
+  min-height: 0;
+  height: auto;
 }
 
 .cutoutSidebarParametersPanel > .cutoutSettings {
-  height: 100%;
+  min-height: 0;
+  height: auto;
 }
 
 .cutoutSidebarBatchPanel {
@@ -295,7 +299,8 @@ body.cutoutOpen .cutoutClose {
 /* The organizer pencil opens a focused single-image session. The control
    column keeps its width so switching tools cannot resize or auto-zoom the canvas. */
 .cutoutModal.singleEditSession .cutoutControls {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto;
+  align-content: start;
 }
 
 .cutoutModal.singleEditSession .cutoutDropzone,
@@ -400,14 +405,25 @@ body.cutoutOpen .cutoutClose {
 }
 
 @media (min-width: 1121px) {
-  body.cutoutOpen .cutoutWorkbench {
-    height: 100vh;
-    max-height: 100vh;
+  /* Beat app_shell's later height:auto / overflow:visible contract so the left
+     parameter pane is a real scrollport. Wheel over the column must move the
+     column, not the document (CUT-032). */
+  body.cutoutOpen .cutoutModal .cutoutWorkbench {
+    height: calc(100vh - var(--shell-flow-height, 52px));
+    max-height: calc(100vh - var(--shell-flow-height, 52px));
+    min-height: 0;
     overflow: hidden;
   }
 
-  body.cutoutOpen .cutoutBody {
+  body.cutoutOpen .cutoutModal .cutoutBody {
     min-height: 0;
     overflow: hidden;
+  }
+
+  body.cutoutOpen .cutoutModal .cutoutControls {
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 }

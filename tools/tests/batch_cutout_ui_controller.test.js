@@ -2,7 +2,11 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createController } = require("../animation_tuner/public/batch_cutout_ui_controller");
+const {
+  createController,
+  formatAdvancedSummary,
+} = require("../animation_tuner/public/batch_cutout_ui_controller");
+const { TEXT } = require("../animation_tuner/public/batch_cutout_text");
 
 class HTMLElementStub {
   constructor(tagName = "DIV") {
@@ -292,6 +296,42 @@ test("danger confirmation focuses cancellation and hides empty details", async (
   controller.resolveConfirmation(false);
   assert.equal(await resultPromise, false);
   assert.equal(confirmationCard.dataset.tone, undefined);
+});
+
+test("advanced summary uses 未设置 / Off instead of the zero machine string", () => {
+  const interpolate =
+    (language) =>
+    (key, variables = {}) =>
+      String(TEXT[language][key] || key).replace(/\{(\w+)\}/g, (_match, name) => variables[name] ?? "");
+
+  assert.equal(
+    formatAdvancedSummary({ alphaLow: 0, alphaHigh: 0, alphaThreshold: 0 }, interpolate("zh")),
+    "未设置",
+  );
+  assert.equal(
+    formatAdvancedSummary({ alphaLow: 0, alphaHigh: 0, alphaThreshold: 0 }, interpolate("en")),
+    "Off",
+  );
+  assert.doesNotMatch(
+    formatAdvancedSummary({ alphaLow: 0, alphaHigh: 0, alphaThreshold: 0 }, interpolate("zh")),
+    /0 — 0 \/ T 0/,
+  );
+  assert.equal(
+    formatAdvancedSummary({ alphaLow: 8, alphaHigh: 240, alphaThreshold: 2 }, interpolate("zh")),
+    "8 — 240 / T 2",
+  );
+
+  const fixture = createFixture();
+  fixture.elements.cutoutAlphaLow.value = "0";
+  fixture.elements.cutoutAlphaHigh.value = "0";
+  fixture.elements.cutoutAlphaThreshold.value = "0";
+  const wired = createController({
+    ...fixture.dependencies,
+    text: interpolate("zh"),
+  });
+  wired.renderAdvancedMode();
+  assert.equal(fixture.dependencies.advancedSummary.textContent, "未设置");
+  assert.doesNotMatch(fixture.dependencies.advancedSummary.textContent, /0 — 0 \/ T 0/);
 });
 
 test("toolbar scrolling keeps wheel and keyboard behavior bounded", () => {
