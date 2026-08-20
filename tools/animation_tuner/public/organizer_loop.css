@@ -149,7 +149,7 @@
 .organizerLoopStartRow {
   width: fit-content;
   display: grid;
-  grid-template-columns: auto 90px auto;
+  grid-template-columns: auto 90px auto auto;
   align-items: center;
   gap: 8px;
   margin: 0 0 0 34px;

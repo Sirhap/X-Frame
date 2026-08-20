@@ -11,6 +11,58 @@
   const MAX_CACHE_ENTRIES = 12;
 
   /**
+   * Parses a raw start-frame field into an integer, or null when empty/non-numeric.
+   * @param {unknown} rawValue Input value.
+   * @returns {number|null}
+   */
+  function parseLoopStartFrame(rawValue) {
+    if (rawValue === "" || rawValue === null || rawValue === undefined) return null;
+    const parsed = Number.parseInt(String(rawValue).trim(), 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  /**
+   * Counts included workset frames. Loop start uses this 1-based length, not the
+   * grid's all-frames numbers when some cards are excluded.
+   * @param {Array<{included?:boolean}>|undefined} frames Organizer frames.
+   * @returns {number}
+   */
+  function includedWorksetCount(frames) {
+    if (!Array.isArray(frames)) return 0;
+    return frames.filter((frame) => frame && frame.included).length;
+  }
+
+  /**
+   * Clamps a start-frame field to the 1-based included-workset range.
+   * Empty and non-numeric values become 1.
+   * @param {unknown} rawValue Input value.
+   * @param {number} includedCount Included workset length.
+   * @returns {number}
+   */
+  function normalizeLoopStartFrame(rawValue, includedCount) {
+    const maximum = Math.max(1, Math.floor(Number(includedCount) || 0));
+    const parsed = parseLoopStartFrame(rawValue);
+    if (parsed === null) return 1;
+    return Math.min(maximum, Math.max(1, parsed));
+  }
+
+  /**
+   * Resolves the field for search: clamped value plus whether the raw value was out of range.
+   * @param {unknown} rawValue Input value.
+   * @param {number} includedCount Included workset length.
+   * @returns {{value:number,outOfRange:boolean}}
+   */
+  function resolveLoopStartFrame(rawValue, includedCount) {
+    const maximum = Math.max(1, Math.floor(Number(includedCount) || 0));
+    const parsed = parseLoopStartFrame(rawValue);
+    if (parsed === null) return { value: 1, outOfRange: false };
+    return {
+      value: Math.min(maximum, Math.max(1, parsed)),
+      outOfRange: parsed < 1 || parsed > maximum,
+    };
+  }
+
+  /**
    * Converts an unknown rejection value into a readable error.
    * @param {unknown} reason Rejection reason.
    * @returns {Error}
@@ -219,9 +271,46 @@
       while (resultCache.size > MAX_CACHE_ENTRIES) resultCache.delete(resultCache.keys().next().value);
     }
 
+    /** @returns {number} Included workset length used as the 1-based start-frame max. */
+    function includedCount() {
+      if (typeof dependencies.includedFrames === "function") {
+        return includedWorksetCount(dependencies.includedFrames());
+      }
+      return includedWorksetCount(state.frames);
+    }
+
+    /**
+     * Writes the 1-based included-workset bound onto the start-frame field.
+     * @param {number} [count] Included length.
+     * @param {number} [value] Value to store; omitted values are normalized.
+     * @param {{allowEmpty?:boolean}} [options] Keep an empty field while typing.
+     * @returns {{value:number,outOfRange:boolean}}
+     */
+    function syncStartInput(count = includedCount(), value, options = {}) {
+      const maximum = Math.max(1, count);
+      const raw = value === undefined ? elements.organizerLoopStartInput.value : value;
+      if (options.allowEmpty && String(raw).trim() === "") {
+        elements.organizerLoopStartInput.min = "1";
+        elements.organizerLoopStartInput.max = String(maximum);
+        if (elements.organizerLoopStartMax) elements.organizerLoopStartMax.textContent = `/ ${maximum}`;
+        return { value: 1, outOfRange: false };
+      }
+      const resolved = resolveLoopStartFrame(raw, maximum);
+      elements.organizerLoopStartInput.min = "1";
+      elements.organizerLoopStartInput.max = String(maximum);
+      elements.organizerLoopStartInput.value = String(resolved.value);
+      if (elements.organizerLoopStartMax) elements.organizerLoopStartMax.textContent = `/ ${maximum}`;
+      return resolved;
+    }
+
+    /** Selects the current start-frame digits so the next keystroke replaces them. @returns {void} */
+    function selectStartInput() {
+      elements.organizerLoopStartInput.select?.();
+    }
+
     /** @returns {void} */
     function open() {
-      const count = dependencies.includedFrames().length;
+      const count = includedCount();
       if (count < MINIMUM_LOOP_FRAMES) {
         dependencies.setStatus(text("loopNeedFrames"), "error");
         return;
@@ -236,8 +325,7 @@
       elements.organizerLoopStartAuto.checked = true;
       elements.organizerLoopStartCustom.checked = false;
       elements.organizerLoopStartRow.hidden = true;
-      elements.organizerLoopStartInput.value = "1";
-      elements.organizerLoopStartInput.max = String(count);
+      syncStartInput(count, 1);
       Array.from(elements.organizerLoopPreference.children).forEach((button) => {
         button.classList.toggle("active", button.dataset.loopPreference === "auto");
       });
@@ -285,6 +373,14 @@
         showDialogError(text("loopNeedFrames"));
         return;
       }
+      const customStart = elements.organizerLoopStartCustom.checked;
+      const resolved = resolveLoopStartFrame(elements.organizerLoopStartInput.value, sourceEntries.length);
+      syncStartInput(sourceEntries.length, resolved.value);
+      if (customStart && resolved.outOfRange) {
+        showDialogError(text("loopStartOutOfRange", { max: sourceEntries.length }));
+        return;
+      }
+      const startFrame = resolved.value;
       const searchToken = state.loopSearchToken + 1;
       state.loopSearchToken = searchToken;
       state.loopCancelled = false;
@@ -302,13 +398,6 @@
           renderProgress(index + 1, sourceEntries.length * 3);
           if (index % 4 === 3) await new Promise((resolve) => windowApi.setTimeout(resolve, 0));
         }
-        const customStart = elements.organizerLoopStartCustom.checked;
-        const startFrame = dependencies.clamp(
-          Math.round(elements.organizerLoopStartInput.value || 1),
-          1,
-          sourceEntries.length,
-        );
-        elements.organizerLoopStartInput.value = String(startFrame);
         const options = {
           minPeriod: 2,
           maxPeriod: Math.max(2, Math.floor((2 * signatures.length) / 3)),
@@ -395,14 +484,32 @@
       [elements.organizerLoopStartAuto, elements.organizerLoopStartCustom].forEach((input) => {
         input.addEventListener("change", () => {
           elements.organizerLoopStartRow.hidden = !elements.organizerLoopStartCustom.checked;
-          if (elements.organizerLoopStartCustom.checked) elements.organizerLoopStartInput.focus();
+          if (elements.organizerLoopStartCustom.checked) {
+            syncStartInput();
+            elements.organizerLoopStartInput.focus();
+            selectStartInput();
+          }
         });
       });
+      elements.organizerLoopStartInput.addEventListener("focus", () => {
+        selectStartInput();
+        windowApi.requestAnimationFrame(selectStartInput);
+      });
+      elements.organizerLoopStartInput.addEventListener("mouseup", (event) => {
+        event.preventDefault?.();
+        selectStartInput();
+      });
+      elements.organizerLoopStartInput.addEventListener("click", () => {
+        selectStartInput();
+      });
+      elements.organizerLoopStartInput.addEventListener("input", () => {
+        syncStartInput(includedCount(), undefined, { allowEmpty: true });
+      });
+      elements.organizerLoopStartInput.addEventListener("change", () => {
+        syncStartInput();
+      });
       elements.organizerLoopStartInput.addEventListener("blur", () => {
-        const maximum = Math.max(1, state.frames.filter((frame) => frame.included).length);
-        elements.organizerLoopStartInput.value = String(
-          dependencies.clamp(Math.round(elements.organizerLoopStartInput.value || 1), 1, maximum),
-        );
+        syncStartInput();
       });
       elements.organizerLoopStartSearch.addEventListener("click", () => {
         startSearch().catch((error) => {
@@ -453,5 +560,11 @@
     return { open, close, isOpen, bindEvents };
   }
 
-  return { createController };
+  return {
+    createController,
+    parseLoopStartFrame,
+    includedWorksetCount,
+    normalizeLoopStartFrame,
+    resolveLoopStartFrame,
+  };
 });

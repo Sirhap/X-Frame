@@ -96,6 +96,7 @@
       "organizerLoopStartCustom",
       "organizerLoopStartRow",
       "organizerLoopStartInput",
+      "organizerLoopStartMax",
       "organizerLoopError",
       "organizerLoopSearch",
       "organizerLoopSearchLabel",

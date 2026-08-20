@@ -2,7 +2,10 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createController } = require("../animation_tuner/public/frame_organizer_loop");
+const {
+  createController,
+  normalizeLoopStartFrame,
+} = require("../animation_tuner/public/frame_organizer_loop");
 
 /**
  * Creates a mutable organizer-loop element.
@@ -54,11 +57,18 @@ function createFixture(options = {}) {
     organizerLoopStartAuto: element({ checked: true }),
     organizerLoopStartCustom: element({ checked: false }),
     organizerLoopStartRow: element({ hidden: true }),
-    organizerLoopStartInput: element({ value: "1" }),
+    organizerLoopStartInput: element({
+      value: "1",
+      max: "",
+      select() {
+        this.selected = true;
+      },
+    }),
+    organizerLoopStartMax: element({ textContent: "/ 1" }),
     organizerLoopPreference: element({
       children: [{ dataset: { loopPreference: "auto" }, classList: { toggle() {} } }],
     }),
-    organizerLoopStartSearch: element(),
+    organizerLoopStartSearch: element({ disabled: false }),
     organizerLoopCancel: element(),
     organizerLoopClose: element(),
     organizerLoopRetry: element(),
@@ -93,11 +103,13 @@ function createFixture(options = {}) {
     }),
   };
   const state = {
-    frames: Array.from({ length: 6 }, (_, index) => ({
-      uid: `f${index}`,
-      included: true,
-      analysisRevision: 1,
-    })),
+    frames:
+      options.frames ||
+      Array.from({ length: options.frameCount || 6 }, (_, index) => ({
+        uid: `f${index}`,
+        included: true,
+        analysisRevision: 1,
+      })),
     busy: false,
     loopCancelled: false,
     loopSearchToken: 0,
@@ -186,4 +198,145 @@ test("closing the loop dialog does not return focus to Find Loop", () => {
   fixture.controller.close();
 
   assert.deepEqual(fixture.focused, ["organizerFileInput"]);
+});
+
+/**
+ * Switches the fixture to a custom 1-based included start frame.
+ * @param {ReturnType<typeof createFixture>} fixture Loop fixture.
+ * @param {string} value Raw input value.
+ * @returns {void}
+ */
+function chooseCustomStart(fixture, value) {
+  fixture.elements.organizerLoopStartAuto.checked = false;
+  fixture.elements.organizerLoopStartCustom.checked = true;
+  fixture.elements.organizerLoopStartCustom.dispatch("change");
+  fixture.elements.organizerLoopStartInput.value = String(value);
+}
+
+/**
+ * Yields until the fixture's synchronous setTimeout awaits settle.
+ * @param {number} [turns] Extra microtask turns.
+ * @returns {Promise<void>}
+ */
+async function flushSearch(turns = 20) {
+  for (let index = 0; index < turns; index += 1) await Promise.resolve();
+}
+
+test("ORG-018 loop start frame is a 1-based included-workset index", () => {
+  assert.equal(normalizeLoopStartFrame("1", 10), 1);
+  assert.equal(normalizeLoopStartFrame("10", 10), 10);
+  assert.equal(normalizeLoopStartFrame("11", 10), 10);
+  assert.equal(normalizeLoopStartFrame("0", 10), 1);
+  assert.equal(normalizeLoopStartFrame("", 10), 1);
+  assert.equal(normalizeLoopStartFrame("abc", 10), 1);
+  assert.equal(normalizeLoopStartFrame(" 8 ", 10), 8);
+  const frames = [
+    ...Array.from({ length: 10 }, (_, index) => ({ included: true, uid: `in${index}` })),
+    { included: false, uid: "out" },
+    { included: false, uid: "out2" },
+  ];
+  const fixture = createFixture({ frames });
+  fixture.controller.open();
+  assert.equal(fixture.elements.organizerLoopStartInput.max, "10");
+  assert.equal(fixture.elements.organizerLoopStartMax.textContent, "/ 10");
+});
+
+test("ORG-018 start=1 and start=N search with the included index", async () => {
+  const analyzeCalls = [];
+  const fixture = createFixture({
+    frameCount: 10,
+    analyze: async (_signatures, options) => {
+      analyzeCalls.push(options);
+      return [];
+    },
+  });
+  fixture.controller.open();
+
+  chooseCustomStart(fixture, "1");
+  fixture.elements.organizerLoopStartSearch.dispatch("click");
+  await flushSearch();
+  assert.equal(analyzeCalls.length, 1);
+  assert.equal(analyzeCalls[0].startFrame, 0);
+  assert.equal(fixture.elements.organizerLoopResults.hidden, false);
+  assert.equal(fixture.elements.organizerLoopError.hidden, true);
+
+  fixture.elements.organizerLoopRetry.dispatch("click");
+  chooseCustomStart(fixture, "10");
+  fixture.elements.organizerLoopStartSearch.dispatch("click");
+  await flushSearch();
+  assert.equal(analyzeCalls.length, 2);
+  assert.equal(analyzeCalls[1].startFrame, 9);
+  assert.equal(fixture.elements.organizerLoopResults.hidden, false);
+  assert.doesNotMatch(fixture.elements.organizerLoopError.textContent, /1.*10/);
+});
+
+test("ORG-018 typing start=N+1 clamps the field to N", () => {
+  const fixture = createFixture({ frameCount: 10 });
+  fixture.controller.open();
+  chooseCustomStart(fixture, "11");
+  fixture.elements.organizerLoopStartInput.dispatch("input");
+  assert.equal(fixture.elements.organizerLoopStartInput.value, "10");
+});
+
+test("ORG-018 start=N+1 is rejected before search and does not keep N+1", async () => {
+  const analyzeCalls = [];
+  const fixture = createFixture({
+    frameCount: 10,
+    analyze: async (_signatures, options) => {
+      analyzeCalls.push(options);
+      return [];
+    },
+  });
+  fixture.controller.open();
+  chooseCustomStart(fixture, "11");
+  fixture.elements.organizerLoopStartSearch.dispatch("click");
+
+  assert.notEqual(fixture.elements.organizerLoopStartInput.value, "11");
+  assert.equal(fixture.elements.organizerLoopStartInput.value, "10");
+  assert.equal(fixture.elements.organizerLoopSearch.hidden, true);
+  assert.equal(fixture.elements.organizerLoopParams.hidden, false);
+  assert.equal(fixture.elements.organizerLoopError.hidden, false);
+  assert.match(fixture.elements.organizerLoopError.textContent, /1.*10|loopStartOutOfRange/);
+  assert.equal(analyzeCalls.length, 0);
+
+  await flushSearch();
+  assert.equal(analyzeCalls.length, 0);
+  assert.equal(fixture.elements.organizerLoopSearch.hidden, true);
+});
+
+test("ORG-018 empty and non-numeric start frames stay safe", async () => {
+  const analyzeCalls = [];
+  const fixture = createFixture({
+    frameCount: 10,
+    analyze: async (_signatures, options) => {
+      analyzeCalls.push(options);
+      return [];
+    },
+  });
+  fixture.controller.open();
+  chooseCustomStart(fixture, "");
+  fixture.elements.organizerLoopStartSearch.dispatch("click");
+  await flushSearch();
+  assert.equal(analyzeCalls.length, 1);
+  assert.equal(analyzeCalls[0].startFrame, 0);
+  assert.equal(fixture.elements.organizerLoopStartInput.value, "1");
+  assert.equal(fixture.elements.organizerLoopError.hidden, true);
+
+  fixture.elements.organizerLoopRetry.dispatch("click");
+  chooseCustomStart(fixture, "abc");
+  fixture.elements.organizerLoopStartSearch.dispatch("click");
+  await flushSearch();
+  assert.ok(analyzeCalls.length >= 1);
+  assert.ok(analyzeCalls.every((options) => options.startFrame === 0));
+  assert.equal(fixture.elements.organizerLoopStartInput.value, "1");
+  assert.equal(fixture.elements.organizerLoopResults.hidden, false);
+  assert.equal(fixture.elements.organizerLoopError.hidden, true);
+});
+
+test("ORG-018 focusing the start-frame field selects the existing value", () => {
+  const fixture = createFixture({ frameCount: 10 });
+  fixture.controller.open();
+  chooseCustomStart(fixture, "10");
+  fixture.elements.organizerLoopStartInput.dispatch("focus");
+  assert.equal(fixture.elements.organizerLoopStartInput.selected, true);
 });
