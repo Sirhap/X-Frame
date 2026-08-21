@@ -154,9 +154,8 @@
       else setVideoStatus(text("videoLoaded"), "success");
     }
 
-    /** @param {boolean} [force] When true, close after a finished extract without aborting. @returns {void} */
-    function close(force = false) {
-      if (state.videoExtracting && !force) extractAbortController?.abort();
+    /** Tears down the video element after extract has stopped. @returns {void} */
+    function teardownVideo() {
       elements.organizerVideoElement.pause();
       elements.organizerVideoElement.removeAttribute("src");
       elements.organizerVideoElement.load();
@@ -169,8 +168,19 @@
       elements.organizerVideoInput.value = "";
       elements.organizerVideoName.textContent = text("videoNoFile");
       elements.organizerVideoMeta.textContent = "—";
-      elements.organizerVideoPanel.hidden = true;
       elements.organizerVideoExtract.disabled = true;
+    }
+
+    /** @param {boolean} [force] When true, close after a finished extract without aborting. @returns {void} */
+    function close(force = false) {
+      if (state.videoExtracting && !force) {
+        extractAbortController?.abort();
+        elements.organizerVideoPanel.hidden = true;
+        elements.organizerVideoExtract.disabled = true;
+        return;
+      }
+      teardownVideo();
+      elements.organizerVideoPanel.hidden = true;
     }
 
     /** @param {File} file @returns {Promise<void>} */
@@ -338,6 +348,7 @@
           }
         }
         throwIfExtractAborted(signal);
+        if (signal.aborted) throw createAbortError();
         state.frames.push(...extractedFrames);
         dependencies.restartPreview();
         close(true);
@@ -352,6 +363,7 @@
         if (extractAbortController === abortController) extractAbortController = null;
         state.videoExtracting = false;
         state.busy = false;
+        if (elements.organizerVideoPanel.hidden) teardownVideo();
         dependencies.renderGrid();
         syncControls();
       }

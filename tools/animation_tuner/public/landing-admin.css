@@ -245,11 +245,17 @@
   text-align: center;
 }
 
-.admin-login-form > input[name="username"] {
+.admin-login-form > input[name="username"],
+.admin-login-form > input[name="password"] {
   height: 54px;
   font: 600 17px/1 var(--sans);
   letter-spacing: 0.04em;
   text-align: left;
+}
+
+.admin-login-form > .admin-action-button {
+  margin-top: 28px;
+  flex-shrink: 0;
 }
 
 .admin-console input:focus,

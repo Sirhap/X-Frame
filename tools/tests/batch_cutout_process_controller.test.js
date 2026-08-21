@@ -182,6 +182,51 @@ test("process controller previews staged recolor but commits only stored repairs
   assert.equal(item.resultVariant, "committed");
 });
 
+test("process controller reuses transferred result pixels for canvas painting", async () => {
+  const resultPixels = new Uint8ClampedArray([9, 8, 7, 255]);
+  let paintedImageData = null;
+  const { controller, state } = createFixture({
+    dependencies: {
+      cutoutExecutor: {
+        async process() {
+          return {
+            automaticData: new Uint8ClampedArray(resultPixels),
+            data: resultPixels,
+            shapeCandidates: [],
+            shapeDescriptor: null,
+            qualityMetrics: {},
+            removedPixels: 0,
+            partialPixels: 0,
+          };
+        },
+      },
+      documentRef: {
+        createElement: () => ({
+          getContext: () => ({
+            putImageData(imageData) {
+              paintedImageData = imageData;
+            },
+          }),
+        }),
+      },
+    },
+  });
+  const item = {
+    id: "frame-buffer",
+    sourceImageData: { width: 1, height: 1, data: new Uint8ClampedArray([1, 2, 3, 255]) },
+    repairs: [],
+    processingRevision: 0,
+    thumbnailRevision: -1,
+    status: "ready",
+  };
+  state.items = [item];
+
+  await controller.processItem(item);
+
+  assert.equal(item.resultImageData.data, resultPixels);
+  assert.equal(paintedImageData, item.resultImageData);
+});
+
 test("processAll publishes live outputs after each successful frame", async () => {
   const liveApplies = [];
   const { controller } = createFixture({

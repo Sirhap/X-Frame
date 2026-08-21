@@ -3150,6 +3150,76 @@
               </button>
               <button id="organizerFlip" type="button" data-organizer-i18n="flip">水平翻转</button>
             </div>
+            <div class="organizerToolbarSecondary">
+              <details class="organizerToolGroup organizerToolMenu organizerAnalysisTools" aria-label="序列分析">
+                <summary data-organizer-i18n="analysisTools">分析</summary>
+                <div class="organizerToolMenuPanel">
+                  <label class="organizerThreshold">
+                    <span data-organizer-i18n="threshold">相似度阈值</span>
+                    <input id="organizerThreshold" type="range" min="55" max="100" step="1" value="88" />
+                    <output id="organizerThresholdValue">88</output>
+                  </label>
+                  <button
+                    id="organizerFindJump"
+                    type="button"
+                    class="secondary premiumOption"
+                    data-organizer-i18n="findJump"
+                  >
+                    寻找跳变帧
+                  </button>
+                  <button
+                    id="organizerFindDuplicate"
+                    type="button"
+                    class="secondary premiumOption"
+                    data-organizer-i18n="findDuplicate"
+                  >
+                    寻找重复帧
+                  </button>
+                  <button
+                    id="organizerFindLoop"
+                    type="button"
+                    class="secondary premiumOption"
+                    data-organizer-i18n="findLoop"
+                  >
+                    寻找循环段
+                  </button>
+                  <output
+                    id="organizerAnalysisFeedback"
+                    class="organizerAnalysisFeedback"
+                    aria-live="polite"
+                  ></output>
+                </div>
+              </details>
+              <details class="organizerToolGroup organizerToolMenu organizerDangerTools" aria-label="删除操作">
+                <summary data-organizer-i18n="dangerTools">移除</summary>
+                <div class="organizerToolMenuPanel">
+                  <button
+                    id="organizerDeleteSelected"
+                    type="button"
+                    class="dangerActive"
+                    data-organizer-i18n="deleteSelected"
+                  >
+                    删除选中
+                  </button>
+                  <button
+                    id="organizerDeleteExcluded"
+                    type="button"
+                    class="dangerActive"
+                    data-organizer-i18n="deleteExcluded"
+                  >
+                    删除未入集
+                  </button>
+                  <button
+                    id="organizerClearWorkset"
+                    type="button"
+                    class="dangerActive"
+                    data-organizer-i18n="clearWorkset"
+                  >
+                    清空工作集
+                  </button>
+                </div>
+              </details>
+            </div>
             <div class="organizerToolbarActions">
               <button
                 id="organizerToggleImportSetup"
@@ -3160,72 +3230,6 @@
                 hidden
               >
                 导入设置
-              </button>
-            </div>
-          </div>
-          <div class="organizerToolbarRow organizerToolbarSecondary">
-            <div class="organizerToolGroup organizerAnalysisTools" role="group" aria-label="序列分析">
-              <span data-organizer-i18n="analysisTools">分析</span>
-              <label class="organizerThreshold">
-                <span data-organizer-i18n="threshold">相似度阈值</span>
-                <input id="organizerThreshold" type="range" min="55" max="100" step="1" value="88" />
-                <output id="organizerThresholdValue">88</output>
-              </label>
-              <button
-                id="organizerFindJump"
-                type="button"
-                class="secondary premiumOption"
-                data-organizer-i18n="findJump"
-              >
-                寻找跳变帧
-              </button>
-              <button
-                id="organizerFindDuplicate"
-                type="button"
-                class="secondary premiumOption"
-                data-organizer-i18n="findDuplicate"
-              >
-                寻找重复帧
-              </button>
-              <button
-                id="organizerFindLoop"
-                type="button"
-                class="secondary premiumOption"
-                data-organizer-i18n="findLoop"
-              >
-                寻找循环段
-              </button>
-              <output
-                id="organizerAnalysisFeedback"
-                class="organizerAnalysisFeedback"
-                aria-live="polite"
-              ></output>
-            </div>
-            <div class="organizerToolGroup organizerDangerTools" role="group" aria-label="删除操作">
-              <span data-organizer-i18n="dangerTools">移除</span>
-              <button
-                id="organizerDeleteSelected"
-                type="button"
-                class="dangerActive"
-                data-organizer-i18n="deleteSelected"
-              >
-                删除选中
-              </button>
-              <button
-                id="organizerDeleteExcluded"
-                type="button"
-                class="dangerActive"
-                data-organizer-i18n="deleteExcluded"
-              >
-                删除未入集
-              </button>
-              <button
-                id="organizerClearWorkset"
-                type="button"
-                class="dangerActive"
-                data-organizer-i18n="clearWorkset"
-              >
-                清空工作集
               </button>
             </div>
           </div>
@@ -3892,20 +3896,30 @@
                   </button>
                 </div>
                 <label
-                  ><span data-i18n="mediaExportHorizontal">水平</span><small>1%</small
+                  ><span id="mediaExportScaleXLabel" data-i18n="mediaExportHorizontal">水平</span><small>1%</small
                   ><input id="mediaExportScaleXRange" type="range" min="1" max="300" value="100" /><small
                     >300%</small
-                  ><input id="mediaExportScaleX" type="number" min="1" max="300" value="100" /><span
-                    >%</span
-                  ></label
+                  ><input
+                    id="mediaExportScaleX"
+                    type="number"
+                    min="1"
+                    max="300"
+                    value="100"
+                    aria-labelledby="mediaExportScaleXLabel"
+                  /><span>%</span></label
                 >
                 <label
-                  ><span>垂直</span><small>1%</small
+                  ><span id="mediaExportScaleYLabel">垂直</span><small>1%</small
                   ><input id="mediaExportScaleYRange" type="range" min="1" max="300" value="100" /><small
                     >300%</small
-                  ><input id="mediaExportScaleY" type="number" min="1" max="300" value="100" /><span
-                    >%</span
-                  ></label
+                  ><input
+                    id="mediaExportScaleY"
+                    type="number"
+                    min="1"
+                    max="300"
+                    value="100"
+                    aria-labelledby="mediaExportScaleYLabel"
+                  /><span>%</span></label
                 >
                 <label class="mediaExportScaleLock"
                   ><input id="mediaExportScaleLinked" type="checkbox" checked />
@@ -3915,23 +3929,33 @@
               <fieldset class="mediaExportReferenceSection mediaExportTransformFields">
                 <legend>画面偏移</legend>
                 <label
-                  ><span>水平</span><small id="mediaExportOffsetXMin">−512</small
+                  ><span id="mediaExportOffsetXLabel">水平</span><small id="mediaExportOffsetXMin">−512</small
                   ><input id="mediaExportOffsetXRange" type="range" min="-8192" max="8192" value="0" /><small
                     id="mediaExportOffsetXMax"
                     >512</small
-                  ><input id="mediaExportOffsetX" type="number" min="-8192" max="8192" value="0" /><span
-                    >px</span
-                  ></label
+                  ><input
+                    id="mediaExportOffsetX"
+                    type="number"
+                    min="-8192"
+                    max="8192"
+                    value="0"
+                    aria-labelledby="mediaExportOffsetXLabel"
+                  /><span>px</span></label
                 >
                 <label
-                  ><span data-i18n="mediaExportVertical">垂直</span
+                  ><span id="mediaExportOffsetYLabel" data-i18n="mediaExportVertical">垂直</span
                   ><small id="mediaExportOffsetYMin">−512</small
                   ><input id="mediaExportOffsetYRange" type="range" min="-8192" max="8192" value="0" /><small
                     id="mediaExportOffsetYMax"
                     >512</small
-                  ><input id="mediaExportOffsetY" type="number" min="-8192" max="8192" value="0" /><span
-                    >px</span
-                  ></label
+                  ><input
+                    id="mediaExportOffsetY"
+                    type="number"
+                    min="-8192"
+                    max="8192"
+                    value="0"
+                    aria-labelledby="mediaExportOffsetYLabel"
+                  /><span>px</span></label
                 >
               </fieldset>
               <fieldset class="mediaExportReferenceSection mediaExportFillSection">
@@ -3954,13 +3978,13 @@
                     /><span data-i18n="mediaExportFillColor">纯色</span></label
                   >
                   <label
-                    ><input name="mediaExportBackground" type="radio" value="transparent" /><span
+                    ><input name="mediaExportBackground" type="radio" value="transparent" checked /><span
                       data-i18n="mediaExportTransparent"
                       >透明</span
                     ></label
                   >
                   <label
-                    ><input name="mediaExportBackground" type="radio" value="edge" checked /><span
+                    ><input name="mediaExportBackground" type="radio" value="edge" /><span
                       data-i18n="mediaExportEdgeFill"
                       >边缘延伸</span
                     ></label
@@ -4126,13 +4150,18 @@
                   ><b>循环播放</b><input id="mediaExportGifLoop" type="checkbox" checked
                 /></label>
                 <label class="mediaExportSettingRow mediaExportFormatRange"
-                  ><b>帧率 <abbr title="GIF 每秒播放帧数">?</abbr></b
+                  ><b id="mediaExportGifFpsLabel">帧率 <abbr title="GIF 每秒播放帧数">?</abbr></b
                   ><small>1</small
                   ><input id="mediaExportGifFpsRange" type="range" min="1" max="50" value="12" /><small
                     >50</small
-                  ><input id="mediaExportGifFps" type="number" min="1" max="50" value="12" /><span
-                    >fps</span
-                  ></label
+                  ><input
+                    id="mediaExportGifFps"
+                    type="number"
+                    min="1"
+                    max="50"
+                    value="12"
+                    aria-labelledby="mediaExportGifFpsLabel"
+                  /><span>fps</span></label
                 >
                 <label class="mediaExportSettingRow mediaExportFormatRange"
                   ><b>透明阈值 <abbr title="低于阈值的像素会变为全透明">?</abbr></b
@@ -4254,13 +4283,18 @@
               <fieldset id="mediaExportMp4Settings" class="mediaExportFormatSettings" hidden>
                 <legend>MP4 导出设置</legend>
                 <label class="mediaExportSettingRow mediaExportFormatRange"
-                  ><b>帧率 <abbr title="MP4 每秒播放帧数">?</abbr></b
+                  ><b id="mediaExportMp4FpsLabel">帧率 <abbr title="MP4 每秒播放帧数">?</abbr></b
                   ><small>1</small
                   ><input id="mediaExportMp4FpsRange" type="range" min="1" max="60" value="30" /><small
                     >60</small
-                  ><input id="mediaExportMp4Fps" type="number" min="1" max="60" value="30" /><span
-                    >fps</span
-                  ></label
+                  ><input
+                    id="mediaExportMp4Fps"
+                    type="number"
+                    min="1"
+                    max="60"
+                    value="30"
+                    aria-labelledby="mediaExportMp4FpsLabel"
+                  /><span>fps</span></label
                 >
                 <div class="mediaExportSettingRow">
                   <b>画质 <abbr title="H.264 编码质量">?</abbr></b>
@@ -4283,12 +4317,26 @@
                 </div>
                 <p class="mediaExportFormatHint">💡 MP4 为纯视频无音频，使用 H.264 编码，兼容性广泛。</p>
               </fieldset>
+              <label class="mediaExportSettingRow mediaExportFormatRange"
+                ><b id="mediaExportSpeedLabel" data-i18n="mediaExportSpeed">播放速度</b
+                ><small>0.5×</small
+                ><input id="mediaExportSpeedRange" type="range" min="0.5" max="2" step="0.1" value="1" /><small
+                  >2×</small
+                ><input
+                  id="mediaExportSpeed"
+                  type="number"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value="1"
+                  aria-labelledby="mediaExportSpeedLabel"
+                /><span>×</span></label
+              >
               <input id="mediaExportPreset" type="hidden" value="atlas" />
               <input id="mediaExportCanvasMode" type="hidden" value="custom" />
               <input id="mediaExportAnchor" type="hidden" value="bottom-center" />
               <input id="mediaExportPadding" type="hidden" value="0" />
               <input id="mediaExportExtrude" type="hidden" value="1" />
-              <input id="mediaExportSpeed" type="hidden" value="1" />
               <kbd class="mediaExportShortcut">Ctrl/⌘+Z 撤销 · Ctrl/⌘+Shift+Z 重做</kbd>
             </section>
           </div>
@@ -4313,7 +4361,7 @@
                 →
               </button>
             </div>
-            <div class="mediaExportPreviewModes" role="group" aria-label="预览模式">
+            <div class="mediaExportPreviewModes" role="group" aria-label="预览模式" hidden>
               <button id="mediaExportPreviewFrame" type="button" aria-pressed="false">单帧</button>
               <button id="mediaExportPreviewAnimation" type="button" aria-pressed="false">动画</button>
               <button id="mediaExportPreviewSheet" type="button" aria-pressed="true">图集</button>
@@ -4714,6 +4762,7 @@
     <script src="/frame_organizer_loop.js"></script>
     <script src="/frame_organizer_text.js"></script>
     <script src="/frame_organizer_ui.js"></script>
+    <script src="/frame_organizer_workset_sync.js"></script>
     <script src="/smart_cutout_defaults.js"></script>
     <script src="/frame_organizer_actions.js"></script>
     <script src="/export_recipe_core.js"></script>
@@ -4801,12 +4850,16 @@
     <div
       id="organizerSmartCutoutProgress"
       class="organizerSmartCutoutProgress"
-      role="status"
-      aria-live="polite"
+      role="region"
+      aria-label="智能抠图进度"
       hidden
     >
       <span class="organizerSmartCutoutSpinner" aria-hidden="true"></span>
-      <span id="organizerSmartCutoutProgressText">智能抠图处理中</span>
+      <div>
+        <span id="organizerSmartCutoutProgressText" role="status" aria-live="polite">智能抠图处理中</span>
+        <progress id="organizerSmartCutoutProgressBar" max="1" value="0"></progress>
+      </div>
+      <button id="organizerSmartCutoutCancel" type="button" class="secondary">取消</button>
     </div>
     <script>
       (() => {

@@ -2,7 +2,11 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createOutput } = require("../animation_tuner/public/batch_cutout_output_core");
+const {
+  createAnimationReplacementPayload,
+  createArchiveEntries,
+  createOutput,
+} = require("../animation_tuner/public/batch_cutout_output_core");
 
 test("cutout outputs retain an independent parameter snapshot for later single-frame editing", () => {
   const cutoutState = {
@@ -22,4 +26,17 @@ test("cutout outputs retain an independent parameter snapshot for later single-f
   assert.equal(output.cutoutState.processingParameters.tolerance, -1);
   assert.equal(output.cutoutState.backgroundSamples[0].r, 12);
   assert.equal(Object.isFrozen(output), true);
+});
+
+test("live organizer outputs retain a canvas without forcing PNG encoding", () => {
+  const canvas = { width: 32, height: 32 };
+  const output = createOutput({ name: "frame.png", canvas });
+
+  assert.equal(output.canvas, canvas);
+  assert.equal(output.data, "");
+  assert.throws(() => createArchiveEntries([output], "{}"), /PNG data URL/);
+  assert.throws(
+    () => createAnimationReplacementPayload("project", [{ path: "frame.png" }], [output]),
+    /PNG data URL/,
+  );
 });

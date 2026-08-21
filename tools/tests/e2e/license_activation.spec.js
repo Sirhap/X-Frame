@@ -62,6 +62,42 @@ async function openAdminDashboard(page, licenses) {
   await expect(page.locator("#adminLicenseItems article")).toHaveCount(Math.min(licenses.length, 20));
 }
 
+test("VIS-032 admin login password placeholder is fully visible and continue stays below the field", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/admin/licenses");
+  await expect(page.locator("#adminLoginView")).toBeVisible();
+  const password = page.locator("#adminPassword");
+  const submit = page.locator("#adminLoginButton");
+  await expect(password).toHaveAttribute("placeholder", "请输入管理员密码");
+  const metrics = await page.evaluate(() => {
+    const field = document.querySelector("#adminPassword");
+    const button = document.querySelector("#adminLoginButton");
+    const fieldBox = field.getBoundingClientRect();
+    const buttonBox = button.getBoundingClientRect();
+    const style = getComputedStyle(field);
+    return {
+      fontSize: Number.parseFloat(style.fontSize),
+      letterSpacing: Number.parseFloat(style.letterSpacing) || 0,
+      fieldBottom: fieldBox.bottom,
+      buttonTop: buttonBox.top,
+      overlap:
+        fieldBox.left < buttonBox.right &&
+        fieldBox.right > buttonBox.left &&
+        fieldBox.top < buttonBox.bottom &&
+        fieldBox.bottom > buttonBox.top,
+    };
+  });
+  expect(metrics.fontSize, "password field must not use the 36px TOTP display font").toBeLessThanOrEqual(20);
+  expect(metrics.letterSpacing, "wide letter-spacing clips 请输入管理员密码").toBeLessThanOrEqual(2);
+  expect(metrics.overlap, "continue must not cover the password field").toBe(false);
+  expect(metrics.buttonTop, "continue must sit below the password field").toBeGreaterThan(
+    metrics.fieldBottom,
+  );
+  await expect(submit).toBeVisible();
+});
+
 test("dedicated email authorization administration page renders from its direct route", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));

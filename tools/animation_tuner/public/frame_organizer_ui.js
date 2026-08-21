@@ -17,6 +17,119 @@
   (root, defaultSequenceOrder, similarityThreshold) => {
     "use strict";
 
+    /**
+     * Captures the organizer mutations that should prompt before leaving.
+     * @param {object[]} frames Organizer frames.
+     * @returns {string} Stable workset signature.
+     */
+    function worksetChangeSignature(frames) {
+      return Array.from(frames || [])
+        .map((frame) =>
+          [
+            frame.uid,
+            Number(frame.assetRevision || 0),
+            frame.included === false ? 0 : 1,
+            frame.flipped ? 1 : 0,
+            String(frame.tag || ""),
+            frame.imported ? 1 : 0,
+            frame.editedCanvas && frame.editedCanvas !== frame.originalCanvas ? 1 : 0,
+          ].join(":"),
+        )
+        .join("|");
+    }
+
+    /**
+     * Reports whether leaving would discard organizer work that is not in a project.
+     * @param {{videoExtracting?:boolean,mode?:string,frames?:object[],baselineFrameIds?:string[],acceptedWorksetSignature?:string}} state Organizer state.
+     * @returns {boolean} True when navigation should confirm.
+     */
+    /**
+     * Reports whether an already-loaded organizer session can be shown again
+     * without resetting include flags from the host animation.
+     * @param {{mode?:string,animationName?:string,frames?:object[]}} state Organizer state.
+     * @param {{name?:string,frames?:object[]}|null|undefined} animation Host animation.
+     * @returns {boolean}
+     */
+    function includedFlagsKey(projectId, animationName) {
+      return `xsxb-organizer-included:${String(projectId || "session")}:${String(animationName || "")}`;
+    }
+
+    /**
+     * Writes include flags so another organizer tab can restore the same workset membership.
+     * @param {object[]} frames Organizer frames.
+     * @param {string} projectId Active project id.
+     * @param {string} animationName Animation name.
+     * @param {{setItem?:Function}|null} storage localStorage-like store.
+     * @returns {void}
+     */
+    function persistIncludedFlags(frames, projectId, animationName, storage) {
+      if (!storage?.setItem || !animationName) return;
+      const items = Array.from(frames || []).map((frame) => ({
+        uid: String(frame.uid),
+        included: frame.included !== false,
+      }));
+      if (!items.length) return;
+      storage.setItem(includedFlagsKey(projectId, animationName), JSON.stringify(items));
+    }
+
+    /**
+     * Applies persisted include flags onto the current workset.
+     * @param {object[]} frames Organizer frames.
+     * @param {string} projectId Active project id.
+     * @param {string} animationName Animation name.
+     * @param {{getItem?:Function}|null} storage localStorage-like store.
+     * @returns {boolean} Whether any frame changed.
+     */
+    function restoreIncludedFlags(frames, projectId, animationName, storage) {
+      if (!storage?.getItem || !animationName) return false;
+      try {
+        const raw = storage.getItem(includedFlagsKey(projectId, animationName));
+        const saved = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(saved) || !saved.length) return false;
+        const byUid = new Map(saved.map((item) => [String(item.uid), item.included !== false]));
+        let changed = false;
+        for (const frame of frames || []) {
+          if (!byUid.has(String(frame.uid))) continue;
+          const included = byUid.get(String(frame.uid));
+          if (frame.included !== included) {
+            frame.included = included;
+            changed = true;
+          }
+        }
+        return changed;
+      } catch {
+        return false;
+      }
+    }
+
+    function canReuseLoadedAnimation(state, animation) {
+      if (state?.mode !== "edit") return false;
+      const frames = Array.from(state?.frames || []);
+      const next = Array.from(animation?.frames || []);
+      if (!frames.length || frames.length !== next.length) return false;
+      if (String(animation?.name || "") !== String(state?.animationName || "")) return false;
+      return frames.every((frame, index) => String(frame.uid) === String(next[index]?.id || ""));
+    }
+
+    function hasUnsavedWorksetChanges(state) {
+      if (state?.videoExtracting) return true;
+      const frames = Array.from(state?.frames || []);
+      const signature = worksetChangeSignature(frames);
+      if (state?.acceptedWorksetSignature && signature === state.acceptedWorksetSignature) return false;
+      if (state?.mode === "import") return frames.length > 0;
+      const baseline = Array.from(state?.baselineFrameIds || []);
+      if (frames.length !== baseline.length) return true;
+      return frames.some(
+        (frame, index) =>
+          frame.uid !== baseline[index] ||
+          frame.imported ||
+          frame.flipped ||
+          !frame.included ||
+          Boolean(frame.tag) ||
+          (frame.editedCanvas && frame.editedCanvas !== frame.originalCanvas),
+      );
+    }
+
     const FOCUSABLE_SELECTOR =
       'button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), select:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])';
 
@@ -453,18 +566,7 @@
        * @returns {boolean} True when navigation could discard staged changes.
        */
       function hasUnsavedChanges() {
-        if (state.videoExtracting) return true;
-        if (state.mode === "import") return state.frames.length > 0;
-        if (state.frames.length !== state.baselineFrameIds.length) return true;
-        return state.frames.some(
-          (frame, index) =>
-            frame.uid !== state.baselineFrameIds[index] ||
-            frame.imported ||
-            frame.flipped ||
-            !frame.included ||
-            Boolean(frame.tag) ||
-            (frame.editedCanvas && frame.editedCanvas !== frame.originalCanvas),
-        );
+        return hasUnsavedWorksetChanges(state);
       }
 
       /** Shows the project-name field only when a new local project is selected. @returns {void} */
@@ -676,6 +778,15 @@
             requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
           }
         });
+        const toolMenus = documentApi.querySelectorAll?.(".organizerToolMenu") || [];
+        for (const menu of toolMenus) {
+          menu.addEventListener("toggle", () => {
+            if (!menu.open) return;
+            for (const other of toolMenus) {
+              if (other !== menu) other.open = false;
+            }
+          });
+        }
         elements.organizerInvert.addEventListener("click", () => {
           root.FrameOrganizerGrid.invertWorksetMembership(state.frames);
           renderGrid();
@@ -930,12 +1041,17 @@
     return {
       applyReduceIncludedFlags,
       bindSimilarityThreshold,
+      canReuseLoadedAnimation,
       confirmReduceIncludedFlags,
+      persistIncludedFlags,
+      restoreIncludedFlags,
       createController,
       cycleTabFocus,
+      hasUnsavedWorksetChanges,
       listFocusableElements,
       normalizeReduceStep,
       openCurrentAnimation,
+      worksetChangeSignature,
     };
   },
 );

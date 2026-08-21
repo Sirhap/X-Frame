@@ -104,6 +104,7 @@ test("static handler maps dedicated documents without treating them as workbench
     publicRoot: root,
     workbenchRoutes: new Set(),
     documentRoutes: {
+      "/admin/login": "admin.html",
       "/admin/licenses": "admin.html",
       "/tools/watermark": "watermark_studio.html",
     },
@@ -114,10 +115,12 @@ test("static handler maps dedicated documents without treating them as workbench
     },
   });
 
+  handler({}, {}, "/admin/login");
   handler({}, {}, "/admin/licenses");
   handler({}, {}, "/tools/watermark");
 
   assert.deepEqual(responses, [
+    { status: 200, body: "admin" },
     { status: 200, body: "admin" },
     { status: 200, body: "watermark" },
   ]);

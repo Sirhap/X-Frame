@@ -179,7 +179,8 @@
           openProject: "打开项目 →",
           continueProject: "继续项目",
           localWorkspace: "本地工作区",
-          projectGroupSummary: `${vars.count ?? 0} 个动画组 · ${vars.workspace || "本地工作区"}`,
+          projectGroupSummary: `${vars.count ?? 0} 个动画组`,
+          projectReadySummary: `${vars.count ?? 0} 个动画组 · ${vars.frames ?? 0} 帧`,
           browserSessionProject: "浏览器临时工作区",
           importProject: "导入视频 / 图片序列 →",
           projectNeedsImportSummary: "还没有动画帧 · 可从视频抽帧或导入 PNG",
@@ -227,11 +228,33 @@
       return `${url.pathname}${url.search}`;
     }
 
-    /** Reduces machine-specific absolute paths to a readable location hint. */
-    function compactProjectLocation(project) {
-      const location = String(project?.workspacePath || project?.projectRoot || "").replace(/\\/g, "/");
-      const segments = location.split("/").filter(Boolean);
-      return segments.length ? `…/${segments.slice(-2).join("/")}` : translate("localAnimationProject");
+    /**
+     * Counts frames in the active project config, or a stored project.frameCount.
+     * @returns {number|null} Frame count when known.
+     */
+    function projectFrameCount(project, config, activeProjectId) {
+      if (project?.id === activeProjectId && Array.isArray(config?.groups)) {
+        const hasFrameLists = config.groups.some((group) => Array.isArray(group?.frames));
+        if (!hasFrameLists) return null;
+        return config.groups.reduce(
+          (total, group) => total + (Array.isArray(group?.frames) ? group.frames.length : 0),
+          0,
+        );
+      }
+      if (!project || !Object.prototype.hasOwnProperty.call(project, "frameCount")) return null;
+      const count = Number(project.frameCount);
+      return Number.isFinite(count) && count >= 0 ? Math.floor(count) : null;
+    }
+
+    /** Product copy for a project that already has animations. */
+    function projectReadySummaryText(project, config, activeProjectId) {
+      const groups = projectAnimationGroupCount(project, config, activeProjectId);
+      const frames = projectFrameCount(project, config, activeProjectId);
+      if (groups != null && frames != null) {
+        return translate("projectReadySummary", { count: groups, frames });
+      }
+      if (groups != null) return translate("projectGroupSummary", { count: groups });
+      return translate("localAnimationProject");
     }
 
     /** Updates a recent-project action without replacing the accessible anchor. */
@@ -270,7 +293,7 @@
       const summary = documentRef.createElement("p");
       summary.textContent = needsImport
         ? translate("projectNeedsImportSummary")
-        : compactProjectLocation(project);
+        : projectReadySummaryText(project, config, activeProjectId);
       const action = documentRef.createElement("strong");
       action.textContent = translate(needsImport ? "importProject" : "openProject");
       card.append(eyebrow, title, summary, action);
@@ -296,10 +319,7 @@
       if (elements.recentSummary) {
         elements.recentSummary.textContent = recentNeedsImport
           ? translate("projectNeedsImportSummary")
-          : translate("projectGroupSummary", {
-              count: recentGroupCount ?? Number(config?.groups?.length || 0),
-              workspace: compactProjectLocation(recent),
-            });
+          : projectReadySummaryText(recent, config, activeProjectId);
       }
       if (elements.continueLink) {
         elements.continueLink.href = projectHref(recent, config, activeProjectId);

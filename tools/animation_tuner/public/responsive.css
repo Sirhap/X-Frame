@@ -755,12 +755,8 @@
     border-bottom: 0;
   }
 
-  .organizerToolbarPrimary {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
   .organizerToolbarSecondary {
-    grid-template-columns: minmax(0, 1fr) auto;
+    margin-inline-start: 0;
   }
 
   .organizerBody {

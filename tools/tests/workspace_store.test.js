@@ -90,6 +90,26 @@ test("normalization preserves original and current asset references", () => {
   });
 });
 
+test("autosave can be disabled so only flushSave persists", async () => {
+  let saves = 0;
+  const store = createStore({
+    autosave: false,
+    debounceMs: 1,
+    save: async () => {
+      saves += 1;
+    },
+  });
+  store.setProjectContext({ projectId: "hero", frames: [{ id: "a", path: "a.png" }] });
+  store.commit({ type: "set-enabled", frameIds: ["a"], enabled: false });
+  store.markDirty();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(saves, 0);
+  assert.equal(store.getSnapshot().saveStatus, SAVE_STATUS.DIRTY);
+  await store.flushSave();
+  assert.equal(saves, 1);
+  assert.equal(store.getSnapshot().saveStatus, SAVE_STATUS.SAVED);
+});
+
 test("abandonUnsaved cancels a pending persist so flushSave does not write dirty data", async () => {
   let saves = 0;
   const store = createStore({

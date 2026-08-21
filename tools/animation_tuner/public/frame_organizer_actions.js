@@ -5,10 +5,12 @@
     typeof module === "object" && module.exports
       ? require("./smart_cutout_defaults")
       : root?.XSXBSmartCutoutDefaults;
-  const api = factory(root, smartCutoutDefaults);
+  const organizerUi =
+    typeof module === "object" && module.exports ? require("./frame_organizer_ui") : root?.FrameOrganizerUi;
+  const api = factory(root, smartCutoutDefaults, organizerUi);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.FrameOrganizerActions = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, (root, smartCutoutDefaults) => {
+})(typeof globalThis !== "undefined" ? globalThis : this, (root, smartCutoutDefaults, organizerUi) => {
   "use strict";
 
   if (!smartCutoutDefaults?.REGULAR_AUTO_BACKGROUND_PARAMETERS) {
@@ -110,6 +112,7 @@
       getUiController,
       setStatus,
       premiumFeatures = root?.XSXBPremiumFeatures,
+      onEditedFrames = () => {},
     } = dependencies;
     if (
       !elements ||
@@ -219,6 +222,7 @@
         if (written) {
           renderGrid();
           renderPreview();
+          onEditedFrames(batchFrames.filter((frame) => writtenOutputs.has(frame.uid)));
         }
         return applied;
       };
@@ -391,18 +395,24 @@
       state.busy = true;
       renderCounts();
       try {
-        const itemForFrame = (frame) => ({
-          frameId: frame.uid,
-          assetRevision: Math.max(0, Number(frame.assetRevision) || (frame.hasEditedResult ? 1 : 0)),
-          sourceIndex: frame.sourceIndex,
-          sourcePath: frame.sourcePath,
-          name: frame.name,
-          flipped: frame.flipped,
-          data:
-            state.mode === "import" || frame.imported || frame.flipped
-              ? frame.editedCanvas.toDataURL("image/png")
-              : "",
-        });
+        const itemForFrame = (frame) => {
+          const sourcePath = String(frame.sourcePath || "");
+          const needsInlinePng =
+            state.mode === "import" ||
+            frame.imported ||
+            frame.flipped ||
+            frame.hasEditedResult ||
+            !sourcePath.toLowerCase().endsWith(".png");
+          return {
+            frameId: frame.uid,
+            assetRevision: Math.max(0, Number(frame.assetRevision) || (frame.hasEditedResult ? 1 : 0)),
+            sourceIndex: frame.sourceIndex,
+            sourcePath: frame.sourcePath,
+            name: frame.name,
+            flipped: frame.flipped,
+            data: needsInlinePng ? frame.editedCanvas.toDataURL("image/png") : "",
+          };
+        };
         const items = frames.map(itemForFrame);
         if (state.mode === "import" && !writeCurrent) {
           const createAnimation = sessionImport ? hooks.createSessionAnimation : hooks.createAnimation;
@@ -537,6 +547,9 @@
             },
           ],
         });
+        if (typeof organizerUi?.worksetChangeSignature === "function") {
+          state.acceptedWorksetSignature = organizerUi.worksetChangeSignature(state.frames);
+        }
         setStatus(text("ready"), "idle");
       } catch (error) {
         setStatus(text("failed", { message: error.message }), "error");

@@ -302,6 +302,12 @@ test("createFrame and temporary workset install use the imported membership help
   assert.match(ORGANIZER_UI_SOURCE, /invertWorksetMembership\(state\.frames\)/);
 });
 
+test("organizer slices atlas frames with crop before creating canvases", () => {
+  assert.match(ORGANIZER_SOURCE, /extractFrameCrop\(/);
+  assert.match(ORGANIZER_SOURCE, /crop:\s*frame\.crop/);
+  assert.match(ORGANIZER_SOURCE, /extractFrameCrop\(animation\.images\[index\], frame\.crop/);
+});
+
 test("a fully included imported workset starts selected so 选中 and 删除选中 agree with the checks", () => {
   const {
     importedFrameStartsSelected,

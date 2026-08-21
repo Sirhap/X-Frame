@@ -105,11 +105,20 @@
     } catch (_error) {
       throw new Error("网络连接失败，请检查服务状态后重试。");
     }
+    const contentType = String(response.headers?.get?.("content-type") || "");
     let payload = {};
     try {
+      if (!contentType.includes("application/json")) {
+        const error = new Error("服务返回了无法识别的响应。");
+        error.status = response.status;
+        throw error;
+      }
       payload = await response.json();
-    } catch (_error) {
-      throw new Error("服务返回了无法识别的响应。");
+    } catch (error) {
+      if (error.status) throw error;
+      const parseError = new Error("服务返回了无法识别的响应。");
+      parseError.status = response.status;
+      throw parseError;
     }
     if (!response.ok) {
       const error = new Error(adminErrorText.localize(payload.error, response.status));
@@ -649,6 +658,15 @@
       }
     } catch (error) {
       showAuthenticatedView(false);
+      const quietProbe =
+        error.status === 401 ||
+        error.status === 404 ||
+        error.status === 405 ||
+        /无法识别的响应/.test(String(error.message || ""));
+      if (quietProbe) {
+        setStatus(elements.loginStatus, "");
+        return;
+      }
       setStatus(elements.loginStatus, error.message, "error");
     }
   }

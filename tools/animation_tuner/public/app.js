@@ -219,6 +219,7 @@ const {
   cloneScaleVector,
   cloneVector,
   escapeHtml,
+  framePreviewSrc,
   groupBindingLabel,
   groupLabel: groupLabelBase,
   isNumberInputTarget,
@@ -400,7 +401,15 @@ const appConfirmation = appConfirmModule.createController({
 });
 
 /** Confirms leaving a populated slice session through app-shell navigation. */
-async function requestScatterSliceLeave() {
+async function requestScatterSliceLeave(destinationRoute) {
+  if (
+    destinationRoute &&
+    ["organizer", "import", "cutout", "scatter", "export", "godot", "codex-pet", "overview", "animation", "boxes", "trails", "audio", "attachments"].includes(
+      destinationRoute,
+    )
+  ) {
+    return true;
+  }
   const pathname = String(globalThis.location.pathname || "");
   if (pathname !== "/tools/scatter-slice" && pathname !== "/workspace/resources/scatter") return true;
   const session = globalThis.XSXBScatterSliceSession;
@@ -1575,6 +1584,7 @@ if (!workspaceStoreModule) throw new Error("XSXBWorkspaceStore is required.");
 const temporaryWorksetModule = globalThis.XSXBTemporaryWorksetStore;
 if (!temporaryWorksetModule) throw new Error("XSXBTemporaryWorksetStore is required.");
 workspaceStore = workspaceStoreModule.createStore({
+  autosave: false,
   debounceMs: 600,
   save: async () => {
     do {
@@ -3018,7 +3028,7 @@ filmstripInteraction = filmstripInteractionModule.createController({
     attachmentLayerOrder,
     status,
   },
-  utils: { translate: t, escapeHtml, assetUrl },
+  utils: { translate: t, escapeHtml, assetUrl, framePreviewSrc, cachedImageForFrame },
   documentRef: globalThis.document,
   requestAnimationFrameRef: globalThis.requestAnimationFrame?.bind(globalThis),
 });
@@ -3525,7 +3535,8 @@ async function collectCodexPetExportsForSave() {
 }
 
 async function save() {
-  return saveController.save();
+  await saveController.save();
+  workspaceStore?.abandonUnsaved();
 }
 
 /** @returns {object} Standard player tuning values. */
@@ -3738,10 +3749,6 @@ window.addEventListener("popstate", () => {
 });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") schedulePlaybackAnimation();
-  else workspaceStore?.flushSave().catch((error) => status(t("saveFailed", { message: error.message })));
-});
-window.addEventListener("pagehide", () => {
-  workspaceStore?.flushSave().catch(() => {});
 });
 batchCutout =
   window.BatchCutout?.createController({
@@ -4220,15 +4227,14 @@ const appShell = appShellModule.createController({
   storage: browserStorage,
   translate: t,
   navigate: async (route) => {
-    if (!(await requestScatterSliceLeave())) return false;
+    if (!(await requestScatterSliceLeave(route))) return false;
     if (!(await confirmWorkspaceLeave(route))) return false;
     syncWorkbenchRoute(route, { push: true });
     return applyWorkbenchRoute({ skipDirtyPrompt: true });
   },
   openContextTool: async (tool) => {
     const route = tool === "organizer" ? "organizer" : "cutout";
-    if (!(await requestScatterSliceLeave())) return false;
-    if (dirty) await save();
+    if (!(await requestScatterSliceLeave(route))) return false;
     syncWorkbenchRoute(route, { push: true, context: "project" });
     const opened = await applyWorkbenchRoute({ skipDirtyPrompt: true });
     return Boolean(opened) && tool === "current-frame-cutout";
@@ -4261,6 +4267,12 @@ function updateDeliverySummary() {
   if (exportButton) {
     exportButton.disabled = summary.currentFrameCount === 0;
     exportButton.title = summary.currentFrameCount ? "" : t("deliverySelectAnimation");
+  }
+  const godotButton = document.querySelector("#deliveryOpenGodot");
+  if (godotButton) {
+    godotButton.disabled = browserOnlyMode;
+    godotButton.title = browserOnlyMode ? t("deliveryGodotNeedsLocal") : "";
+    godotButton.setAttribute("aria-disabled", browserOnlyMode ? "true" : "false");
   }
 
   const setDeliveryStatus = (selector, result) => {
@@ -4398,6 +4410,7 @@ document.querySelector("#temporaryWorksetClear")?.addEventListener("click", () =
   status("临时工作集已清空");
 });
 document.querySelector("#deliveryOpenGodot")?.addEventListener("click", async () => {
+  if (browserOnlyMode) return;
   syncWorkbenchRoute("overview", { push: true, context: "project" });
   await applyWorkbenchRoute();
   const card = document.querySelector("#godotHandoffCard");

@@ -1,8 +1,18 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const test = require("node:test");
-const { remapAttackTrails, remapReferenceFrame } = require("../frame_organizer");
+const { createProjectStore } = require("../project_store");
+const { remapAttackTrails, remapReferenceFrame, reorganizeAnimation } = require("../frame_organizer");
+
+/** 1×1 transparent PNG used as organizer replacement payload. */
+const PNG_DATA_URL = `data:image/png;base64,${Buffer.from(
+  "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082",
+  "hex",
+).toString("base64")}`;
 
 test("TUN-021 remapping a deleted reference frame clears the persisted descriptor", () => {
   const descriptor = {
@@ -89,4 +99,70 @@ test("frame organizer uses normalized phase and old order as stable trail tie-br
       { id: "late-stable", order: 2 },
     ],
   );
+});
+
+test("reorganizeAnimation writes PNG frames beside a spritesheet file instead of replacing it", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-reorganize-sheet-"));
+  try {
+    const store = createProjectStore(root);
+    store.addProject({ id: "codex_pets", label: "Codex 宠物", kind: "codex_pets" });
+    const project = store.resolveProject(store.readRegistry());
+    const workspaceDir = store.projectWorkspaceDir(project);
+    const atlasRel = path.posix.join("workspace/projects/codex_pets/spritesheets/custom/lanma-duck.webp");
+    const atlasPath = path.join(root, atlasRel);
+    fs.mkdirSync(path.dirname(atlasPath), { recursive: true });
+    fs.writeFileSync(atlasPath, Buffer.from("FAKEWEBP"));
+    const paths = store.projectPaths(project);
+    store.writeJson(paths.manifest, {
+      schemaVersion: 1,
+      profiles: [
+        {
+          id: "custom:lanma-duck",
+          animations: [
+            {
+              id: "idle",
+              name: "idle",
+              source: atlasRel,
+              frames: [
+                { id: "idle_01", name: "idle 1", path: atlasRel },
+                { id: "idle_02", name: "idle 2", path: atlasRel },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    store.writeJson(paths.tuning, { schemaVersion: 1, values: {} });
+
+    const result = reorganizeAnimation({
+      root,
+      projectStore: store,
+      project,
+      profileId: "custom:lanma-duck",
+      animationId: "idle",
+      items: [
+        { data: PNG_DATA_URL, name: "a.png" },
+        { data: PNG_DATA_URL, name: "b.png" },
+      ],
+    });
+
+    assert.equal(fs.statSync(atlasPath).isFile(), true, "shared Codex atlas must remain a file");
+    assert.equal(fs.readFileSync(atlasPath).toString(), "FAKEWEBP");
+    assert.equal(fs.statSync(result.targetDir).isDirectory(), true);
+    assert.notEqual(result.targetDir, atlasPath);
+    assert.ok(
+      result.targetDir.startsWith(`${workspaceDir}${path.sep}`),
+      "replacement frames must stay in the project workspace",
+    );
+    assert.equal(result.frameCount, 2);
+    assert.ok(fs.existsSync(path.join(result.targetDir, "frame_0001.png")));
+    assert.ok(fs.existsSync(path.join(result.targetDir, "frame_0002.png")));
+    const idle = store
+      .readJson(paths.manifest)
+      .profiles[0].animations.find((animation) => animation.id === "idle");
+    assert.notEqual(idle.source, atlasRel);
+    assert.ok(idle.frames.every((frame) => frame.path.endsWith(".png")));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

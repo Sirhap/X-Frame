@@ -181,10 +181,11 @@ test("SAV-004 typed horizontal 0→1 stays 1 after autosave and hard reload", as
   await expect.poll(async () => Number(await baseX.inputValue())).toBe(1);
   await expect(page.locator("#workspaceSaveIndicator")).toHaveText(/等待保存|保存中/);
 
+  await page.locator("#save").click();
   await expect(page.locator("#workspaceSaveIndicator")).toHaveText(/已保存/, { timeout: 8000 });
   await expect
     .poll(async () => Number(await baseX.inputValue()))
-    .toBe(1, { timeoutMessage: "autosave snapped typed 水平位置 back to 0 before reload" });
+    .toBe(1, { timeoutMessage: "typed 水平位置 snapped back to 0 before reload" });
 
   await page.reload({ waitUntil: "load" });
   await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);

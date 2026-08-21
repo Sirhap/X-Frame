@@ -61,6 +61,10 @@
     const translate = utils.translate || ((key) => key);
     const escapeHtml = utils.escapeHtml || ((value) => String(value ?? ""));
     const assetUrl = utils.assetUrl || ((frame) => String(frame?.path || ""));
+    const cachedImageForFrame = utils.cachedImageForFrame || (() => null);
+    const framePreviewSrc =
+      utils.framePreviewSrc ||
+      ((frame, options) => options?.cachedImage?.src || assetUrl(frame));
     const cssEscape =
       utils.cssEscape || root.CSS?.escape || ((value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&"));
 
@@ -505,7 +509,7 @@
           : "";
         item.innerHTML = `
       ${audioBadge}
-      <img src="${assetUrl(frame)}" alt="" width="${Math.max(1, Number(frame.width || 1))}" height="${Math.max(1, Number(frame.height || 1))}" loading="lazy">
+      <img src="${framePreviewSrc(frame, { cachedImage: cachedImageForFrame(frame), assetUrl })}" alt="" width="${Math.max(1, Number(frame.width || 1))}" height="${Math.max(1, Number(frame.height || 1))}" loading="lazy">
       <span class="thumbLabel">${label}${index + 1}</span>
       <div class="thumbDuration">
         <button type="button" class="durationStep" data-delta="${-frameDurationStepMs}" ${canAdjustDuration ? "" : "disabled"} title="-${frameDurationStepMs}ms" aria-label="-${frameDurationStepMs}ms">-</button>

@@ -28,5 +28,7 @@ test("export recipes are transient, bounded, and preserve valid transform values
   assert.equal(recipe.scaleY, 75);
   assert.equal(recipe.offsetX, -42);
   assert.equal(createDefaultRecipe().canvasMode, "union");
+  assert.equal(createDefaultRecipe().background, "transparent");
+  assert.equal(normalizeRecipe({}).background, "transparent");
   assert.equal(PRESETS.socialMp4.background, "color");
 });

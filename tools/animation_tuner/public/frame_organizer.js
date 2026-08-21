@@ -28,6 +28,11 @@
   function createController(hooks = {}) {
     const imagePixelBudget = root.ImagePixelBudget;
     if (!imagePixelBudget) throw new Error("ImagePixelBudget is required.");
+    const appUtils =
+      root.XSXBAppUtils ||
+      (typeof module === "object" && module.exports ? require("./app_utils") : null);
+    const extractFrameCrop = appUtils?.extractFrameCrop;
+    if (typeof extractFrameCrop !== "function") throw new Error("XSXBAppUtils.extractFrameCrop is required.");
     if (!textModule) throw new Error("FrameOrganizerText is required.");
     if (!sequenceOrder) throw new Error("FrameSequenceOrder is required.");
     const protectedRuntimeModule = root.ProtectedAlgorithmRuntime;
@@ -51,6 +56,12 @@
     if (!previewModule) throw new Error("FrameOrganizerPreview is required.");
     const actionModule = root.FrameOrganizerActions;
     if (!actionModule) throw new Error("FrameOrganizerActions is required.");
+    const organizerUi =
+      root.FrameOrganizerUi ||
+      (typeof module === "object" && module.exports ? require("./frame_organizer_ui") : null);
+    const worksetSyncModule =
+      root.FrameOrganizerWorksetSync ||
+      (typeof module === "object" && module.exports ? require("./frame_organizer_workset_sync") : null);
     const mediaExportDialogModule = root.MediaExportDialog;
     if (!mediaExportDialogModule) throw new Error("MediaExportDialog is required.");
     const batchZip = root.BatchZip;
@@ -201,6 +212,7 @@
       "mediaExportInterpolation",
       "mediaExportBackground",
       "mediaExportBackgroundColor",
+      "mediaExportSpeedRange",
       "mediaExportSpeed",
       "mediaExportColumns",
       "mediaExportGap",
@@ -303,6 +315,7 @@
       loopCancelled: false,
       loopSourceEntries: [],
       baselineFrameIds: [],
+      acceptedWorksetSignature: "",
       premiumFeatures: new Set(),
     };
     const IMAGE_PIXEL_LIMITS = Object.freeze({
@@ -369,10 +382,68 @@
       renderPreview,
       restartPreview,
       setStatus,
-      onWorksetChanged: (frames) =>
-        hooks.onWorksetChanged?.({ name: state.animationName || "临时工作集", mode: state.mode, frames }),
+      onWorksetChanged: (frames) => {
+        persistWorksetIncludes(frames);
+        hooks.onWorksetChanged?.({ name: state.animationName || "临时工作集", mode: state.mode, frames });
+      },
     });
     const { renderCounts, renderGrid, selectFrame, selectIndexes } = gridController;
+
+    function persistWorksetIncludes(frames = state.frames) {
+      if (typeof organizerUi?.persistIncludedFlags !== "function") return;
+      organizerUi.persistIncludedFlags(
+        frames,
+        String(hooks.getImportContext?.()?.activeProject?.id || ""),
+        state.animationName,
+        root.localStorage,
+      );
+    }
+
+    function restoreWorksetIncludes() {
+      if (typeof organizerUi?.restoreIncludedFlags !== "function") return false;
+      return organizerUi.restoreIncludedFlags(
+        state.frames,
+        String(hooks.getImportContext?.()?.activeProject?.id || ""),
+        state.animationName,
+        root.localStorage,
+      );
+    }
+
+    function currentProjectId() {
+      return String(hooks.getImportContext?.()?.activeProject?.id || "");
+    }
+
+    const canvasSyncStoragePromise = worksetSyncModule
+      ? worksetSyncModule
+          .createIndexedDbStorage(root.indexedDB)
+          .catch(() => worksetSyncModule.createMemoryStorage())
+      : null;
+    const canvasSync = worksetSyncModule?.createController({
+      storage: canvasSyncStoragePromise
+        ? {
+            put: (...args) => canvasSyncStoragePromise.then((storage) => storage.put(...args)),
+            get: (...args) => canvasSyncStoragePromise.then((storage) => storage.get(...args)),
+          }
+        : undefined,
+      channel:
+        typeof root.BroadcastChannel === "function"
+          ? new root.BroadcastChannel("xsxb-organizer-canvas")
+          : null,
+      documentRef: document,
+      getState: () => state,
+      onRemoteApply: () => {
+        renderGrid();
+        restartPreview();
+      },
+    });
+    canvasSync?.bind();
+
+    function publishEditedFrames(frames) {
+      if (!canvasSync) return;
+      for (const frame of frames || []) {
+        canvasSync.publishFrame(currentProjectId(), state.animationName, frame).catch(() => {});
+      }
+    }
 
     /**
      * Uses an imported source filename as the new-animation default while preserving a user override.
@@ -508,12 +579,17 @@
     /**
      * Creates one organizer frame record.
      * @param {CanvasImageSource} image Source image.
-     * @param {{sourceIndex?:number,originalIndex?:number,sourcePath?:string,name?:string,imported?:boolean,reuseCanvas?:boolean,sourceType?:"manifest"|"image"|"video",importBatchIndex?:number,importSelectionIndex?:number,importFilenameIndex?:number}} options Frame metadata.
+     * @param {{sourceIndex?:number,originalIndex?:number,sourcePath?:string,name?:string,imported?:boolean,reuseCanvas?:boolean,crop?:object,sourceType?:"manifest"|"image"|"video",importBatchIndex?:number,importSelectionIndex?:number,importFilenameIndex?:number}} options Frame metadata.
      * @returns {object}
      */
     function createFrame(image, options = {}) {
+      const cropped = extractFrameCrop(image, options.crop, document);
       const originalCanvas =
-        options.reuseCanvas && image instanceof HTMLCanvasElement ? image : imageCanvas(image);
+        cropped !== image && typeof cropped?.getContext === "function"
+          ? cropped
+          : options.reuseCanvas && image instanceof HTMLCanvasElement
+            ? image
+            : imageCanvas(cropped);
       const orderMetadata = sequenceOrder.createFrameOrderMetadata({
         sourceType:
           options.sourceType ||
@@ -602,20 +678,25 @@
       if (!animation?.frames?.length || animation.images?.length !== animation.frames.length) {
         state.frames = [];
         state.baselineFrameIds = [];
+        state.acceptedWorksetSignature = "";
         state.animationName = "";
         renderGrid();
         renderPreview();
         setStatus(text("noGroup"), "error");
         return;
       }
+      const croppedImages = animation.frames.map((frame, index) =>
+        extractFrameCrop(animation.images[index], frame.crop, document),
+      );
       try {
         let retainedPixels = 0;
-        animation.images.forEach((image) => {
+        croppedImages.forEach((image) => {
           retainedPixels = assertImagePixelBudget(image, retainedPixels).totalPixels;
         });
       } catch (error) {
         state.frames = [];
         state.baselineFrameIds = [];
+        state.acceptedWorksetSignature = "";
         state.animationName = "";
         renderGrid();
         renderPreview();
@@ -623,11 +704,14 @@
         return;
       }
       state.frames = animation.frames.map((frame, index) => {
-        const organizerFrame = createFrame(animation.images[index], {
+        const sourceImage = croppedImages[index];
+        const organizerFrame = createFrame(sourceImage, {
           sourceIndex: index,
           originalIndex: index,
           sourcePath: frame.path,
           name: frame.name,
+          crop: frame.crop,
+          reuseCanvas: sourceImage !== animation.images[index],
         });
         organizerFrame.uid = String(frame.id || organizerFrame.uid);
         organizerFrame.assetRevision = Math.max(0, Number(frame.assetRevision) || 0);
@@ -635,9 +719,12 @@
         return organizerFrame;
       });
       state.baselineFrameIds = state.frames.map((frame) => frame.uid);
+      state.acceptedWorksetSignature = "";
       state.animationName = animation.name;
       state.anchorIndex = -1;
       state.previewIndex = 0;
+      restoreWorksetIncludes();
+      if (canvasSync) await canvasSync.hydrateFrames(currentProjectId(), state.animationName, state.frames);
       renderGrid();
       restartPreview();
       setStatus(text("loaded", { name: animation.name, count: state.frames.length }), "success");
@@ -785,6 +872,7 @@
       outputCore,
       cssEscape: (value) => CSS.escape(value),
       premiumFeatures: hooks.premiumFeatures,
+      onEditedFrames: publishEditedFrames,
     });
     const mediaExportDialog = mediaExportDialogModule.createController({
       elements,
@@ -844,7 +932,16 @@
       document.body.classList.add("organizerOpen");
       if (options.syncRoute !== false) hooks.onOpen?.("edit");
       uiController.renderLanguage();
-      await loadCurrentAnimation();
+      const currentAnimation = hooks.getCurrentAnimation?.();
+      const reuseLoaded =
+        typeof organizerUi?.canReuseLoadedAnimation === "function" &&
+        organizerUi.canReuseLoadedAnimation(state, currentAnimation);
+      if (reuseLoaded) {
+        renderGrid();
+        restartPreview();
+      } else {
+        await loadCurrentAnimation();
+      }
       elements.organizerFileInput.focus();
     }
 
@@ -1023,6 +1120,12 @@
     uiController.bindEvents();
     uiController.renderLanguage();
     renderCounts();
+    root.addEventListener?.("storage", (event) => {
+      if (!String(event?.key || "").startsWith("xsxb-organizer-included:")) return;
+      if (!restoreWorksetIncludes()) return;
+      renderGrid();
+      restartPreview();
+    });
     return {
       open,
       openCurrentExport,

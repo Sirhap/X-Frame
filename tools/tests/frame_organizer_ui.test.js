@@ -6,9 +6,14 @@ const { ORGANIZER_SIMILARITY_THRESHOLD } = require("../animation_tuner/public/fr
 const {
   applyReduceIncludedFlags,
   bindSimilarityThreshold,
+  canReuseLoadedAnimation,
   confirmReduceIncludedFlags,
   cycleTabFocus,
+  hasUnsavedWorksetChanges,
   listFocusableElements,
+  persistIncludedFlags,
+  restoreIncludedFlags,
+  worksetChangeSignature,
 } = require("../animation_tuner/public/frame_organizer_ui");
 const { createTranslator } = require("../animation_tuner/public/frame_organizer_text");
 
@@ -58,6 +63,87 @@ test("ORG-035 canceling reduce confirmation leaves included flags unchanged", as
   assert.deepEqual(
     frames.map((frame) => frame.included),
     [true, true, true, true],
+  );
+});
+
+test("adding a workset to a project accepts the current organizer session as saved", () => {
+  const original = {};
+  const edited = {};
+  const frames = [
+    {
+      uid: "idle-3",
+      assetRevision: 1,
+      included: true,
+      flipped: false,
+      imported: false,
+      tag: "",
+      originalCanvas: original,
+      editedCanvas: edited,
+    },
+  ];
+  const state = {
+    mode: "edit",
+    videoExtracting: false,
+    frames,
+    baselineFrameIds: ["idle-3"],
+    acceptedWorksetSignature: "",
+  };
+  assert.equal(hasUnsavedWorksetChanges(state), true);
+  state.acceptedWorksetSignature = worksetChangeSignature(frames);
+  assert.equal(hasUnsavedWorksetChanges(state), false);
+  frames[0].assetRevision = 2;
+  assert.equal(hasUnsavedWorksetChanges(state), true);
+});
+
+test("ENV-004 reopening the same animation keeps unchecked frames instead of reloading", () => {
+  const state = {
+    mode: "edit",
+    animationName: "idle",
+    frames: [
+      { uid: "idle-1", included: true },
+      { uid: "idle-2", included: false },
+    ],
+  };
+  const animation = {
+    name: "idle",
+    frames: [{ id: "idle-1" }, { id: "idle-2" }],
+  };
+  assert.equal(canReuseLoadedAnimation(state, animation), true);
+  assert.equal(canReuseLoadedAnimation({ ...state, mode: "import" }, animation), false);
+  assert.equal(canReuseLoadedAnimation(state, { name: "run", frames: animation.frames }), false);
+  assert.equal(
+    canReuseLoadedAnimation(state, { name: "idle", frames: [{ id: "idle-1" }] }),
+    false,
+  );
+});
+
+test("ENV-004 included flags persist across organizer sessions of the same animation", () => {
+  const storage = new Map();
+  const store = {
+    setItem(key, value) {
+      storage.set(key, String(value));
+    },
+    getItem(key) {
+      return storage.has(key) ? storage.get(key) : null;
+    },
+  };
+  persistIncludedFlags(
+    [
+      { uid: "idle-1", included: true },
+      { uid: "idle-2", included: false },
+    ],
+    "pets",
+    "idle",
+    store,
+  );
+  const frames = [
+    { uid: "idle-1", included: true },
+    { uid: "idle-2", included: true },
+  ];
+  assert.equal(restoreIncludedFlags(frames, "pets", "idle", store), true);
+  assert.deepEqual(
+    frames.map((frame) => frame.included),
+    [true, false],
   );
 });
 

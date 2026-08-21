@@ -1,7 +1,17 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 const { createController } = require("../animation_tuner/public/app_filmstrip_interaction");
+const FILMSTRIP_SOURCE = fs.readFileSync(
+  path.join(__dirname, "../animation_tuner/public/app_filmstrip_interaction.js"),
+  "utf8",
+);
+
+test("filmstrip thumbs use cropped preview URLs instead of the raw atlas asset", () => {
+  assert.match(FILMSTRIP_SOURCE, /framePreviewSrc\(frame,/);
+});
 
 test("filmstrip rendering clears the tray and renders the active chain", () => {
   const filmstrip = { innerHTML: "stale" };

@@ -250,11 +250,19 @@ test("recent project summary does not expose the machine-specific absolute works
   const controller = createController({
     documentRef: fixture.documentRef,
     windowRef: { location: { origin: "http://localhost" } },
-    translate: (key, vars = {}) => (key === "projectGroupSummary" ? `${vars.workspace}` : key),
+    translate: (key, vars = {}) => {
+      if (key === "projectReadySummary") return `${vars.count} groups · ${vars.frames} frames`;
+      if (key === "projectGroupSummary") return `${vars.count} groups`;
+      return key;
+    },
   });
 
   controller.renderProjects({
     activeProjectId: "ready",
+    groups: [
+      { name: "idle", frames: [{ id: "a" }, { id: "b" }] },
+      { name: "walk", frames: [{ id: "c" }] },
+    ],
     projects: [
       {
         id: "ready",
@@ -266,8 +274,13 @@ test("recent project summary does not expose the machine-specific absolute works
   });
 
   const summary = fixture.elements["#projectHubRecentSummary"].textContent;
+  const cardSummary = fixture.elements["#projectHubList"].children[0].children[2].textContent;
   assert.equal(summary.includes("/Users/example/private/project"), false);
-  assert.match(summary, /…\/(?:private\/)?project/u);
+  assert.equal(summary.includes("…/"), false);
+  assert.match(summary, /2/);
+  assert.match(summary, /3/);
+  assert.equal(cardSummary.includes("…/"), false);
+  assert.match(cardSummary, /2/);
 });
 
 test("New Project asks for a name before creating and opening import", async () => {

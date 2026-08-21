@@ -52,6 +52,7 @@
    * Creates the application-wide workspace state and save coordinator.
    * @param {{
    *   save?:(snapshot:object)=>Promise<object|void>,
+   *   autosave?:boolean,
    *   debounceMs?:number,
    *   setTimeoutImpl?:typeof setTimeout,
    *   clearTimeoutImpl?:typeof clearTimeout,
@@ -60,6 +61,7 @@
    */
   function createStore(dependencies = {}) {
     const saveSnapshot = dependencies.save || (async () => {});
+    const autosaveEnabled = dependencies.autosave !== false;
     const debounceMs = Math.max(0, Number(dependencies.debounceMs ?? 600));
     const setTimeoutImpl = dependencies.setTimeoutImpl || root?.setTimeout?.bind(root) || setTimeout;
     const clearTimeoutImpl = dependencies.clearTimeoutImpl || root?.clearTimeout?.bind(root) || clearTimeout;
@@ -276,6 +278,7 @@
 
     /** Schedules one delayed project save. */
     function scheduleSave() {
+      if (!autosaveEnabled) return;
       clearTimeoutImpl(saveTimer);
       saveTimer = setTimeoutImpl(() => {
         saveTimer = 0;

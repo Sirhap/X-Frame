@@ -65,6 +65,42 @@ test("stage pointer controller preserves listener order and wheel options", () =
   assert.deepEqual(stage.listenerOptions("wheel"), { passive: false });
 });
 
+test("narrow layout lets un-modified wheel scroll the page instead of zooming the stage", () => {
+  const stage = createStage();
+  const events = [];
+  const controller = createController({
+    stage,
+    state: { view: { x: 0, y: 0, zoom: 1 } },
+    getViewportWidth: () => 640,
+    handlers: {
+      stagePoint: () => ({ x: 0, y: 0 }),
+      zoomViewAt: () => events.push("zoom"),
+      applySelectedAttachmentWheel: () => false,
+    },
+  });
+  controller.bind();
+  let prevented = false;
+  stage.dispatch("wheel", {
+    deltaY: 40,
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(prevented, false);
+  assert.deepEqual(events, []);
+
+  prevented = false;
+  stage.dispatch("wheel", {
+    deltaY: 40,
+    ctrlKey: true,
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(prevented, true);
+  assert.deepEqual(events, ["zoom"]);
+});
+
 test("stage pointer controller starts a pan drag through injected handlers", () => {
   const stage = createStage();
   const state = { view: { x: 4, y: 8, zoom: 2 } };

@@ -65,6 +65,87 @@ test("bounded image loading preserves frame order", async () => {
   );
 });
 
+test("image cache crops shared atlas frames once per cell without aliasing the sheet path", async () => {
+  const imageCache = new Map();
+  const imageElements = new Map();
+  const draws = [];
+  class FakeAtlas {
+    constructor() {
+      this.width = 8;
+      this.height = 4;
+    }
+
+    set src(value) {
+      this._src = value;
+      queueMicrotask(() => this.onload?.());
+    }
+
+    get src() {
+      return this._src;
+    }
+  }
+  const documentRef = {
+    createElement(tag) {
+      assert.equal(tag, "canvas");
+      const canvas = {
+        width: 0,
+        height: 0,
+        getContext() {
+          return {
+            drawImage(...args) {
+              draws.push({ canvas, args });
+            },
+          };
+        },
+      };
+      return canvas;
+    },
+  };
+  const controller = createController({
+    getImageCache: () => imageCache,
+    getImageElements: () => imageElements,
+    getOpaqueRectCache: () => new WeakMap(),
+    assetUrl: (frame) => `/assets/${frame.path}`,
+    imageConstructor: FakeAtlas,
+    documentRef,
+  });
+  const atlasPath = "pets/lanma-duck.webp";
+  const left = {
+    path: atlasPath,
+    crop: { x: 0, y: 0, width: 4, height: 4, sheetWidth: 8, sheetHeight: 4 },
+  };
+  const right = {
+    path: atlasPath,
+    crop: { x: 4, y: 0, width: 4, height: 4, sheetWidth: 8, sheetHeight: 4 },
+  };
+
+  const [leftImage, rightImage, leftAgain] = await Promise.all([
+    controller.loadImageCached(left),
+    controller.loadImageCached(right),
+    controller.loadImageCached(left),
+  ]);
+
+  assert.notEqual(leftImage, rightImage);
+  assert.equal(leftImage, leftAgain);
+  assert.equal(leftImage.width, 4);
+  assert.equal(leftImage.height, 4);
+  assert.equal(rightImage.width, 4);
+  assert.equal(rightImage.height, 4);
+  assert.equal(draws.length, 2);
+  assert.deepEqual(
+    draws
+      .map((draw) => draw.args.slice(1, 5))
+      .sort((left, right) => left[0] - right[0]),
+    [
+      [0, 0, 4, 4],
+      [4, 0, 4, 4],
+    ],
+  );
+  assert.equal(imageElements.has(atlasPath), false);
+  assert.equal(controller.cachedImageForFrame(left), leftImage);
+  assert.equal(controller.cachedImageForFrame(right), rightImage);
+});
+
 test("opaque rectangle scans visible alpha and caches the result", () => {
   const { controller } = createFixture();
   const image = { width: 4, height: 3 };

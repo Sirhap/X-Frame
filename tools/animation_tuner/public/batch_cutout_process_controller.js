@@ -112,21 +112,27 @@
         if (processingRevision !== Number(item.processingRevision || 0)) {
           throw new DOMExceptionClass("Stale cutout result was discarded.", "AbortError");
         }
-        item.automaticImageData = new ImageDataClass(result.automaticData, width, height);
+        const automaticPixels =
+          result.automaticData instanceof Uint8ClampedArray
+            ? result.automaticData
+            : new Uint8ClampedArray(result.automaticData);
+        const resultPixels =
+          result.data instanceof Uint8ClampedArray ? result.data : new Uint8ClampedArray(result.data);
+        item.automaticImageData = new ImageDataClass(automaticPixels, width, height);
         item.automaticCacheKey = automaticKey;
         if (!Array.isArray(result.shapeCandidates) || !result.qualityMetrics) {
           throw new Error("ENGINE_INVALID_RESULT");
         }
         item.shapeCandidates = result.shapeCandidates;
         item.shapeDescriptor = result.shapeDescriptor;
-        item.resultImageData = new ImageDataClass(new Uint8ClampedArray(result.data), width, height);
+        item.resultImageData = new ImageDataClass(resultPixels, width, height);
         item.qualityMetrics = result.qualityMetrics;
         item.diagnosticCanvases = {};
         const canvas = documentApi.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
         const context = canvas.getContext("2d");
-        context.putImageData(new ImageDataClass(result.data, width, height), 0, 0);
+        context.putImageData(item.resultImageData, 0, 0);
         item.resultCanvas = canvas;
         item.statistics = {
           removedPixels: result.removedPixels,

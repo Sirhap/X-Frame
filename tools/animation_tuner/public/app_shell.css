@@ -3,6 +3,7 @@
   --shell-rail-width: 64px;
   --shell-sidebar-width: 320px;
   --shell-flow-height: 52px;
+  --shell-chrome-top: var(--shell-flow-height);
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -77,8 +78,9 @@ body:not(.theme-kunkun) {
   .desktopRecommendedBanner {
     display: flex;
     position: fixed;
-    inset: 0 0 auto 0;
-    z-index: 80;
+    inset: 64px 0 auto 0;
+    top: 64px;
+    z-index: 1170;
     align-items: baseline;
     flex-wrap: wrap;
     gap: 6px 10px;
@@ -90,8 +92,18 @@ body:not(.theme-kunkun) {
     line-height: 1.4;
   }
 
-  body {
-    padding-top: 52px;
+  body:is(
+      [data-app-surface="workspace"],
+      [data-app-surface="delivery"],
+      [data-app-surface="tool"],
+      [data-app-surface="scatter"]
+    )
+    .desktopRecommendedBanner {
+    display: none;
+  }
+
+  body:is([data-app-surface="projects"], [data-app-surface="tools"]) .modeHub {
+    padding-top: 128px;
   }
 }
 
@@ -126,6 +138,10 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
 /* Hidden is the shared surface contract; component display rules must never override it. */
 [hidden] {
   display: none !important;
+}
+
+html {
+  scroll-padding-top: var(--shell-chrome-top);
 }
 
 .app {
@@ -168,7 +184,7 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
 .workspaceFlowContext > span {
   grid-column: 1 / -1;
   color: var(--accent-2);
-  font: 780 8px/1 var(--data-font);
+  font: 780 11px/1 var(--data-font);
   letter-spacing: 0.13em;
 }
 
@@ -182,7 +198,7 @@ body:not(.theme-kunkun) button:active:not(:disabled) {
 
 .workspaceFlowContext output {
   color: var(--muted);
-  font: 700 9px/1 var(--data-font);
+  font: 700 11px/1 var(--data-font);
   white-space: nowrap;
 }
 
@@ -377,7 +393,7 @@ body[data-app-surface="tools"] .app {
 }
 
 .toolRailItem span {
-  font: 700 9px/1 var(--ui-font);
+  font: 700 11px/1 var(--ui-font);
 }
 
 .toolRailItem:hover,
@@ -497,6 +513,13 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
 
 .deliverySurface {
   overflow: hidden;
+}
+
+@media (max-width: 1100px) {
+  .deliverySurface {
+    overflow: auto;
+    max-height: calc(100dvh - var(--shell-chrome-top));
+  }
 }
 
 .deliveryExportMount {
@@ -920,10 +943,14 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
 }
 
 @media (max-width: 900px) {
+  :root {
+    --shell-chrome-top: calc(64px + var(--shell-flow-height));
+  }
+
   .app,
   body.sidebarCollapsed .app {
     padding-left: 0;
-    padding-top: calc(64px + var(--shell-flow-height));
+    padding-top: var(--shell-chrome-top);
   }
 
   /* Hub surfaces hide the flow header and reserve rail space inside .modeHub. */
@@ -1100,7 +1127,7 @@ body[data-workspace-tool="audio"] #browserModeBanner {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font: 700 9px/1.4 var(--data-font);
+  font: 700 11px/1.4 var(--data-font);
   white-space: nowrap;
 }
 
@@ -1377,7 +1404,7 @@ body[data-workspace-tool="audio"] #browserModeBanner {
 
 .contextActionStatus span {
   color: var(--accent-text);
-  font: 700 8px/1 var(--data-font);
+  font: 700 11px/1 var(--data-font);
   letter-spacing: 0.14em;
 }
 
@@ -1448,7 +1475,7 @@ body:is(.cutoutOpen, .organizerOpen) :is(.cutoutModal, .organizerModal) {
 
 @media (max-width: 1180px) {
   :root {
-    --shell-flow-height: 88px;
+    --shell-flow-height: 108px;
   }
 
   .workspaceFlowHeader {
@@ -1456,7 +1483,9 @@ body:is(.cutoutOpen, .organizerOpen) :is(.cutoutModal, .organizerModal) {
     grid-template-rows: auto auto auto;
     height: auto;
     min-height: var(--shell-flow-height);
-    row-gap: 4px;
+    row-gap: 2px;
+    gap: 8px;
+    padding: 4px 10px;
   }
 
   .workspaceFlowContext {
@@ -1556,7 +1585,7 @@ body:not(.theme-kunkun).organizerOpen .organizerPrimary {
 
 .organizerScopedAction small {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -1574,7 +1603,7 @@ body:not(.theme-kunkun).organizerOpen .organizerPrimary {
 
 .organizerBatchScope > span {
   color: var(--accent-3);
-  font: 780 9px/1 var(--data-font);
+  font: 780 11px/1 var(--data-font);
   letter-spacing: 0.08em;
 }
 
@@ -1586,7 +1615,7 @@ body:not(.theme-kunkun).organizerOpen .organizerPrimary {
 .organizerBatchScope small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1629,9 +1658,10 @@ body:not(.theme-kunkun).organizerOpen .organizerPrimary {
 .organizerDownstreamMenu > div {
   position: absolute;
   z-index: 40;
-  right: 0;
+  left: 0;
+  right: auto;
   top: calc(100% + 7px);
-  width: 210px;
+  width: min(210px, calc(100vw - 24px));
   display: grid;
   gap: 6px;
   padding: 8px;
@@ -1761,12 +1791,19 @@ body.organizerOpen .organizerFooterActions {
   }
 
   .sidebar {
-    order: 2;
-    width: 100%;
+    position: fixed;
+    z-index: 1100;
+    top: var(--shell-chrome-top, var(--shell-flow-height));
+    right: 0;
+    bottom: 0;
+    width: min(360px, calc(100vw - var(--shell-rail-width)));
     height: auto;
     max-height: none;
-    border-top: 1px solid var(--line);
+    overflow: auto;
+    border-top: 0;
     border-right: 0;
+    border-left: 1px solid var(--line);
+    box-shadow: var(--soft-shadow);
   }
 
   body.sidebarCollapsed .sidebar {
@@ -1812,7 +1849,7 @@ body.organizerOpen .organizerFooterActions {
   html {
     height: auto;
     min-height: 100%;
-    scroll-padding-top: var(--shell-flow-height);
+    scroll-padding-top: var(--shell-chrome-top);
   }
 
   body,

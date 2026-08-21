@@ -68,6 +68,13 @@
     "godot",
     "codex-pet",
   ]);
+  const FREE_STAGE_ROUTES = new Set([
+    ...SAME_STAGE_WORKSPACE_ROUTES,
+    "organizer",
+    "import",
+    "cutout",
+    "scatter",
+  ]);
   const STICKY_STANDALONE_ROUTES = new Set(["scatter"]);
   const VALID_ROUTES = new Set([
     "cutout",
@@ -292,8 +299,18 @@
     }
 
     /**
-     * Asks about unsaved tuning before a cross-stage leave. Callers that have not
-     * changed the URL yet keep the workbench address until the user decides.
+     * Stage switches close resource tools immediately. Home and project list
+     * still confirm so unfinished organizer work is not discarded silently.
+     * @param {string} route Destination route.
+     * @returns {boolean} Whether close may skip the unsaved prompt.
+     */
+    function shouldForceCloseTools(route) {
+      return Boolean(route) && route !== "projects" && route !== "tools" && FREE_STAGE_ROUTES.has(route);
+    }
+
+    /**
+     * Asks about unsaved tuning before leaving the project workbench.
+     * Resource processing, animation editing, and export switch without a prompt.
      * @param {string} route Destination workbench route.
      * @param {{skipDirtyPrompt?:boolean}} [options] When skipDirtyPrompt is set,
      *   unsaved tuning does not block a tool that already attempted to save.
@@ -303,6 +320,7 @@
       const visibleRoute = visibleWorkbenchRoute(getBatchCutout(), getFrameOrganizer());
       if (
         !route ||
+        FREE_STAGE_ROUTES.has(route) ||
         SAME_STAGE_WORKSPACE_ROUTES.has(route) ||
         visibleRoute ||
         !getWorkspaceDirty() ||
@@ -340,8 +358,6 @@
         return false;
       }
       try {
-        const temporarySessionActive =
-          currentNavigationContext() === "standalone" && Boolean(getTemporaryWorkset()?.frames?.length);
         const stickyCurrent = STICKY_STANDALONE_ROUTES.has(route);
         if (
           !(await confirmWorkspaceLeave(
@@ -372,7 +388,7 @@
             const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
             const closed = await closeWorkbench(frameOrganizer, {
               syncRoute: false,
-              force: temporarySessionActive,
+              force: shouldForceCloseTools(route),
             });
             if (!closed) {
               syncWorkbenchRoute(organizerRoute);
@@ -399,7 +415,7 @@
         if (batchCutout?.isOpen()) {
           const closed = await closeWorkbench(batchCutout, null, {
             syncRoute: false,
-            force: temporarySessionActive,
+            force: shouldForceCloseTools(route),
           });
           if (!closed) {
             syncWorkbenchRoute("cutout");
@@ -415,7 +431,7 @@
               const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
               const closed = await closeWorkbench(frameOrganizer, {
                 syncRoute: false,
-                force: temporarySessionActive,
+                force: shouldForceCloseTools(route),
               });
               if (!closed) {
                 syncWorkbenchRoute(organizerRoute);
@@ -437,7 +453,7 @@
           const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
           const closed = await closeWorkbench(frameOrganizer, {
             syncRoute: false,
-            force: temporarySessionActive,
+            force: shouldForceCloseTools(route),
           });
           if (!closed) {
             syncWorkbenchRoute(organizerRoute);

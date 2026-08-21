@@ -7,6 +7,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
+  const appUtils =
+    root?.XSXBAppUtils ||
+    (typeof module === "object" && module.exports ? require("./app_utils") : null);
+
   /**
    * Creates image loading, caching, bounded preloading, and opaque-boundary operations.
    * @param {{
@@ -51,13 +55,26 @@
 
     /**
      * Returns a stable cache key preferring an asset hash over a path.
+     * Cropped atlas cells must not share the sheet path key.
+     * @param {object|null|undefined} frame Frame or attachment descriptor.
+     * @returns {string} Image cache key.
+     */
+    function atlasCacheKey(frame) {
+      const hash = String(frame?.assetHash || "");
+      if (hash) return `asset:${hash}`;
+      return String(frame?.path || "");
+    }
+
+    /**
+     * Returns a stable cache key preferring an asset hash over a path.
      * @param {object|null|undefined} frame Frame or attachment descriptor.
      * @returns {string} Image cache key.
      */
     function imageCacheKey(frame) {
-      const hash = String(frame?.assetHash || "");
-      if (hash) return `asset:${hash}`;
-      return String(frame?.path || "");
+      const base = atlasCacheKey(frame);
+      const crop = appUtils?.normalizeFrameCrop?.(frame?.crop);
+      if (!crop) return base;
+      return `${base}@${crop.x},${crop.y},${crop.width},${crop.height}`;
     }
 
     /**
@@ -86,7 +103,22 @@
     }
 
     /**
+     * Decodes one atlas or standalone image once, independent of cell crops.
+     * @param {object} frame Frame descriptor.
+     * @returns {Promise<object>} Decoded source image.
+     */
+    function loadAtlasImage(frame) {
+      const crop = appUtils?.normalizeFrameCrop?.(frame?.crop);
+      if (!crop) return loadImage(frame);
+      const atlasKey = `atlas:${atlasCacheKey(frame)}`;
+      const imageCache = getImageCache();
+      if (!imageCache.has(atlasKey)) imageCache.set(atlasKey, loadImage(frame));
+      return imageCache.get(atlasKey);
+    }
+
+    /**
      * Loads one image once and shares its promise with all callers.
+     * Spritesheet frames are sliced to their crop so consumers receive cells.
      * @param {object} frame Frame descriptor.
      * @returns {Promise<object>} Decoded image.
      */
@@ -94,13 +126,17 @@
       const key = imageCacheKey(frame);
       const imageCache = getImageCache();
       if (!imageCache.has(key)) {
+        const crop = appUtils?.normalizeFrameCrop?.(frame?.crop);
         imageCache.set(
           key,
-          loadImage(frame).then((image) => {
+          loadAtlasImage(frame).then((image) => {
+            const cropped = appUtils?.extractFrameCrop
+              ? appUtils.extractFrameCrop(image, frame?.crop, documentRef)
+              : image;
             const imageElements = getImageElements();
-            imageElements.set(key, image);
-            if (frame?.path) imageElements.set(String(frame.path), image);
-            return image;
+            imageElements.set(key, cropped);
+            if (!crop && frame?.path) imageElements.set(String(frame.path), cropped);
+            return cropped;
           }),
         );
       }

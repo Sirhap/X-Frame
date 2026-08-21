@@ -245,6 +245,50 @@ function remapAttackTrails(source, animationKey, items) {
  * @param {string} animationId Animation identifier.
  * @returns {{profile:object,animation:object}}
  */
+/**
+ * Builds a workspace-safe folder name for imported PNG sequences.
+ * @param {unknown} value Profile or animation id.
+ * @param {string} fallback Fallback segment.
+ * @returns {string} Path segment.
+ */
+function assetFolderSegment(value, fallback) {
+  const slug = String(value || "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return slug || fallback;
+}
+
+/**
+ * Resolves the directory that will own reorganized PNG frames.
+ * Spritesheet-backed animations keep the atlas file and write a sibling asset folder.
+ * @param {string} root Tuner root.
+ * @param {string} workspaceDir Project workspace.
+ * @param {object} animation Manifest animation.
+ * @param {string} profileId Profile id.
+ * @param {string} animationId Animation id.
+ * @returns {string} Target frame directory.
+ */
+function resolveReorganizeTargetDir(root, workspaceDir, animation, profileId, animationId) {
+  const sourceDirectory = reslash(animation.source || path.dirname(animation.frames?.[0]?.path || ""));
+  const resolved = safeResolve(root, sourceDirectory);
+  if (!resolved || !resolved.startsWith(`${workspaceDir}${path.sep}`)) {
+    throw new Error("Animation assets must stay inside the active project workspace.");
+  }
+  if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+    const targetDir = path.join(
+      workspaceDir,
+      "assets",
+      assetFolderSegment(profileId, "profile"),
+      assetFolderSegment(animationId, "animation"),
+    );
+    if (!targetDir.startsWith(`${workspaceDir}${path.sep}`)) {
+      throw new Error("Animation assets must stay inside the active project workspace.");
+    }
+    return targetDir;
+  }
+  return resolved;
+}
+
 function findAnimation(manifest, profileId, animationId) {
   const profile = (manifest.profiles || []).find((entry) => String(entry.id) === profileId);
   if (!profile) throw new Error(`Profile not found: ${profileId}`);
@@ -477,11 +521,7 @@ function reorganizeAnimation(options) {
   };
   const { animation } = findAnimation(manifest, profileId, animationId);
   const workspaceDir = projectStore.projectWorkspaceDir(project);
-  const sourceDirectory = reslash(animation.source || path.dirname(animation.frames?.[0]?.path || ""));
-  const targetDir = safeResolve(root, sourceDirectory);
-  if (!targetDir || !targetDir.startsWith(`${workspaceDir}${path.sep}`)) {
-    throw new Error("Animation assets must stay inside the active project workspace.");
-  }
+  const targetDir = resolveReorganizeTargetDir(root, workspaceDir, animation, profileId, animationId);
 
   const buffers = items.map((item) => {
     const inlineBuffer = decodePngDataUrl(item.data);

@@ -6,6 +6,7 @@ const {
   createController,
   partitionFramesByPixelBudget,
 } = require("../animation_tuner/public/frame_organizer_actions");
+const { worksetChangeSignature } = require("../animation_tuner/public/frame_organizer_ui");
 const { REGULAR_AUTO_BACKGROUND_PARAMETERS } = require("../animation_tuner/public/smart_cutout_defaults");
 
 /** Creates the small host fixture needed to exercise organizer actions. */
@@ -207,6 +208,7 @@ test("organizer actions hand off an ordered processed workset without closing th
   ]);
   assert.equal(fixture.calls.closes, 0);
   assert.equal(fixture.state.busy, false);
+  assert.equal(fixture.state.acceptedWorksetSignature, worksetChangeSignature(fixture.state.frames));
 });
 
 test("organizer actions forwards sprite-sheet canvases only when requested", async () => {
@@ -434,6 +436,23 @@ test("a second smart cutout replaces the previous result instead of stacking on 
 
   assert.equal(fixture.calls.autoCutoutWorksets[1].items[0].image, sourceCanvas);
   assert.equal(fixture.frame.cutoutSourceCanvas, sourceCanvas);
+});
+
+test("edit-mode applyPlan inlines PNG data for spritesheet-backed frames", async () => {
+  const fixture = createFixture();
+  fixture.frame.imported = false;
+  fixture.frame.hasEditedResult = false;
+  fixture.frame.sourcePath = "workspace/projects/codex_pets/spritesheets/custom/lanma-duck.webp";
+  fixture.state.mode = "edit";
+  fixture.state.confirmApply = true;
+
+  await fixture.controller.applyPlan();
+
+  assert.match(fixture.calls.applied.items[0].data, /^data:image\/png/);
+  assert.equal(
+    fixture.calls.applied.items[0].sourcePath,
+    "workspace/projects/codex_pets/spritesheets/custom/lanma-duck.webp",
+  );
 });
 
 test("project-context import replaces the current animation instead of creating a group", async () => {

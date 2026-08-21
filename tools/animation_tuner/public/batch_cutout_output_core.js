@@ -33,19 +33,22 @@
 
   /**
    * Creates one immutable product output consumed by ZIP, worksets, and group replacement.
-   * @param {{name:string,frame?:object|null,data:string,canvas?:object|null,cutoutState?:object|null}} value Output fields.
+   * Canvas-only outputs are valid for live in-memory organizer updates; archive
+   * and server payload helpers still require encoded PNG data.
+   * @param {{name:string,frame?:object|null,data?:string,canvas?:object|null,cutoutState?:object|null}} value Output fields.
    * @returns {{name:string,frame:object|null,data:string,canvas:object|null,cutoutState:object|null}}
    */
   function createOutput(value) {
     const data = String(value?.data || "");
-    if (!data.startsWith("data:image/png;base64,")) {
+    const canvas = value?.canvas || null;
+    if (!canvas && !data.startsWith("data:image/png;base64,")) {
       throw new Error("Cutout output must contain a PNG data URL.");
     }
     return Object.freeze({
       name: String(value?.name || "frame.png"),
       frame: value?.frame || null,
       data,
-      canvas: value?.canvas || null,
+      canvas,
       cutoutState: value?.cutoutState
         ? {
             processingParameters: { ...(value.cutoutState.processingParameters || {}) },
@@ -67,7 +70,7 @@
   function createArchiveEntries(outputs, manifestJson) {
     const entries = outputs.map((output) => ({
       name: String(output.name),
-      data: String(output.data),
+      data: requirePngDataUrl(output.data),
     }));
     entries.push({ name: "cutout-manifest.json", data: String(manifestJson) });
     return entries;
@@ -87,8 +90,21 @@
     return {
       projectId: String(projectId || ""),
       frames: frames.map((frame) => ({ path: String(frame.path || "") })),
-      files: outputs.map((output) => ({ data: String(output.data || "") })),
+      files: outputs.map((output) => ({ data: requirePngDataUrl(output.data) })),
     };
+  }
+
+  /**
+   * Validates an encoded PNG at serialization boundaries.
+   * @param {unknown} value Data URL candidate.
+   * @returns {string} Valid PNG data URL.
+   */
+  function requirePngDataUrl(value) {
+    const data = String(value || "");
+    if (!data.startsWith("data:image/png;base64,")) {
+      throw new Error("Cutout output must contain a PNG data URL.");
+    }
+    return data;
   }
 
   return {

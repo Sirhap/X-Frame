@@ -242,6 +242,7 @@
         currentFrame.included = event.currentTarget.checked;
         renderCounts();
         dependencies.restartPreview();
+        dependencies.onWorksetChanged?.(state.frames);
       });
       card.querySelector(".organizerFrameCutout").addEventListener("click", (event) => {
         event.stopPropagation();

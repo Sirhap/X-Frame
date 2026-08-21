@@ -16,6 +16,38 @@
   const PROGRESS_PATTERN = /(\d+)\s*\/\s*(\d+)/u;
 
   /**
+   * Writes progress copy only when it changed. Mutation observers must never
+   * observe and then rewrite their own caption, otherwise they create an
+   * endless microtask loop that starves Worker responses and browser painting.
+   * @param {{textContent?:string}|null} caption Progress caption.
+   * @param {string} value Next caption.
+   * @returns {boolean} Whether the DOM value changed.
+   */
+  function writeCaption(caption, value) {
+    if (!caption || caption.textContent === value) return false;
+    caption.textContent = value;
+    return true;
+  }
+
+  /**
+   * Synchronizes the determinate progress bar when frame counts are known.
+   * @param {{max?:number,value?:number,removeAttribute?:(name:string)=>void}|null} meter Progress element.
+   * @param {{current?:number,total?:number}} progress Parsed progress.
+   * @returns {void}
+   */
+  function writeProgress(meter, progress) {
+    if (!meter) return;
+    const total = Math.max(0, Number(progress.total) || 0);
+    const current = Math.max(0, Number(progress.current) || 0);
+    if (!total) {
+      meter.removeAttribute?.("value");
+      return;
+    }
+    meter.max = total;
+    meter.value = Math.min(total, current);
+  }
+
+  /**
    * Formats the overlay caption for the current frame progress.
    * @param {{current?:number,total?:number}} progress Parsed frame progress.
    * @returns {string}
@@ -74,21 +106,30 @@
       const button = documentApi.querySelector("#organizerBatchCutout");
       const overlay = documentApi.querySelector("#organizerSmartCutoutProgress");
       const caption = documentApi.querySelector("#organizerSmartCutoutProgressText");
+      const meter = documentApi.querySelector("#organizerSmartCutoutProgressBar");
+      const cancel = documentApi.querySelector("#organizerSmartCutoutCancel");
       const organizer = documentApi.querySelector("#organizerModal");
       if (!button || !overlay || !caption || !organizer) return false;
       attached = true;
       let startedAt = 0;
       let sawBusy = false;
       let observer = null;
+      let startTimer = 0;
       const hide = () => {
         overlay.hidden = true;
+        if (cancel) cancel.disabled = false;
         observer?.disconnect();
         observer = null;
+        windowApi.clearTimeout?.(startTimer);
+        startTimer = 0;
       };
       const readSignals = () => {
         const statusText = documentApi.querySelector("#organizerStatus")?.textContent || "";
         const progress = parseProgress(`${button.textContent || ""} ${statusText}`);
-        if (progress.current || progress.total) caption.textContent = progressLabel(progress);
+        if (progress.current || progress.total) {
+          writeCaption(caption, progressLabel(progress));
+          writeProgress(meter, progress);
+        }
         sawBusy ||= Boolean(button.disabled);
         return {
           organizerHidden: Boolean(organizer.hidden),
@@ -108,27 +149,36 @@
         "click",
         () => {
           const total = documentApi.querySelectorAll(".organizerFrame").length;
-          caption.textContent = progressLabel({ total });
+          writeCaption(caption, progressLabel({ total }));
+          writeProgress(meter, { current: 0, total });
           overlay.hidden = false;
           startedAt = now();
           sawBusy = false;
+          if (cancel) cancel.disabled = false;
           observer?.disconnect();
           observer = new windowApi.MutationObserver(settle);
-          observer.observe(documentApi.body, {
+          observer.observe(button, {
             attributes: true,
-            attributeFilter: ["disabled", "hidden", "open", "class"],
+            attributeFilter: ["disabled"],
             childList: true,
             subtree: true,
             characterData: true,
           });
-          const poll = () => {
-            if (settle()) return;
-            windowApi.requestAnimationFrame(poll);
-          };
-          windowApi.requestAnimationFrame(poll);
+          const status = documentApi.querySelector("#organizerStatus");
+          if (status) {
+            observer.observe(status, { childList: true, subtree: true, characterData: true });
+          }
+          observer.observe(organizer, { attributes: true, attributeFilter: ["hidden"] });
+          windowApi.clearTimeout?.(startTimer);
+          startTimer = windowApi.setTimeout?.(settle, START_TIMEOUT_MS + 1) || 0;
         },
         { capture: true },
       );
+      cancel?.addEventListener("click", () => {
+        cancel.disabled = true;
+        writeCaption(caption, "正在取消智能抠图…");
+        documentApi.querySelector("#cutoutCancelProcess")?.click?.();
+      });
       return true;
     }
 
@@ -167,5 +217,7 @@
     progressLabel,
     scheduleAttach,
     shouldKeepVisible,
+    writeCaption,
+    writeProgress,
   });
 });

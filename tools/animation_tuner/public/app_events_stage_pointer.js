@@ -22,6 +22,10 @@
     const state = dependencies.state || {};
     const devicePixelRatio = Number(dependencies.devicePixelRatio || 1);
     const handlers = dependencies.handlers || {};
+    const getViewportWidth =
+      typeof dependencies.getViewportWidth === "function"
+        ? dependencies.getViewportWidth
+        : () => Number(root?.innerWidth || 0);
     const structuredCloneImpl = dependencies.structuredCloneImpl || root?.structuredClone;
     const structuredClone =
       typeof structuredCloneImpl === "function"
@@ -311,6 +315,9 @@
       stage.addEventListener(
         "wheel",
         (event) => {
+          const pageScroll =
+            Number(getViewportWidth()) <= 1120 && !event.ctrlKey && !event.metaKey;
+          if (pageScroll) return;
           event.preventDefault();
           state.pointerStagePoint = stagePoint(event);
           if (applySelectedAttachmentWheel(event)) return;

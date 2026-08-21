@@ -82,6 +82,44 @@ test("single-frame filmstrip keeps room for the thumbnail", () => {
   assert.match(css, /@media \(max-width: 759px\)/);
 });
 
+test("organizer analysis and danger tools collapse behind labeled menus", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const css = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/organizer_shell.css"), "utf8");
+  assert.match(html, /<details class="organizerToolGroup organizerToolMenu organizerAnalysisTools"/u);
+  assert.match(html, /<details class="organizerToolGroup organizerToolMenu organizerDangerTools"/u);
+  assert.doesNotMatch(
+    html,
+    /<details class="organizerToolGroup organizerToolMenu organizerAnalysisTools"[^>]*\bopen\b/u,
+  );
+  assert.doesNotMatch(
+    html,
+    /<details class="organizerToolGroup organizerToolMenu organizerDangerTools"[^>]*\bopen\b/u,
+  );
+  assert.match(html, /<summary[^>]*data-organizer-i18n="analysisTools"/u);
+  assert.match(html, /<summary[^>]*data-organizer-i18n="dangerTools"/u);
+  assert.match(css, /\.organizerToolMenuPanel\s*\{[\s\S]*?position:\s*absolute/u);
+});
+
+test("export number fields expose their own accessible names", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  for (const id of [
+    "mediaExportScaleX",
+    "mediaExportScaleY",
+    "mediaExportOffsetX",
+    "mediaExportOffsetY",
+    "mediaExportGifFps",
+    "mediaExportMp4Fps",
+    "mediaExportSpeed",
+  ]) {
+    const input = html.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`, "u"));
+    assert.ok(input, `${id} input`);
+    assert.match(input[0], /aria-labelledby=|aria-label=/u, `${id} needs an accessible name`);
+  }
+  assert.match(html, /id="mediaExportSpeed"[^>]*type="number"/u);
+  assert.doesNotMatch(html, /id="mediaExportSpeed"[^>]*type="hidden"/u);
+  assert.match(html, /class="mediaExportPreviewModes"[^>]*hidden/u);
+});
+
 test("the Codex Pets project exposes custom-pet recovery controls", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
   const script = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app.js"), "utf8");

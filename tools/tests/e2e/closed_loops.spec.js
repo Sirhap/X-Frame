@@ -309,6 +309,50 @@ test("standalone export uses the current animation when no temporary workset exi
   ).toBeVisible();
 });
 
+test("VIS-010 200% layout keeps the export recipe and start button reachable", async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 360 });
+  await page.goto("/workspace/delivery/export");
+  const exportWorkbench = page.locator("#mediaExportDialog");
+  await expect(exportWorkbench).toBeVisible();
+  await expect(page.locator(".mediaExportFormats")).toHaveCount(1);
+  await expect(page.locator(".mediaExportFormats")).toBeAttached();
+  const submit = page.locator("#mediaExportSubmit");
+  await expect(submit).toBeAttached();
+  await submit.scrollIntoViewIfNeeded();
+  await expect(submit).toBeVisible();
+  const hit = await submit.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    const x = box.left + Math.min(24, Math.max(4, box.width / 2));
+    const y = box.top + Math.min(16, Math.max(4, box.height / 2));
+    return document.elementFromPoint(x, y)?.id || document.elementFromPoint(x, y)?.tagName || "";
+  });
+  expect(hit, "开始导出 must remain hittable at 640×360 (200% of 1280×720)").toBe("mediaExportSubmit");
+  const formatsBox = await page.locator(".mediaExportFormats").boundingBox();
+  expect(formatsBox, "export format row must stay in the layout").toBeTruthy();
+  expect(formatsBox.x, "export format row must not overflow left").toBeGreaterThanOrEqual(-1);
+  expect(
+    formatsBox.x + formatsBox.width,
+    "export format row must not overflow the 640px layout",
+  ).toBeLessThanOrEqual(641);
+});
+
+test("ENV-009 hosted Godot delivery CTA does not leave the delivery page", async ({ page }) => {
+  await page.addInitScript(() => {
+    globalThis.__XSXB_PRODUCTION__ = true;
+    document.documentElement.dataset.runtimeMode = "browser";
+  });
+  await page.goto("/workspace/delivery/godot");
+  await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);
+  const button = page.locator("#deliveryOpenGodot");
+  await expect(button).toBeVisible();
+  await expect(button).toBeDisabled();
+  await button.click({ force: true });
+  await expect(page).toHaveURL(/\/workspace\/delivery\/godot/);
+  await expect(page.locator('[data-delivery-panel="godot"]')).toBeVisible();
+  await expect(page.locator("#organizerModal")).toBeHidden();
+  await expect(page.locator('[data-panel="project-processing"]')).toBeHidden();
+});
+
 test("delivery tabs expose only their peer panel", async ({ page }) => {
   await page.goto("/workspace/delivery/godot");
   await expect(page.locator('[data-delivery-panel="godot"]')).toBeVisible();

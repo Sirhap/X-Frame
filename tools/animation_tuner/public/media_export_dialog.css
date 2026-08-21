@@ -62,12 +62,33 @@ body.mediaExportOpen {
   overflow: visible;
 }
 
-.mediaExportDialog[data-presentation="embedded"] .mediaExportFooter {
+.mediaExportDialog[data-presentation="embedded"] .mediaExportPreview {
   position: sticky;
-  z-index: 35;
-  bottom: 0;
+  top: var(--shell-chrome-top, var(--shell-flow-height));
+  align-self: start;
+  height: auto;
+  min-height: 0;
+  max-height: calc(100dvh - var(--shell-chrome-top, var(--shell-flow-height)) - 24px);
+}
+
+.mediaExportDialog[data-presentation="embedded"] .mediaExportPreviewStage {
+  max-height: min(48dvh, 440px);
+}
+
+.mediaExportDialog[data-presentation="embedded"] .mediaExportPreviewStage canvas {
+  max-height: min(44dvh, 400px);
+}
+
+.mediaExportDialog[data-presentation="embedded"] .mediaExportFooter {
+  position: static;
+  z-index: auto;
   border-width: 1px;
-  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
+}
+
+.mediaExportDialog[data-presentation="embedded"] #mediaExportSubmit {
+  scroll-margin-top: calc(var(--shell-chrome-top, var(--shell-flow-height)) + 16px);
+  scroll-margin-bottom: 16px;
 }
 
 .mediaExportCard {
@@ -461,6 +482,7 @@ body.mediaExportOpen {
 .mediaExportPreviewModes {
   justify-content: center;
   gap: 0;
+  display: none;
 }
 .mediaExportPreviewModes button {
   min-height: 38px;
@@ -583,6 +605,20 @@ body.mediaExportOpen {
 
   .mediaExportNotices {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1100px) {
+  .mediaExportDialog[data-presentation="embedded"] .mediaExportWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+
+  .mediaExportDialog[data-presentation="embedded"] .mediaExportPreview {
+    order: -1;
+    min-height: 0;
+    position: static;
+    max-height: none;
   }
 }
 

@@ -235,8 +235,11 @@ body.organizerOpen .organizerClose {
 }
 
 .organizerToolbarPrimary {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 6px;
 }
 
 .organizerToolbarActions {
@@ -257,8 +260,10 @@ body.organizerOpen .organizerClose {
 }
 
 .organizerToolbarSecondary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-inline-start: auto;
 }
 
 .organizerToolbarPrimary .organizerEditTools,
@@ -362,9 +367,8 @@ body.organizerOpen .organizerClose {
 }
 
 @media (max-width: 1000px) {
-  .organizerToolbarPrimary,
   .organizerToolbarSecondary {
-    grid-template-columns: minmax(0, 1fr);
+    margin-inline-start: 0;
   }
 
   .organizerSourceTools,
@@ -374,7 +378,55 @@ body.organizerOpen .organizerClose {
 }
 
 .organizerAnalysisTools {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+}
+
+.organizerToolMenu {
+  position: static;
+  padding: 0;
+}
+
+.organizerToolMenu > summary {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  list-style: none;
+  cursor: pointer;
+  color: var(--ink);
+  font: 950 10px/1 var(--data-font);
+}
+
+.organizerToolMenu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.organizerToolMenu > summary::after {
+  color: var(--muted);
+  content: "▾";
+  font-size: 9px;
+}
+
+.organizerToolMenuPanel {
+  display: none;
+  position: absolute;
+  z-index: 45;
+  top: calc(100% + 6px);
+  left: 8px;
+  right: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--soft-shadow);
+}
+
+.organizerToolMenu[open] .organizerToolMenuPanel {
+  display: flex;
 }
 
 .organizerDangerTools {
@@ -382,6 +434,10 @@ body.organizerOpen .organizerClose {
   align-self: start;
   border-color: color-mix(in srgb, var(--danger) 72%, var(--line));
   background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+}
+
+.organizerDangerTools > summary {
+  color: var(--danger);
 }
 
 .organizerReduceControl {
@@ -533,15 +589,43 @@ body.organizerOpen .organizerClose {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-height: 48px;
-  padding: 0 16px;
+  min-width: min(360px, calc(100vw - 32px));
+  min-height: 64px;
+  padding: 10px 12px;
   border: 1px solid var(--accent-2, #32d2b6);
   border-radius: 10px;
   background: rgb(10 24 31 / 94%);
   box-shadow: 0 14px 36px rgb(0 0 0 / 35%);
   color: var(--text, #edf7f5);
   font-weight: 700;
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+.organizerSmartCutoutProgress > div {
+  min-width: 0;
+  display: grid;
+  flex: 1;
+  gap: 7px;
+}
+
+#organizerSmartCutoutProgressText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#organizerSmartCutoutProgressBar {
+  width: 100%;
+  height: 6px;
+  display: block;
+  border: 0;
+  accent-color: var(--accent-2, #32d2b6);
+}
+
+#organizerSmartCutoutCancel {
+  min-height: 38px;
+  flex: 0 0 auto;
+  padding-inline: 12px;
 }
 
 .organizerSmartCutoutSpinner {
@@ -556,5 +640,20 @@ body.organizerOpen .organizerClose {
 @keyframes organizer-smart-cutout-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 560px) {
+  .organizerSmartCutoutProgress {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .organizerSmartCutoutSpinner {
+    animation: none;
   }
 }

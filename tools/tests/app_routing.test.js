@@ -199,6 +199,25 @@ test("applying the workspace URL keeps the frame editor route active", async () 
   assert.equal(windowRef.location.pathname, "/workspace");
 });
 
+test("resource, animation, and export stage switches do not ask about unsaved edits", async () => {
+  const events = [];
+  const controller = createController({
+    windowRef: createWindow("http://localhost/workspace/resources/import"),
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => {
+      events.push("prompt");
+      return "cancel";
+    },
+  });
+
+  assert.equal(await controller.confirmWorkspaceLeave("export"), true);
+  assert.equal(await controller.confirmWorkspaceLeave("animation"), true);
+  assert.equal(await controller.confirmWorkspaceLeave("organizer"), true);
+  assert.equal(await controller.confirmWorkspaceLeave("cutout"), true);
+  assert.deepEqual(events, []);
+});
+
 test("same-stage workspace tab switches do not ask about unsaved edits", async () => {
   const events = [];
   const windowRef = createWindow("http://localhost/workspace/animation/boxes");
@@ -293,29 +312,53 @@ test("route application restores home when the requested controller is unavailab
   assert.equal(windowRef.location.pathname, "/tools");
 });
 
-test("route application restores the open organizer when close is cancelled", async () => {
-  const windowRef = createWindow("http://localhost/tools/cutout");
+test("route application force-closes the organizer when switching stages", async () => {
+  const windowRef = createWindow("http://localhost/workspace/delivery/export");
   const events = [];
   const controller = createController({
     windowRef,
     documentRef: { title: "" },
+    getWorkspaceDirty: () => true,
+    requestWorkspaceDecision: async () => {
+      events.push("prompt");
+      return "cancel";
+    },
     getFrameOrganizer: () => ({
       isOpen: () => true,
-      getMode: () => "import",
-      async requestClose() {
-        events.push("cancel-close");
-        return false;
+      getMode: () => "edit",
+      async requestClose(options) {
+        events.push(options?.force ? "force-close" : "ask-close");
+        return Boolean(options?.force);
       },
     }),
-    getBatchCutout: () => ({
-      isOpen: () => false,
-      open: () => events.push("open-cutout"),
+    activateWorkspaceRoute: (route) => events.push(`activate:${route}`),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.equal(windowRef.location.pathname, "/workspace/delivery/export");
+  assert.deepEqual(events, ["force-close", "activate:export"]);
+});
+
+test("returning to projects asks before discarding organizer work", async () => {
+  const windowRef = createWindow("http://localhost/projects");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getWorkspaceDirty: () => false,
+    getFrameOrganizer: () => ({
+      isOpen: () => true,
+      getMode: () => "edit",
+      async requestClose(options) {
+        events.push(options?.force ? "force-close" : "ask-close");
+        return !options?.force;
+      },
     }),
   });
 
-  assert.equal(await controller.applyWorkbenchRoute(), false);
-  assert.equal(windowRef.location.pathname, "/tools/organizer");
-  assert.deepEqual(events, ["cancel-close"]);
+  assert.equal(await controller.applyWorkbenchRoute(), true);
+  assert.equal(windowRef.location.pathname, "/projects");
+  assert.deepEqual(events, ["ask-close"]);
 });
 
 test("route application rolls URL back when opening a workbench throws", async () => {
@@ -335,7 +378,7 @@ test("route application rolls URL back when opening a workbench throws", async (
   assert.equal(windowRef.location.pathname, "/tools");
 });
 
-test("workspace route guard saves dirty tuning before opening a tool", async () => {
+test("workspace route guard opens a tool without saving dirty tuning first", async () => {
   const windowRef = createWindow("http://localhost/tools/cutout");
   const events = [];
   const controller = createController({
@@ -354,7 +397,7 @@ test("workspace route guard saves dirty tuning before opening a tool", async () 
   });
 
   assert.equal(await controller.applyWorkbenchRoute(), true);
-  assert.deepEqual(events, ["decide", "save", "open-cutout"]);
+  assert.deepEqual(events, ["open-cutout"]);
 });
 
 test("confirmWorkspaceLeave asks while the URL is still on the workbench", async () => {
@@ -412,18 +455,28 @@ test("workspace route guard discards or cancels dirty tuning explicitly", async 
     }),
   });
   assert.equal(await discardController.applyWorkbenchRoute(), true);
-  assert.deepEqual(discardEvents, ["discard", "open-organizer"]);
+  assert.deepEqual(discardEvents, ["open-organizer"]);
 
   const cancelWindow = createWindow("http://localhost/tools/cutout");
+  const cancelEvents = [];
   const cancelController = createController({
     windowRef: cancelWindow,
     documentRef: { title: "" },
     getWorkspaceDirty: () => true,
-    requestWorkspaceDecision: async () => "cancel",
-    getBatchCutout: () => ({ isOpen: () => false, open() {} }),
+    requestWorkspaceDecision: async () => {
+      cancelEvents.push("prompt");
+      return "cancel";
+    },
+    getBatchCutout: () => ({
+      isOpen: () => false,
+      open() {
+        cancelEvents.push("open-cutout");
+      },
+    }),
   });
-  assert.equal(await cancelController.applyWorkbenchRoute(), false);
-  assert.equal(cancelWindow.location.pathname, "/workspace");
+  assert.equal(await cancelController.applyWorkbenchRoute(), true);
+  assert.equal(cancelWindow.location.pathname, "/tools/cutout");
+  assert.deepEqual(cancelEvents, ["open-cutout"]);
 });
 
 test("project cutout route copies the current animation frames into the batch", async () => {
@@ -482,7 +535,7 @@ test("scatter route stays put when a leftover organizer refuses to close", async
   assert.deepEqual(events, ["force-close"]);
 });
 
-test("choosing scatter from a dirty workspace still asks before leaving tuning", async () => {
+test("choosing scatter from a dirty workspace does not ask before leaving tuning", async () => {
   const events = [];
   const controller = createController({
     windowRef: createWindow("http://localhost/workspace/animation/transform"),
@@ -494,8 +547,8 @@ test("choosing scatter from a dirty workspace still asks before leaving tuning",
     },
   });
 
-  assert.equal(await controller.confirmWorkspaceLeave("scatter"), false);
-  assert.deepEqual(events, ["prompt"]);
+  assert.equal(await controller.confirmWorkspaceLeave("scatter"), true);
+  assert.deepEqual(events, []);
 });
 
 test("reconciling scatter after a slow config load does not open organizer", async () => {

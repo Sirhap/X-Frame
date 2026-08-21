@@ -1000,6 +1000,10 @@ test("loaded organizer keeps tools visible and can restore import settings", asy
   await page.goto("/tools/import");
   await expect(page.locator(".organizerEditTools")).toBeVisible();
   await expect(page.locator(".organizerToolbarSecondary")).toBeVisible();
+  await expect(page.locator(".organizerAnalysisTools > summary")).toBeVisible();
+  await expect(page.locator(".organizerDangerTools > summary")).toBeVisible();
+  await expect(page.locator("#organizerFindLoop")).toBeHidden();
+  await page.locator(".organizerAnalysisTools > summary").click();
   await expect(page.locator("#organizerFindLoop")).toBeVisible();
   await expect(page.locator("#organizerFindLoop")).toBeDisabled();
 

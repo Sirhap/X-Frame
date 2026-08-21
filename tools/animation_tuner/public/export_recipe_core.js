@@ -45,7 +45,7 @@
       padding: 2,
       extrude: 1,
       interpolation: "smooth",
-      background: "edge",
+      background: "transparent",
       backgroundColor: "#f0f0f0",
       opacity: 100,
       brightness: 100,

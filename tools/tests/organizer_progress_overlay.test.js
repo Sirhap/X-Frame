@@ -9,6 +9,8 @@ const {
   progressLabel,
   scheduleAttach,
   shouldKeepVisible,
+  writeCaption,
+  writeProgress,
 } = require("../animation_tuner/public/organizer_progress_overlay");
 
 /**
@@ -16,10 +18,41 @@ const {
  * @returns {{overlay:object,harness:object}}
  */
 function createHarness() {
+  const state = {
+    frames: 0,
+    time: 0,
+    observers: 0,
+    observerInstances: [],
+    disconnects: 0,
+    timers: [],
+    timerSequence: 0,
+  };
+  let captionText = "";
   const nodes = {
     "#organizerBatchCutout": { textContent: "智能抠图", disabled: false, listeners: {} },
     "#organizerSmartCutoutProgress": { hidden: true },
-    "#organizerSmartCutoutProgressText": { textContent: "" },
+    "#organizerSmartCutoutProgressText": {
+      get textContent() {
+        return captionText;
+      },
+      set textContent(value) {
+        captionText = String(value);
+      },
+    },
+    "#organizerSmartCutoutProgressBar": { max: 1, value: 0, removeAttribute() {} },
+    "#organizerSmartCutoutCancel": {
+      disabled: false,
+      listeners: {},
+      addEventListener(type, handler) {
+        this.listeners[type] = handler;
+      },
+    },
+    "#cutoutCancelProcess": {
+      clicks: 0,
+      click() {
+        this.clicks += 1;
+      },
+    },
     "#organizerModal": { hidden: false },
     "#organizerStatus": { textContent: "" },
   };
@@ -27,7 +60,6 @@ function createHarness() {
   button.addEventListener = (type, handler) => {
     button.listeners[type] = handler;
   };
-  const state = { frames: 0, time: 0, observers: 0, disconnects: 0, pending: [] };
   const documentApi = {
     body: {},
     querySelector: (selector) => nodes[selector] || null,
@@ -40,24 +72,39 @@ function createHarness() {
       /** @param {Function} callback Mutation handler. */
       constructor(callback) {
         this.callback = callback;
+        this.active = true;
         state.observers += 1;
+        state.observerInstances.push(this);
       }
       /** Records observation without a live DOM. @returns {void} */
       observe() {}
       /** Tracks teardown so leaks are visible to tests. @returns {void} */
       disconnect() {
+        this.active = false;
         state.disconnects += 1;
       }
+    },
+    setTimeout(callback, delay) {
+      const id = ++state.timerSequence;
+      state.timers.push({ id, at: state.time + Number(delay || 0), callback });
+      return id;
+    },
+    clearTimeout(id) {
+      state.timers = state.timers.filter((timer) => timer.id !== id);
     },
   };
   const harness = {
     nodes,
     state,
     click: () => button.listeners.click(),
-    /** Drains queued animation frames once. @returns {void} */
+    /** Delivers observed mutations and expired timers once. @returns {void} */
     tick: () => {
-      const queued = state.pending.splice(0, state.pending.length);
-      for (const callback of queued) callback();
+      for (const observer of state.observerInstances) {
+        if (observer.active) observer.callback();
+      }
+      const due = state.timers.filter((timer) => timer.at <= state.time);
+      state.timers = state.timers.filter((timer) => timer.at > state.time);
+      for (const timer of due) timer.callback();
     },
     /** @param {number} ms Milliseconds to advance the injected clock. @returns {void} */
     advance: (ms) => {
@@ -73,6 +120,24 @@ test("overlay parses frame progress from button and status text", () => {
   assert.equal(progressLabel({ current: 7, total: 42 }), "智能抠图处理中 · 7 / 42 帧");
   assert.equal(progressLabel({ total: 42 }), "智能抠图处理中 · 共 42 帧");
   assert.equal(progressLabel({}), "智能抠图处理中");
+});
+
+test("overlay caption and meter writes are idempotent", () => {
+  const caption = { textContent: "智能抠图处理中" };
+  const meter = {
+    max: 1,
+    value: 0,
+    removed: false,
+    removeAttribute() {
+      this.removed = true;
+    },
+  };
+  assert.equal(writeCaption(caption, "智能抠图处理中"), false);
+  assert.equal(writeCaption(caption, "智能抠图处理中 · 1 / 2 帧"), true);
+  writeProgress(meter, { current: 1, total: 2 });
+  assert.deepEqual({ max: meter.max, value: meter.value }, { max: 2, value: 1 });
+  writeProgress(meter, {});
+  assert.equal(meter.removed, true);
 });
 
 test("overlay stays visible for a long run once the button reports busy", () => {
@@ -109,8 +174,18 @@ test("overlay survives a batch that runs far past the old sixty second cutoff", 
   harness.nodes["#organizerBatchCutout"].disabled = false;
   harness.tick();
   assert.equal(harness.nodes["#organizerSmartCutoutProgress"].hidden, true);
-  assert.equal(harness.state.pending.length, 0);
+  assert.equal(harness.state.timers.length, 0);
   assert.equal(harness.state.disconnects, 1);
+});
+
+test("overlay cancel forwards to the active cutout controller", () => {
+  const { overlay, harness } = createHarness();
+  overlay.attach();
+  harness.click();
+  harness.nodes["#organizerSmartCutoutCancel"].listeners.click();
+  assert.equal(harness.nodes["#organizerSmartCutoutCancel"].disabled, true);
+  assert.equal(harness.nodes["#cutoutCancelProcess"].clicks, 1);
+  assert.equal(harness.nodes["#organizerSmartCutoutProgressText"].textContent, "正在取消智能抠图…");
 });
 
 test("overlay hides when the organizer closes mid-run", () => {

@@ -209,6 +209,7 @@
       state,
       devicePixelRatio,
       structuredCloneImpl: structuredClone,
+      getViewportWidth: () => Number(root.innerWidth || 0),
       handlers: {
         activateFrameAttachmentForEditing,
         applySelectedAttachmentWheel,

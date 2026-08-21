@@ -128,6 +128,7 @@ const serveStatic = createStaticHandler({
   workbenchRoutes: WORKBENCH_ROUTES,
   landingDocument: "animation_factory.html",
   documentRoutes: {
+    "/admin/login": "admin.html",
     "/admin/licenses": "admin.html",
     "/tools/watermark": "watermark_studio.html",
   },

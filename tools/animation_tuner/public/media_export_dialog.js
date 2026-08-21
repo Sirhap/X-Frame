@@ -677,12 +677,12 @@
       elements.mediaExportOffsetYMin.textContent = `−${vertical}`;
       elements.mediaExportOffsetYMax.textContent = String(vertical);
 
-      if (format === "mp4" && checkedValue("mediaExportBackground", "edge") !== "color") {
+      if (format === "mp4" && checkedValue("mediaExportBackground", "transparent") !== "color") {
         elements.mediaExportDialog.querySelector(
           'input[name="mediaExportBackground"][value="color"]',
         ).checked = true;
       }
-      const background = checkedValue("mediaExportBackground", "edge");
+      const background = checkedValue("mediaExportBackground", "transparent");
       elements.mediaExportFillColorRow.hidden = background !== "color";
       elements.mediaExportBackgroundColor.value = elements.mediaExportFillColor.value;
       elements.mediaExportExtrude.value = background === "edge" ? "1" : "0";
@@ -703,7 +703,7 @@
       const value = (name, fallback) => elements[name]?.value ?? fallback;
       const speed = value("mediaExportSpeed", "1");
       const textureSize = checkedValue("mediaExportTextureSize", "2048");
-      const background = checkedValue("mediaExportBackground", "edge");
+      const background = checkedValue("mediaExportBackground", "transparent");
       const format = currentFormat();
       const canvasMode = value("mediaExportCanvasMode", "union");
       const outputWidth = Math.max(1, Number(value("mediaExportWidth", 512)) || 512);
@@ -902,6 +902,7 @@
     bindTransformPair(elements.mediaExportGifFpsRange, elements.mediaExportGifFps);
     bindTransformPair(elements.mediaExportGifAlphaRange, elements.mediaExportGifAlpha);
     bindTransformPair(elements.mediaExportMp4FpsRange, elements.mediaExportMp4Fps);
+    bindTransformPair(elements.mediaExportSpeedRange, elements.mediaExportSpeed);
     elements.mediaExportDialog.addEventListener("pointerdown", (event) => {
       if (event.target === elements.mediaExportDialog) close();
     });
