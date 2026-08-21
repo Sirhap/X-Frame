@@ -17,7 +17,10 @@ test("disabled workbench controls keep readable text and announce their disabled
 });
 
 test("embedded export footer does not stick over the parameter list", () => {
-  const css = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/media_export_dialog.css"), "utf8");
+  const css = fs.readFileSync(
+    path.join(__dirname, "../animation_tuner/public/media_export_dialog.css"),
+    "utf8",
+  );
   const embeddedFooter = css.match(
     /\.mediaExportDialog\[data-presentation="embedded"\] \.mediaExportFooter\s*\{[\s\S]*?\}/u,
   );
@@ -37,10 +40,17 @@ test("narrow chrome keeps the desktop banner below the tool rail", () => {
 
 test("narrow flow header reserves less than a quarter of a 720px screen with the rail", () => {
   const css = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/app_shell.css"), "utf8");
-  const compact = css.match(
-    /@media \(max-width: 1180px\) \{[\s\S]*?--shell-flow-height:\s*(\d+)px;/u,
-  );
+  const compact = css.match(/@media \(max-width: 1180px\) \{[\s\S]*?--shell-flow-height:\s*(\d+)px;/u);
   assert.ok(compact, "compact flow height");
   const flowHeight = Number(compact[1]);
   assert.ok(flowHeight <= 112, `flow header ${flowHeight}px should stay compact`);
+});
+
+test("phone cutout overlays zoom controls on the preview instead of reserving an empty row", () => {
+  const css = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/responsive.css"), "utf8");
+  const phoneRules = css.match(/@media \(max-width: 700px\) \{[\s\S]*$/u);
+  assert.ok(phoneRules, "phone cutout rules");
+  assert.match(phoneRules[0], /\.cutoutCompare \{[\s\S]*?position:\s*relative/u);
+  assert.match(phoneRules[0], /\.cutoutZoomControls \{[\s\S]*?position:\s*absolute/u);
+  assert.match(phoneRules[0], /\.cutoutZoomControls \{[\s\S]*?flex:\s*0 0 auto/u);
 });

@@ -907,3 +907,50 @@
     grid-auto-rows: minmax(0, 1fr);
   }
 }
+
+/* Phone-width cutout keeps zoom controls on the image instead of allocating a
+   full empty row between the preview and the parameters. */
+@media (max-width: 700px) {
+  .cutoutPreview {
+    min-height: auto;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .cutoutPreviewDisplayControls {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .cutoutPreviewBackgrounds button,
+  .cutoutViewModes button {
+    min-height: 38px;
+    font-size: 11px;
+  }
+
+  .cutoutCompare {
+    position: relative;
+    min-height: 260px;
+    height: clamp(260px, 44dvh, 420px);
+  }
+
+  .cutoutZoomControls {
+    position: absolute;
+    z-index: 6;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    min-height: 40px;
+    flex: 0 0 auto;
+    margin: 0;
+    background: color-mix(in srgb, var(--panel-2) 92%, transparent);
+    backdrop-filter: blur(7px);
+  }
+
+  .cutoutZoomSlider {
+    width: 96px;
+    flex: 0 0 auto;
+  }
+}
