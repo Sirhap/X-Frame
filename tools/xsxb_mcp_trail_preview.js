@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -246,14 +247,20 @@ async function compositeWithPage(job, page) {
                   ? attachment.layer === "below" || Number(attachment.layerOrder) < 0
                   : attachment.layer !== "below" && Number(attachment.layerOrder) >= 0),
             )
-            .sort((left, right) => Number(left.layerOrder || 0) - Number(right.layerOrder || 0));
+            .sort(
+              (left, right) =>
+                Number(left.layerOrder || 0) - Number(right.layerOrder || 0) ||
+                attachmentEntries.indexOf(right) - attachmentEntries.indexOf(left),
+            );
           for (const attachment of matches) {
             const image = loadedAttachments[attachment.absolutePath];
             if (!image) continue;
             const transform = attachment.transform || {};
-            const scale = Number(transform.scale ?? 1);
-            const scaleX = Number(transform.scaleX ?? scale) * selectedScale;
-            const scaleY = Number(transform.scaleY ?? scale) * selectedScale;
+            const legacyScale =
+              transform.scale && typeof transform.scale === "object" ? transform.scale : null;
+            const scale = Number(legacyScale ? 1 : (transform.scale ?? 1));
+            const scaleX = Number(transform.scaleX ?? legacyScale?.x ?? scale) * selectedScale;
+            const scaleY = Number(transform.scaleY ?? legacyScale?.y ?? scale) * selectedScale;
             const offset = transform.offset || {};
             ctx.save();
             ctx.translate(
@@ -335,6 +342,7 @@ function createCompositeSession(options = {}) {
   let browser = null;
   let page = null;
   let idleTimer = null;
+  let queue = Promise.resolve();
 
   async function close() {
     if (idleTimer) clearTimeout(idleTimer);
@@ -364,7 +372,9 @@ function createCompositeSession(options = {}) {
     return page;
   }
 
-  async function composite(job) {
+  async function runComposite(job) {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = null;
     const attachments = Array.isArray(job?.attachments) ? job.attachments : [];
     const trails = usableTrailSegments(job?.trails, String(job?.bindingKey || ""));
     if (!attachments.length && !trails.length) {
@@ -380,11 +390,15 @@ function createCompositeSession(options = {}) {
     const attachmentImageSources = {};
     for (const attachment of attachments) {
       const absolutePath = String(attachment?.absolutePath || "");
-      if (absolutePath && !attachmentSourceCache.has(absolutePath)) {
-        attachmentSourceCache.set(absolutePath, dataUrl(absolutePath));
+      if (!absolutePath) continue;
+      const bytes = fs.readFileSync(absolutePath);
+      const digest = crypto.createHash("sha256").update(bytes).digest("hex");
+      const cacheKey = `${absolutePath}:${digest}`;
+      if (!attachmentSourceCache.has(cacheKey)) {
+        attachmentSourceCache.set(cacheKey, `data:image/png;base64,${bytes.toString("base64")}`);
         stats.uniqueAttachmentLoads += 1;
       }
-      if (absolutePath) attachmentImageSources[absolutePath] = attachmentSourceCache.get(absolutePath);
+      attachmentImageSources[absolutePath] = attachmentSourceCache.get(cacheKey);
     }
     const activePage = await ensurePage();
     try {
@@ -392,6 +406,12 @@ function createCompositeSession(options = {}) {
     } finally {
       scheduleIdleClose();
     }
+  }
+
+  function composite(job) {
+    const task = queue.then(() => runComposite(job));
+    queue = task.catch(() => {});
+    return task;
   }
 
   return { composite, close, stats };

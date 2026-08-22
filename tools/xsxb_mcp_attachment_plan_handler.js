@@ -13,12 +13,18 @@ const { measureLongAxis, parseGripT, renderContactSheet } = require("./xsxb_mcp_
 
 /**
  * Creates the revision-bound attachment planning handler.
- * @param {{root:string,projectStore:object,animationFor:Function,resolveAnimationFramePath:Function,attachmentBindingForSelection:Function}} dependencies Service context.
+ * @param {{root:string,projectStore:object,animationFor:Function,resolveAnimationFramePath:Function,attachmentBindingForSelection:Function,registerPlan?:(plan:object)=>void}} dependencies Service context.
  * @returns {(args?:object)=>object} MCP handler.
  */
 function createPlanAttachmentHandler(dependencies) {
-  const { root, projectStore, animationFor, resolveAnimationFramePath, attachmentBindingForSelection } =
-    dependencies;
+  const {
+    root,
+    projectStore,
+    animationFor,
+    resolveAnimationFramePath,
+    attachmentBindingForSelection,
+    registerPlan,
+  } = dependencies;
 
   function planAttachment(args = {}) {
     const selection = animationFor(args);
@@ -213,6 +219,7 @@ function createPlanAttachmentHandler(dependencies) {
     fs.mkdirSync(path.dirname(previewPath), { recursive: true });
     fs.writeFileSync(previewPath, encodePngRgba(preview.data, preview.width, preview.height));
     plan.previewPath = previewPath;
+    registerPlan?.(structuredClone(plan));
     return {
       projectId: project.id,
       profileId: profile.id,

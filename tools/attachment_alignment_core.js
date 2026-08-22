@@ -732,66 +732,73 @@ function applyAlignmentPlan(options) {
   }
   const originalAssets = projectStore.readJson(paths.attachmentAssets, []);
   const nextAssets = Array.isArray(originalAssets) ? clone(originalAssets) : [];
-  for (const entry of plan.entries) {
-    const asset = entry.asset;
-    const targetPath = safeResolve(root, asset.path);
-    const workspaceDir = projectStore.projectWorkspaceDir(project);
-    if (!targetPath || !safeResolve(workspaceDir, path.relative(workspaceDir, targetPath))) {
-      throw new Error(`Planned attachment path is outside the project workspace: ${asset.path}`);
-    }
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    if (fs.existsSync(targetPath)) {
-      if (fileHash(targetPath) !== asset.assetHash)
-        throw new Error(`Attachment target hash mismatch: ${asset.path}`);
-    } else {
-      fs.copyFileSync(asset.sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
-    }
-    const existingAsset = nextAssets.find((candidate) => String(candidate.id) === String(asset.id));
-    if (existingAsset && String(existingAsset.assetHash || "") !== String(asset.assetHash)) {
-      throw new Error(`Attachment asset id collision: ${asset.id}`);
-    }
-    if (!existingAsset) {
-      nextAssets.push({
-        id: String(asset.id),
-        name: String(asset.name),
-        path: String(asset.path),
-        assetHash: String(asset.assetHash),
-        type: String(asset.type || "image/png"),
-        width: Number(asset.width || 0),
-        height: Number(asset.height || 0),
-        groupKey: String(plan.groupKey),
-      });
-    }
-  }
-  const nextAttachments = [...attachments, ...plan.entries.map((entry) => attachmentFromEntry(plan, entry))];
-  const backups = [backupJson(paths.frameImageAttachments, currentRevision)];
-  if (JSON.stringify(nextAssets) !== JSON.stringify(originalAssets)) {
-    backups.push(backupJson(paths.attachmentAssets, currentRevision));
-  }
+  const createdTargets = [];
+  let validation;
+  let godotSync = null;
   try {
+    for (const entry of plan.entries) {
+      const asset = entry.asset;
+      const targetPath = safeResolve(root, asset.path);
+      const workspaceDir = projectStore.projectWorkspaceDir(project);
+      if (!targetPath || !safeResolve(workspaceDir, path.relative(workspaceDir, targetPath))) {
+        throw new Error(`Planned attachment path is outside the project workspace: ${asset.path}`);
+      }
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      if (fs.existsSync(targetPath)) {
+        if (fileHash(targetPath) !== asset.assetHash)
+          throw new Error(`Attachment target hash mismatch: ${asset.path}`);
+      } else {
+        fs.copyFileSync(asset.sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
+        createdTargets.push(targetPath);
+      }
+      const existingAsset = nextAssets.find((candidate) => String(candidate.id) === String(asset.id));
+      if (existingAsset && String(existingAsset.assetHash || "") !== String(asset.assetHash)) {
+        throw new Error(`Attachment asset id collision: ${asset.id}`);
+      }
+      if (!existingAsset) {
+        nextAssets.push({
+          id: String(asset.id),
+          name: String(asset.name),
+          path: String(asset.path),
+          assetHash: String(asset.assetHash),
+          type: String(asset.type || "image/png"),
+          width: Number(asset.width || 0),
+          height: Number(asset.height || 0),
+          groupKey: String(plan.groupKey),
+        });
+      }
+    }
+    const nextAttachments = [
+      ...attachments,
+      ...plan.entries.map((entry) => attachmentFromEntry(plan, entry)),
+    ];
+    const backups = [backupJson(paths.frameImageAttachments, currentRevision)];
+    if (JSON.stringify(nextAssets) !== JSON.stringify(originalAssets)) {
+      backups.push(backupJson(paths.attachmentAssets, currentRevision));
+    }
     projectStore.writeJson(paths.attachmentAssets, nextAssets);
     projectStore.writeJson(paths.frameImageAttachments, nextAttachments);
-    const validation = validateAlignment({ root, plan });
+    validation = validateAlignment({ root, plan });
     if (!validation.ok) throw new Error(`Post-apply validation failed: ${validation.errors.join(" ")}`);
+    godotSync =
+      options.syncGodot !== false && validGodotProjectRoot(project)
+        ? syncGodotProject(root, projectStore, project, { frameImageAttachments: nextAttachments })
+        : null;
+    return {
+      ok: true,
+      status: "applied",
+      applied: plan.entries.length,
+      validation,
+      godotSync,
+      backups,
+      revision: projectDataRevision(projectStore, project),
+    };
   } catch (error) {
     projectStore.writeJson(paths.attachmentAssets, originalAssets);
     projectStore.writeJson(paths.frameImageAttachments, originalAttachments);
+    for (const targetPath of createdTargets.reverse()) fs.rmSync(targetPath, { force: true });
     throw error;
   }
-  const validation = validateAlignment({ root, plan });
-  const godotSync =
-    options.syncGodot !== false && validGodotProjectRoot(project)
-      ? syncGodotProject(root, projectStore, project, { frameImageAttachments: nextAttachments })
-      : null;
-  return {
-    ok: true,
-    status: "applied",
-    applied: plan.entries.length,
-    validation,
-    godotSync,
-    backups,
-    revision: projectDataRevision(projectStore, project),
-  };
 }
 
 module.exports = {

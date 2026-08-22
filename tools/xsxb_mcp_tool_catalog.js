@@ -613,7 +613,7 @@ function toolDefinitions() {
         },
         additionalProperties: false,
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     {
       name: "xsxb_add_attachment",
@@ -820,7 +820,7 @@ function toolDefinitions() {
     {
       name: "xsxb_export_gif",
       description:
-        "Export one animation as an animated GIF preview via FFmpeg, honoring per-frame durations, group/frame visual_size, and authored attack-trail meshes. Skips disabled frames. Returns the absolute output path.",
+        "Export one animation as an animated GIF preview via FFmpeg, including workbench attachments and attack trails by default and honoring timing plus group/frame visual_size. Skips disabled frames.",
       inputSchema: {
         type: "object",
         properties: {
@@ -851,12 +851,12 @@ function toolDefinitions() {
         },
         additionalProperties: false,
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     {
       name: "xsxb_export_sheet",
       description:
-        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size, leftover dirt, and authored attack-trail meshes stay comparable. Every cell is labeled with its absolute 0-based index and the tuner group-coordinate grid (foot origin 0,0; body is negative y). mark_frame highlights one cell for a second cull pass. output_path must stay inside the XSXB root.",
+        "Export a contact sheet PNG with workbench attachments and attack trails by default. Shared cells keep standing size and leftover dirt comparable; labels and the group grid use foot origin 0,0 with the body in negative y.",
       inputSchema: {
         type: "object",
         properties: {
@@ -906,7 +906,7 @@ function toolDefinitions() {
         },
         additionalProperties: false,
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     {
       name: "xsxb_measure_image",

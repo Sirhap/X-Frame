@@ -174,6 +174,7 @@ function createXsxbMcpService(options = {}) {
   const probeTunerImpl = options.probeTunerImpl || probeTunerUrl;
   const launchTunerImpl = options.launchTunerImpl || launchTunerProcess;
   const context = { projectId: "", profileId: "", animationId: "" };
+  const reviewedAttachmentPlans = new Map();
 
   /**
    * Composites authored attack-trail meshes onto export frames.
@@ -1824,7 +1825,11 @@ function createXsxbMcpService(options = {}) {
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot attach an image to an animation without frames.");
     if (args.plan) {
-      const plan = args.plan;
+      const submittedPlan = args.plan;
+      const plan = reviewedAttachmentPlans.get(String(submittedPlan?.planId || ""));
+      if (!plan || JSON.stringify(submittedPlan) !== JSON.stringify(plan)) {
+        throw new Error("Attachment plan changed after visual review; generate and review a new plan.");
+      }
       const absolute = requireExistingFile(args.file_path, "Attachment image");
       if (!booleanFlag(args.confirm)) {
         throw new Error("Applying an attachment plan requires explicit confirmation.");
@@ -2526,6 +2531,9 @@ function createXsxbMcpService(options = {}) {
     animationFor,
     resolveAnimationFramePath,
     attachmentBindingForSelection,
+    registerPlan(plan) {
+      reviewedAttachmentPlans.set(String(plan.planId), plan);
+    },
   });
   const handlers = {
     xsxb_list_projects: listProjects,
@@ -2567,6 +2575,7 @@ function createXsxbMcpService(options = {}) {
   return {
     tools,
     async close() {
+      reviewedAttachmentPlans.clear();
       await compositeSession?.close();
     },
     async call(name, args = {}) {

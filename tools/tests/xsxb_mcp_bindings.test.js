@@ -386,6 +386,19 @@ test("xsxb_plan_attachment previews a revision-bound weapon plan and add_attachm
     );
     fs.writeFileSync(weaponPath, weaponBytes);
 
+    const tamperedPlan = structuredClone(planResult.plan);
+    tamperedPlan.entries[0].transform.offset.x += 500;
+    await assert.rejects(
+      current.service.call("xsxb_add_attachment", {
+        animation_id: "walk",
+        file_path: weaponPath,
+        plan: tamperedPlan,
+        confirm: true,
+        sync: false,
+      }),
+      /changed after visual review/u,
+    );
+
     const originalTuning = current.store.readJson(paths.tuning, {});
     current.store.writeJson(paths.tuning, { ...originalTuning, revisionProbe: true });
     await assert.rejects(
