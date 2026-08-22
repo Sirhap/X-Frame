@@ -29,6 +29,7 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_reorganize_frames",
   "xsxb_replace_frame",
   "xsxb_add_attack_trail",
+  "xsxb_plan_attachment",
   "xsxb_add_attachment",
   "xsxb_add_sfx",
   "xsxb_remove_binding",
@@ -535,6 +536,59 @@ function toolDefinitions() {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     {
+      name: "xsxb_plan_attachment",
+      description:
+        "Plan a revision-bound weapon attachment from explicit hand and tip anchors, render a marked contact-sheet preview, and return a plan for confirmed xsxb_add_attachment application. Does not mutate project JSON.",
+      inputSchema: {
+        type: "object",
+        required: ["file_path"],
+        properties: {
+          ...animationProperties,
+          file_path: { type: "string", description: "Absolute weapon PNG path." },
+          kind: { type: "string", enum: ["weapon", "effect"], default: "weapon" },
+          id: { type: "string", description: "Logical attachment id." },
+          name: { type: "string" },
+          grip_t: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            description: "Grip fraction on the measured pommel-to-tip axis.",
+          },
+          anchors: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["frame", "hand"],
+              properties: {
+                frame: { type: "integer", minimum: 0 },
+                hand: {
+                  type: "object",
+                  required: ["x", "y"],
+                  properties: { x: { type: "number" }, y: { type: "number" } },
+                  additionalProperties: false,
+                },
+                tip: {
+                  type: "object",
+                  required: ["x", "y"],
+                  properties: { x: { type: "number" }, y: { type: "number" } },
+                  additionalProperties: false,
+                },
+                rotation: { type: "number" },
+                scale: { type: "number", exclusiveMinimum: 0 },
+                layer: { type: "string", enum: ["above", "below"], default: "above" },
+              },
+              additionalProperties: false,
+            },
+          },
+          start_frame: { type: "integer", minimum: 0 },
+          end_frame: { type: "integer", minimum: 0 },
+          preview_path: { type: "string", description: "Optional PNG path inside the XSXB root." },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
       name: "xsxb_add_attachment",
       description:
         "Bind a local PNG as a frame image attachment. file_path is required for a real asset. Pass frames to bind the same asset on many frames in one write.",
@@ -558,6 +612,11 @@ function toolDefinitions() {
           offset_y: { type: "number" },
           scale: { type: "number", default: 1 },
           rotation: { type: "number", default: 0 },
+          plan: {
+            type: "object",
+            description: "Plan returned by xsxb_plan_attachment. Requires confirm=true.",
+          },
+          confirm: { type: "boolean", default: false },
           sync: { type: "boolean", default: true },
         },
         required: ["file_path"],

@@ -26,6 +26,23 @@ function bodyFrame(shift = 0) {
   return encodePngRgba(rgba, width, height);
 }
 
+/**
+ * Builds a horizontal tapered weapon whose thick left end is the pommel.
+ * @returns {Buffer} Encoded PNG.
+ */
+function weaponFrame() {
+  const width = 24;
+  const height = 12;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let x = 2; x <= 21; x += 1) {
+    const half = x < 7 ? 2 : x < 17 ? 1 : 0;
+    for (let y = 6 - half; y <= 6 + half; y += 1) {
+      rgba.set([220, 220, 240, 255], (y * width + x) * 4);
+    }
+  }
+  return encodePngRgba(rgba, width, height);
+}
+
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-mcp-bind-"));
   const godotRoot = path.join(root, "godot");
@@ -313,6 +330,120 @@ test("xsxb_add_attachment writes workbench-compatible identity and complete asse
     assert.equal(assets.length, 1);
     assert.equal(assets[0].id, binding.assetId);
     assert.equal(assets[0].assetHash, binding.assetHash);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("xsxb_plan_attachment previews a revision-bound weapon plan and add_attachment applies it", async () => {
+  const current = await importedFixture();
+  try {
+    const weaponPath = path.join(current.root, "weapon.png");
+    const weaponBytes = weaponFrame();
+    fs.writeFileSync(weaponPath, weaponBytes);
+    const paths = current.store.projectPaths(current.store.readRegistry().projects[0]);
+
+    const planResult = await current.service.call("xsxb_plan_attachment", {
+      animation_id: "walk",
+      file_path: weaponPath,
+      kind: "weapon",
+      grip_t: 0.2,
+      anchors: [
+        { frame: 0, hand: { x: -2, y: -6 }, tip: { x: 6, y: -10 }, layer: "below" },
+        { frame: 1, hand: { x: 2, y: -7 }, tip: { x: 10, y: -3 }, layer: "above" },
+      ],
+    });
+
+    assert.equal(planResult.plan.entries.length, 2);
+    assert.equal(planResult.plan.requiresVisualReview, true);
+    assert.match(planResult.plan.planId, /^weapon_/u);
+    assert.match(planResult.plan.baseRevision, /^[a-f0-9]{64}$/u);
+    assert.ok(fs.existsSync(planResult.previewPath));
+    assert.deepEqual(current.store.readJson(paths.frameImageAttachments, []), []);
+    assert.deepEqual(current.store.readJson(paths.attachmentAssets, []), []);
+
+    await assert.rejects(
+      current.service.call("xsxb_add_attachment", {
+        animation_id: "walk",
+        file_path: weaponPath,
+        plan: planResult.plan,
+        confirm: false,
+        sync: false,
+      }),
+      /explicit confirmation/u,
+    );
+
+    fs.writeFileSync(weaponPath, bodyFrame());
+    await assert.rejects(
+      current.service.call("xsxb_add_attachment", {
+        animation_id: "walk",
+        file_path: weaponPath,
+        plan: planResult.plan,
+        confirm: true,
+        sync: false,
+      }),
+      /source changed/u,
+    );
+    fs.writeFileSync(weaponPath, weaponBytes);
+
+    const originalTuning = current.store.readJson(paths.tuning, {});
+    current.store.writeJson(paths.tuning, { ...originalTuning, revisionProbe: true });
+    await assert.rejects(
+      current.service.call("xsxb_add_attachment", {
+        animation_id: "walk",
+        file_path: weaponPath,
+        plan: planResult.plan,
+        confirm: true,
+        sync: false,
+      }),
+      /Project data changed after planning/u,
+    );
+    current.store.writeJson(paths.tuning, originalTuning);
+
+    const applied = await current.service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      file_path: weaponPath,
+      plan: planResult.plan,
+      confirm: true,
+      sync: false,
+    });
+    assert.equal(applied.status, "applied");
+    assert.equal(applied.updatedFrames, 2);
+    assert.equal(applied.requiresVisualReview, true);
+    assert.equal(applied.previewPath, planResult.previewPath);
+    const readBack = await current.service.call("xsxb_get_animation", {
+      animation_id: "walk",
+      include: ["attachments"],
+    });
+    assert.equal(readBack.attachments.length, 2);
+    assert.ok(readBack.attachments.every((attachment) => attachment.key.startsWith("bind-test:")));
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("xsxb_plan_attachment keeps alpha-bounds effect placement explicitly reviewable", async () => {
+  const current = await importedFixture();
+  try {
+    const effectPath = path.join(current.root, "effect.png");
+    fs.writeFileSync(effectPath, bodyFrame(1));
+
+    const planned = await current.service.call("xsxb_plan_attachment", {
+      animation_id: "walk",
+      file_path: effectPath,
+      kind: "effect",
+      start_frame: 0,
+      end_frame: 1,
+    });
+
+    assert.equal(planned.plan.attachmentKind, "effect");
+    assert.equal(planned.plan.entries.length, 2);
+    assert.equal(planned.requiresVisualReview, true);
+    assert.ok(
+      planned.plan.entries.every(
+        (entry) => entry.alignment.spatialMode === "alpha_bounds" && entry.alignment.spatialConfidence < 1,
+      ),
+    );
   } finally {
     current.cleanup();
   }

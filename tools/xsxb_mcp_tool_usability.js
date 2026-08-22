@@ -94,6 +94,24 @@ function writeGreenSequence(directory) {
 }
 
 /**
+ * Writes a tapered horizontal PNG for weapon-placement probes.
+ * @param {string} filePath Output file.
+ * @returns {void}
+ */
+function writeWeaponPng(filePath) {
+  const width = 24;
+  const height = 12;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let x = 2; x <= 21; x += 1) {
+    const half = x < 7 ? 2 : x < 17 ? 1 : 0;
+    for (let y = 6 - half; y <= 6 + half; y += 1) {
+      rgba.set([220, 220, 240, 255], (y * width + x) * 4);
+    }
+  }
+  fs.writeFileSync(filePath, encodePngRgba(rgba, width, height));
+}
+
+/**
  * Builds one lavfi MP4 when ffmpeg is on PATH.
  * @param {string} filePath Destination path.
  * @returns {{ok:boolean,error?:string}} Probe result.
@@ -667,6 +685,40 @@ animations = [{
       "xsxb_add_attack_trail",
       "ready",
       `id=${trail.segment.id} sticks=${trail.segment.sticks.length}`,
+    );
+  },
+
+  async xsxb_plan_attachment(fixture) {
+    const directory = path.join(fixture.root, "weapon-owner-seq");
+    writeGreenSequence(directory);
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "weapon_walk",
+    });
+    const weaponPath = path.join(fixture.root, "weapon.png");
+    writeWeaponPng(weaponPath);
+    const planned = await fixture.service.call("xsxb_plan_attachment", {
+      animation_id: "weapon_walk",
+      file_path: weaponPath,
+      kind: "weapon",
+      grip_t: 0.2,
+      anchors: [
+        { frame: 0, hand: { x: -2, y: -6 }, tip: { x: 6, y: -10 } },
+        { frame: 1, hand: { x: 2, y: -7 }, tip: { x: 10, y: -3 } },
+      ],
+    });
+    if (
+      planned.plan?.entries?.length !== 2 ||
+      planned.requiresVisualReview !== true ||
+      !fs.existsSync(planned.previewPath)
+    ) {
+      return verdict("xsxb_plan_attachment", "fail", JSON.stringify(planned));
+    }
+    return verdict(
+      "xsxb_plan_attachment",
+      "ready",
+      `frames=${planned.frameCount} preview=${path.basename(planned.previewPath)}`,
     );
   },
 

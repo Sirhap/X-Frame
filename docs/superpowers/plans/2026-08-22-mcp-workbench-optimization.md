@@ -31,11 +31,11 @@ weapon planner, compose attachment/trail rendering in one export boundary, and k
 
 ### Task 2: Weapon attachment planning
 
-- [ ] Add failing geometry tests for rotated/scaled grip placement and shortest-angle interpolation.
-- [ ] Add failing service tests for `xsxb_plan_attachment`, revision/hash guards, and confirmed apply.
-- [ ] Implement the deterministic weapon planner and annotated preview output.
-- [ ] Extend `xsxb_add_attachment` with plan application, atomic rollback, and quality receipts.
-- [ ] Run the focused Red-Green mutation check.
+- [x] Add failing geometry tests for rotated/scaled grip placement and shortest-angle interpolation.
+- [x] Add failing service tests for `xsxb_plan_attachment`, revision/hash guards, and confirmed apply.
+- [x] Implement the deterministic weapon planner and annotated preview output.
+- [x] Extend `xsxb_add_attachment` with plan application, atomic rollback, and quality receipts.
+- [x] Run the focused Red-Green mutation check.
 
 ### Task 3: Weapon-derived trails
 

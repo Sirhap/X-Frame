@@ -14,6 +14,8 @@ const {
   validateAttackTrails,
 } = require("./attack_trails");
 const { deleteAnimation } = require("./animation_mutations");
+const { applyAlignmentPlan, projectDataRevision } = require("./attachment_alignment_core");
+const { analyzePngAlpha, recommendSpatialTransform } = require("./attachment_sequence_analysis");
 const { frameBoxKey, upsertEstimatedFrameBoxes } = require("./box_estimator");
 const { importAnimation, reorganizeAnimation } = require("./frame_organizer");
 const { syncGodotProject, validGodotProjectRoot } = require("./godot_sync");
@@ -51,6 +53,7 @@ const {
   summarizeMetrics,
 } = require("./xsxb_mcp_visual_qa");
 const { validateToolArguments } = require("./xsxb_mcp_schema");
+const { planWeaponTransforms, renderWeaponPlanFrame } = require("./xsxb_mcp_attachment_planner");
 const { compositeAttackTrails } = require("./xsxb_mcp_trail_preview");
 const { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions } = require("./xsxb_mcp_tool_catalog");
 const {
@@ -287,6 +290,35 @@ function createXsxbMcpService(options = {}) {
     if (!key.startsWith(legacyPrefix)) return null;
     const legacyFrame = Number(key.slice(legacyPrefix.length));
     return Number.isInteger(legacyFrame) ? legacyFrame : null;
+  }
+
+  /**
+   * Builds the canonical workbench binding identity for one selected frame.
+   * @param {{project:object,profile:object,animation:object}} selection Animation selection.
+   * @param {number} frame Zero-based frame.
+   * @returns {{key:string,metadata:object,groupKey:string,groupName:string}} Binding identity.
+   */
+  function attachmentBindingForSelection(selection, frame) {
+    const { project, profile, animation } = selection;
+    const animationId = String(animation.id || animation.name);
+    const groupKey = `${profile.id}/${animationId}`;
+    const groupName = String(animation.name || animationId);
+    const metadata = {
+      projectId: project.id,
+      tuningTarget: "player",
+      profileId: profile.id,
+      groupType: String(animation.type || "actor"),
+      animation: groupKey,
+      source: reslash(animation.source || path.dirname(animation.frames?.[0]?.path || "")),
+      frame,
+      displayFrame: frame,
+    };
+    return {
+      key: canonicalAttachmentFrameKey({ ...metadata, groupName }),
+      metadata,
+      groupKey,
+      groupName,
+    };
   }
 
   /**
@@ -1617,6 +1649,217 @@ function createXsxbMcpService(options = {}) {
     return { frameSpan, centerTravel, edgeTravel, note };
   }
 
+  /**
+   * Creates a reviewable, revision-bound weapon placement plan and contact sheet.
+   * @param {object} args MCP arguments.
+   * @returns {object} Plan and preview receipt.
+   */
+  function planAttachment(args = {}) {
+    const selection = animationFor(args);
+    const { project, profile, animation } = selection;
+    const kind = String(args.kind || "weapon").toLowerCase();
+    if (!new Set(["weapon", "effect"]).has(kind)) throw new Error('kind must be "weapon" or "effect".');
+    const absolute = requireExistingFile(args.file_path, "Attachment image");
+    if (!/\.png$/i.test(absolute)) throw new Error("Attachment image must be a PNG.");
+    const assetBuffer = fs.readFileSync(absolute);
+    const assetHash = crypto.createHash("sha256").update(assetBuffer).digest("hex");
+    const image = decodePngRgba(absolute);
+    let gripT = null;
+    let measured = null;
+    let weapon = null;
+    let planned;
+    if (kind === "weapon") {
+      if (args.grip_t === undefined) throw new Error("grip_t is required for weapon attachment planning.");
+      gripT = parseGripT(args.grip_t, NaN);
+      if (!Number.isFinite(gripT) || gripT < 0 || gripT > 1) {
+        throw new Error("grip_t must be a number between 0 and 1.");
+      }
+      measured = measureLongAxis(image.data, image.width, image.height, { t: gripT });
+      weapon = {
+        grip: measured.localFromCenter,
+        tip: { x: measured.tip.x - image.width / 2, y: measured.tip.y - image.height / 2 },
+      };
+      planned = planWeaponTransforms({
+        frameCount: animation.frames?.length || 0,
+        weapon,
+        anchors: args.anchors,
+        startFrame: args.start_frame,
+        endFrame: args.end_frame,
+      });
+    } else {
+      const frames = animation.frames || [];
+      const startFrame =
+        args.start_frame === undefined ? 0 : requireFrameIndex(args.start_frame, frames.length - 1);
+      const endFrame =
+        args.end_frame === undefined
+          ? frames.length - 1
+          : requireFrameIndex(args.end_frame, frames.length - 1);
+      if (endFrame < startFrame) throw new Error("end_frame must be greater than or equal to start_frame.");
+      const attachmentAnalysis = analyzePngAlpha(absolute);
+      planned = [];
+      for (let frame = startFrame; frame <= endFrame; frame += 1) {
+        const ownerPath = resolveAnimationFramePath(project, frames[frame]?.path);
+        if (!ownerPath || !fs.existsSync(ownerPath)) {
+          throw new Error(`Frame ${frame} has no generated PNG for effect planning.`);
+        }
+        const recommendation = recommendSpatialTransform({
+          owner: analyzePngAlpha(ownerPath),
+          attachment: attachmentAnalysis,
+          direction: "auto",
+        });
+        planned.push({
+          frame,
+          layer: "above",
+          transform: recommendation.transform,
+          gripErrorPx: 0,
+          tipAngleErrorDeg: 0,
+          spatialConfidence: Math.min(0.95, recommendation.confidence),
+          diagnostics: recommendation.diagnostics,
+        });
+      }
+    }
+    const animationId = String(animation.id || animation.name);
+    const groupKey = `${profile.id}/${animationId}`;
+    const logicalId = slug(args.id || path.basename(absolute, path.extname(absolute)), "attachment");
+    const assetId = `asset_${crypto
+      .createHash("sha256")
+      .update(`${groupKey}:${assetHash}`)
+      .digest("hex")
+      .slice(0, 32)}`;
+    const targetPath = path.join(
+      projectStore.projectWorkspaceDir(project),
+      "attachments",
+      profile.id,
+      animationId,
+      `${assetHash.slice(0, 16)}${path.extname(absolute).toLowerCase()}`,
+    );
+    const relativePath = reslash(path.relative(root, targetPath));
+    const baseRevision = projectDataRevision(projectStore, project);
+    const planSeed = {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId,
+      logicalId,
+      assetHash,
+      baseRevision,
+      gripT,
+      kind,
+      anchors: args.anchors,
+    };
+    const planId = `${kind}_${crypto
+      .createHash("sha256")
+      .update(JSON.stringify(planSeed))
+      .digest("hex")
+      .slice(0, 24)}`;
+    const entries = planned.map((entry, index) => {
+      const binding = attachmentBindingForSelection(selection, entry.frame);
+      const frame = animation.frames[entry.frame];
+      return {
+        entryId: `${planId}:${index}`,
+        instanceId: `${logicalId}_${String(entry.frame).padStart(4, "0")}`,
+        logicalId,
+        sequenceIndex: index,
+        frameIndex: entry.frame,
+        displayFrame: entry.frame + 1,
+        frameId: String(frame?.id || ""),
+        framePath: String(frame?.path || ""),
+        key: binding.key,
+        metadata: binding.metadata,
+        asset: {
+          id: assetId,
+          name: String(args.name || path.basename(absolute)),
+          path: relativePath,
+          sourcePath: absolute,
+          assetHash,
+          type: "image/png",
+          width: image.width,
+          height: image.height,
+          groupKey,
+          registered: false,
+        },
+        canvasCompatibility: {
+          mode: frame?.width === image.width && frame?.height === image.height ? "shared" : "local",
+          ownerWidth: Number(frame?.width || 0),
+          ownerHeight: Number(frame?.height || 0),
+          assetWidth: image.width,
+          assetHeight: image.height,
+        },
+        layer: entry.layer,
+        layerOrder: entry.layer === "below" ? -1 : 1,
+        transform: entry.transform,
+        hand: entry.hand,
+        grip: entry.grip,
+        tip: entry.tip,
+        gripErrorPx: entry.gripErrorPx,
+        tipAngleErrorDeg: entry.tipAngleErrorDeg,
+        alignment: {
+          mappingStrategy: kind === "weapon" ? "weapon_anchors" : "frame_alpha_bounds",
+          spatialMode: kind === "weapon" ? "hand_tip" : "alpha_bounds",
+          spatialConfidence: kind === "weapon" ? 1 : entry.spatialConfidence,
+          ...(kind === "weapon" ? { gripT } : { diagnostics: entry.diagnostics }),
+        },
+      };
+    });
+    const plan = {
+      schemaVersion: 1,
+      kind: "xsxb-attachment-alignment-plan",
+      attachmentKind: kind,
+      planId,
+      createdAt: new Date().toISOString(),
+      root,
+      projectId: project.id,
+      profileId: profile.id,
+      animationId,
+      groupKey,
+      logicalId,
+      baseRevision,
+      sourcePath: absolute,
+      sourceHash: assetHash,
+      ...(kind === "weapon" ? { gripT, weapon: { ...weapon, measured } } : {}),
+      requiresVisualReview: true,
+      entries,
+    };
+    const previewFrames = entries.map((entry) => {
+      const ownerPath = resolveAnimationFramePath(project, animation.frames[entry.frameIndex]?.path);
+      if (!ownerPath || !fs.existsSync(ownerPath)) {
+        throw new Error(`Frame ${entry.frameIndex} has no generated PNG for attachment preview.`);
+      }
+      return renderWeaponPlanFrame(decodePngRgba(ownerPath), image, entry);
+    });
+    const preview = renderContactSheet(previewFrames, {
+      cell: Math.max(64, ...previewFrames.map((frame) => Math.max(frame.width, frame.height))),
+      pad: 8,
+      columns: Math.min(8, previewFrames.length),
+      startIndex: entries[0].frameIndex,
+      markFrame: entries[0].frameIndex,
+      grid: true,
+      anchorMode: String(animation.anchorMode || "canvas_bottom_center"),
+    });
+    const exportRoot = projectStore.projectWorkspaceDir(project);
+    const requestedPreview = String(args.preview_path || "");
+    const previewPath = requestedPreview
+      ? path.resolve(exportRoot, requestedPreview)
+      : path.join(exportRoot, "exports", `${profile.id}_${animationId}_${planId}.png`);
+    if (!/\.png$/i.test(previewPath)) throw new Error("preview_path must end with .png.");
+    if (!isInsideDirectory(previewPath, root)) {
+      throw new Error(`preview_path must stay inside the XSXB workspace root (${root}).`);
+    }
+    fs.mkdirSync(path.dirname(previewPath), { recursive: true });
+    fs.writeFileSync(previewPath, encodePngRgba(preview.data, preview.width, preview.height));
+    plan.previewPath = previewPath;
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId,
+      plan,
+      previewPath,
+      frameCount: entries.length,
+      requiresVisualReview: true,
+      gripErrorPx: Math.max(0, ...entries.map((entry) => Number(entry.gripErrorPx || 0))),
+      tipAngleErrorDeg: Math.max(0, ...entries.map((entry) => Number(entry.tipAngleErrorDeg || 0))),
+    };
+  }
+
   async function addAttackTrail(args = {}) {
     const selection = animationFor(args);
     const { project, profile, animation } = selection;
@@ -1708,9 +1951,60 @@ function createXsxbMcpService(options = {}) {
   }
 
   async function addAttachment(args = {}) {
-    const { project, profile, animation } = animationFor(args);
+    const selection = animationFor(args);
+    const { project, profile, animation } = selection;
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot attach an image to an animation without frames.");
+    if (args.plan) {
+      const plan = args.plan;
+      const absolute = requireExistingFile(args.file_path, "Attachment image");
+      if (!booleanFlag(args.confirm)) {
+        throw new Error("Applying an attachment plan requires explicit confirmation.");
+      }
+      if (
+        String(plan.projectId || "") !== String(project.id) ||
+        String(plan.profileId || "") !== String(profile.id) ||
+        String(plan.animationId || "") !== String(animation.id || animation.name)
+      ) {
+        throw new Error("Attachment plan belongs to a different project or animation.");
+      }
+      if (path.resolve(String(plan.sourcePath || "")) !== absolute) {
+        throw new Error("Attachment plan belongs to a different source file.");
+      }
+      const sourceHash = crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex");
+      if (sourceHash !== String(plan.sourceHash || "")) {
+        throw new Error("Attachment source changed after planning.");
+      }
+      const applied = applyAlignmentPlan({
+        root,
+        plan,
+        confirmed: true,
+        syncGodot: booleanFlag(args.sync, true),
+      });
+      const paths = projectStore.projectPaths(project);
+      const persisted = projectStore.readJson(paths.frameImageAttachments, []);
+      const bindings = (Array.isArray(persisted) ? persisted : []).filter(
+        (entry) => String(entry?.automation?.planId || "") === String(plan.planId),
+      );
+      return {
+        projectId: project.id,
+        status: applied.status,
+        updatedFrames: bindings.length,
+        bindings,
+        binding: bindings.at(-1),
+        bindingCount: Array.isArray(persisted) ? persisted.length : 0,
+        requiresVisualReview: plan.requiresVisualReview === true,
+        previewPath: String(plan.previewPath || ""),
+        gripErrorPx: Math.max(0, ...plan.entries.map((entry) => Number(entry.gripErrorPx || 0))),
+        tipAngleErrorDeg: Math.max(0, ...plan.entries.map((entry) => Number(entry.tipAngleErrorDeg || 0))),
+        validation: applied.validation,
+        backups: applied.backups,
+        revision: applied.revision,
+        sync: applied.godotSync
+          ? { requested: true, ...applied.godotSync }
+          : { requested: booleanFlag(args.sync, true), ok: null },
+      };
+    }
     const batch = Array.isArray(args.frames) && args.frames.length > 0;
     const requests = batch
       ? args.frames
@@ -1755,9 +2049,6 @@ function createXsxbMcpService(options = {}) {
     const layer = String(args.layer || "above") === "below" ? "below" : "above";
     const signedLayerOrder =
       layerOrder === 0 ? 0 : layer === "below" ? -Math.abs(layerOrder) : Math.abs(layerOrder);
-    const groupType = String(animation.type || "actor");
-    const groupName = String(animation.name || animationId);
-    const sourcePath = reslash(animation.source || path.dirname(frames[0]?.path || ""));
     const added = [];
     let next = Array.isArray(bindings) ? bindings.slice() : [];
     for (const request of requests) {
@@ -1765,20 +2056,8 @@ function createXsxbMcpService(options = {}) {
         throw new Error("Each frames item must be an object with a frame index.");
       }
       const frame = requireFrameIndex(request.frame ?? 0, frames.length - 1);
-      const metadata = {
-        projectId: project.id,
-        tuningTarget: "player",
-        profileId: profile.id,
-        groupType,
-        animation: groupKey,
-        source: sourcePath,
-        frame,
-        displayFrame: frame,
-      };
-      const key = canonicalAttachmentFrameKey({
-        ...metadata,
-        groupName,
-      });
+      const bindingIdentity = attachmentBindingForSelection(selection, frame);
+      const { key, metadata } = bindingIdentity;
       const source = frames[frame] || frames[0];
       const scale = Number(request.scale ?? defaultScale);
       const offsetX = Number(request.offset_x ?? args.offset_x ?? 0);
@@ -2350,6 +2629,7 @@ function createXsxbMcpService(options = {}) {
     xsxb_set_visual_transform: setVisualTransform,
     xsxb_estimate_visual: estimateVisual,
     xsxb_replace_frame: replaceFrame,
+    xsxb_plan_attachment: planAttachment,
     xsxb_export_gif: exportGif,
     xsxb_export_sheet: exportSheet,
     xsxb_measure_image: measureImage,
