@@ -111,22 +111,40 @@ function pngHeaderDimensions(buffer) {
  * @param {number} frameCount Frame count.
  * @returns {number[]} Per-frame scales.
  */
-function bakedVisualScales(tuning, profileId, animationId, frameCount) {
+function bakedVisualTransforms(tuning, profileId, animationId, frameCount) {
   const values = tuning?.values && typeof tuning.values === "object" ? tuning.values : {};
   const group = Number(values[`profiles.${profileId}.groups.${animationId}.visual_size`]);
   const groupScale = Number.isFinite(group) && group > 0 ? group : 1;
+  const groupScaleVector = values[`profiles.${profileId}.groups.${animationId}.visual_scale`];
+  const groupOffset = values[`profiles.${profileId}.groups.${animationId}.offset`];
+  const groupRotation = Number(values[`profiles.${profileId}.groups.${animationId}.rotation`] || 0);
   const overrides =
     tuning?.frame_visual_overrides && typeof tuning.frame_visual_overrides === "object"
       ? tuning.frame_visual_overrides
       : {};
-  const scales = [];
+  const transforms = [];
   for (let index = 0; index < frameCount; index += 1) {
     const key = frameBoxKey(profileId, animationId, index);
     const override = overrides[key] && typeof overrides[key] === "object" ? overrides[key] : {};
     const frameScale = Number(override.visual_size);
-    scales.push(Number.isFinite(frameScale) && frameScale > 0 ? frameScale : groupScale);
+    const scale = Number.isFinite(frameScale) && frameScale > 0 ? frameScale : groupScale;
+    const vector = override.visual_scale || groupScaleVector || {};
+    const offset = override.offset || groupOffset || {};
+    transforms.push({
+      scale,
+      scaleX: Number(vector.x) > 0 ? Number(vector.x) : scale,
+      scaleY: Number(vector.y) > 0 ? Number(vector.y) : scale,
+      offset: { x: Number(offset.x || 0), y: Number(offset.y || 0) },
+      rotation: Number(override.rotation ?? groupRotation) || 0,
+    });
   }
-  return scales;
+  return transforms;
+}
+
+function bakedVisualScales(tuning, profileId, animationId, frameCount) {
+  return bakedVisualTransforms(tuning, profileId, animationId, frameCount).map(
+    (transform) => transform.scale,
+  );
 }
 
 /**
@@ -210,6 +228,7 @@ function createXsxbMcpService(options = {}) {
       trails,
       attachments,
       visualScales: options.visualScales,
+      visualTransforms: options.visualTransforms,
       bindingKey: `${profile.id}/${animation.id || animation.name}`,
       root,
     });
@@ -2244,9 +2263,11 @@ function createXsxbMcpService(options = {}) {
       tuning.frame_playback_overrides && typeof tuning.frame_playback_overrides === "object"
         ? tuning.frame_playback_overrides
         : {};
-    const visualScales = bakedVisualScales(tuning, profile.id, animationId, frames.length);
+    const visualTransforms = bakedVisualTransforms(tuning, profile.id, animationId, frames.length);
+    const visualScales = visualTransforms.map((transform) => transform.scale);
     const framePaths = [];
     const selectedScales = [];
+    const selectedTransforms = [];
     const durations = [];
     let skippedDisabledFrames = 0;
     for (let index = startFrame; index <= endFrame; index += 1) {
@@ -2263,6 +2284,7 @@ function createXsxbMcpService(options = {}) {
       }
       framePaths.push(absolute);
       selectedScales.push(visualScales[index]);
+      selectedTransforms.push(visualTransforms[index]);
       durations.push(Math.max(0.001, Number(override.duration || 1)) / fps);
     }
     if (!framePaths.length) {
@@ -2303,6 +2325,7 @@ function createXsxbMcpService(options = {}) {
       const decoded = framePaths.map((filePath) => decodePngRgba(filePath));
       const placed = placeFramesOnCanvas(decoded, decoded[0].width, decoded[0].height, {
         frameScales: selectedScales,
+        frameTransforms: selectedTransforms,
       });
       encodePaths = placed.map((frame, index) => {
         const filePath = path.join(visualTemp, `frame_${String(index + 1).padStart(4, "0")}.png`);
@@ -2325,6 +2348,7 @@ function createXsxbMcpService(options = {}) {
           includeAttachments: booleanFlag(args.include_attachments, true),
           includeTrails: booleanFlag(args.include_trails, true),
           visualScales: selectedScales,
+          visualTransforms: selectedTransforms,
         },
       );
       bakedTrails = baked.bakedTrails === true;
@@ -2379,7 +2403,8 @@ function createXsxbMcpService(options = {}) {
     const paths = projectStore.projectPaths(project);
     const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
     const animationId = String(animation.id || animation.name);
-    const visualScales = bakedVisualScales(tuning, profile.id, animationId, frames.length);
+    const visualTransforms = bakedVisualTransforms(tuning, profile.id, animationId, frames.length);
+    const visualScales = visualTransforms.map((transform) => transform.scale);
     const sourcePaths = [];
     const indexes = [];
     for (let index = startFrame; index <= endFrame; index += 1) {
@@ -2391,6 +2416,7 @@ function createXsxbMcpService(options = {}) {
       indexes.push(index);
     }
     const selectedScales = indexes.map((index) => visualScales[index]);
+    const selectedTransforms = indexes.map((index) => visualTransforms[index]);
     const appliedVisual = selectedScales.some((scale) => scale !== 1);
     let compositePaths = sourcePaths;
     let visualTemp = null;
@@ -2399,6 +2425,7 @@ function createXsxbMcpService(options = {}) {
       const decoded = sourcePaths.map((filePath) => decodePngRgba(filePath));
       const placed = placeFramesOnCanvas(decoded, decoded[0].width, decoded[0].height, {
         frameScales: selectedScales,
+        frameTransforms: selectedTransforms,
       });
       compositePaths = placed.map((frame, index) => {
         const filePath = path.join(visualTemp, `frame_${String(index + 1).padStart(4, "0")}.png`);
@@ -2416,6 +2443,7 @@ function createXsxbMcpService(options = {}) {
         includeAttachments: booleanFlag(args.include_attachments, true),
         includeTrails: booleanFlag(args.include_trails, true),
         visualScales: selectedScales,
+        visualTransforms: selectedTransforms,
       },
     );
     let selected;

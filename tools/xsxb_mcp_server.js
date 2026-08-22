@@ -103,7 +103,7 @@ function startServer(options = {}) {
       });
   });
   lines.once("close", () => {
-    Promise.resolve(service.close?.()).catch(() => {});
+    queue.finally(() => service.close?.()).catch(() => {});
   });
   return lines;
 }

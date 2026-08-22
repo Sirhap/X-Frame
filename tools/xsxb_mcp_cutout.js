@@ -504,17 +504,29 @@ function placeFramesOnCanvas(frames, canvasWidth, canvasHeight, options = {}) {
   const destFeetX = (canvasWidth - 1) / 2;
   const destFeetY = canvasHeight - 1;
   const frameScales = Array.isArray(options.frameScales) ? options.frameScales : null;
+  const frameTransforms = Array.isArray(options.frameTransforms) ? options.frameTransforms : null;
   return frames.map((frame, index) => {
     const dest = new Uint8ClampedArray(canvasWidth * canvasHeight * 4);
     const anchor = anchors[index];
     const requested = Number(frameScales?.[index]);
     const scale = Number.isFinite(requested) && requested > 0 ? requested : sharedScale;
-    if (!anchor || scale <= 0) return { data: dest, width: canvasWidth, height: canvasHeight };
+    const transform = frameTransforms?.[index] || {};
+    const scaleX = Number(transform.scaleX) > 0 ? Number(transform.scaleX) : scale;
+    const scaleY = Number(transform.scaleY) > 0 ? Number(transform.scaleY) : scale;
+    const radians = (Number(transform.rotation || 0) * Math.PI) / 180;
+    const targetX = destFeetX + Number(transform.offset?.x || 0);
+    const targetY = destFeetY + Number(transform.offset?.y || 0);
+    if (!anchor || scaleX <= 0 || scaleY <= 0)
+      return { data: dest, width: canvasWidth, height: canvasHeight };
     for (let y = 0; y < canvasHeight; y += 1) {
-      const sourceY = Math.round(anchor.feetY + (y - destFeetY) / scale);
-      if (sourceY < 0 || sourceY >= frame.height) continue;
       for (let x = 0; x < canvasWidth; x += 1) {
-        const sourceX = Math.round(anchor.centerX + (x - destFeetX) / scale);
+        const dx = x - targetX;
+        const dy = y - targetY;
+        const localX = dx * Math.cos(radians) + dy * Math.sin(radians);
+        const localY = -dx * Math.sin(radians) + dy * Math.cos(radians);
+        const sourceX = Math.round(anchor.centerX + localX / scaleX);
+        const sourceY = Math.round(anchor.feetY + localY / scaleY);
+        if (sourceY < 0 || sourceY >= frame.height) continue;
         if (sourceX < 0 || sourceX >= frame.width) continue;
         const sourceOffset = (sourceY * frame.width + sourceX) * 4;
         if (frame.data[sourceOffset + 3] <= ALPHA_VISIBLE) continue;

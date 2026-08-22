@@ -735,6 +735,8 @@ function applyAlignmentPlan(options) {
   const createdTargets = [];
   let validation;
   let godotSync = null;
+  let nextAttachments = [];
+  let backups = [];
   try {
     for (const entry of plan.entries) {
       const asset = entry.asset;
@@ -768,11 +770,8 @@ function applyAlignmentPlan(options) {
         });
       }
     }
-    const nextAttachments = [
-      ...attachments,
-      ...plan.entries.map((entry) => attachmentFromEntry(plan, entry)),
-    ];
-    const backups = [backupJson(paths.frameImageAttachments, currentRevision)];
+    nextAttachments = [...attachments, ...plan.entries.map((entry) => attachmentFromEntry(plan, entry))];
+    backups = [backupJson(paths.frameImageAttachments, currentRevision)];
     if (JSON.stringify(nextAssets) !== JSON.stringify(originalAssets)) {
       backups.push(backupJson(paths.attachmentAssets, currentRevision));
     }
@@ -780,25 +779,35 @@ function applyAlignmentPlan(options) {
     projectStore.writeJson(paths.frameImageAttachments, nextAttachments);
     validation = validateAlignment({ root, plan });
     if (!validation.ok) throw new Error(`Post-apply validation failed: ${validation.errors.join(" ")}`);
-    godotSync =
-      options.syncGodot !== false && validGodotProjectRoot(project)
-        ? syncGodotProject(root, projectStore, project, { frameImageAttachments: nextAttachments })
-        : null;
-    return {
-      ok: true,
-      status: "applied",
-      applied: plan.entries.length,
-      validation,
-      godotSync,
-      backups,
-      revision: projectDataRevision(projectStore, project),
-    };
   } catch (error) {
     projectStore.writeJson(paths.attachmentAssets, originalAssets);
     projectStore.writeJson(paths.frameImageAttachments, originalAttachments);
     for (const targetPath of createdTargets.reverse()) fs.rmSync(targetPath, { force: true });
     throw error;
   }
+  if (options.syncGodot !== false && validGodotProjectRoot(project)) {
+    try {
+      godotSync = syncGodotProject(root, projectStore, project, {
+        frameImageAttachments: nextAttachments,
+      });
+    } catch (error) {
+      godotSync = {
+        ok: false,
+        error: String(error?.message || error),
+        partialExternalWritePossible: true,
+        retryable: true,
+      };
+    }
+  }
+  return {
+    ok: true,
+    status: "applied",
+    applied: plan.entries.length,
+    validation,
+    godotSync,
+    backups,
+    revision: projectDataRevision(projectStore, project),
+  };
 }
 
 module.exports = {

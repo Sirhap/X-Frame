@@ -140,6 +140,7 @@ async function compositeWithPage(job, page) {
         attachments: attachmentEntries,
         attachmentImages: attachmentSources,
         visualScales,
+        visualTransforms,
         hasTrails,
         profileId: profile,
         animationId: animation,
@@ -177,8 +178,26 @@ async function compositeWithPage(job, page) {
         const ctx = canvas.getContext("2d");
         let selectedFrame = indexes[0] || 0;
         let selectedScale = 1;
+        let selectedVisual = { scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 };
         let elapsed = 0;
         const origin = { x: width / 2, y: height };
+        const visualPoint = (point) => {
+          const radians = (Number(selectedVisual.rotation || 0) * Math.PI) / 180;
+          const x = Number(point.x || 0) * Number(selectedVisual.scaleX || selectedScale);
+          const y = Number(point.y || 0) * Number(selectedVisual.scaleY || selectedScale);
+          return {
+            x:
+              origin.x +
+              Number(selectedVisual.offset?.x || 0) +
+              x * Math.cos(radians) -
+              y * Math.sin(radians),
+            y:
+              origin.y +
+              Number(selectedVisual.offset?.y || 0) +
+              x * Math.sin(radians) +
+              y * Math.cos(radians),
+          };
+        };
         const arrival = (frame, phase) => {
           const target = Math.min(
             Math.max(0, Math.round(Number(frame) || 0)),
@@ -214,14 +233,8 @@ async function compositeWithPage(job, page) {
                   lastPlayableFrameStart: Math.max(0, total - (frameDurations.at(-1) || 1 / playbackFps)),
                 };
               },
-              localToScreen: (point) => ({
-                x: origin.x + point.x * selectedScale,
-                y: origin.y + point.y * selectedScale,
-              }),
-              screenToLocal: (point) => ({
-                x: (point.x - origin.x) / selectedScale,
-                y: (point.y - origin.y) / selectedScale,
-              }),
+              localToScreen: visualPoint,
+              screenToLocal: (point) => ({ x: point.x - origin.x, y: point.y - origin.y }),
               stagePoint: () => ({ x: 0, y: 0 }),
               dpr: () => 1,
               markDirty: () => {},
@@ -259,15 +272,19 @@ async function compositeWithPage(job, page) {
             const legacyScale =
               transform.scale && typeof transform.scale === "object" ? transform.scale : null;
             const scale = Number(legacyScale ? 1 : (transform.scale ?? 1));
-            const scaleX = Number(transform.scaleX ?? legacyScale?.x ?? scale) * selectedScale;
-            const scaleY = Number(transform.scaleY ?? legacyScale?.y ?? scale) * selectedScale;
+            const scaleX =
+              Number(transform.scaleX ?? legacyScale?.x ?? scale) *
+              Number(selectedVisual.scaleX || selectedScale);
+            const scaleY =
+              Number(transform.scaleY ?? legacyScale?.y ?? scale) *
+              Number(selectedVisual.scaleY || selectedScale);
             const offset = transform.offset || {};
+            const attachmentOrigin = visualPoint(offset);
             ctx.save();
-            ctx.translate(
-              origin.x + Number(offset.x || 0) * selectedScale,
-              origin.y + Number(offset.y || 0) * selectedScale,
+            ctx.translate(attachmentOrigin.x, attachmentOrigin.y);
+            ctx.rotate(
+              ((Number(transform.rotation || 0) + Number(selectedVisual.rotation || 0)) * Math.PI) / 180,
             );
-            ctx.rotate((Number(transform.rotation || 0) * Math.PI) / 180);
             ctx.drawImage(
               image,
               (-image.width * scaleX) / 2,
@@ -282,6 +299,12 @@ async function compositeWithPage(job, page) {
         for (let index = 0; index < heroes.length; index += 1) {
           selectedFrame = indexes[index];
           selectedScale = Number(visualScales[index]) > 0 ? Number(visualScales[index]) : 1;
+          selectedVisual = visualTransforms[index] || {
+            scaleX: selectedScale,
+            scaleY: selectedScale,
+            offset: { x: 0, y: 0 },
+            rotation: 0,
+          };
           elapsed = arrival(selectedFrame, 0.99);
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.clearRect(0, 0, width, height);
@@ -305,6 +328,9 @@ async function compositeWithPage(job, page) {
         attachments,
         attachmentImages,
         visualScales: Array.isArray(job.visualScales) ? job.visualScales : framePaths.map(() => 1),
+        visualTransforms: Array.isArray(job.visualTransforms)
+          ? job.visualTransforms
+          : framePaths.map(() => ({ scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 })),
         hasTrails: segments.length > 0,
         profileId: profileId || "profile",
         animationId: animationId || "animation",

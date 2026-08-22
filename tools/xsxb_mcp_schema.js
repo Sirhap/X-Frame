@@ -176,6 +176,7 @@ function validateToolResult(toolName, schema, result) {
     error.code = "xsxb_invalid_tool_result";
     throw error;
   }
+  validateToolArguments(`${toolName} output`, schema, result);
   return result;
 }
 

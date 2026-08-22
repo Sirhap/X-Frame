@@ -75,6 +75,7 @@ test("MCP tool catalog exposes the required XSXB tools in the requested order", 
     assert.equal(typeof tool.description, "string");
     assert.equal(typeof tool.title, "string", `${tool.name} title`);
     assert.equal(tool.outputSchema?.type, "object", `${tool.name} output schema`);
+    assert.ok(tool.outputSchema.required?.length > 0, `${tool.name} declares a stable output field`);
     for (const hint of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"]) {
       assert.equal(typeof tool.annotations?.[hint], "boolean", `${tool.name} ${hint}`);
     }

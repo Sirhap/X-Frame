@@ -13,6 +13,39 @@ const { workbenchSliderSchemaProperties } = require("./xsxb_mcp_cutout");
 const { WORKFLOW_NAMES } = require("./xsxb_mcp_workflows");
 
 const DEFAULT_PROFILE_ID = "mcp_imports";
+const OUTPUT_PRIMARY_FIELDS = Object.freeze({
+  xsxb_list_projects: ["count", "number"],
+  xsxb_get_project: ["projectId", "string"],
+  xsxb_get_workflow: ["workflow", "string"],
+  xsxb_import_video: ["importedFrameCount", "number"],
+  xsxb_import_animation: ["importedFrameCount", "number"],
+  xsxb_get_animation: ["frameCount", "number"],
+  xsxb_find_loop: ["candidates", "array"],
+  xsxb_find_duplicates: ["order", "array"],
+  xsxb_find_motion: ["order", "array"],
+  xsxb_update_frame_boxes: ["projectId", "string"],
+  xsxb_estimate_boxes: ["estimatedFrames", "number"],
+  xsxb_update_timing: ["fps", "number"],
+  xsxb_set_visual_transform: ["level", "string"],
+  xsxb_estimate_visual: ["projectId", "string"],
+  xsxb_reorganize_frames: ["outputFrameCount", "number"],
+  xsxb_replace_frame: ["frame", "number"],
+  xsxb_add_attack_trail: ["bindingKey", "string"],
+  xsxb_plan_attachment: ["plan", "object"],
+  xsxb_add_attachment: ["bindingCount", "number"],
+  xsxb_add_sfx: ["bindingCount", "number"],
+  xsxb_remove_binding: ["removedCount", "number"],
+  xsxb_delete_animation: ["deleted", "boolean"],
+  xsxb_sync_godot: ["requested", "boolean"],
+  xsxb_validate_project: ["ok", "boolean"],
+  xsxb_set_active_project: ["activeProjectId", "string"],
+  xsxb_bind_godot: ["projectId", "string"],
+  xsxb_cutout: ["processedFrameCount", "number"],
+  xsxb_export_gif: ["outputPath", "string"],
+  xsxb_export_sheet: ["outputPath", "string"],
+  xsxb_measure_image: ["filePath", "string"],
+  xsxb_open_tuner: ["url", "string"],
+});
 const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_list_projects",
   "xsxb_get_project",
@@ -958,15 +991,22 @@ function toolDefinitions() {
         .split("_")
         .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
         .join(" "),
-    outputSchema: definition.outputSchema || {
-      type: "object",
-      properties: {
-        projectId: { type: "string", description: "Selected XSXB project when applicable." },
-        profileId: { type: "string", description: "Selected animation profile when applicable." },
-        animationId: { type: "string", description: "Selected animation when applicable." },
-      },
-      additionalProperties: true,
-    },
+    outputSchema:
+      definition.outputSchema ||
+      (() => {
+        const primary = OUTPUT_PRIMARY_FIELDS[definition.name];
+        return {
+          type: "object",
+          properties: {
+            projectId: { type: "string", description: "Selected XSXB project when applicable." },
+            profileId: { type: "string", description: "Selected animation profile when applicable." },
+            animationId: { type: "string", description: "Selected animation when applicable." },
+            ...(primary ? { [primary[0]]: { type: primary[1] } } : {}),
+          },
+          required: primary ? [primary[0]] : [],
+          additionalProperties: true,
+        };
+      })(),
     annotations: {
       readOnlyHint: false,
       destructiveHint: true,
