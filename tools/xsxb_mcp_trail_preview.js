@@ -365,8 +365,20 @@ function createCompositeSession(options = {}) {
   }
 
   async function composite(job) {
+    const attachments = Array.isArray(job?.attachments) ? job.attachments : [];
+    const trails = usableTrailSegments(job?.trails, String(job?.bindingKey || ""));
+    if (!attachments.length && !trails.length) {
+      return {
+        framePaths: Array.isArray(job?.framePaths) ? job.framePaths : [],
+        bakedTrails: false,
+        trailIds: [],
+        bakedAttachments: false,
+        attachmentIds: [],
+        tempDir: null,
+      };
+    }
     const attachmentImageSources = {};
-    for (const attachment of Array.isArray(job?.attachments) ? job.attachments : []) {
+    for (const attachment of attachments) {
       const absolutePath = String(attachment?.absolutePath || "");
       if (absolutePath && !attachmentSourceCache.has(absolutePath)) {
         attachmentSourceCache.set(absolutePath, dataUrl(absolutePath));

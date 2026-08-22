@@ -286,7 +286,9 @@ test("replace_frame swaps the PNG, keeps tuning, and refreshes the stored size",
 
 test("export_gif honors timing, skips disabled frames, and validates the output path", async () => {
   const jobs = [];
+  const compositeSession = createCompositeSession({ idleMs: 10_000 });
   const current = fixture({
+    createCompositeSessionImpl: () => compositeSession,
     encodeGifImpl: async (job) => {
       jobs.push(job);
       fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
@@ -331,7 +333,9 @@ test("export_gif honors timing, skips disabled frames, and validates the output 
       current.service.call("xsxb_export_gif", { start_frame: 1, end_frame: 0 }),
       /greater than or equal/,
     );
+    assert.equal(compositeSession.stats.browserLaunches, 0, "plain exports do not launch a browser");
   } finally {
+    await current.service.close();
     current.cleanup();
   }
 });
