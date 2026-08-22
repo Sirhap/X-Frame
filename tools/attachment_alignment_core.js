@@ -640,6 +640,9 @@ function attachmentFromEntry(plan, entry) {
       planId: String(plan.planId),
       entryId: String(entry.entryId),
       assetId: String(entry.asset.id),
+      logicalId: String(entry.logicalId || plan.logicalId || ""),
+      attachmentKind: String(plan.attachmentKind || ""),
+      gripT: Number(entry.alignment?.gripT ?? plan.gripT),
     },
   };
 }

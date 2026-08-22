@@ -3,7 +3,11 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { planWeaponTransforms, transformAttachmentPoint } = require("../xsxb_mcp_attachment_planner");
+const {
+  deriveWeaponTrailSticks,
+  planWeaponTransforms,
+  transformAttachmentPoint,
+} = require("../xsxb_mcp_attachment_planner");
 
 const WEAPON = Object.freeze({
   grip: { x: -2, y: 0 },
@@ -89,4 +93,63 @@ test("weapon planning rejects ambiguous anchors and unsafe frame ranges", () => 
       }),
     /between 0 and 0/u,
   );
+});
+
+test("weapon trail derivation uses transformed tips, grips, and attachment layers", () => {
+  const attachments = [
+    {
+      id: "sword_0000",
+      assetId: "asset-sword",
+      layer: "below",
+      metadata: { frame: 0 },
+      transform: { scale: 2, scaleX: 2, scaleY: 2, rotation: -90, offset: { x: 10, y: -24 } },
+    },
+    {
+      id: "sword_0001",
+      assetId: "asset-sword",
+      layer: "above",
+      metadata: { frame: 1 },
+      transform: { scale: 1, scaleX: 1, scaleY: 1, rotation: 0, offset: { x: 12, y: -20 } },
+    },
+  ];
+
+  const result = deriveWeaponTrailSticks({
+    attachments,
+    attachmentId: "asset-sword",
+    weapon: WEAPON,
+  });
+
+  assert.deepEqual(result.sticks, [
+    { frame: 0, top: { x: 10, y: -40 }, bottom: { x: 10, y: -20 }, layer: "behind" },
+    { frame: 1, top: { x: 20, y: -20 }, bottom: { x: 10, y: -20 }, layer: "front" },
+  ]);
+  assert.equal(result.warnings.length, 0);
+});
+
+test("weapon trail derivation rejects fewer than two poses and warns on discontinuities", () => {
+  assert.throws(
+    () =>
+      deriveWeaponTrailSticks({
+        attachments: [{ id: "sword", metadata: { frame: 0 }, transform: { offset: { x: 0, y: 0 } } }],
+        attachmentId: "sword",
+        weapon: WEAPON,
+      }),
+    /at least two weapon poses/u,
+  );
+
+  const result = deriveWeaponTrailSticks({
+    attachments: [
+      { id: "sword", metadata: { frame: 0 }, transform: { scale: 1, rotation: 0, offset: { x: 0, y: 0 } } },
+      {
+        id: "sword",
+        metadata: { frame: 3 },
+        transform: { scale: 4, rotation: 170, offset: { x: 80, y: 0 } },
+      },
+    ],
+    attachmentId: "sword",
+    weapon: WEAPON,
+  });
+  assert.ok(result.warnings.some((warning) => /missing weapon frames/u.test(warning)));
+  assert.ok(result.warnings.some((warning) => /scale jump/u.test(warning)));
+  assert.ok(result.warnings.some((warning) => /rotation jump/u.test(warning)));
 });

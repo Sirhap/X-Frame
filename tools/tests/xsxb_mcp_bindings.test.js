@@ -449,6 +449,71 @@ test("xsxb_plan_attachment keeps alpha-bounds effect placement explicitly review
   }
 });
 
+test("xsxb_add_attack_trail derives blade sticks from a confirmed weapon attachment plan", async () => {
+  const current = await importedFixture();
+  try {
+    const weaponPath = path.join(current.root, "weapon.png");
+    fs.writeFileSync(weaponPath, weaponFrame());
+    const planned = await current.service.call("xsxb_plan_attachment", {
+      animation_id: "walk",
+      file_path: weaponPath,
+      kind: "weapon",
+      id: "held-sword",
+      grip_t: 0.2,
+      anchors: [
+        { frame: 0, hand: { x: -2, y: -6 }, tip: { x: 6, y: -10 }, layer: "below" },
+        { frame: 1, hand: { x: 2, y: -7 }, tip: { x: 10, y: -3 }, layer: "above" },
+      ],
+    });
+    await current.service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      file_path: weaponPath,
+      plan: planned.plan,
+      confirm: true,
+      sync: false,
+    });
+
+    const trail = await current.service.call("xsxb_add_attack_trail", {
+      animation_id: "walk",
+      attachment_id: "held-sword",
+      grip_t: 0.2,
+      id: "weapon-slash",
+      sync: false,
+    });
+
+    assert.equal(trail.sourceAttachmentId, "held-sword");
+    assert.equal(trail.derivedStickCount, 2);
+    assert.ok(
+      Math.hypot(
+        trail.segment.sticks[0].bottom.x - planned.plan.entries[0].grip.x,
+        trail.segment.sticks[0].bottom.y - planned.plan.entries[0].grip.y,
+      ) <= 0.000001,
+    );
+    assert.ok(
+      Math.hypot(
+        trail.segment.sticks[0].top.x - planned.plan.entries[0].tip.x,
+        trail.segment.sticks[0].top.y - planned.plan.entries[0].tip.y,
+      ) <= 0.000001,
+    );
+    assert.equal(trail.segment.sticks[0].layer, "behind");
+    assert.equal(trail.segment.sticks[1].layer, "front");
+    await assert.rejects(
+      current.service.call("xsxb_add_attack_trail", {
+        animation_id: "walk",
+        attachment_id: "held-sword",
+        sticks: [
+          { frame: 0, top: { x: 1, y: 1 }, bottom: { x: 0, y: 0 } },
+          { frame: 1, top: { x: 2, y: 2 }, bottom: { x: 0, y: 0 } },
+        ],
+        sync: false,
+      }),
+      /cannot be combined/u,
+    );
+  } finally {
+    current.cleanup();
+  }
+});
+
 test("estimate_boxes fills every frame, previews with dry_run, and skips existing overrides", async () => {
   const current = await importedFixture();
   try {

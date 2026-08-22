@@ -489,6 +489,17 @@ function toolDefinitions() {
           },
           start_frame: { type: "integer", minimum: 0 },
           end_frame: { type: "integer", minimum: 0 },
+          attachment_id: {
+            type: "string",
+            description:
+              "Derive sticks from matching per-frame weapon attachments. Cannot be combined with sticks.",
+          },
+          grip_t: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            description: "Weapon grip fraction. Defaults to the confirmed attachment plan value.",
+          },
           before_stop_chase: {
             type: "number",
             minimum: 0,

@@ -191,6 +191,69 @@ function planWeaponTransforms(options) {
   return entries;
 }
 
+/** @param {{x:number,y:number}} point Point. @returns {{x:number,y:number}} Stable receipt point. */
+function roundedPoint(point) {
+  return { x: Number(point.x.toFixed(6)), y: Number(point.y.toFixed(6)) };
+}
+
+/**
+ * Derives attack-trail sticks from persisted per-frame weapon transforms.
+ * @param {{attachments:object[],attachmentId:string,weapon:{grip:{x:number,y:number},tip:{x:number,y:number}},startFrame?:number,endFrame?:number}} options Derivation input.
+ * @returns {{sticks:object[],warnings:string[],matchedAttachments:object[]}} Derived trail data.
+ */
+function deriveWeaponTrailSticks(options) {
+  const attachmentId = String(options?.attachmentId || "");
+  const weapon = {
+    grip: requirePoint(options?.weapon?.grip, "Weapon grip"),
+    tip: requirePoint(options?.weapon?.tip, "Weapon tip"),
+  };
+  const startFrame = options.startFrame === undefined ? 0 : Number(options.startFrame);
+  const endFrame = options.endFrame === undefined ? Number.POSITIVE_INFINITY : Number(options.endFrame);
+  const matchedAttachments = (Array.isArray(options?.attachments) ? options.attachments : [])
+    .filter((attachment) => {
+      const matches = [attachment?.id, attachment?.assetId, attachment?.automation?.logicalId].some(
+        (value) => String(value || "") === attachmentId,
+      );
+      const frame = Number(attachment?.metadata?.frame);
+      return matches && Number.isInteger(frame) && frame >= startFrame && frame <= endFrame;
+    })
+    .sort((left, right) => Number(left.metadata.frame) - Number(right.metadata.frame));
+  if (matchedAttachments.length < 2) {
+    throw new Error(`Deriving a trail requires at least two weapon poses for attachment ${attachmentId}.`);
+  }
+  const warnings = [];
+  for (let index = 1; index < matchedAttachments.length; index += 1) {
+    const previous = matchedAttachments[index - 1];
+    const current = matchedAttachments[index];
+    const previousFrame = Number(previous.metadata.frame);
+    const currentFrame = Number(current.metadata.frame);
+    if (currentFrame - previousFrame > 1) {
+      warnings.push(
+        `Attachment ${attachmentId} has missing weapon frames ${previousFrame + 1}-${currentFrame - 1}.`,
+      );
+    }
+    const previousScale = Number(previous.transform?.scale ?? previous.transform?.scaleX ?? 1);
+    const currentScale = Number(current.transform?.scale ?? current.transform?.scaleX ?? 1);
+    const scaleRatio =
+      Math.max(previousScale, currentScale) / Math.max(0.000001, Math.min(previousScale, currentScale));
+    if (scaleRatio > 2)
+      warnings.push(`Attachment ${attachmentId} has a scale jump of ${scaleRatio.toFixed(2)}x.`);
+    const rotationJump = Math.abs(
+      shortestAngleDelta(Number(previous.transform?.rotation || 0), Number(current.transform?.rotation || 0)),
+    );
+    if (rotationJump > 120) {
+      warnings.push(`Attachment ${attachmentId} has a rotation jump of ${rotationJump.toFixed(1)} degrees.`);
+    }
+  }
+  const sticks = matchedAttachments.map((attachment) => ({
+    frame: Number(attachment.metadata.frame),
+    top: roundedPoint(transformAttachmentPoint(weapon.tip, attachment.transform)),
+    bottom: roundedPoint(transformAttachmentPoint(weapon.grip, attachment.transform)),
+    layer: attachment.layer === "below" || Number(attachment.layerOrder) < 0 ? "behind" : "front",
+  }));
+  return { sticks, warnings, matchedAttachments };
+}
+
 /** @param {Uint8ClampedArray} destination Mutable destination. @param {number} offset Pixel offset. @param {Uint8ClampedArray|number[]} source RGBA. @returns {void} */
 function alphaOver(destination, offset, source) {
   const sourceAlpha = Number(source[3]) / 255;
@@ -285,6 +348,7 @@ function renderWeaponPlanFrame(owner, attachment, entry) {
 }
 
 module.exports = {
+  deriveWeaponTrailSticks,
   planWeaponTransforms,
   renderWeaponPlanFrame,
   shortestAngleDelta,

@@ -53,7 +53,11 @@ const {
   summarizeMetrics,
 } = require("./xsxb_mcp_visual_qa");
 const { validateToolArguments } = require("./xsxb_mcp_schema");
-const { planWeaponTransforms, renderWeaponPlanFrame } = require("./xsxb_mcp_attachment_planner");
+const {
+  deriveWeaponTrailSticks,
+  planWeaponTransforms,
+  renderWeaponPlanFrame,
+} = require("./xsxb_mcp_attachment_planner");
 const { compositeAttackTrails } = require("./xsxb_mcp_trail_preview");
 const { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions } = require("./xsxb_mcp_tool_catalog");
 const {
@@ -1914,7 +1918,48 @@ function createXsxbMcpService(options = {}) {
         bottom: { x: -width * 0.15, y: height * 0.1 },
       },
     ];
-    const sticks = Array.isArray(args.sticks) && args.sticks.length ? args.sticks : defaultSticks;
+    if (args.attachment_id && Array.isArray(args.sticks) && args.sticks.length) {
+      throw new Error("attachment_id cannot be combined with explicit sticks.");
+    }
+    let derived = null;
+    if (args.attachment_id) {
+      const rawAttachments = projectStore.readJson(paths.frameImageAttachments, []);
+      const attachments = (Array.isArray(rawAttachments) ? rawAttachments : []).filter(
+        (entry) => attachmentFrameForSelection(entry, selection) !== null,
+      );
+      const attachmentId = String(args.attachment_id);
+      const candidate = attachments.find((entry) =>
+        [entry?.id, entry?.assetId, entry?.automation?.logicalId].some(
+          (value) => String(value || "") === attachmentId,
+        ),
+      );
+      if (!candidate) throw new Error(`Weapon attachment not found: ${attachmentId}.`);
+      const attachmentPath = resolveAnimationFramePath(project, candidate.path);
+      if (!attachmentPath || !fs.existsSync(attachmentPath)) {
+        throw new Error(`Weapon attachment image not found: ${candidate.path || "(empty)"}.`);
+      }
+      const gripT = parseGripT(args.grip_t ?? candidate.automation?.gripT, 0.5);
+      if (!Number.isFinite(gripT) || gripT < 0 || gripT > 1) {
+        throw new Error("grip_t must be a number between 0 and 1.");
+      }
+      const image = decodePngRgba(attachmentPath);
+      const measured = measureLongAxis(image.data, image.width, image.height, { t: gripT });
+      derived = deriveWeaponTrailSticks({
+        attachments,
+        attachmentId,
+        weapon: {
+          grip: measured.localFromCenter,
+          tip: { x: measured.tip.x - image.width / 2, y: measured.tip.y - image.height / 2 },
+        },
+        startFrame,
+        endFrame,
+      });
+    }
+    const sticks = derived
+      ? derived.sticks
+      : Array.isArray(args.sticks) && args.sticks.length
+        ? args.sticks
+        : defaultSticks;
     const segmentId = slug(
       args.id ||
         (args.texture_path ? path.basename(args.texture_path, path.extname(args.texture_path)) : "trail"),
@@ -1929,6 +1974,7 @@ function createXsxbMcpService(options = {}) {
       colorMode: args.color_mode || args.colorMode || "solid",
       color: args.color || "#d9364a",
       sticks,
+      ...(args.attachment_id ? { sourceAttachmentId: String(args.attachment_id) } : {}),
     };
     if (args.before_stop_chase !== undefined) segment.beforeStopChaseMultiplier = args.before_stop_chase;
     if (args.after_stop_chase !== undefined) segment.afterStopChaseMultiplier = args.after_stop_chase;
@@ -1937,7 +1983,7 @@ function createXsxbMcpService(options = {}) {
       segment,
     ];
     const normalized = normalizeAttackTrails(trails);
-    const warnings = validateAttackTrails(normalized, selection.manifest);
+    const warnings = [...(derived?.warnings || []), ...validateAttackTrails(normalized, selection.manifest)];
     projectStore.writeJson(paths.attackTrails, normalized);
     const written = normalized.bindings[bindingKey].find((entry) => entry.id === segment.id);
     return {
@@ -1945,6 +1991,8 @@ function createXsxbMcpService(options = {}) {
       bindingKey,
       segment: written,
       ...summarizeAttackTrailSticks(written?.sticks || []),
+      sourceAttachmentId: args.attachment_id ? String(args.attachment_id) : null,
+      derivedStickCount: derived?.sticks.length || 0,
       warnings,
       sync: synchronize(project, booleanFlag(args.sync, true)),
     };

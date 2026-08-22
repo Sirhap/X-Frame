@@ -39,10 +39,10 @@ weapon planner, compose attachment/trail rendering in one export boundary, and k
 
 ### Task 3: Weapon-derived trails
 
-- [ ] Add failing tests that derive stick bottoms/tops from persisted weapon transforms.
-- [ ] Reject mixed manual and derived sticks and invalid or discontinuous weapon poses.
-- [ ] Implement derived sticks and diagnostic receipts while preserving manual/default behavior.
-- [ ] Run the focused Red-Green mutation check.
+- [x] Add failing tests that derive stick bottoms/tops from persisted weapon transforms.
+- [x] Reject mixed manual and derived sticks and invalid or discontinuous weapon poses.
+- [x] Implement derived sticks and diagnostic receipts while preserving manual/default behavior.
+- [x] Run the focused Red-Green mutation check.
 
 ### Task 4: Workbench-parity composite exports
 
