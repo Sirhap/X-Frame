@@ -643,6 +643,15 @@ function attachmentFromEntry(plan, entry) {
       logicalId: String(entry.logicalId || plan.logicalId || ""),
       attachmentKind: String(plan.attachmentKind || ""),
       gripT: Number(entry.alignment?.gripT ?? plan.gripT),
+      ...(plan.weapon
+        ? {
+            weapon: {
+              grip: clone(plan.weapon.grip),
+              tip: clone(plan.weapon.tip),
+              directionSource: String(plan.weapon.measured?.directionSource || ""),
+            },
+          }
+        : {}),
     },
   };
 }

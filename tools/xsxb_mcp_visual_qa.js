@@ -394,7 +394,7 @@ function drawIndexBadge(rgba, width, originX, originY, cell, value) {
  * @param {Uint8ClampedArray|Uint8Array} rgba Pixels.
  * @param {number} width Width.
  * @param {number} height Height.
- * @param {{t?:number}} [options] Grip fraction from pommel (0) to tip (1).
+ * @param {{t?:number,pommelHint?:{x:number,y:number},tipHint?:{x:number,y:number},flipAxis?:boolean}} [options] Grip fraction and optional direction overrides.
  * @returns {object} Axis, fractions, and the requested grip.
  */
 function measureLongAxis(rgba, width, height, options = {}) {
@@ -485,7 +485,33 @@ function measureLongAxis(rgba, width, height, options = {}) {
     }
   }
   const maxStation = minProj + ((maxBin + 0.5) / binCount) * span;
-  const minIsPommel = Math.abs(minProj - maxStation) <= Math.abs(maxProj - maxStation);
+  let minIsPommel = Math.abs(minProj - maxStation) <= Math.abs(maxProj - maxStation);
+  let directionSource = "widest_cross_section";
+  const pommelHint = options.pommelHint;
+  const tipHint = options.tipHint;
+  const finiteHint = (value) =>
+    value && Number.isFinite(Number(value.x)) && Number.isFinite(Number(value.y))
+      ? { x: Number(value.x), y: Number(value.y) }
+      : null;
+  const hintedPommel = finiteHint(pommelHint);
+  const hintedTip = finiteHint(tipHint);
+  const distanceTo = (left, right) => Math.hypot(left.x - right.x, left.y - right.y);
+  if (hintedPommel && hintedTip) {
+    const normalScore = distanceTo(minEnd, hintedPommel) + distanceTo(maxEnd, hintedTip);
+    const reversedScore = distanceTo(maxEnd, hintedPommel) + distanceTo(minEnd, hintedTip);
+    minIsPommel = normalScore <= reversedScore;
+    directionSource = "hints";
+  } else if (hintedPommel) {
+    minIsPommel = distanceTo(minEnd, hintedPommel) <= distanceTo(maxEnd, hintedPommel);
+    directionSource = "pommel_hint";
+  } else if (hintedTip) {
+    minIsPommel = distanceTo(minEnd, hintedTip) > distanceTo(maxEnd, hintedTip);
+    directionSource = "tip_hint";
+  }
+  if (options.flipAxis === true) {
+    minIsPommel = !minIsPommel;
+    directionSource = "flip_axis";
+  }
   const pommel = minIsPommel ? minEnd : maxEnd;
   const tip = minIsPommel ? maxEnd : minEnd;
   /**
@@ -520,6 +546,7 @@ function measureLongAxis(rgba, width, height, options = {}) {
       x: (tip.x - pommel.x) / Math.max(0.0001, Math.hypot(tip.x - pommel.x, tip.y - pommel.y)),
       y: (tip.y - pommel.y) / Math.max(0.0001, Math.hypot(tip.x - pommel.x, tip.y - pommel.y)),
     },
+    directionSource,
     t: gripT,
     at,
     localFromCenter: { x: at.x - width / 2, y: at.y - height / 2 },
@@ -681,7 +708,12 @@ function renderContactSheet(frames, options = {}) {
 function measureFrameFiles(filePaths) {
   return (Array.isArray(filePaths) ? filePaths : []).map((filePath, index) => {
     const image = decodePngRgba(filePath);
-    return { index, ...measureFrame(image.data, image.width, image.height) };
+    return {
+      index,
+      width: image.width,
+      height: image.height,
+      ...measureFrame(image.data, image.width, image.height),
+    };
   });
 }
 

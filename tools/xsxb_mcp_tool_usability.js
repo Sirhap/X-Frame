@@ -179,6 +179,24 @@ const PROBES = {
     return verdict("xsxb_list_projects", "ready", `count=${listed.count} active=${listed.activeProjectId}`);
   },
 
+  async xsxb_create_project(fixture) {
+    const preview = await fixture.service.call("xsxb_create_project", {
+      id: "created",
+      label: "Created",
+      kind: "scratch",
+      dry_run: true,
+    });
+    const created = await fixture.service.call("xsxb_create_project", {
+      id: "created",
+      label: "Created",
+      kind: "scratch",
+    });
+    if (preview.created !== false || created.created !== true || created.projectId !== "created") {
+      return verdict("xsxb_create_project", "fail", JSON.stringify({ preview, created }));
+    }
+    return verdict("xsxb_create_project", "ready", "dry_run previews; create activates local project");
+  },
+
   async xsxb_get_project(fixture) {
     const project = await fixture.service.call("xsxb_get_project", { project_id: "usable" });
     if (project.projectId !== "usable" || project.godotProjectValid !== true) {

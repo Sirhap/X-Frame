@@ -362,6 +362,16 @@ test("find_motion trims leading and trailing rest holds", async () => {
     assert.equal(found.end, 5);
     assert.deepEqual(found.order, [3, 4, 5]);
     assert.equal(found.applied, false);
+
+    const attack = await current.service.call("xsxb_find_motion", {
+      animation_id: "jump",
+      preset: "attack",
+    });
+    assert.equal(attack.rawStart, 3);
+    assert.equal(attack.rawEnd, 5);
+    assert.equal(attack.start, 1);
+    assert.equal(attack.end, 7);
+    assert.deepEqual(attack.order, [1, 2, 3, 4, 5, 6, 7]);
   } finally {
     current.cleanup();
   }
@@ -475,6 +485,46 @@ test("xsxb_measure_image returns pommel-to-tip handle fractions", async () => {
     assert.ok(measured.fractions["2/3"]);
     assert.ok(Math.abs(measured.at.x - 7.5) < 1.5);
     assert.equal(measured.localFromCenter.x, measured.at.x - width / 2);
+
+    const flipped = await current.service.call("xsxb_measure_image", {
+      file_path: filePath,
+      t: "2/3",
+      flip_axis: true,
+    });
+    assert.ok(flipped.tip.y > flipped.pommel.y);
+    assert.equal(flipped.directionSource, "flip_axis");
+
+    const hinted = await current.service.call("xsxb_measure_image", {
+      file_path: filePath,
+      pommel_hint: { x: 8, y: 2 },
+      tip_hint: { x: 8, y: 28 },
+    });
+    assert.ok(hinted.pommel.y < hinted.tip.y);
+    assert.equal(hinted.directionSource, "hints");
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("find_motion warns when opaque backgrounds make motion analysis unreliable", async () => {
+  const current = serviceFixture();
+  try {
+    const directory = path.join(current.root, "opaque");
+    fs.mkdirSync(directory);
+    for (let index = 0; index < 3; index += 1) {
+      const rgba = new Uint8ClampedArray(16 * 16 * 4);
+      for (let offset = 0; offset < rgba.length; offset += 4) rgba.set([240, 235, 220, 255], offset);
+      fs.writeFileSync(path.join(directory, `${index}.png`), encodePngRgba(rgba, 16, 16));
+    }
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "opaque_attack",
+    });
+    const found = await current.service.call("xsxb_find_motion", { animation_id: "opaque_attack" });
+    assert.equal(found.analysisReliable, false);
+    assert.ok(found.opaqueRatio >= 0.99);
+    assert.match(found.warnings.join("\n"), /xsxb_cutout/u);
   } finally {
     current.cleanup();
   }

@@ -276,6 +276,8 @@ function normalizeSegment(value, index, bindingKey, sourceSchema = 6) {
     texture: normalizeTexture(segment.texture),
     colorMode: normalizeColorMode(segment.colorMode || segment.color_mode || "solid"),
     color,
+    opacity: clamp(segment.opacity, 0, 1, 1),
+    widthScale: clamp(segment.widthScale ?? segment.width_scale, 0.1, 2, 1),
     gradientStops: normalizeGradientStops(segment.gradientStops ?? segment.gradient_stops, color),
     beforeStopChaseMultiplier: normalizeChaseMultiplier(segment, "before", sourceSchema),
     afterStopChaseMultiplier: normalizeChaseMultiplier(segment, "after", sourceSchema),

@@ -81,8 +81,45 @@ test("MCP tool catalog exposes the required XSXB tools in the requested order", 
     }
     assert.equal(tool.annotations.openWorldHint, false, `${tool.name} stays on the local machine`);
   }
-  assert.equal(MCP_TOOL_NAMES.length, 31);
+  assert.equal(MCP_TOOL_NAMES.length, 32);
   assert.ok(MCP_TOOL_NAMES.includes("xsxb_get_workflow"));
+  assert.ok(MCP_TOOL_NAMES.includes("xsxb_create_project"));
+});
+
+test("create_project previews and creates an unbound local project", async () => {
+  const current = fixture();
+  try {
+    const before = await current.service.call("xsxb_list_projects");
+    const preview = await current.service.call("xsxb_create_project", {
+      id: "assassin-qa",
+      label: "Assassin QA",
+      kind: "scratch",
+      dry_run: true,
+    });
+    assert.equal(preview.projectId, "assassin-qa");
+    assert.equal(preview.created, false);
+    assert.equal(preview.dryRun, true);
+    assert.equal((await current.service.call("xsxb_list_projects")).count, before.count);
+
+    const created = await current.service.call("xsxb_create_project", {
+      id: "assassin-qa",
+      label: "Assassin QA",
+      kind: "scratch",
+    });
+    assert.equal(created.projectId, "assassin-qa");
+    assert.equal(created.created, true);
+    assert.equal(created.project.kind, "scratch");
+    assert.equal(created.project.projectRoot, "");
+    assert.equal((await current.service.call("xsxb_list_projects")).activeProjectId, "assassin-qa");
+    const syncPreview = await current.service.call("xsxb_sync_godot", {
+      project_id: "assassin-qa",
+      dry_run: true,
+    });
+    assert.equal(syncPreview.requested, false);
+    assert.deepEqual(syncPreview.availableAnimationIds, []);
+  } finally {
+    current.cleanup();
+  }
 });
 
 test("MCP transport initializes, lists tools, and returns structured tool results", async () => {
@@ -985,6 +1022,67 @@ test("open_tuner can switch projects without leftover animation context", async 
     assert.equal(opened.animationId, "");
     assert.match(opened.url, /project=proj-b/);
     assert.doesNotMatch(opened.url, /animation=/);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("open_tuner refuses a foreign checkout and selects the next free port", async () => {
+  const current = fixture();
+  let launchedPort = null;
+  const service = createXsxbMcpService({
+    root: current.root,
+    probeTunerImpl: async (url) => {
+      const port = Number(new URL(url).port);
+      if (port === 5179) return { reachable: true, compatible: false, rootHash: "foreign-root" };
+      if (port === launchedPort) return { reachable: true, compatible: true };
+      return { reachable: false, compatible: false };
+    },
+    launchTunerImpl: async ({ port }) => {
+      launchedPort = port;
+      return { pid: 72 };
+    },
+  });
+  try {
+    const opened = await service.call("xsxb_open_tuner", { project_id: "mcp-test" });
+    assert.equal(launchedPort, 5180);
+    assert.equal(opened.port, 5180);
+    assert.equal(opened.conflictPort, 5179);
+    assert.equal(opened.reused, false);
+    assert.match(opened.url, /:5180\//u);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("gameplay readiness warning is non-blocking unless require_gameplay is set", async () => {
+  const current = fixture();
+  try {
+    const sequenceDir = path.join(current.root, "gameplay-seq");
+    fs.mkdirSync(sequenceDir);
+    fs.writeFileSync(path.join(sequenceDir, "a.png"), ONE_PIXEL_PNG);
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: sequenceDir,
+      animation_id: "idle",
+    });
+    await current.service.call("xsxb_sync_godot", { force: true });
+
+    const readiness = await current.service.call("xsxb_validate_project", {
+      strict: true,
+      layer: "gameplay",
+    });
+    assert.equal(readiness.errors.length, 0);
+    assert.match(readiness.warnings.join("\n"), /No non-runtime gameplay scene/u);
+    assert.equal(readiness.gameplayReady, false);
+    assert.equal(readiness.ok, true);
+
+    const required = await current.service.call("xsxb_validate_project", {
+      strict: true,
+      require_gameplay: true,
+      layer: "gameplay",
+    });
+    assert.equal(required.ok, false);
   } finally {
     current.cleanup();
   }

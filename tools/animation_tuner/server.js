@@ -55,6 +55,11 @@ const {
 } = require("./server_validation");
 
 const ROOT = path.resolve(process.env.XSXB_ROOT || path.resolve(__dirname, "..", ".."));
+const INSTANCE_ROOT_HASH = crypto
+  .createHash("sha256")
+  .update(fs.existsSync(ROOT) ? fs.realpathSync(ROOT) : ROOT)
+  .digest("hex")
+  .slice(0, 24);
 const PUBLIC = path.join(__dirname, "public");
 const PORT = Number(process.env.PORT || 5179);
 const HOST = process.env.XSXB_HOST || process.env.HOST || "127.0.0.1";
@@ -874,6 +879,15 @@ ensureDataFiles();
 const server = http.createServer(async (req, res) => {
   try {
     const parsed = new URL(req.url, "http://127.0.0.1");
+    if (req.method === "GET" && parsed.pathname === "/api/instance") {
+      const registry = projectStore.readRegistry();
+      return send(res, 200, {
+        product: "xsxb-frame-tuner",
+        rootHash: INSTANCE_ROOT_HASH,
+        activeProjectId: registry.activeProjectId,
+        projectIds: registry.projects.map((project) => project.id),
+      });
+    }
     if (["POST", "DELETE"].includes(req.method)) {
       if (watermarkStudioService.isUploadRequest(req, parsed)) {
         watermarkStudioService.validateUploadRequest(req);

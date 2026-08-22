@@ -46,7 +46,12 @@ function createPlanAttachmentHandler(dependencies) {
       if (!Number.isFinite(gripT) || gripT < 0 || gripT > 1) {
         throw new Error("grip_t must be a number between 0 and 1.");
       }
-      measured = measureLongAxis(image.data, image.width, image.height, { t: gripT });
+      measured = measureLongAxis(image.data, image.width, image.height, {
+        t: gripT,
+        pommelHint: args.pommel_hint,
+        tipHint: args.tip_hint,
+        flipAxis: args.flip_axis === true,
+      });
       weapon = {
         grip: measured.localFromCenter,
         tip: { x: measured.tip.x - image.width / 2, y: measured.tip.y - image.height / 2 },
@@ -220,11 +225,27 @@ function createPlanAttachmentHandler(dependencies) {
     fs.writeFileSync(previewPath, encodePngRgba(preview.data, preview.width, preview.height));
     plan.previewPath = previewPath;
     registerPlan?.(structuredClone(plan));
+    const compact = String(args.response_mode || "full") === "compact";
+    const publicPlan = compact
+      ? {
+          planId,
+          attachmentKind: kind,
+          projectId: project.id,
+          profileId: profile.id,
+          animationId,
+          logicalId,
+          baseRevision,
+          sourceHash: assetHash,
+          frameCount: entries.length,
+        }
+      : plan;
     return {
       projectId: project.id,
       profileId: profile.id,
       animationId,
-      plan,
+      planId,
+      responseMode: compact ? "compact" : "full",
+      plan: publicPlan,
       previewPath,
       frameCount: entries.length,
       requiresVisualReview: true,

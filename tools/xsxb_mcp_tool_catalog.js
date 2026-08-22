@@ -15,6 +15,7 @@ const { WORKFLOW_NAMES } = require("./xsxb_mcp_workflows");
 const DEFAULT_PROFILE_ID = "mcp_imports";
 const OUTPUT_PRIMARY_FIELDS = Object.freeze({
   xsxb_list_projects: ["count", "number"],
+  xsxb_create_project: ["projectId", "string"],
   xsxb_get_project: ["projectId", "string"],
   xsxb_get_workflow: ["workflow", "string"],
   xsxb_import_video: ["importedFrameCount", "number"],
@@ -48,6 +49,7 @@ const OUTPUT_PRIMARY_FIELDS = Object.freeze({
 });
 const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_list_projects",
+  "xsxb_create_project",
   "xsxb_get_project",
   "xsxb_get_workflow",
   "xsxb_import_video",
@@ -96,6 +98,23 @@ function toolDefinitions() {
       description: "List every local XSXB project, its active state, Godot binding, and animation counts.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_create_project",
+      description:
+        "Create and activate an empty local XSXB project. A Godot root is optional and can be bound later. Use dry_run to preview the stable id without writing.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Preferred stable project id." },
+          label: { type: "string", description: "Human-readable project label." },
+          kind: { type: "string", default: "godot" },
+          project_root: { type: "string", description: "Optional existing project directory." },
+          dry_run: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     {
       name: "xsxb_get_project",
@@ -336,6 +355,15 @@ function toolDefinitions() {
             description:
               "Absolute PNG paths in playback order. Overrides directory and the imported animation when set.",
           },
+          preset: {
+            type: "string",
+            enum: ["default", "attack"],
+            default: "default",
+            description:
+              "attack keeps configurable anticipation and recovery padding around the raw motion peak.",
+          },
+          padding_before: { type: "integer", minimum: 0, maximum: 120 },
+          padding_after: { type: "integer", minimum: 0, maximum: 120 },
         },
         additionalProperties: false,
       },
@@ -379,6 +407,14 @@ function toolDefinitions() {
             description: "Recompute frames that already have box overrides.",
           },
           dry_run: { type: "boolean", default: false },
+          attachment_id: {
+            type: "string",
+            description:
+              "Optional held weapon id; derives an oriented hitbox from grip to tip per attached frame.",
+          },
+          grip_t: { type: "number", minimum: 0, maximum: 1 },
+          hitbox_width: { type: "number", exclusiveMinimum: 0 },
+          hitbox_padding: { type: "number", minimum: 0, default: 4 },
           sync: { type: "boolean", default: false },
         },
         additionalProperties: false,
@@ -549,6 +585,52 @@ function toolDefinitions() {
             maximum: 1,
             description: "Weapon grip fraction. Defaults to the confirmed attachment plan value.",
           },
+          pommel_hint: {
+            type: "object",
+            required: ["x", "y"],
+            properties: { x: { type: "number" }, y: { type: "number" } },
+            additionalProperties: false,
+          },
+          tip_hint: {
+            type: "object",
+            required: ["x", "y"],
+            properties: { x: { type: "number" }, y: { type: "number" } },
+            additionalProperties: false,
+          },
+          flip_axis: { type: "boolean", default: false },
+          opacity: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            default: 1,
+            description: "Trail alpha multiplier shared by Tuner previews, exports, and Godot.",
+          },
+          blade_width_scale: {
+            type: "number",
+            minimum: 0.1,
+            maximum: 2,
+            default: 1,
+            description: "Scale derived grip-to-tip stick width around its center.",
+          },
+          detect_source_fx: {
+            type: "boolean",
+            default: true,
+            description:
+              "Warn when bright source pixels near the weapon suggest an already-baked slash effect.",
+          },
+          source_fx_threshold: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            default: 0.03,
+            description: "Highlighted sample ratio that triggers the baked-FX warning.",
+          },
+          dry_run: {
+            type: "boolean",
+            default: false,
+            description:
+              "Return the normalized trail, derived sticks, and FX warnings without writing project data.",
+          },
           before_stop_chase: {
             type: "number",
             minimum: 0,
@@ -614,6 +696,19 @@ function toolDefinitions() {
             maximum: 1,
             description: "Grip fraction on the measured pommel-to-tip axis.",
           },
+          pommel_hint: {
+            type: "object",
+            required: ["x", "y"],
+            properties: { x: { type: "number" }, y: { type: "number" } },
+            additionalProperties: false,
+          },
+          tip_hint: {
+            type: "object",
+            required: ["x", "y"],
+            properties: { x: { type: "number" }, y: { type: "number" } },
+            additionalProperties: false,
+          },
+          flip_axis: { type: "boolean", default: false },
           anchors: {
             type: "array",
             items: {
@@ -643,6 +738,12 @@ function toolDefinitions() {
           start_frame: { type: "integer", minimum: 0 },
           end_frame: { type: "integer", minimum: 0 },
           preview_path: { type: "string", description: "Optional PNG path inside the XSXB root." },
+          response_mode: {
+            type: "string",
+            enum: ["full", "compact"],
+            default: "full",
+            description: "compact returns plan identity and summary; apply it later with plan_id.",
+          },
         },
         additionalProperties: false,
       },
@@ -676,10 +777,13 @@ function toolDefinitions() {
             type: "object",
             description: "Plan returned by xsxb_plan_attachment. Requires confirm=true.",
           },
+          plan_id: {
+            type: "string",
+            description: "Immutable server-reviewed plan id returned by xsxb_plan_attachment compact mode.",
+          },
           confirm: { type: "boolean", default: false },
           sync: { type: "boolean", default: true },
         },
-        required: ["file_path"],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
@@ -745,7 +849,16 @@ function toolDefinitions() {
       description: "Synchronize the current project to its bound Godot root without changing animation data.",
       inputSchema: {
         type: "object",
-        properties: { project_id: projectProperty, force: { type: "boolean", default: false } },
+        properties: {
+          project_id: projectProperty,
+          force: { type: "boolean", default: false },
+          dry_run: { type: "boolean", default: false },
+          include_animation_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional animation ids to deliver; omitted means the complete project.",
+          },
+        },
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
@@ -843,6 +956,11 @@ function toolDefinitions() {
             default: true,
             description:
               "Include per-frame bodyHeight, feetY, and leftover near-white counts on the receipt.",
+          },
+          reestimate_boxes: {
+            type: "boolean",
+            default: false,
+            description: "Replace frame boxes from the post-cutout alpha bounds in the same MCP operation.",
           },
           sync: { type: "boolean", default: false },
         },
@@ -956,6 +1074,23 @@ function toolDefinitions() {
             maximum: 1,
             default: 0.5,
             description: "Grip fraction along pommel→tip. 0.5 is the middle; send 0.666… or the string 2/3.",
+          },
+          pommel_hint: {
+            type: "object",
+            required: ["x", "y"],
+            properties: { x: { type: "number" }, y: { type: "number" } },
+            additionalProperties: false,
+          },
+          tip_hint: {
+            type: "object",
+            required: ["x", "y"],
+            properties: { x: { type: "number" }, y: { type: "number" } },
+            additionalProperties: false,
+          },
+          flip_axis: {
+            type: "boolean",
+            default: false,
+            description: "Reverse the measured pommel-to-tip direction after hints/heuristics.",
           },
         },
         additionalProperties: false,

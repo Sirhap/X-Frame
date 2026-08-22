@@ -63,13 +63,18 @@ function copyFileIfChanged(source, target, force = false) {
  * @returns {void}
  */
 function pruneGeneratedDirectory(directory, retainedPaths) {
-  if (!fs.existsSync(directory)) return;
+  if (!fs.existsSync(directory)) return 0;
+  let removedFiles = 0;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const fullPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) pruneGeneratedDirectory(fullPath, retainedPaths);
-    else if (!retainedPaths.has(path.resolve(fullPath))) fs.rmSync(fullPath, { force: true });
+    if (entry.isDirectory()) removedFiles += pruneGeneratedDirectory(fullPath, retainedPaths);
+    else if (!retainedPaths.has(path.resolve(fullPath))) {
+      fs.rmSync(fullPath, { force: true });
+      removedFiles += 1;
+    }
   }
   if (!fs.readdirSync(directory).length) fs.rmSync(directory, { recursive: true, force: true });
+  return removedFiles;
 }
 
 function fileContentHash(filePath) {
@@ -112,6 +117,7 @@ function syncManifest(root, projectStore, project, manifestInput = null, options
   const manifest = clone(manifestInput || projectStore.readJson(paths.manifest, EMPTY_MANIFEST));
   let copiedFrames = 0;
   let frameCount = 0;
+  const retainedFrames = new Set();
 
   for (const profile of Array.isArray(manifest.profiles) ? manifest.profiles : []) {
     for (const animation of Array.isArray(profile.animations) ? profile.animations : []) {
@@ -124,6 +130,8 @@ function syncManifest(root, projectStore, project, manifestInput = null, options
         frame.path = nextRel;
         frameCount += 1;
         if (!isInside(target, path.join(projectRoot, GODOT_SYNC_ROOT))) continue;
+        retainedFrames.add(path.resolve(target));
+        retainedFrames.add(path.resolve(`${target}.import`));
         if (!source || path.extname(source).toLowerCase() !== ".png") continue;
         if (copyFileIfChanged(source, target, options.force === true)) copiedFrames += 1;
       }
@@ -132,7 +140,12 @@ function syncManifest(root, projectStore, project, manifestInput = null, options
 
   const targetManifest = path.join(godotDataDir(projectRoot, project), "animation_manifest.json");
   writeJson(targetManifest, manifest);
-  return { copiedFrames, frameCount };
+  const generatedRoot = safeResolve(
+    path.join(projectRoot, GODOT_SYNC_ROOT),
+    path.join(project.workspaceDir || `workspace/projects/${project.id}`, "assets"),
+  );
+  const prunedFrameFiles = generatedRoot ? pruneGeneratedDirectory(generatedRoot, retainedFrames) : 0;
+  return { copiedFrames, frameCount, prunedFrameFiles };
 }
 
 function syncTuning(projectStore, project, tuningInput = null) {

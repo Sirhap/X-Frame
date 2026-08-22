@@ -91,7 +91,7 @@ func _apply_material(material: ShaderMaterial, segment: Dictionary) -> void:
 	material.set_shader_parameter("use_original_color", color_mode == "original")
 	material.set_shader_parameter("use_gradient", color_mode == "gradient")
 	material.set_shader_parameter("trail_gradient", _gradient_texture(segment))
-	material.set_shader_parameter("alpha_gain", 1.0)
+	material.set_shader_parameter("alpha_gain", clampf(float(segment.get("opacity", 1.0)), 0.0, 1.0))
 	material.set_shader_parameter("tail_fade_start", clampf(float(segment.get("tailFadeStart", 0.6)), 0.0, 0.95))
 
 
@@ -236,6 +236,7 @@ func _timing_signature(segment: Dictionary, animation_name: String) -> String:
 	parts.append(str(segment.get("tailSamples", 5)))
 	parts.append(str(segment.get("stableSeed", 73129)))
 	parts.append(str(segment.get("tailFadeStart", 0.6)))
+	parts.append(str(segment.get("widthScale", 1.0)))
 	return "|".join(parts)
 
 
@@ -258,11 +259,12 @@ func _rebuild_path_cache(state: Dictionary, segment: Dictionary, animation_name:
 	var path_times := PackedFloat32Array()
 	var path_distances := PackedFloat32Array()
 	var duration := maxf(0.0001, local_times[-1])
-	var previous_pose := _pose_at_local_time(sticks, local_times, 0.0)
+	var width_scale := clampf(float(segment.get("widthScale", 1.0)), 0.1, 2.0)
+	var previous_pose := _pose_at_local_time(sticks, local_times, 0.0, width_scale)
 	var cumulative := 0.0
 	for sample_index in range(sample_count):
 		var sample_time := duration * float(sample_index) / float(sample_count - 1)
-		var pose := _pose_at_local_time(sticks, local_times, sample_time)
+		var pose := _pose_at_local_time(sticks, local_times, sample_time, width_scale)
 		if sample_index > 0:
 			var top_delta := Vector2(previous_pose["top"]).distance_to(Vector2(pose["top"]))
 			var bottom_delta := Vector2(previous_pose["bottom"]).distance_to(Vector2(pose["bottom"]))
@@ -328,13 +330,13 @@ func _local_time_at_distance(state: Dictionary, distance_px: float) -> float:
 	return lerpf(times[low], times[high], fraction)
 
 
-func _pose_at_local_time(sticks: Array, times: PackedFloat32Array, local_time: float) -> Dictionary:
+func _pose_at_local_time(sticks: Array, times: PackedFloat32Array, local_time: float, width_scale: float = 1.0) -> Dictionary:
 	if sticks.is_empty():
 		return {"top": Vector2.ZERO, "bottom": Vector2(0.0, 1.0), "center": Vector2(0.0, 0.5)}
 	if sticks.size() == 1 or local_time <= times[0]:
-		return _stick_pose(sticks[0])
+		return _scaled_pose(_stick_pose(sticks[0]), width_scale)
 	if local_time >= times[-1]:
-		return _stick_pose(sticks[-1])
+		return _scaled_pose(_stick_pose(sticks[-1]), width_scale)
 	var segment_index := 0
 	for index in range(times.size() - 1):
 		if local_time <= times[index + 1]:
@@ -358,7 +360,15 @@ func _pose_at_local_time(sticks: Array, times: PackedFloat32Array, local_time: f
 	var bottom_distance := from_bottom.distance_to(to_bottom)
 	var top := _hermite(from_top, from_direction * top_distance * from_strength, to_top, to_direction * top_distance * to_strength, t)
 	var bottom := _hermite(from_bottom, from_direction * bottom_distance * from_strength, to_bottom, to_direction * bottom_distance * to_strength, t)
-	return {"top": top, "bottom": bottom, "center": (top + bottom) * 0.5}
+	return _scaled_pose({"top": top, "bottom": bottom, "center": (top + bottom) * 0.5}, width_scale)
+
+
+func _scaled_pose(pose: Dictionary, width_scale: float) -> Dictionary:
+	var center := Vector2(pose["center"])
+	var scale := clampf(width_scale, 0.1, 2.0)
+	var top := center + (Vector2(pose["top"]) - center) * scale
+	var bottom := center + (Vector2(pose["bottom"]) - center) * scale
+	return {"top": top, "bottom": bottom, "center": center}
 
 
 func _stick_pose(stick_value: Variant) -> Dictionary:
@@ -438,7 +448,8 @@ func _rebuild_mesh(state: Dictionary, segment: Dictionary, current_distance: flo
 	var sample_times := PackedFloat32Array()
 	var indices := PackedInt32Array()
 	var current_time := _local_time_at_distance(state, current_distance)
-	var current_pose := _pose_at_local_time(sticks, local_times, current_time)
+	var width_scale := clampf(float(segment.get("widthScale", 1.0)), 0.1, 2.0)
+	var current_pose := _pose_at_local_time(sticks, local_times, current_time, width_scale)
 	var head_direction := _direction_at_local_time(sticks, local_times, current_time)
 	var head_half_width := Vector2(current_pose["top"]).distance_to(Vector2(current_pose["bottom"])) * 0.5
 	var head_curvature := float(segment.get("headCurvature", 0.0))
@@ -451,7 +462,7 @@ func _rebuild_mesh(state: Dictionary, segment: Dictionary, current_distance: flo
 			var u := float(column) / float(column_count - 1)
 			var sample_distance := lerpf(current_distance, tail_distance, u)
 			var sample_time := _local_time_at_distance(state, sample_distance)
-			var pose := _pose_at_local_time(sticks, local_times, sample_time)
+			var pose := _pose_at_local_time(sticks, local_times, sample_time, width_scale)
 			var point := Vector2(pose["top"]).lerp(Vector2(pose["bottom"]), v)
 			var head_profile: float = _head_curve_profile(v) * _head_curve_blend(u)
 			var bulge := head_curvature * head_half_width * head_profile

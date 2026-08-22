@@ -31,7 +31,10 @@ const WORKFLOWS = Object.freeze({
   one_shot: {
     preconditions: ["An imported one-shot animation is available."],
     steps: [
-      { tool: "xsxb_find_motion", purpose: "Trim leading and trailing holds." },
+      {
+        tool: "xsxb_find_motion",
+        purpose: "Cut out opaque sources first; use preset=attack to preserve anticipation and recovery.",
+      },
       { tool: "xsxb_reorganize_frames", purpose: "Apply the reviewed motion window." },
       { tool: "xsxb_export_gif", purpose: "Review the one-shot timing." },
     ],
@@ -40,7 +43,10 @@ const WORKFLOWS = Object.freeze({
   cutout: {
     preconditions: ["Animation PNG frames exist on disk."],
     steps: [
-      { tool: "xsxb_cutout", purpose: "Use shared workbench defaults unless explicit tuning is needed." },
+      {
+        tool: "xsxb_cutout",
+        purpose: "Use shared defaults and reestimate_boxes=true when existing boxes predate the cutout.",
+      },
       { tool: "xsxb_export_sheet", purpose: "Review transparency and leftover background pixels." },
     ],
     completionChecks: ["Body pixels remain and background pixels are transparent."],
@@ -66,9 +72,15 @@ const WORKFLOWS = Object.freeze({
     preconditions: ["The character animation and transparent weapon PNG are available."],
     steps: [
       { tool: "xsxb_export_sheet", purpose: "Read hand and tip targets from the group-coordinate grid." },
-      { tool: "xsxb_measure_image", purpose: "Measure the weapon axis and choose grip_t." },
-      { tool: "xsxb_plan_attachment", purpose: "Plan hand/tip anchors and render a marked preview." },
-      { tool: "xsxb_add_attachment", purpose: "Apply the reviewed plan with confirm=true." },
+      {
+        tool: "xsxb_measure_image",
+        purpose: "Measure the weapon axis; correct ambiguous blades with endpoint hints or flip_axis.",
+      },
+      {
+        tool: "xsxb_plan_attachment",
+        purpose: "Plan anchors with response_mode=compact and review the marked preview.",
+      },
+      { tool: "xsxb_add_attachment", purpose: "Apply plan_id with confirm=true." },
       { tool: "xsxb_export_sheet", purpose: "Verify grip, tip, scale, and front/back layers." },
       { tool: "xsxb_sync_godot", purpose: "Synchronize only after visual verification." },
     ],
@@ -82,7 +94,8 @@ const WORKFLOWS = Object.freeze({
     steps: [
       {
         tool: "xsxb_add_attack_trail",
-        purpose: "Derive sticks with attachment_id and the confirmed grip_t.",
+        purpose:
+          "Derive sticks with attachment_id; inspect sourceFxOverlapRatio and tune opacity/blade_width_scale.",
       },
       { tool: "xsxb_export_sheet", purpose: "Check the ribbon against weapon tips and body layers." },
       { tool: "xsxb_export_gif", purpose: "Review smear growth and release through playback." },
@@ -95,7 +108,11 @@ const WORKFLOWS = Object.freeze({
     steps: [
       { tool: "xsxb_bind_godot", purpose: "Bind or repair the Godot root." },
       { tool: "xsxb_validate_project", purpose: "Validate standalone and bind layers." },
-      { tool: "xsxb_sync_godot", purpose: "Write reviewed data and runtime assets." },
+      {
+        tool: "xsxb_sync_godot",
+        purpose:
+          "Dry-run the inventory, then restrict include_animation_ids when diagnostics must stay local.",
+      },
       { tool: "xsxb_validate_project", purpose: "Validate gameplay output." },
     ],
     completionChecks: ["Bind and gameplay validation report no errors."],

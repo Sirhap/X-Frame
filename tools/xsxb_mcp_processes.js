@@ -12,6 +12,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { execFile, spawn } = require("node:child_process");
 const { promisify } = require("node:util");
 
@@ -128,20 +129,53 @@ function createTestWav(options = {}) {
 /**
  * Probes whether the Tuner HTTP port answers.
  * @param {string} url Workspace URL.
- * @returns {Promise<boolean>} True when the server responds.
+ * @param {{rootHash?:string}} [expected] Expected instance identity.
+ * @returns {Promise<{reachable:boolean,compatible:boolean,rootHash:string,statusCode:number}>} Probe result.
  */
-function probeTunerUrl(url) {
+function probeTunerUrl(url, expected = {}) {
   return new Promise((resolve) => {
-    const request = http.get(url, { timeout: 800 }, (response) => {
-      response.resume();
-      resolve(Number(response.statusCode) >= 200 && Number(response.statusCode) < 500);
+    const instanceUrl = new URL("/api/instance", url);
+    const request = http.get(instanceUrl, { timeout: 800 }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        const statusCode = Number(response.statusCode || 0);
+        let body = {};
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } catch {
+          body = {};
+        }
+        const reachable = statusCode >= 200 && statusCode < 500;
+        const rootHash = String(body.rootHash || "");
+        const compatible =
+          reachable &&
+          body.product === "xsxb-frame-tuner" &&
+          (!expected.rootHash || rootHash === String(expected.rootHash));
+        resolve({ reachable, compatible, rootHash, statusCode });
+      });
     });
-    request.on("error", () => resolve(false));
+    request.on("error", () => resolve({ reachable: false, compatible: false, rootHash: "", statusCode: 0 }));
     request.on("timeout", () => {
       request.destroy();
-      resolve(false);
+      resolve({ reachable: false, compatible: false, rootHash: "", statusCode: 0 });
     });
   });
+}
+
+/**
+ * Computes the stable identity advertised by one Tuner checkout.
+ * @param {string} root XSXB root.
+ * @returns {string} Short SHA-256 identity.
+ */
+function tunerRootHash(root) {
+  let resolved = path.resolve(root);
+  try {
+    resolved = fs.realpathSync(resolved);
+  } catch {
+    // Hashing the resolved path stays deterministic when the caller reports a missing root.
+  }
+  return crypto.createHash("sha256").update(resolved).digest("hex").slice(0, 24);
 }
 
 /**
@@ -176,7 +210,8 @@ function launchTunerProcess(options) {
  */
 async function waitForTuner(probe, url, attempts = 20) {
   for (let index = 0; index < attempts; index += 1) {
-    if (await probe(url)) return true;
+    const result = await probe(url);
+    if (result === true || result?.compatible === true) return true;
     await new Promise((resolve) => {
       setTimeout(resolve, 150);
     });
@@ -189,5 +224,6 @@ module.exports = {
   extractVideoFrames,
   launchTunerProcess,
   probeTunerUrl,
+  tunerRootHash,
   waitForTuner,
 };

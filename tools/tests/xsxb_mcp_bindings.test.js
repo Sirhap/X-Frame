@@ -7,7 +7,7 @@ const path = require("node:path");
 const test = require("node:test");
 const { createProjectStore } = require("../project_store");
 const { createTestWav, createXsxbMcpService } = require("../xsxb_mcp_service");
-const { encodePngRgba } = require("../xsxb_mcp_cutout");
+const { decodePngRgba, encodePngRgba } = require("../xsxb_mcp_cutout");
 
 /**
  * Builds a 16x16 transparent PNG with one opaque body block.
@@ -435,6 +435,40 @@ test("xsxb_plan_attachment previews a revision-bound weapon plan and add_attachm
   }
 });
 
+test("compact attachment plans apply by immutable plan_id without replaying the plan payload", async () => {
+  const current = await importedFixture();
+  try {
+    const weaponPath = path.join(current.root, "compact-weapon.png");
+    fs.writeFileSync(weaponPath, weaponFrame());
+    const planned = await current.service.call("xsxb_plan_attachment", {
+      animation_id: "walk",
+      file_path: weaponPath,
+      kind: "weapon",
+      id: "compact-sword",
+      grip_t: 0.2,
+      response_mode: "compact",
+      anchors: [
+        { frame: 0, hand: { x: -2, y: -6 }, tip: { x: 6, y: -10 } },
+        { frame: 1, hand: { x: 2, y: -7 }, tip: { x: 10, y: -3 } },
+      ],
+    });
+    assert.match(planned.planId, /^weapon_/u);
+    assert.equal(planned.plan.entries, undefined);
+    assert.ok(JSON.stringify(planned).length < 2500);
+
+    const applied = await current.service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      plan_id: planned.planId,
+      confirm: true,
+      sync: false,
+    });
+    assert.equal(applied.updatedFrames, 2);
+    assert.equal(applied.planId, planned.planId);
+  } finally {
+    current.cleanup();
+  }
+});
+
 test("xsxb_plan_attachment keeps alpha-bounds effect placement explicitly reviewable", async () => {
   const current = await importedFixture();
   try {
@@ -485,12 +519,56 @@ test("xsxb_add_attack_trail derives blade sticks from a confirmed weapon attachm
       confirm: true,
       sync: false,
     });
+    const imported = await current.service.call("xsxb_get_animation", {
+      animation_id: "walk",
+      frames: "full",
+    });
+    const sourceFx = decodePngRgba(imported.animation.frames[0].absolutePath);
+    for (let y = 7; y <= 9; y += 1) {
+      for (let x = 9; x <= 11; x += 1) {
+        sourceFx.data.set([255, 240, 180, 255], (y * sourceFx.width + x) * 4);
+      }
+    }
+    fs.writeFileSync(
+      imported.animation.frames[0].absolutePath,
+      encodePngRgba(sourceFx.data, sourceFx.width, sourceFx.height),
+    );
+
+    const boxes = await current.service.call("xsxb_estimate_boxes", {
+      animation_id: "walk",
+      attachment_id: "held-sword",
+      replace: true,
+      dry_run: true,
+    });
+    assert.equal(boxes.attachmentHitboxFrames, 2);
+    const expectedCenter = {
+      x: (planned.plan.entries[0].grip.x + planned.plan.entries[0].tip.x) / 2,
+      y: (planned.plan.entries[0].grip.y + planned.plan.entries[0].tip.y) / 2,
+    };
+    assert.ok(Math.abs(boxes.frames[0].boxes.hitbox.offset.x - expectedCenter.x) <= 0.001);
+    assert.ok(Math.abs(boxes.frames[0].boxes.hitbox.offset.y - expectedCenter.y) <= 0.001);
+    assert.ok(Math.abs(boxes.frames[0].boxes.hitbox.rotation + 26.565) <= 0.01);
+
+    const trailPreview = await current.service.call("xsxb_add_attack_trail", {
+      animation_id: "walk",
+      attachment_id: "held-sword",
+      id: "preview-only",
+      dry_run: true,
+      sync: false,
+    });
+    assert.equal(trailPreview.dryRun, true);
+    const beforeApply = await current.service.call("xsxb_get_animation", {
+      animation_id: "walk",
+      include: ["trails"],
+    });
+    assert.deepEqual(beforeApply.trails, []);
 
     const trail = await current.service.call("xsxb_add_attack_trail", {
       animation_id: "walk",
       attachment_id: "held-sword",
       grip_t: 0.2,
       id: "weapon-slash",
+      opacity: 0.45,
       sync: false,
     });
 
@@ -510,6 +588,21 @@ test("xsxb_add_attack_trail derives blade sticks from a confirmed weapon attachm
     );
     assert.equal(trail.segment.sticks[0].layer, "behind");
     assert.equal(trail.segment.sticks[1].layer, "front");
+    assert.equal(trail.segment.opacity, 0.45);
+    assert.equal(trail.bladeWidthScale, 1);
+    assert.ok(trail.sourceFxOverlapRatio > 0);
+    assert.deepEqual(trail.sourceFxFrames, [0]);
+    assert.match(trail.warnings.join("\n"), /source frame.*highlight|baked.*FX/iu);
+    const narrow = await current.service.call("xsxb_add_attack_trail", {
+      animation_id: "walk",
+      attachment_id: "held-sword",
+      id: "narrow-slash",
+      blade_width_scale: 0.5,
+      sync: false,
+    });
+    assert.equal(narrow.segment.widthScale, 0.5);
+    assert.deepEqual(narrow.segment.sticks[0].top, trail.segment.sticks[0].top);
+    assert.deepEqual(narrow.segment.sticks[0].bottom, trail.segment.sticks[0].bottom);
     await assert.rejects(
       current.service.call("xsxb_add_attack_trail", {
         animation_id: "walk",
@@ -556,6 +649,72 @@ test("estimate_boxes fills every frame, previews with dry_run, and skips existin
 
     const replaced = await current.service.call("xsxb_estimate_boxes", { replace: true });
     assert.equal(replaced.estimatedFrames, 2);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("cutout reports stale boxes and can re-estimate them from post-cutout pixels", async () => {
+  const current = await importedFixture();
+  try {
+    await current.service.call("xsxb_estimate_boxes", { replace: true });
+    const stale = await current.service.call("xsxb_cutout", {
+      animation_id: "walk",
+      force: true,
+      key_color: "#000000",
+    });
+    assert.equal(stale.boxesStale, true);
+    assert.equal(stale.staleBoxFrameCount, 2);
+
+    const refreshed = await current.service.call("xsxb_cutout", {
+      animation_id: "walk",
+      force: true,
+      key_color: "#000000",
+      reestimate_boxes: true,
+    });
+    assert.equal(refreshed.boxesStale, false);
+    assert.equal(refreshed.boxesReestimated, 2);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("sync_godot can preview and restrict delivery to selected animations", async () => {
+  const current = await importedFixture();
+  try {
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: current.sequenceDir,
+      project_id: "bind-test",
+      animation_id: "diagnostic",
+    });
+    await current.service.call("xsxb_sync_godot", { force: true });
+    const project = current.store.activeProject("bind-test");
+    const diagnosticAssetDir = path.join(
+      project.projectRoot,
+      "xsxb_frame_tuner/workspace/projects/bind-test/assets/mcp_imports/diagnostic",
+    );
+    assert.equal(fs.existsSync(diagnosticAssetDir), true);
+    const preview = await current.service.call("xsxb_sync_godot", { dry_run: true });
+    assert.deepEqual(preview.availableAnimationIds.sort(), ["diagnostic", "walk"]);
+    assert.equal(preview.requested, false);
+
+    const synced = await current.service.call("xsxb_sync_godot", {
+      include_animation_ids: ["walk"],
+      force: true,
+    });
+    assert.deepEqual(synced.includedAnimationIds, ["walk"]);
+    assert.equal(synced.frameCount, 2);
+    assert.equal(fs.existsSync(diagnosticAssetDir), false);
+    const manifestPath = path.join(
+      project.projectRoot,
+      "xsxb_frame_tuner/data/projects/bind-test/animation_manifest.json",
+    );
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    assert.deepEqual(
+      manifest.profiles.flatMap((profile) => profile.animations).map((entry) => entry.id),
+      ["walk"],
+    );
   } finally {
     current.cleanup();
   }

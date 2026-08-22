@@ -110,7 +110,7 @@ Bridge 执行本地操作，Bridge 不负责启动或控制 Codex。
 4. 在任务完成后启动本地 Tuner Web 服务。
 5. 用户通过 `http://127.0.0.1:5179` 打开本地界面。
 
-当前仓库已经提供本地 STDIO MCP Server，并与工作台共用项目存储、附件、拖影、导入、调参、导出和 Godot 同步服务。Agent 可通过 31 个 `xsxb_*` 工具完成生产闭环；HTTP/WebSocket 设备配对 Bridge 仍属于后续云端连接阶段。
+当前仓库已经提供本地 STDIO MCP Server，并与工作台共用项目存储、附件、拖影、导入、调参、导出和 Godot 同步服务。Agent 可通过 32 个 `xsxb_*` 工具完成生产闭环，其中 `xsxb_create_project` 可建立未绑定 Godot 的本地项目；HTTP/WebSocket 设备配对 Bridge 仍属于后续云端连接阶段。
 
 ## 推荐迁移顺序
 

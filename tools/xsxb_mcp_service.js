@@ -41,6 +41,7 @@ const {
   GROUP_GRID_MIN_CELL,
   estimateVisualScales,
   findMotionWindow,
+  groupToCanvas,
   groupGridStep,
   measureFrame,
   measureFrameFiles,
@@ -53,7 +54,9 @@ const {
 } = require("./xsxb_mcp_visual_qa");
 const { validateToolArguments, validateToolResult } = require("./xsxb_mcp_schema");
 const { createPlanAttachmentHandler } = require("./xsxb_mcp_attachment_plan_handler");
-const { deriveWeaponTrailSticks } = require("./xsxb_mcp_attachment_planner");
+const { createProjectHandlers } = require("./xsxb_mcp_project_handler");
+const { createOpenTunerHandler } = require("./xsxb_mcp_tuner_handler");
+const { deriveWeaponTrailSticks, transformAttachmentPoint } = require("./xsxb_mcp_attachment_planner");
 const { createCompositeSession } = require("./xsxb_mcp_trail_preview");
 const { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions } = require("./xsxb_mcp_tool_catalog");
 const { getWorkflow } = require("./xsxb_mcp_workflows");
@@ -78,11 +81,8 @@ const {
   extractVideoFrames,
   launchTunerProcess,
   probeTunerUrl,
-  waitForTuner,
 } = require("./xsxb_mcp_processes");
 
-const DEFAULT_TUNER_HOST = "127.0.0.1";
-const DEFAULT_TUNER_PORT = 5179;
 const BOX_NAMES = Object.freeze(["hurtbox", "collisionbox", "hitbox"]);
 
 /**
@@ -796,6 +796,63 @@ function createXsxbMcpService(options = {}) {
     upsertEstimatedFrameBoxes(tuning, profile.id, { ...animation, id: animationId }, frameFiles, {
       replace,
     });
+    let attachmentHitboxFrames = 0;
+    const sourceAttachmentId = String(args.attachment_id || "").trim();
+    if (sourceAttachmentId) {
+      const rawAttachments = projectStore.readJson(paths.frameImageAttachments, []);
+      const matching = (Array.isArray(rawAttachments) ? rawAttachments : [])
+        .map((attachment) => ({
+          attachment,
+          frame: attachmentFrameForSelection(attachment, { project, profile, animation }),
+        }))
+        .filter(
+          ({ attachment, frame }) =>
+            frame !== null &&
+            [attachment.id, attachment.assetId, attachment.automation?.logicalId].some(
+              (value) => String(value || "") === sourceAttachmentId,
+            ),
+        );
+      if (!matching.length) throw new Error(`Weapon attachment not found: ${sourceAttachmentId}.`);
+      const geometryCache = new Map();
+      for (const { attachment, frame } of matching) {
+        let weapon = attachment.automation?.weapon;
+        if (!weapon?.grip || !weapon?.tip) {
+          const absolute = resolveAnimationFramePath(project, attachment.path);
+          if (!absolute || !fs.existsSync(absolute)) {
+            throw new Error(`Weapon attachment image not found: ${attachment.path || "(empty)"}.`);
+          }
+          const cacheKey = `${absolute}:${Number(args.grip_t ?? attachment.automation?.gripT ?? 0.5)}`;
+          if (!geometryCache.has(cacheKey)) {
+            const image = decodePngRgba(absolute);
+            const measured = measureLongAxis(image.data, image.width, image.height, {
+              t: parseGripT(args.grip_t ?? attachment.automation?.gripT, 0.5),
+            });
+            geometryCache.set(cacheKey, {
+              grip: measured.localFromCenter,
+              tip: { x: measured.tip.x - image.width / 2, y: measured.tip.y - image.height / 2 },
+            });
+          }
+          weapon = geometryCache.get(cacheKey);
+        }
+        const grip = transformAttachmentPoint(weapon.grip, attachment.transform);
+        const tip = transformAttachmentPoint(weapon.tip, attachment.transform);
+        const length = Math.max(1, Math.hypot(tip.x - grip.x, tip.y - grip.y));
+        const padding = Math.max(0, Number(args.hitbox_padding ?? 4) || 0);
+        const width = Math.max(1, Number(args.hitbox_width ?? Math.max(8, length * 0.22)) || 1);
+        const key = keyFor(frame);
+        const current = tuning.frame_box_overrides[key] || {};
+        tuning.frame_box_overrides[key] = {
+          ...current,
+          hitbox: {
+            offset: { x: (grip.x + tip.x) / 2, y: (grip.y + tip.y) / 2 },
+            size: { x: length + padding * 2, y: width },
+            rotation: (Math.atan2(tip.y - grip.y, tip.x - grip.x) * 180) / Math.PI,
+            enabled: true,
+          },
+        };
+        attachmentHitboxFrames += 1;
+      }
+    }
     const results = frames.map((_, index) => {
       const key = keyFor(index);
       const had = existing.has(key);
@@ -817,6 +874,8 @@ function createXsxbMcpService(options = {}) {
       skippedExistingFrames: results.filter((entry) => entry.skippedExisting).length,
       replace,
       dryRun,
+      sourceAttachmentId: sourceAttachmentId || null,
+      attachmentHitboxFrames,
       frames: results,
       sync: synchronize(project, dryRun ? false : booleanFlag(args.sync)),
     };
@@ -1038,15 +1097,6 @@ function createXsxbMcpService(options = {}) {
       removedFrames: result.removedFrames,
       removedDirectory: result.removedDirectory,
       sync: synchronize(project, booleanFlag(args.sync)),
-    };
-  }
-
-  async function syncGodot(args = {}) {
-    const project = registryProject(args.project_id || args.project, true);
-    return {
-      projectId: project.id,
-      force: booleanFlag(args.force),
-      ...synchronize(project, true, { force: booleanFlag(args.force) }),
     };
   }
 
@@ -1327,12 +1377,37 @@ function createXsxbMcpService(options = {}) {
         cy: frame.cy,
       })),
     );
+    const preset = String(args.preset || "default");
+    const attackPreset = preset === "attack";
+    const paddingBefore = Math.max(0, Number(args.padding_before ?? (attackPreset ? 2 : 0)) || 0);
+    const paddingAfter = Math.max(0, Number(args.padding_after ?? (attackPreset ? 2 : 0)) || 0);
+    const start = Math.max(0, found.start - paddingBefore);
+    const end = Math.min(filePaths.length - 1, found.end + paddingAfter);
+    const opaqueRatios = measured.map(
+      (frame) =>
+        Number(frame.opaque || 0) / Math.max(1, Number(frame.width || 1) * Number(frame.height || 1)),
+    );
+    const opaqueRatio = median(opaqueRatios);
+    const analysisReliable = opaqueRatio < 0.98;
+    const warnings = analysisReliable
+      ? []
+      : [
+          "Frames are almost fully opaque, so motion bounds are unreliable. Run xsxb_cutout before applying this order.",
+        ];
     return {
       ...payload,
       frameCount: filePaths.length,
-      start: found.start,
-      end: found.end,
-      order: found.order,
+      preset,
+      rawStart: found.start,
+      rawEnd: found.end,
+      start,
+      end,
+      order: Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => start + index),
+      paddingBefore,
+      paddingAfter,
+      opaqueRatio: Math.round(opaqueRatio * 10000) / 10000,
+      analysisReliable,
+      warnings,
       activity: found.activity,
       frames: measured.map((frame) => ({
         index: frame.index,
@@ -1408,7 +1483,7 @@ function createXsxbMcpService(options = {}) {
     };
   }
 
-  function layerValidation(raw, layer = "all") {
+  function layerValidation(raw, layer = "all", options = {}) {
     const requested = ["standalone", "bind", "gameplay"].includes(layer) ? layer : "all";
     const layers = { standalone: [], bind: [], gameplay: [] };
     const warningLayers = { standalone: [], bind: [], gameplay: [] };
@@ -1416,6 +1491,16 @@ function createXsxbMcpService(options = {}) {
     for (const message of raw.warnings || []) warningLayers[classifyValidationMessage(message)].push(message);
     const selectedErrors = requested === "all" ? raw.errors : layers[requested];
     const selectedWarnings = requested === "all" ? raw.warnings : warningLayers[requested];
+    const gameplayReadinessPattern = /No non-runtime gameplay scene or script uses xsxb_frame_actor\./u;
+    const nonBlockingWarnings =
+      options.requireGameplay === true
+        ? []
+        : selectedWarnings.filter((message) => gameplayReadinessPattern.test(String(message)));
+    const blockingWarnings = selectedWarnings.filter((message) => !nonBlockingWarnings.includes(message));
+    const gameplayReady = ![
+      ...layers.gameplay,
+      ...warningLayers.gameplay.filter((message) => gameplayReadinessPattern.test(String(message))),
+    ].length;
     return {
       ...raw,
       layer: requested,
@@ -1426,7 +1511,9 @@ function createXsxbMcpService(options = {}) {
         bind: { errors: layers.bind, warnings: warningLayers.bind },
         gameplay: { errors: layers.gameplay, warnings: warningLayers.gameplay },
       },
-      ok: selectedErrors.length === 0 && (!raw.strict || selectedWarnings.length === 0),
+      gameplayReady,
+      nonBlockingWarnings,
+      ok: selectedErrors.length === 0 && (!raw.strict || blockingWarnings.length === 0),
     };
   }
 
@@ -1440,7 +1527,9 @@ function createXsxbMcpService(options = {}) {
       },
       { root, projectStore },
     );
-    return layerValidation({ ...raw, strict: args.strict === true }, args.layer || "all");
+    return layerValidation({ ...raw, strict: args.strict === true }, args.layer || "all", {
+      requireGameplay: args.require_gameplay === true,
+    });
   }
 
   function setActiveProject(args = {}) {
@@ -1507,6 +1596,12 @@ function createXsxbMcpService(options = {}) {
     }
     if (!jobs.length) throw new Error("Cutout found no on-disk frames to process.");
     const paths = projectStore.projectPaths(project);
+    const animationId = String(animation.id || animation.name);
+    const boxPrefix = `${profile.id}/${animationId}:`;
+    const tuningBeforeCutout = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+    const staleBoxFrameCount = Object.keys(tuningBeforeCutout.frame_box_overrides || {}).filter((key) =>
+      key.startsWith(boxPrefix),
+    ).length;
     const applyVisual = booleanFlag(args.apply_visual);
     const visualScales = applyVisual
       ? bakedVisualScales(
@@ -1573,7 +1668,6 @@ function createXsxbMcpService(options = {}) {
     }
     projectStore.writeJson(paths.manifest, manifest);
     if (applyVisual) {
-      const animationId = String(animation.id || animation.name);
       const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
       tuning.values = tuning.values && typeof tuning.values === "object" ? tuning.values : {};
       tuning.values[`profiles.${profile.id}.groups.${animationId}.visual_size`] = 1;
@@ -1594,10 +1688,27 @@ function createXsxbMcpService(options = {}) {
       tuning.frame_visual_overrides = overrides;
       projectStore.writeJson(paths.tuning, tuning);
     }
+    const shouldReestimateBoxes = booleanFlag(args.reestimate_boxes);
+    let boxesReestimated = 0;
+    if (shouldReestimateBoxes) {
+      const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+      upsertEstimatedFrameBoxes(
+        tuning,
+        profile.id,
+        { ...animation, id: animationId },
+        jobs.map((job) => job.absolutePath),
+        {
+          replace: true,
+        },
+      );
+      projectStore.writeJson(paths.tuning, tuning);
+      boxesReestimated = jobs.length;
+    }
+    const boxesStale = processedFrameCount > 0 && staleBoxFrameCount > 0 && !shouldReestimateBoxes;
     return {
       projectId: project.id,
       profileId: profile.id,
-      animationId: String(animation.id || animation.name),
+      animationId,
       pipeline: receipt.pipeline,
       rematched: receipt.rematched,
       rematchMode: receipt.rematchMode || (receipt.rematched ? "shared" : "none"),
@@ -1610,6 +1721,9 @@ function createXsxbMcpService(options = {}) {
       frameCount: frames.length,
       processedFrameCount,
       skippedFrameCount: Number(receipt.skippedFrameCount || 0),
+      boxesStale,
+      staleBoxFrameCount,
+      boxesReestimated,
       metrics: booleanFlag(args.metrics, true)
         ? summarizeMetrics(
             receipt.frameMetrics
@@ -1640,53 +1754,6 @@ function createXsxbMcpService(options = {}) {
     };
   }
 
-  async function openTuner(args = {}) {
-    const requestedAnimation = Boolean(args.animation_id || args.animation);
-    let project;
-    let profileId = String(args.profile_id || args.profile || "").trim();
-    let animationId = String(args.animation_id || args.animation || "").trim();
-    if (requestedAnimation) {
-      const selection = animationFor(args);
-      project = selection.project;
-      profileId = selection.profile.id;
-      animationId = String(selection.animation.id || selection.animation.name);
-    } else {
-      project = registryProject(args.project_id || args.project, false);
-    }
-    const port = Math.max(1, Number(args.port || process.env.PORT || DEFAULT_TUNER_PORT));
-    const host = DEFAULT_TUNER_HOST;
-    const url = new URL(`http://${host}:${port}/workspace`);
-    url.searchParams.set("project", project.id);
-    if (profileId) url.searchParams.set("profile", profileId);
-    if (animationId) url.searchParams.set("animation", animationId);
-    const workspaceUrl = url.toString();
-    const shouldStart = args.start !== false;
-    let reused = await probeTunerImpl(workspaceUrl);
-    let launched = false;
-    let pid = null;
-    if (!reused && shouldStart) {
-      const spawned = (await launchTunerImpl({ root, port, host, url: workspaceUrl })) || {};
-      pid = spawned.pid || null;
-      launched = true;
-      reused = options.launchTunerImpl
-        ? Boolean(await probeTunerImpl(workspaceUrl))
-        : await waitForTuner(probeTunerImpl, workspaceUrl);
-      if (!reused && !options.launchTunerImpl) {
-        throw new Error(`Tuner did not start at http://${host}:${port}.`);
-      }
-    }
-    return {
-      projectId: project.id,
-      profileId,
-      animationId,
-      url: workspaceUrl,
-      launched,
-      reused: Boolean(reused && !launched),
-      started: Boolean(reused || launched),
-      pid,
-    };
-  }
-
   function summarizeAttackTrailSticks(sticks) {
     const frames = sticks.map((stick) => Number(stick.frame) || 0);
     const frameSpan = frames.length ? Math.max(...frames) - Math.min(...frames) : 0;
@@ -1697,6 +1764,64 @@ function createXsxbMcpService(options = {}) {
       note = "Both sticks are on the same frame. The trail blooms on that frame only.";
     }
     return { frameSpan, centerTravel, edgeTravel, note };
+  }
+
+  /**
+   * Detects bright source pixels around derived weapon sticks that are likely baked slash FX.
+   * @param {{project:object,animation:object}} selection Animation selection.
+   * @param {object[]} sticks Derived group-coordinate weapon sticks.
+   * @param {number} threshold Per-frame highlighted-area ratio that triggers review.
+   * @returns {{ratio:number,frames:number[]}} Overlap summary.
+   */
+  function detectSourceFxOverlap(selection, sticks, threshold) {
+    let highlightedPixels = 0;
+    let sampledPixels = 0;
+    const flaggedFrames = [];
+    for (const stick of sticks) {
+      const frame = Number(stick.frame);
+      const source = selection.animation.frames?.[frame];
+      const absolute = resolveAnimationFramePath(selection.project, source?.path);
+      if (!absolute || !fs.existsSync(absolute)) continue;
+      const image = decodePngRgba(absolute);
+      const top = groupToCanvas(
+        Number(stick.top?.x || 0),
+        Number(stick.top?.y || 0),
+        image.width,
+        image.height,
+        selection.animation.anchorMode,
+      );
+      const bottom = groupToCanvas(
+        Number(stick.bottom?.x || 0),
+        Number(stick.bottom?.y || 0),
+        image.width,
+        image.height,
+        selection.animation.anchorMode,
+      );
+      const bladeLength = Math.hypot(top.x - bottom.x, top.y - bottom.y);
+      const padding = Math.max(2, Math.round(bladeLength * 0.12));
+      const left = Math.max(0, Math.floor(Math.min(top.x, bottom.x) - padding));
+      const right = Math.min(image.width - 1, Math.ceil(Math.max(top.x, bottom.x) + padding));
+      const upper = Math.max(0, Math.floor(Math.min(top.y, bottom.y) - padding));
+      const lower = Math.min(image.height - 1, Math.ceil(Math.max(top.y, bottom.y) + padding));
+      let frameHighlights = 0;
+      let frameSamples = 0;
+      for (let y = upper; y <= lower; y += 1) {
+        for (let x = left; x <= right; x += 1) {
+          const offset = (y * image.width + x) * 4;
+          frameSamples += 1;
+          const luma =
+            0.2126 * image.data[offset] + 0.7152 * image.data[offset + 1] + 0.0722 * image.data[offset + 2];
+          if (image.data[offset + 3] >= 96 && luma >= 190) frameHighlights += 1;
+        }
+      }
+      highlightedPixels += frameHighlights;
+      sampledPixels += frameSamples;
+      if (frameHighlights / Math.max(1, frameSamples) >= threshold) flaggedFrames.push(frame);
+    }
+    return {
+      ratio: Math.round((highlightedPixels / Math.max(1, sampledPixels)) * 10000) / 10000,
+      frames: [...new Set(flaggedFrames)].sort((left, right) => left - right),
+    };
   }
 
   /**
@@ -1711,6 +1836,7 @@ function createXsxbMcpService(options = {}) {
     const trails = normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
     const bindingKey = `${profile.id}/${animation.id || animation.name}`;
     const frames = animation.frames || [];
+    const dryRun = booleanFlag(args.dry_run);
     if (!frames.length) throw new Error("Cannot add an attack trail to an animation without frames.");
     const lastFrame = frames.length - 1;
     const width = Number(frames[0]?.width || 320);
@@ -1727,17 +1853,21 @@ function createXsxbMcpService(options = {}) {
       const buffer = fs.readFileSync(absolute);
       const info = pngInfo(buffer);
       const hash = crypto.createHash("sha256").update(buffer).digest("hex");
-      const destDir = path.join(
-        projectStore.projectWorkspaceDir(project),
-        "attack_trails",
-        profile.id,
-        String(animation.id || animation.name),
-      );
-      fs.mkdirSync(destDir, { recursive: true });
-      const destPath = path.join(destDir, `${hash}.png`);
-      fs.writeFileSync(destPath, buffer);
+      let texturePath = absolute;
+      if (!dryRun) {
+        const destDir = path.join(
+          projectStore.projectWorkspaceDir(project),
+          "attack_trails",
+          profile.id,
+          String(animation.id || animation.name),
+        );
+        fs.mkdirSync(destDir, { recursive: true });
+        const destPath = path.join(destDir, `${hash}.png`);
+        fs.writeFileSync(destPath, buffer);
+        texturePath = reslash(path.relative(root, destPath));
+      }
       texture = {
-        path: reslash(path.relative(root, destPath)),
+        path: texturePath,
         assetHash: hash,
         name: path.basename(absolute),
         type: "image/png",
@@ -1783,23 +1913,45 @@ function createXsxbMcpService(options = {}) {
         throw new Error("grip_t must be a number between 0 and 1.");
       }
       const image = decodePngRgba(attachmentPath);
-      const measured = measureLongAxis(image.data, image.width, image.height, { t: gripT });
+      const measured = measureLongAxis(image.data, image.width, image.height, {
+        t: gripT,
+        pommelHint: args.pommel_hint,
+        tipHint: args.tip_hint,
+        flipAxis: args.flip_axis === true,
+      });
+      const storedWeapon = candidate.automation?.weapon;
       derived = deriveWeaponTrailSticks({
         attachments,
         attachmentId,
-        weapon: {
-          grip: measured.localFromCenter,
-          tip: { x: measured.tip.x - image.width / 2, y: measured.tip.y - image.height / 2 },
-        },
+        weapon:
+          storedWeapon?.grip && storedWeapon?.tip
+            ? storedWeapon
+            : {
+                grip: measured.localFromCenter,
+                tip: { x: measured.tip.x - image.width / 2, y: measured.tip.y - image.height / 2 },
+              },
         startFrame,
         endFrame,
       });
     }
-    const sticks = derived
+    const bladeWidthScale = Number(args.blade_width_scale ?? 1);
+    if (!Number.isFinite(bladeWidthScale) || bladeWidthScale < 0.1 || bladeWidthScale > 2) {
+      throw new Error("blade_width_scale must be between 0.1 and 2.");
+    }
+    const baseSticks = derived
       ? derived.sticks
       : Array.isArray(args.sticks) && args.sticks.length
         ? args.sticks
         : defaultSticks;
+    const sticks = baseSticks;
+    const sourceFxThreshold = Number(args.source_fx_threshold ?? 0.03);
+    if (!Number.isFinite(sourceFxThreshold) || sourceFxThreshold < 0 || sourceFxThreshold > 1) {
+      throw new Error("source_fx_threshold must be between 0 and 1.");
+    }
+    const sourceFx =
+      derived && args.detect_source_fx !== false
+        ? detectSourceFxOverlap(selection, sticks, sourceFxThreshold)
+        : { ratio: 0, frames: [] };
     const segmentId = slug(
       args.id ||
         (args.texture_path ? path.basename(args.texture_path, path.extname(args.texture_path)) : "trail"),
@@ -1813,6 +1965,8 @@ function createXsxbMcpService(options = {}) {
       texture,
       colorMode: args.color_mode || args.colorMode || "solid",
       color: args.color || "#d9364a",
+      opacity: args.opacity === undefined ? 1 : Number(args.opacity),
+      widthScale: bladeWidthScale,
       sticks,
       ...(args.attachment_id ? { sourceAttachmentId: String(args.attachment_id) } : {}),
     };
@@ -1823,18 +1977,31 @@ function createXsxbMcpService(options = {}) {
       segment,
     ];
     const normalized = normalizeAttackTrails(trails);
-    const warnings = [...(derived?.warnings || []), ...validateAttackTrails(normalized, selection.manifest)];
-    projectStore.writeJson(paths.attackTrails, normalized);
+    const warnings = [
+      ...(derived?.warnings || []),
+      ...(sourceFx.frames.length
+        ? [
+            `Derived trail overlaps bright source-frame highlights on frames ${sourceFx.frames.join(", ")}; baked slash FX may duplicate the trail. Review the preview or lower opacity/width.`,
+          ]
+        : []),
+      ...validateAttackTrails(normalized, selection.manifest),
+    ];
+    if (!dryRun) projectStore.writeJson(paths.attackTrails, normalized);
     const written = normalized.bindings[bindingKey].find((entry) => entry.id === segment.id);
     return {
       projectId: project.id,
+      dryRun,
+      applied: !dryRun,
       bindingKey,
       segment: written,
       ...summarizeAttackTrailSticks(written?.sticks || []),
       sourceAttachmentId: args.attachment_id ? String(args.attachment_id) : null,
       derivedStickCount: derived?.sticks.length || 0,
+      bladeWidthScale,
+      sourceFxOverlapRatio: sourceFx.ratio,
+      sourceFxFrames: sourceFx.frames,
       warnings,
-      sync: synchronize(project, booleanFlag(args.sync, true)),
+      sync: synchronize(project, dryRun ? false : booleanFlag(args.sync, true)),
     };
   }
 
@@ -1843,13 +2010,17 @@ function createXsxbMcpService(options = {}) {
     const { project, profile, animation } = selection;
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot attach an image to an animation without frames.");
-    if (args.plan) {
+    if (args.plan || args.plan_id) {
+      if (args.plan && args.plan_id && String(args.plan.planId || "") !== String(args.plan_id)) {
+        throw new Error("plan and plan_id refer to different attachment plans.");
+      }
       const submittedPlan = args.plan;
-      const plan = reviewedAttachmentPlans.get(String(submittedPlan?.planId || ""));
-      if (!plan || JSON.stringify(submittedPlan) !== JSON.stringify(plan)) {
+      const requestedPlanId = String(args.plan_id || submittedPlan?.planId || "");
+      const plan = reviewedAttachmentPlans.get(requestedPlanId);
+      if (!plan || (submittedPlan && JSON.stringify(submittedPlan) !== JSON.stringify(plan))) {
         throw new Error("Attachment plan changed after visual review; generate and review a new plan.");
       }
-      const absolute = requireExistingFile(args.file_path, "Attachment image");
+      const absolute = requireExistingFile(args.file_path || plan.sourcePath, "Attachment image");
       if (!booleanFlag(args.confirm)) {
         throw new Error("Applying an attachment plan requires explicit confirmation.");
       }
@@ -1880,6 +2051,7 @@ function createXsxbMcpService(options = {}) {
       );
       return {
         projectId: project.id,
+        planId: String(plan.planId),
         status: applied.status,
         updatedFrames: bindings.length,
         bindings,
@@ -1897,6 +2069,7 @@ function createXsxbMcpService(options = {}) {
           : { requested: booleanFlag(args.sync, true), ok: null },
       };
     }
+    if (!args.file_path) throw new Error('missing required argument "file_path" for manual attachment.');
     const batch = Array.isArray(args.frames) && args.frames.length > 0;
     const requests = batch
       ? args.frames
@@ -2558,11 +2731,16 @@ function createXsxbMcpService(options = {}) {
     if (!/\.png$/i.test(absolute)) throw new Error("file_path must be a PNG.");
     const image = decodePngRgba(absolute);
     const t = parseGripT(args.t);
-    const measured = measureLongAxis(image.data, image.width, image.height, { t });
+    const measured = measureLongAxis(image.data, image.width, image.height, {
+      t,
+      pommelHint: args.pommel_hint,
+      tipHint: args.tip_hint,
+      flipAxis: args.flip_axis === true,
+    });
     return {
       filePath: absolute,
       space: "image_pixels",
-      note: "t=0 is the thicker pommel and t=1 is the thinner tip. Use xsxb_plan_attachment for rotated/scaled placement; manual offset = hand - Rotate(scale * localFromCenter).",
+      note: "t=0 is the selected pommel and t=1 is the selected tip. Use pommel_hint, tip_hint, or flip_axis when the width heuristic is ambiguous.",
       ...measured,
     };
   }
@@ -2577,8 +2755,26 @@ function createXsxbMcpService(options = {}) {
       reviewedAttachmentPlans.set(String(plan.planId), plan);
     },
   });
+  const { createProject, syncGodot } = createProjectHandlers({
+    projectStore,
+    context,
+    registryProject,
+    manifestFor,
+    synchronize,
+    readSfxBindings,
+    attachmentFrameForSelection,
+  });
+  const openTuner = createOpenTunerHandler({
+    root,
+    animationFor,
+    registryProject,
+    probeTuner: probeTunerImpl,
+    launchTuner: launchTunerImpl,
+    fastLaunchProbe: Boolean(options.launchTunerImpl),
+  });
   const handlers = {
     xsxb_list_projects: listProjects,
+    xsxb_create_project: createProject,
     xsxb_get_project: projectSnapshot,
     xsxb_get_workflow: workflowForAgent,
     xsxb_import_video: importVideo,

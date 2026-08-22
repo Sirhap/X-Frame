@@ -499,7 +499,9 @@
       ctx.beginPath();
       for (let sample = 0; sample <= 48; sample += 1) {
         const time = startTime + ((endTime - startTime) * sample) / 48;
-        const screen = this.hooks.localToScreen(this._pose(segment.sticks, timing.times, time).center);
+        const screen = this.hooks.localToScreen(
+          this._pose(segment.sticks, timing.times, time, segment.widthScale).center,
+        );
         if (sample === 0) ctx.moveTo(screen.x, screen.y);
         else ctx.lineTo(screen.x, screen.y);
       }
@@ -1480,6 +1482,7 @@
         segment.tailSamples,
         segment.stableSeed,
         segment.speedVariation,
+        segment.widthScale,
       ]);
       const cached = this.pathCache.get(segment.id);
       if (cached?.signature === signature) return cached;
@@ -1487,10 +1490,10 @@
       const duration = timing.times.at(-1) || 0.0001;
       const samples = [];
       let distance = 0;
-      let previous = this._pose(segment.sticks, timing.times, 0);
+      let previous = this._pose(segment.sticks, timing.times, 0, segment.widthScale);
       for (let index = 0; index < count; index += 1) {
         const time = (duration * index) / (count - 1);
-        const pose = this._pose(segment.sticks, timing.times, time);
+        const pose = this._pose(segment.sticks, timing.times, time, segment.widthScale);
         if (index)
           distance += Math.max(
             Math.hypot(pose.top.x - previous.top.x, pose.top.y - previous.top.y),
@@ -1520,10 +1523,11 @@
       return state;
     }
 
-    _pose(sticks, times, time) {
+    _pose(sticks, times, time, widthScale = 1) {
       if (!sticks.length) return { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, center: { x: 0, y: 0 } };
-      if (sticks.length === 1 || time <= times[0]) return this._stickPose(sticks[0]);
-      if (time >= times.at(-1)) return this._stickPose(sticks.at(-1));
+      if (sticks.length === 1 || time <= times[0])
+        return this._scaledPose(this._stickPose(sticks[0]), widthScale);
+      if (time >= times.at(-1)) return this._scaledPose(this._stickPose(sticks.at(-1)), widthScale);
       let index = 0;
       while (index + 1 < times.length && time > times[index + 1]) index += 1;
       const a = sticks[index],
@@ -1549,7 +1553,20 @@
         { x: db.x * bottomDistance * b.tangentStrength, y: db.y * bottomDistance * b.tangentStrength },
         t,
       );
-      return { top, bottom, center: { x: (top.x + bottom.x) / 2, y: (top.y + bottom.y) / 2 } };
+      return this._scaledPose(
+        { top, bottom, center: { x: (top.x + bottom.x) / 2, y: (top.y + bottom.y) / 2 } },
+        widthScale,
+      );
+    }
+
+    _scaledPose(pose, widthScale) {
+      const scale = clamp(widthScale, 0.1, 2, 1);
+      const center = pose.center;
+      const scaled = (point) => ({
+        x: center.x + (point.x - center.x) * scale,
+        y: center.y + (point.y - center.y) * scale,
+      });
+      return { top: scaled(pose.top), bottom: scaled(pose.bottom), center };
     }
 
     _stickPose(stick) {
@@ -1712,7 +1729,7 @@
       // into a diamond-shaped point.
       const rows = Math.max(TRAIL_MESH_WIDTH_ROWS, tails.length);
       const currentPathTime = this._timeAtDistance(state, currentDistance);
-      const currentPose = this._pose(segment.sticks, state.timing.times, currentPathTime);
+      const currentPose = this._pose(segment.sticks, state.timing.times, currentPathTime, segment.widthScale);
       const headDirection = this._directionAtTime(segment.sticks, state.timing.times, currentPathTime);
       const headHalfWidth =
         Math.hypot(currentPose.bottom.x - currentPose.top.x, currentPose.bottom.y - currentPose.top.y) * 0.5;
@@ -1740,7 +1757,7 @@
           let localPoint, sampleTime;
           const distance = currentDistance + (rowTailDistance - currentDistance) * u;
           sampleTime = this._timeAtDistance(state, distance);
-          const pose = this._pose(segment.sticks, state.timing.times, sampleTime);
+          const pose = this._pose(segment.sticks, state.timing.times, sampleTime, segment.widthScale);
           localPoint = {
             x: pose.top.x + (pose.bottom.x - pose.top.x) * v,
             y: pose.top.y + (pose.bottom.y - pose.top.y) * v,
@@ -2198,7 +2215,7 @@
     }
 
     _processedTexture(image, segment) {
-      const key = `${segment.texture.assetHash}:${segment.colorMode}:${segment.color}:${JSON.stringify(segment.gradientStops)}:${segment.tailFadeStart}`;
+      const key = `${segment.texture.assetHash}:${segment.colorMode}:${segment.color}:${JSON.stringify(segment.gradientStops)}:${segment.tailFadeStart}:${segment.opacity}`;
       if (this.processed.has(key)) return this.processed.get(key);
       const canvas = document.createElement("canvas");
       canvas.width = image.width;
@@ -2236,6 +2253,7 @@
           0,
         );
         pixels.data[index + 3] = pixels.data[index + 3] * (1 - Math.pow(fadeU, TAIL_ALPHA_EXPONENT));
+        pixels.data[index + 3] = pixels.data[index + 3] * clamp(segment.opacity, 0, 1, 1);
       }
       context.putImageData(pixels, 0, 0);
       this.processed.set(key, canvas);
@@ -2322,6 +2340,8 @@
         },
         colorMode: normalizeColorMode(value.colorMode || value.color_mode || "solid"),
         color,
+        opacity: clamp(value.opacity, 0, 1, 1),
+        widthScale: clamp(value.widthScale ?? value.width_scale, 0.1, 2, 1),
         gradientStops: normalizeGradientStops(value.gradientStops ?? value.gradient_stops, color),
         beforeStopChaseMultiplier: this._chaseMultiplier(value, "before", 0, 1, sourceSchema),
         afterStopChaseMultiplier: this._chaseMultiplier(value, "after", 0.1, 20, sourceSchema),
