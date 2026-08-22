@@ -407,6 +407,35 @@ test("export_gif rematches group and frame visual_size before encode", async () 
   }
 });
 
+test("export_gif bakes non-scalar visual offset and rotation even when visual_size is one", async () => {
+  const jobs = [];
+  const current = fixture({
+    encodeGifImpl: async (job) => {
+      jobs.push(job);
+      fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
+    },
+  });
+  try {
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), cutBodyPng(16));
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), cutBodyPng(16));
+    await importWalk(current);
+    await current.service.call("xsxb_set_visual_transform", {
+      level: "group",
+      visual_size: 1,
+      offset_x: 2,
+      offset_y: -1,
+      rotation: 15,
+    });
+    const exported = await current.service.call("xsxb_export_gif", {});
+    const source = (await current.service.call("xsxb_get_animation")).animation.frames[0].absolutePath;
+    assert.equal(exported.appliedVisual, true);
+    assert.notEqual(jobs[0].framePaths[0], source);
+  } finally {
+    await current.service.close();
+    current.cleanup();
+  }
+});
+
 test("export_gif composites attachments in workbench layer order and supports opt-out", async () => {
   const centerColors = [];
   const greenCounts = [];

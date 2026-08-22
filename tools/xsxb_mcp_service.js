@@ -2308,7 +2308,14 @@ function createXsxbMcpService(options = {}) {
       outputPath = path.join(exportRoot, "exports", `${profile.id}_${animationId}.gif`);
     }
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    const appliedVisual = selectedScales.some((scale) => scale !== 1);
+    const appliedVisual = selectedTransforms.some(
+      (transform) =>
+        transform.scaleX !== 1 ||
+        transform.scaleY !== 1 ||
+        transform.offset.x !== 0 ||
+        transform.offset.y !== 0 ||
+        transform.rotation !== 0,
+    );
     let encodePaths = framePaths;
     let visualTemp = null;
     let trailTemp = null;
@@ -2417,7 +2424,14 @@ function createXsxbMcpService(options = {}) {
     }
     const selectedScales = indexes.map((index) => visualScales[index]);
     const selectedTransforms = indexes.map((index) => visualTransforms[index]);
-    const appliedVisual = selectedScales.some((scale) => scale !== 1);
+    const appliedVisual = selectedTransforms.some(
+      (transform) =>
+        transform.scaleX !== 1 ||
+        transform.scaleY !== 1 ||
+        transform.offset.x !== 0 ||
+        transform.offset.y !== 0 ||
+        transform.rotation !== 0,
+    );
     let compositePaths = sourcePaths;
     let visualTemp = null;
     if (appliedVisual) {
