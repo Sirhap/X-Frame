@@ -8,6 +8,7 @@ const test = require("node:test");
 const { createProjectStore } = require("../project_store");
 const { createXsxbMcpService } = require("../xsxb_mcp_service");
 const { decodePngRgba, encodePngRgba } = require("../xsxb_mcp_cutout");
+const { createCompositeSession } = require("../xsxb_mcp_trail_preview");
 
 const TRAIL_PRESET = path.join(
   __dirname,
@@ -398,6 +399,151 @@ test("export_gif rematches group and frame visual_size before encode", async () 
     const source = (await current.service.call("xsxb_get_animation")).animation.frames[0].absolutePath;
     assert.notEqual(jobs[0].framePaths[0], source);
   } finally {
+    current.cleanup();
+  }
+});
+
+test("export_gif composites attachments in workbench layer order and supports opt-out", async () => {
+  const centerColors = [];
+  const greenCounts = [];
+  let scaledSheetGreen = 0;
+  const compositeSession = createCompositeSession({ idleMs: 10_000 });
+  const current = fixture({
+    createCompositeSessionImpl: () => compositeSession,
+    encodeGifImpl: async (job) => {
+      const frame = decodePngRgba(job.framePaths[0]);
+      const offset = (8 * frame.width + 8) * 4;
+      centerColors.push(Array.from(frame.data.slice(offset, offset + 4)));
+      let green = 0;
+      for (let pixel = 0; pixel < frame.data.length; pixel += 4) {
+        if (
+          frame.data[pixel] === 30 &&
+          frame.data[pixel + 1] === 240 &&
+          frame.data[pixel + 2] === 80 &&
+          frame.data[pixel + 3] === 255
+        ) {
+          green += 1;
+        }
+      }
+      greenCounts.push(green);
+      fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
+    },
+  });
+  try {
+    await importWalk(current);
+    const belowPath = path.join(current.root, "below.png");
+    const abovePath = path.join(current.root, "above.png");
+    fs.writeFileSync(belowPath, solidPng(4, [30, 80, 240, 255]));
+    fs.writeFileSync(abovePath, solidPng(4, [30, 240, 80, 255]));
+    await current.service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      file_path: belowPath,
+      frame: 0,
+      id: "below",
+      layer: "below",
+      offset_y: -8,
+      sync: false,
+    });
+
+    const belowOnly = await current.service.call("xsxb_export_gif", {
+      animation_id: "walk",
+      start_frame: 0,
+      end_frame: 0,
+    });
+    assert.equal(belowOnly.bakedAttachments, true);
+    assert.deepEqual(centerColors[0], [200, 40, 40, 255], "opaque owner covers the below attachment");
+
+    await current.service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      file_path: abovePath,
+      frame: 0,
+      id: "above",
+      layer: "above",
+      offset_y: -8,
+      sync: false,
+    });
+    const withAbove = await current.service.call("xsxb_export_gif", {
+      animation_id: "walk",
+      start_frame: 0,
+      end_frame: 0,
+    });
+    assert.equal(withAbove.bakedAttachments, true);
+    assert.deepEqual(centerColors[1], [30, 240, 80, 255], "above attachment covers the owner");
+
+    await current.service.call("xsxb_set_visual_transform", {
+      animation_id: "walk",
+      level: "group",
+      visual_size: 0.5,
+    });
+    await current.service.call("xsxb_export_gif", {
+      animation_id: "walk",
+      start_frame: 0,
+      end_frame: 0,
+    });
+    assert.ok(greenCounts[2] < greenCounts[1], "attachment scales with the owner visual transform");
+    const scaledSheet = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      start_frame: 0,
+      end_frame: 0,
+      cell: 16,
+      pad: 4,
+      columns: 1,
+      grid: false,
+    });
+    assert.equal(scaledSheet.appliedVisual, true);
+    const scaledSheetImage = decodePngRgba(scaledSheet.outputPath);
+    for (let offset = 0; offset < scaledSheetImage.data.length; offset += 4) {
+      if (
+        scaledSheetImage.data[offset] === 30 &&
+        scaledSheetImage.data[offset + 1] === 240 &&
+        scaledSheetImage.data[offset + 2] === 80 &&
+        scaledSheetImage.data[offset + 3] === 255
+      ) {
+        scaledSheetGreen += 1;
+      }
+    }
+    await current.service.call("xsxb_set_visual_transform", {
+      animation_id: "walk",
+      level: "group",
+      visual_size: 1,
+    });
+
+    const pureOwner = await current.service.call("xsxb_export_gif", {
+      animation_id: "walk",
+      start_frame: 0,
+      end_frame: 0,
+      include_attachments: false,
+    });
+    assert.equal(pureOwner.bakedAttachments, false);
+    assert.deepEqual(centerColors[3], [200, 40, 40, 255]);
+    const sheet = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      start_frame: 0,
+      end_frame: 0,
+      cell: 16,
+      pad: 4,
+      columns: 1,
+      grid: false,
+    });
+    assert.equal(sheet.bakedAttachments, true);
+    const sheetImage = decodePngRgba(sheet.outputPath);
+    let greenPixels = 0;
+    for (let offset = 0; offset < sheetImage.data.length; offset += 4) {
+      if (
+        sheetImage.data[offset] === 30 &&
+        sheetImage.data[offset + 1] === 240 &&
+        sheetImage.data[offset + 2] === 80 &&
+        sheetImage.data[offset + 3] === 255
+      ) {
+        greenPixels += 1;
+      }
+    }
+    assert.ok(greenPixels >= 4, `sheet must include the above attachment, got ${greenPixels} pixels`);
+    assert.ok(scaledSheetGreen < greenPixels, "sheet scales the attachment with the owner");
+    assert.equal(compositeSession.stats.browserLaunches, 1, "sequential exports reuse one browser");
+    assert.equal(compositeSession.stats.uniqueAttachmentLoads, 2, "each content asset is counted once");
+  } finally {
+    await current.service.close?.();
     current.cleanup();
   }
 });

@@ -46,11 +46,11 @@ weapon planner, compose attachment/trail rendering in one export boundary, and k
 
 ### Task 4: Workbench-parity composite exports
 
-- [ ] Add pixel fixtures proving below/behind/character/above/front layer order.
-- [ ] Add GIF and sheet integration tests for attachments, trails, and visual transforms.
-- [ ] Implement a shared composite renderer with content-hash asset caching.
-- [ ] Reuse one lazy Playwright session and close it from the MCP service lifecycle.
-- [ ] Add count-based performance tests and run the focused Red-Green mutation check.
+- [x] Add pixel fixtures proving below/behind/character/above/front layer order.
+- [x] Add GIF and sheet integration tests for attachments, trails, and visual transforms.
+- [x] Implement a shared composite renderer with content-hash asset caching.
+- [x] Reuse one lazy Playwright session and close it from the MCP service lifecycle.
+- [x] Add count-based performance tests and run the focused Red-Green mutation check.
 
 ### Task 5: MCP contract and architecture
 

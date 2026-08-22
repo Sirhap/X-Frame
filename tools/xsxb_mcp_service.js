@@ -58,7 +58,7 @@ const {
   planWeaponTransforms,
   renderWeaponPlanFrame,
 } = require("./xsxb_mcp_attachment_planner");
-const { compositeAttackTrails } = require("./xsxb_mcp_trail_preview");
+const { createCompositeSession } = require("./xsxb_mcp_trail_preview");
 const { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions } = require("./xsxb_mcp_tool_catalog");
 const {
   PNG_NAME,
@@ -169,7 +169,10 @@ function createXsxbMcpService(options = {}) {
   const projectStore = createProjectStore(root);
   const extractVideoFramesImpl = options.extractVideoFramesImpl || extractVideoFrames;
   const encodeGifImpl = options.encodeGifImpl || encodeGifWithFfmpeg;
-  const compositeTrailImpl = options.compositeTrailImpl || compositeAttackTrails;
+  const compositeSession = options.compositeTrailImpl
+    ? null
+    : (options.createCompositeSessionImpl || createCompositeSession)();
+  const compositeTrailImpl = options.compositeTrailImpl || ((job) => compositeSession.composite(job));
   const cutoutPngFileImpl = options.cutoutPngFileImpl || null;
   const probeTunerImpl = options.probeTunerImpl || probeTunerUrl;
   const launchTunerImpl = options.launchTunerImpl || launchTunerProcess;
@@ -184,16 +187,31 @@ function createXsxbMcpService(options = {}) {
    * @param {number} fps Playback fps.
    * @returns {Promise<object>} Composite receipt.
    */
-  function bakeTrailsOnto(selection, framePaths, frameIndexes, durations, fps) {
+  function bakeTrailsOnto(selection, framePaths, frameIndexes, durations, fps, options = {}) {
     const { project, profile, animation } = selection;
     const paths = projectStore.projectPaths(project);
-    const trails = normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
+    const trails =
+      options.includeTrails === false
+        ? normalizeAttackTrails(EMPTY_ATTACK_TRAILS)
+        : normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
+    const rawAttachments =
+      options.includeAttachments === false ? [] : projectStore.readJson(paths.frameImageAttachments, []);
+    const selectedIndexes = new Set(frameIndexes.map(Number));
+    const attachments = (Array.isArray(rawAttachments) ? rawAttachments : []).flatMap((attachment) => {
+      const frame = attachmentFrameForSelection(attachment, selection);
+      if (frame === null || !selectedIndexes.has(frame)) return [];
+      const absolutePath = resolveAnimationFramePath(project, attachment.path);
+      if (!absolutePath || !fs.existsSync(absolutePath)) return [];
+      return [{ ...attachment, frame, absolutePath }];
+    });
     return compositeTrailImpl({
       framePaths,
       frameIndexes,
       durations,
       fps,
       trails,
+      attachments,
+      visualScales: options.visualScales,
       bindingKey: `${profile.id}/${animation.id || animation.name}`,
       root,
     });
@@ -2487,6 +2505,8 @@ function createXsxbMcpService(options = {}) {
     }
     let bakedTrails = false;
     let trailIds = [];
+    let bakedAttachments = false;
+    let attachmentIds = [];
     try {
       const baked = await bakeTrailsOnto(
         { project, profile, animation },
@@ -2494,10 +2514,17 @@ function createXsxbMcpService(options = {}) {
         exportedIndexes,
         playbackDurations(tuning, profile.id, animationId, frames.length, fps),
         fps,
+        {
+          includeAttachments: booleanFlag(args.include_attachments, true),
+          includeTrails: booleanFlag(args.include_trails, true),
+          visualScales: selectedScales,
+        },
       );
       bakedTrails = baked.bakedTrails === true;
       trailIds = baked.trailIds || [];
-      if (baked.bakedTrails) {
+      bakedAttachments = baked.bakedAttachments === true;
+      attachmentIds = baked.attachmentIds || [];
+      if (baked.bakedTrails || baked.bakedAttachments) {
         encodePaths = baked.framePaths;
         trailTemp = baked.tempDir;
       }
@@ -2520,6 +2547,8 @@ function createXsxbMcpService(options = {}) {
       appliedVisual,
       bakedTrails,
       trailIds,
+      bakedAttachments,
+      attachmentIds,
       frameScales: appliedVisual ? selectedScales : undefined,
       totalDurationMs: Math.round(durations.reduce((sum, value) => sum + value, 0) * 1000),
       bytes: fs.statSync(outputPath).size,
@@ -2542,6 +2571,8 @@ function createXsxbMcpService(options = {}) {
     const fps = requireFps(animation.fps, 12);
     const paths = projectStore.projectPaths(project);
     const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+    const animationId = String(animation.id || animation.name);
+    const visualScales = bakedVisualScales(tuning, profile.id, animationId, frames.length);
     const sourcePaths = [];
     const indexes = [];
     for (let index = startFrame; index <= endFrame; index += 1) {
@@ -2552,18 +2583,40 @@ function createXsxbMcpService(options = {}) {
       sourcePaths.push(absolute);
       indexes.push(index);
     }
+    const selectedScales = indexes.map((index) => visualScales[index]);
+    const appliedVisual = selectedScales.some((scale) => scale !== 1);
+    let compositePaths = sourcePaths;
+    let visualTemp = null;
+    if (appliedVisual) {
+      visualTemp = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-sheet-visual-"));
+      const decoded = sourcePaths.map((filePath) => decodePngRgba(filePath));
+      const placed = placeFramesOnCanvas(decoded, decoded[0].width, decoded[0].height, {
+        frameScales: selectedScales,
+      });
+      compositePaths = placed.map((frame, index) => {
+        const filePath = path.join(visualTemp, `frame_${String(index + 1).padStart(4, "0")}.png`);
+        fs.writeFileSync(filePath, encodePngRgba(frame.data, frame.width, frame.height));
+        return filePath;
+      });
+    }
     const baked = await bakeTrailsOnto(
       { project, profile, animation },
-      sourcePaths,
+      compositePaths,
       indexes,
       playbackDurations(tuning, profile.id, String(animation.id || animation.name), frames.length, fps),
       fps,
+      {
+        includeAttachments: booleanFlag(args.include_attachments, true),
+        includeTrails: booleanFlag(args.include_trails, true),
+        visualScales: selectedScales,
+      },
     );
     let selected;
     try {
       selected = baked.framePaths.map((filePath) => decodePngRgba(filePath));
     } finally {
       if (baked.tempDir) fs.rmSync(baked.tempDir, { recursive: true, force: true });
+      if (visualTemp) fs.rmSync(visualTemp, { recursive: true, force: true });
     }
     const columns =
       args.columns === undefined ? Math.min(selected.length, 8) : Math.max(1, Number(args.columns));
@@ -2589,7 +2642,6 @@ function createXsxbMcpService(options = {}) {
       anchorMode,
     });
     const exportRoot = projectStore.projectWorkspaceDir(project);
-    const animationId = String(animation.id || animation.name);
     let outputPath;
     if (args.output_path) {
       const requested = String(args.output_path);
@@ -2624,6 +2676,10 @@ function createXsxbMcpService(options = {}) {
       bytes: fs.statSync(outputPath).size,
       bakedTrails: baked.bakedTrails === true,
       trailIds: baked.trailIds || [],
+      bakedAttachments: baked.bakedAttachments === true,
+      attachmentIds: baked.attachmentIds || [],
+      appliedVisual,
+      frameScales: appliedVisual ? selectedScales : undefined,
       grid:
         grid && cell >= GROUP_GRID_MIN_CELL
           ? {
@@ -2699,6 +2755,9 @@ function createXsxbMcpService(options = {}) {
   const schemas = new Map(tools.map((tool) => [tool.name, tool.inputSchema]));
   return {
     tools,
+    async close() {
+      await compositeSession?.close();
+    },
     async call(name, args = {}) {
       if (!MCP_TOOL_NAMES.includes(name) || !handlers[name])
         throw new Error(`Unknown XSXB MCP tool: ${name}`);

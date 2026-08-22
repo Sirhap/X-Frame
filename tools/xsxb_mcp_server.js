@@ -99,6 +99,9 @@ function startServer(options = {}) {
         output.write(`${JSON.stringify(failure(null, -32603, error.message || "Internal MCP error."))}\n`);
       });
   });
+  lines.once("close", () => {
+    Promise.resolve(service.close?.()).catch(() => {});
+  });
   return lines;
 }
 

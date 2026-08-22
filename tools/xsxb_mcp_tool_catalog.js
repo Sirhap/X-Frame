@@ -822,6 +822,16 @@ function toolDefinitions() {
             default: false,
             description: "Also render frames whose playback is disabled.",
           },
+          include_attachments: {
+            type: "boolean",
+            default: true,
+            description: "Composite frame image attachments in workbench layer order.",
+          },
+          include_trails: {
+            type: "boolean",
+            default: true,
+            description: "Composite authored attack trails.",
+          },
         },
         additionalProperties: false,
       },
@@ -842,6 +852,16 @@ function toolDefinitions() {
           },
           start_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
           end_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
+          include_attachments: {
+            type: "boolean",
+            default: true,
+            description: "Composite frame image attachments in workbench layer order.",
+          },
+          include_trails: {
+            type: "boolean",
+            default: true,
+            description: "Composite authored attack trails.",
+          },
           mark_frame: {
             type: "integer",
             minimum: 0,
