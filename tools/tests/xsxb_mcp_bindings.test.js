@@ -274,6 +274,50 @@ test("xsxb_add_attachment binds many frames in one call", async () => {
   }
 });
 
+test("xsxb_add_attachment writes workbench-compatible identity and complete asset geometry", async () => {
+  const current = await importedFixture();
+  try {
+    const attachmentPath = path.join(current.root, "sword.png");
+    fs.writeFileSync(attachmentPath, bodyFrame(1));
+
+    const added = await current.service.call("xsxb_add_attachment", {
+      file_path: attachmentPath,
+      frame: 1,
+      id: "sword",
+      scale: 1.5,
+      rotation: 30,
+      sync: false,
+    });
+
+    const binding = added.binding;
+    assert.match(
+      binding.key,
+      /^bind-test:player:mcp_imports:actor:walk:workspace\/projects\/bind-test\/assets\/mcp_imports\/walk:1$/u,
+    );
+    assert.equal(binding.metadata.projectId, "bind-test");
+    assert.equal(binding.metadata.tuningTarget, "player");
+    assert.equal(binding.metadata.profileId, "mcp_imports");
+    assert.equal(binding.metadata.groupType, "actor");
+    assert.equal(binding.metadata.animation, "mcp_imports/walk");
+    assert.equal(binding.metadata.frame, 1);
+    assert.equal(binding.width, 16);
+    assert.equal(binding.height, 16);
+    assert.match(binding.assetHash, /^[a-f0-9]{64}$/u);
+    assert.ok(binding.assetId);
+    assert.equal(binding.transform.scale, 1.5);
+    assert.equal(binding.transform.scaleX, 1.5);
+    assert.equal(binding.transform.scaleY, 1.5);
+
+    const paths = current.store.projectPaths(current.store.readRegistry().projects[0]);
+    const assets = current.store.readJson(paths.attachmentAssets, []);
+    assert.equal(assets.length, 1);
+    assert.equal(assets[0].id, binding.assetId);
+    assert.equal(assets[0].assetHash, binding.assetHash);
+  } finally {
+    current.cleanup();
+  }
+});
+
 test("estimate_boxes fills every frame, previews with dry_run, and skips existing overrides", async () => {
   const current = await importedFixture();
   try {

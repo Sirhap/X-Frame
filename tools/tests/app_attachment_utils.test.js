@@ -3,11 +3,55 @@ const test = require("node:test");
 
 const {
   attachmentLayerOrder,
+  attachmentMatchesFrame,
+  canonicalAttachmentFrameKey,
   frameImageAttachmentClipboardItem,
   normalizeAttachmentLayerOrder,
   normalizeAttachmentTransform,
   normalizeFrameImageAttachment,
 } = require("../animation_tuner/public/app_attachment_utils");
+
+test("attachment identity uses the workbench frame key and accepts metadata-backed legacy keys", () => {
+  const identity = {
+    projectId: "bind-test",
+    tuningTarget: "player",
+    profileId: "mcp_imports",
+    groupType: "actor",
+    groupName: "walk",
+    animation: "mcp_imports/walk",
+    source: "workspace/projects/bind-test/assets/mcp_imports/walk",
+    frame: 1,
+  };
+  const key =
+    "bind-test:player:mcp_imports:actor:walk:workspace/projects/bind-test/assets/mcp_imports/walk:1";
+
+  assert.equal(canonicalAttachmentFrameKey(identity), key);
+  assert.equal(attachmentMatchesFrame({ key }, key, identity), true);
+  assert.equal(
+    attachmentMatchesFrame(
+      {
+        key: "mcp_imports/walk:1",
+        metadata: {
+          projectId: "bind-test",
+          profileId: "mcp_imports",
+          animation: "mcp_imports/walk",
+          frame: 1,
+        },
+      },
+      key,
+      identity,
+    ),
+    true,
+  );
+  assert.equal(
+    attachmentMatchesFrame(
+      { key: "mcp_imports/walk:0", metadata: { animation: "mcp_imports/walk", frame: 0 } },
+      key,
+      identity,
+    ),
+    false,
+  );
+});
 
 test("attachment utilities normalize transforms and signed layer order", () => {
   assert.deepEqual(

@@ -21,6 +21,10 @@ const { parseSpriteFrames } = require("./import_spriteframes");
 const { createProjectStore, EMPTY_TUNING, reslash, slug } = require("./project_store");
 const { validateImport } = require("./validate_import");
 const {
+  canonicalAttachmentFrameKey,
+  normalizeAttachmentTransform,
+} = require("./animation_tuner/public/app_attachment_utils");
+const {
   collectWorkbenchExtras,
   cutoutFrameFiles,
   decodePngRgba,
@@ -76,6 +80,23 @@ const {
 const DEFAULT_TUNER_HOST = "127.0.0.1";
 const DEFAULT_TUNER_PORT = 5179;
 const BOX_NAMES = Object.freeze(["hurtbox", "collisionbox", "hitbox"]);
+
+/**
+ * Reads PNG dimensions from the stable IHDR boundary without decoding pixels.
+ * Existing MCP attachment calls accept header-only PNG fixtures, so asset metadata
+ * must not silently tighten that compatibility contract.
+ * @param {Buffer} buffer PNG bytes.
+ * @returns {{width:number,height:number}} Positive canvas dimensions.
+ */
+function pngHeaderDimensions(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 24 || buffer.toString("ascii", 1, 4) !== "PNG") {
+    throw new Error("Attachment image must be a PNG.");
+  }
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  if (width < 1 || height < 1) throw new Error("Attachment image must have positive dimensions.");
+  return { width, height };
+}
 
 /**
  * Resolves group/frame visual_size for baking or GIF rematch.
@@ -241,6 +262,31 @@ function createXsxbMcpService(options = {}) {
     context.profileId = profile.id;
     context.animationId = String(animation.id || animation.name);
     return { project, manifest, profile, animation };
+  }
+
+  /**
+   * Resolves an attachment's frame for one selected animation across canonical and legacy keys.
+   * @param {object} entry Persisted attachment.
+   * @param {{project:object,profile:object,animation:object}} selection Animation selection.
+   * @returns {number|null} Owned frame index, or null when the attachment belongs elsewhere.
+   */
+  function attachmentFrameForSelection(entry, selection) {
+    const animationId = String(selection.animation.id || selection.animation.name);
+    const bindingKey = `${selection.profile.id}/${animationId}`;
+    const metadata = entry?.metadata && typeof entry.metadata === "object" ? entry.metadata : {};
+    const metadataFrame = Number(metadata.frame);
+    if (
+      String(metadata.animation || "") === bindingKey &&
+      Number.isInteger(metadataFrame) &&
+      (!metadata.projectId || String(metadata.projectId) === String(selection.project.id))
+    ) {
+      return metadataFrame;
+    }
+    const key = String(entry?.key || entry?.frameKey || "");
+    const legacyPrefix = `${bindingKey}:`;
+    if (!key.startsWith(legacyPrefix)) return null;
+    const legacyFrame = Number(key.slice(legacyPrefix.length));
+    return Number.isInteger(legacyFrame) ? legacyFrame : null;
   }
 
   /**
@@ -1003,8 +1049,9 @@ function createXsxbMcpService(options = {}) {
     if (wanted.has("attachments")) {
       const raw = projectStore.readJson(paths.frameImageAttachments, []);
       extras.attachments = (Array.isArray(raw) ? raw : [])
-        .filter((entry) => String(entry?.key || entry?.frameKey || "").startsWith(framePrefix))
-        .map((entry) => ({ ...entry, frame: frameFromKey(entry.key || entry.frameKey) }));
+        .map((entry) => ({ entry, frame: attachmentFrameForSelection(entry, selection) }))
+        .filter(({ frame }) => frame !== null)
+        .map(({ entry, frame }) => ({ ...entry, frame }));
     }
     if (wanted.has("trails")) {
       const trails = normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
@@ -1680,9 +1727,20 @@ function createXsxbMcpService(options = {}) {
     if (!/\.png$/i.test(absolute)) throw new Error("Attachment image must be a PNG.");
     const paths = projectStore.projectPaths(project);
     const bindings = projectStore.readJson(paths.frameImageAttachments, []);
+    const attachmentAssets = projectStore.readJson(paths.attachmentAssets, []);
+    const assetBuffer = fs.readFileSync(absolute);
+    const assetHash = crypto.createHash("sha256").update(assetBuffer).digest("hex");
+    const assetInfo = pngHeaderDimensions(assetBuffer);
+    const animationId = String(animation.id || animation.name);
+    const groupKey = `${profile.id}/${animationId}`;
+    const assetId = `asset_${crypto
+      .createHash("sha256")
+      .update(`${groupKey}:${assetHash}`)
+      .digest("hex")
+      .slice(0, 32)}`;
     const relativePath = copyIntoWorkspace(
       project,
-      path.join("attachments", profile.id, String(animation.id || animation.name)),
+      path.join("attachments", profile.id, animationId),
       absolute,
     );
     const name = String(args.name || path.basename(absolute));
@@ -1695,6 +1753,11 @@ function createXsxbMcpService(options = {}) {
         : Number(requestedOrder);
     if (!Number.isFinite(layerOrder)) throw new Error("layer_order must be a finite number.");
     const layer = String(args.layer || "above") === "below" ? "below" : "above";
+    const signedLayerOrder =
+      layerOrder === 0 ? 0 : layer === "below" ? -Math.abs(layerOrder) : Math.abs(layerOrder);
+    const groupType = String(animation.type || "actor");
+    const groupName = String(animation.name || animationId);
+    const sourcePath = reslash(animation.source || path.dirname(frames[0]?.path || ""));
     const added = [];
     let next = Array.isArray(bindings) ? bindings.slice() : [];
     for (const request of requests) {
@@ -1702,7 +1765,20 @@ function createXsxbMcpService(options = {}) {
         throw new Error("Each frames item must be an object with a frame index.");
       }
       const frame = requireFrameIndex(request.frame ?? 0, frames.length - 1);
-      const key = `${profile.id}/${animation.id || animation.name}:${frame}`;
+      const metadata = {
+        projectId: project.id,
+        tuningTarget: "player",
+        profileId: profile.id,
+        groupType,
+        animation: groupKey,
+        source: sourcePath,
+        frame,
+        displayFrame: frame,
+      };
+      const key = canonicalAttachmentFrameKey({
+        ...metadata,
+        groupName,
+      });
       const source = frames[frame] || frames[0];
       const scale = Number(request.scale ?? defaultScale);
       const offsetX = Number(request.offset_x ?? args.offset_x ?? 0);
@@ -1720,23 +1796,43 @@ function createXsxbMcpService(options = {}) {
         frame,
         name,
         path: relativePath,
+        assetId,
+        assetHash,
         type: "image/png",
+        width: assetInfo.width,
+        height: assetInfo.height,
         layer,
-        layerOrder,
-        transform: {
+        layerOrder: signedLayerOrder,
+        transform: normalizeAttachmentTransform({
           offset: { x: offsetX, y: offsetY },
-          scale: { x: scale, y: scale },
+          scale,
+          scaleX: scale,
+          scaleY: scale,
           rotation,
-        },
-        metadata: {
-          profileId: profile.id,
-          animation: `${profile.id}/${animation.id || animation.name}`,
-          frame,
-        },
+        }),
+        metadata,
       };
-      next = next.filter((entry) => entry.id !== id || entry.key !== key);
+      next = next.filter(
+        (entry) =>
+          entry.id !== id || attachmentFrameForSelection(entry, { project, profile, animation }) !== frame,
+      );
       next.push(attachment);
       added.push(attachment);
+    }
+    const nextAssets = Array.isArray(attachmentAssets) ? attachmentAssets.slice() : [];
+    const existingAsset = nextAssets.find((asset) => String(asset.id) === assetId);
+    if (!existingAsset) {
+      nextAssets.push({
+        id: assetId,
+        name,
+        path: relativePath,
+        assetHash,
+        type: "image/png",
+        width: assetInfo.width,
+        height: assetInfo.height,
+        groupKey,
+      });
+      projectStore.writeJson(paths.attachmentAssets, nextAssets);
     }
     projectStore.writeJson(paths.frameImageAttachments, next);
     const base = {
@@ -1839,9 +1935,15 @@ function createXsxbMcpService(options = {}) {
             })();
       const matches = (entry) => {
         const key = String(entry?.key || entry?.frameKey || "");
-        if (!key.startsWith(framePrefix)) return false;
+        const attachmentFrame =
+          kind === "attachment" ? attachmentFrameForSelection(entry, { project, profile, animation }) : null;
+        if (kind === "attachment" ? attachmentFrame === null : !key.startsWith(framePrefix)) return false;
         if (String(entry?.id) !== id) return false;
-        if (frameFilter !== null && key !== `${framePrefix}${frameFilter}`) return false;
+        if (
+          frameFilter !== null &&
+          (kind === "attachment" ? attachmentFrame !== frameFilter : key !== `${framePrefix}${frameFilter}`)
+        )
+          return false;
         return true;
       };
       removed = bindings.filter(matches);
@@ -1850,7 +1952,11 @@ function createXsxbMcpService(options = {}) {
         const available = [
           ...new Set(
             bindings
-              .filter((entry) => String(entry?.key || entry?.frameKey || "").startsWith(framePrefix))
+              .filter((entry) =>
+                kind === "attachment"
+                  ? attachmentFrameForSelection(entry, { project, profile, animation }) !== null
+                  : String(entry?.key || entry?.frameKey || "").startsWith(framePrefix),
+              )
               .map((entry) => String(entry?.id)),
           ),
         ];

@@ -305,7 +305,10 @@ test("XSXB MCP service executes the complete mutation workflow", async () => {
     const spark = path.join(current.root, "spark.png");
     fs.writeFileSync(spark, ONE_PIXEL_PNG);
     const attachment = await current.service.call("xsxb_add_attachment", { file_path: spark });
-    assert.equal(attachment.binding.key, "mcp_imports/source:0");
+    assert.equal(
+      attachment.binding.key,
+      "mcp-test:player:mcp_imports:actor:source:workspace/projects/mcp-test/assets/mcp_imports/source:0",
+    );
     assert.equal(attachment.sync.imageAttachmentCount, 1);
 
     const hit = path.join(current.root, "hit.wav");

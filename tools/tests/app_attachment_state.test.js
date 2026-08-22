@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const { createController } = require("../animation_tuner/public/app_attachment_state");
+const { attachmentMatchesFrame } = require("../animation_tuner/public/app_attachment_utils");
 
 function createFixture() {
   const group = { frames: [{}, {}] };
@@ -35,7 +36,13 @@ function createFixture() {
     getSelectedFrame: () => state.selectedFrame,
     getCurrentGroup: () => group,
     getFrameKey: (index) => `frame:${index}`,
-    getFrameMetadata: (index) => ({ frame: index }),
+    getFrameMetadata: (index) => ({
+      projectId: "bind-test",
+      profileId: "mcp_imports",
+      animation: "mcp_imports/walk",
+      frame: index,
+    }),
+    matchesFrame: attachmentMatchesFrame,
     normalizeAttachment: (raw) => ({
       ...raw,
       id: String(raw.id),
@@ -100,4 +107,27 @@ test("attachment state resolves direct manipulation and metadata frame indexes",
   assert.equal(controller.selectedAttachment().id, "selected");
   assert.equal(controller.attachmentFrameIndex(state.attachments[0], group), 1);
   assert.equal(controller.directManipulationAttachment().id, "selected");
+});
+
+test("attachment state matches a metadata-owned legacy key and upgrades it for the workbench", () => {
+  const { controller, group, state } = createFixture();
+  state.attachments = [
+    {
+      id: "legacy-sword",
+      key: "mcp_imports/walk:1",
+      metadata: {
+        projectId: "bind-test",
+        profileId: "mcp_imports",
+        animation: "mcp_imports/walk",
+        frame: 1,
+      },
+      layerOrder: 1,
+    },
+  ];
+
+  const matched = controller.forFrame(1, group);
+
+  assert.equal(matched.length, 1);
+  assert.equal(matched[0].key, "frame:1");
+  assert.equal(matched[0].frameKey, "frame:1");
 });

@@ -250,6 +250,7 @@ const {
 } = globalThis.XSXBBoxGeometry;
 const {
   attachmentLayerOrder,
+  attachmentMatchesFrame,
   frameImageAttachmentClipboardItem,
   newLocalId,
   normalizeAttachmentLayerOrder,
@@ -404,9 +405,21 @@ const appConfirmation = appConfirmModule.createController({
 async function requestScatterSliceLeave(destinationRoute) {
   if (
     destinationRoute &&
-    ["organizer", "import", "cutout", "scatter", "export", "godot", "codex-pet", "overview", "animation", "boxes", "trails", "audio", "attachments"].includes(
-      destinationRoute,
-    )
+    [
+      "organizer",
+      "import",
+      "cutout",
+      "scatter",
+      "export",
+      "godot",
+      "codex-pet",
+      "overview",
+      "animation",
+      "boxes",
+      "trails",
+      "audio",
+      "attachments",
+    ].includes(destinationRoute)
   ) {
     return true;
   }
@@ -1163,6 +1176,7 @@ const attachmentState = globalThis.XSXBAttachmentState.createController({
   getCurrentGroup: () => currentGroup,
   getFrameKey: frameImageAttachmentKey,
   getFrameMetadata: frameImageAttachmentMetadata,
+  matchesFrame: attachmentMatchesFrame,
   normalizeAttachment: normalizeFrameImageAttachment,
   newLocalId,
   attachmentLayerOrder,

@@ -24,10 +24,10 @@ weapon planner, compose attachment/trail rendering in one export boundary, and k
 
 ### Task 1: Canonical attachment identity
 
-- [ ] Add failing utility and service tests proving MCP-created attachments match the workbench key.
-- [ ] Add metadata fallback tests for legacy simplified keys.
-- [ ] Implement shared canonical key/matching helpers and full MCP attachment metadata.
-- [ ] Run focused tests, revert the production change, observe regression failure, restore, and rerun.
+- [x] Add failing utility and service tests proving MCP-created attachments match the workbench key.
+- [x] Add metadata fallback tests for legacy simplified keys.
+- [x] Implement shared canonical key/matching helpers and full MCP attachment metadata.
+- [x] Run focused tests, revert the production change, observe regression failure, restore, and rerun.
 
 ### Task 2: Weapon attachment planning
 

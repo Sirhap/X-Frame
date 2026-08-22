@@ -21,6 +21,7 @@
    *   getCurrentGroup?:()=>object|null,
    *   getFrameKey:(index:number,group:object|null)=>string,
    *   getFrameMetadata:(index:number,group:object|null)=>object|null,
+   *   matchesFrame?:(attachment:object,key:string,metadata:object)=>boolean,
    *   normalizeAttachment:(raw:object)=>object,
    *   newLocalId:(prefix:string)=>string,
    *   attachmentLayerOrder:(attachment:object)=>number,
@@ -53,6 +54,7 @@
       getCurrentGroup = () => null,
       getFrameKey,
       getFrameMetadata,
+      matchesFrame = (attachment, key) => attachment?.key === key,
       normalizeAttachment,
       newLocalId,
       attachmentLayerOrder,
@@ -104,7 +106,15 @@
      */
     function forFrame(index = getSelectedFrame(), group = getCurrentGroup()) {
       const key = getFrameKey(index, group);
-      return getAttachments().filter((attachment) => attachment.key === key);
+      const metadata = getFrameMetadata(index, group) || {};
+      return getAttachments().filter((attachment) => {
+        if (!matchesFrame(attachment, key, metadata)) return false;
+        if (attachment.key !== key) {
+          attachment.key = key;
+          attachment.frameKey = key;
+        }
+        return true;
+      });
     }
 
     /**

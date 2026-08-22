@@ -18,6 +18,56 @@
   }
 
   /**
+   * Builds the stable frame-binding key shared by the workbench, MCP, and Godot handoff.
+   * @param {{projectId?:string,tuningTarget?:string,profileId?:string,groupType?:string,groupName?:string,source?:string,frame?:number}} identity Frame identity.
+   * @returns {string} Canonical attachment key.
+   */
+  function canonicalAttachmentFrameKey(identity = {}) {
+    return [
+      identity.projectId || "default",
+      identity.tuningTarget || "player",
+      identity.profileId || "all",
+      identity.groupType || "animation",
+      identity.groupName || "",
+      identity.source || "",
+      Number(identity.frame || 0),
+    ].join(":");
+  }
+
+  /**
+   * Matches one persisted attachment to a workbench frame, including legacy simplified keys.
+   * @param {object|null|undefined} attachment Persisted attachment.
+   * @param {string} canonicalKey Current workbench frame key.
+   * @param {{projectId?:string,profileId?:string,animation?:string,frame?:number}} identity Current frame metadata.
+   * @returns {boolean} Whether the attachment belongs to the frame.
+   */
+  function attachmentMatchesFrame(attachment, canonicalKey, identity = {}) {
+    if (!attachment || typeof attachment !== "object") return false;
+    if (String(attachment.key || attachment.frameKey || "") === String(canonicalKey || "")) return true;
+    const metadata =
+      attachment.metadata && typeof attachment.metadata === "object" ? attachment.metadata : {};
+    const frame = Number(metadata.frame);
+    if (!Number.isFinite(frame) || frame !== Number(identity.frame)) return false;
+    if (
+      identity.projectId &&
+      metadata.projectId &&
+      String(metadata.projectId) !== String(identity.projectId)
+    ) {
+      return false;
+    }
+    if (
+      identity.profileId &&
+      metadata.profileId &&
+      String(metadata.profileId) !== String(identity.profileId)
+    ) {
+      return false;
+    }
+    return Boolean(
+      identity.animation && metadata.animation && String(metadata.animation) === String(identity.animation),
+    );
+  }
+
+  /**
    * Normalizes an attached image transform.
    * @param {{scale?:number,scaleX?:number,scaleY?:number,visual_scale?:{x?:number,y?:number},offset?:{x?:number,y?:number},rotation?:number}} [transform]
    * Raw transform.
@@ -103,6 +153,8 @@
 
   return {
     attachmentLayerOrder: normalizeAttachmentLayerOrder,
+    attachmentMatchesFrame,
+    canonicalAttachmentFrameKey,
     frameImageAttachmentClipboardItem,
     newLocalId,
     normalizeAttachmentLayerOrder,
