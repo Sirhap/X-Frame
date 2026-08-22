@@ -73,7 +73,15 @@ test("MCP tool catalog exposes the required XSXB tools in the requested order", 
   for (const tool of toolDefinitions()) {
     assert.equal(tool.inputSchema.type, "object");
     assert.equal(typeof tool.description, "string");
+    assert.equal(typeof tool.title, "string", `${tool.name} title`);
+    assert.equal(tool.outputSchema?.type, "object", `${tool.name} output schema`);
+    for (const hint of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"]) {
+      assert.equal(typeof tool.annotations?.[hint], "boolean", `${tool.name} ${hint}`);
+    }
+    assert.equal(tool.annotations.openWorldHint, false, `${tool.name} stays on the local machine`);
   }
+  assert.equal(MCP_TOOL_NAMES.length, 31);
+  assert.ok(MCP_TOOL_NAMES.includes("xsxb_get_workflow"));
 });
 
 test("MCP transport initializes, lists tools, and returns structured tool results", async () => {
@@ -83,9 +91,19 @@ test("MCP transport initializes, lists tools, and returns structured tool result
     service,
   );
   assert.equal(initialized.result.serverInfo.name, "xsxb-frame-tuner");
+  assert.equal(initialized.result.protocolVersion, "2025-06-18");
   assert.match(initialized.result.instructions, /XSXB-Frame-Tuner/);
   assert.match(initialized.result.instructions, /missing capability|leave MCP|raise it/i);
   assert.equal(initialized.result.instructions, INSTRUCTIONS);
+  assert.ok(
+    INSTRUCTIONS.length < 1500,
+    `initialize instructions must stay compact, got ${INSTRUCTIONS.length}`,
+  );
+  const fallbackVersion = await handleMessage(
+    { jsonrpc: "2.0", id: 4, method: "initialize", params: { protocolVersion: "2099-01-01" } },
+    service,
+  );
+  assert.equal(fallbackVersion.result.protocolVersion, "2025-11-25");
   const listed = await handleMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }, service);
   assert.equal(listed.result.tools.length, MCP_TOOL_NAMES.length);
   const called = await handleMessage(
@@ -94,6 +112,56 @@ test("MCP transport initializes, lists tools, and returns structured tool result
   );
   assert.deepEqual(called.result.structuredContent, { ok: true, value: 42 });
   assert.equal(called.result.isError, false);
+});
+
+test("get_workflow returns on-demand weapon attachment and trail completion steps", async () => {
+  const current = fixture();
+  try {
+    const attachment = await current.service.call("xsxb_get_workflow", {
+      workflow: "weapon_attachment",
+    });
+    assert.equal(attachment.workflow, "weapon_attachment");
+    assert.deepEqual(
+      attachment.steps.map((step) => step.tool),
+      [
+        "xsxb_export_sheet",
+        "xsxb_measure_image",
+        "xsxb_plan_attachment",
+        "xsxb_add_attachment",
+        "xsxb_export_sheet",
+        "xsxb_sync_godot",
+      ],
+    );
+    assert.ok(attachment.completionChecks.some((check) => /grip/i.test(check)));
+
+    const trail = await current.service.call("xsxb_get_workflow", { workflow: "weapon_trail" });
+    assert.ok(trail.steps.some((step) => step.tool === "xsxb_add_attack_trail"));
+    assert.ok(trail.failureFeedback.includes("XSXB-Frame-Tuner"));
+  } finally {
+    await current.service.close();
+    current.cleanup();
+  }
+});
+
+test("STDIO close releases service-owned resources", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let closes = 0;
+  const lines = startServer({
+    input,
+    output,
+    service: {
+      tools: [],
+      call: async () => ({}),
+      close: async () => {
+        closes += 1;
+      },
+    },
+  });
+  input.end();
+  await new Promise((resolve) => lines.once("close", resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closes, 1);
 });
 
 test("a failing tool answers with an MCP error result instead of a transport error", async () => {

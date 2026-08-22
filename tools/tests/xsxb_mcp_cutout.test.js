@@ -479,3 +479,29 @@ test("workbench tolerance -1 turns the MCP cutout into a no-op", () => {
     fs.rmSync(folder, { recursive: true, force: true });
   }
 });
+
+test("cutout computes requested metrics from each in-memory output frame exactly once", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-metrics-"));
+  try {
+    const paths = [path.join(root, "a.png"), path.join(root, "b.png")];
+    const source = greenScreenFrame();
+    for (const filePath of paths) {
+      fs.writeFileSync(filePath, encodePngRgba(source.data, source.width, source.height));
+    }
+    let calls = 0;
+
+    const receipt = cutoutFrameFiles(paths, {
+      metricsImpl(data, width, height) {
+        calls += 1;
+        return { width, height, opaque: data.filter((_value, index) => index % 4 === 3).length };
+      },
+    });
+
+    assert.equal(calls, 2);
+    assert.equal(receipt.metricsSource, "in_memory");
+    assert.equal(receipt.frameMetrics.length, 2);
+    assert.equal(receipt.frameMetrics[0].width, 16);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

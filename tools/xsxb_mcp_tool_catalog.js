@@ -10,11 +10,13 @@
 const path = require("node:path");
 const { ORGANIZER_SIMILARITY_THRESHOLD } = require("./animation_tuner/public/frame_organizer_core");
 const { workbenchSliderSchemaProperties } = require("./xsxb_mcp_cutout");
+const { WORKFLOW_NAMES } = require("./xsxb_mcp_workflows");
 
 const DEFAULT_PROFILE_ID = "mcp_imports";
 const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_list_projects",
   "xsxb_get_project",
+  "xsxb_get_workflow",
   "xsxb_import_video",
   "xsxb_import_animation",
   "xsxb_get_animation",
@@ -55,7 +57,7 @@ function toolDefinitions() {
     profile_id: { type: "string", description: "Animation profile id." },
     animation_id: { type: "string", description: "Animation id." },
   };
-  return [
+  const definitions = [
     {
       name: "xsxb_list_projects",
       description: "List every local XSXB project, its active state, Godot binding, and animation counts.",
@@ -69,6 +71,20 @@ function toolDefinitions() {
       inputSchema: {
         type: "object",
         properties: { project_id: projectProperty },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_get_workflow",
+      description:
+        "Return an on-demand XSXB production workflow with preconditions, ordered tools, completion checks, and mandatory failure feedback.",
+      inputSchema: {
+        type: "object",
+        required: ["workflow"],
+        properties: {
+          workflow: { type: "string", enum: WORKFLOW_NAMES },
+        },
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
@@ -895,7 +911,7 @@ function toolDefinitions() {
     {
       name: "xsxb_measure_image",
       description:
-        'Measure a PNG\'s long axis. The pommel is the end closer to the widest cross-section (guard or forte); the far end is the tip. Pass t for a handle fraction (0=pommel, 0.5=middle, 0.666 or "2/3", 1=tip). Returns image-pixel landmarks. localFromCenter is the grip relative to the image center; attachment offset = hand - localFromCenter. Does not bind or write frames.',
+        "Measure a PNG's long axis. The pommel is the end closer to the widest cross-section and the far end is the tip. Pass t for a grip fraction. Returns image-pixel landmarks for xsxb_plan_attachment. Manual placement must rotate and scale localFromCenter before subtracting it from the hand point.",
       inputSchema: {
         type: "object",
         required: ["file_path"],
@@ -933,6 +949,32 @@ function toolDefinitions() {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
   ];
+  return definitions.map((definition) => ({
+    ...definition,
+    title:
+      definition.title ||
+      definition.name
+        .replace(/^xsxb_/u, "XSXB ")
+        .split("_")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" "),
+    outputSchema: definition.outputSchema || {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "Selected XSXB project when applicable." },
+        profileId: { type: "string", description: "Selected animation profile when applicable." },
+        animationId: { type: "string", description: "Selected animation when applicable." },
+      },
+      additionalProperties: true,
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      ...definition.annotations,
+      openWorldHint: false,
+    },
+  }));
 }
 
 module.exports = { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions };

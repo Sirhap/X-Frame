@@ -163,4 +163,20 @@ function validateToolArguments(toolName, schema, args) {
   return args;
 }
 
-module.exports = { validateToolArguments };
+/**
+ * Validates the stable root type promised by an MCP tool output schema.
+ * @param {string} toolName Tool name.
+ * @param {object|undefined} schema Declared output schema.
+ * @param {unknown} result Successful handler result.
+ * @returns {unknown} Original result.
+ */
+function validateToolResult(toolName, schema, result) {
+  if (schema?.type === "object" && (!result || typeof result !== "object" || Array.isArray(result))) {
+    const error = new Error(`${toolName} output must be object, received ${typeOf(result)}.`);
+    error.code = "xsxb_invalid_tool_result";
+    throw error;
+  }
+  return result;
+}
+
+module.exports = { validateToolArguments, validateToolResult };

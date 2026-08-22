@@ -528,7 +528,7 @@ function placeFramesOnCanvas(frames, canvasWidth, canvasHeight, options = {}) {
 /**
  * Runs the tuner smart-cutout path on every PNG and optionally rematches a shared canvas.
  * @param {string[]} filePaths Frame files written in place.
- * @param {{keyColor?:string,outputWidth?:number,outputHeight?:number,protectedColors?:unknown,protectionTolerance?:number,force?:boolean,frameScales?:number[]}} [options] Cutout options.
+ * @param {{keyColor?:string,outputWidth?:number,outputHeight?:number,protectedColors?:unknown,protectionTolerance?:number,force?:boolean,frameScales?:number[],metricsImpl?:Function}} [options] Cutout options.
  * @returns {{
  *   pipeline:string,
  *   rematched:boolean,
@@ -583,6 +583,10 @@ function cutoutFrameFiles(filePaths, options = {}) {
   outputFrames.forEach((frame, index) => {
     fs.writeFileSync(paths[index], encodePngRgba(frame.data, frame.width, frame.height));
   });
+  const frameMetrics =
+    typeof options.metricsImpl === "function"
+      ? outputFrames.map((frame) => options.metricsImpl(frame.data, frame.width, frame.height))
+      : undefined;
   const processedFrameCount = outputFrames.length - skippedFrameCount;
   return {
     pipeline: "smart_product",
@@ -594,6 +598,8 @@ function cutoutFrameFiles(filePaths, options = {}) {
     outputWidth: outputFrames[0].width,
     outputHeight: outputFrames[0].height,
     frameSizes: outputFrames.map((frame) => ({ width: frame.width, height: frame.height })),
+    frameMetrics,
+    metricsSource: frameMetrics ? "in_memory" : undefined,
     processedFrameCount,
     skippedFrameCount,
     options: cutoutOptions,

@@ -187,6 +187,19 @@ const PROBES = {
     return verdict("xsxb_get_project", "ready", `godotValid=${project.godotProjectValid}`);
   },
 
+  async xsxb_get_workflow(fixture) {
+    const workflow = await fixture.service.call("xsxb_get_workflow", {
+      workflow: "weapon_attachment",
+    });
+    if (
+      workflow.workflow !== "weapon_attachment" ||
+      !workflow.steps.some((step) => step.tool === "xsxb_plan_attachment")
+    ) {
+      return verdict("xsxb_get_workflow", "fail", JSON.stringify(workflow));
+    }
+    return verdict("xsxb_get_workflow", "ready", `steps=${workflow.steps.length}`);
+  },
+
   async xsxb_set_active_project(fixture) {
     const store = createProjectStore(fixture.root);
     store.addProject({ id: "other", label: "Other", projectRoot: "" });

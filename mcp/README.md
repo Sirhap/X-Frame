@@ -60,6 +60,7 @@ npm run mcp:start
 服务在 `initialize` 里下发同一段说明，大意是：
 
 - 改数据前先 `xsxb_list_projects` 或 `xsxb_get_project`
+- 复杂任务先 `xsxb_get_workflow`，按需读取流程，不再依赖初始化时注入一大段操作手册
 - 同步前先 `xsxb_bind_godot`
 - 导入用 `xsxb_import_animation`（支持 `start_frame` / `end_frame` / `replace`）；`xsxb_import_video` 只是视频别名
 - 抠图用 `xsxb_cutout`（网页同一套智能抠图和滑块；可传 `tolerance` / `feather` / `protected_colors` 等，省略则用共用智能档；已抠帧默认跳过，除非 `force`；回执带 `bodyHeight` / `nearWhite`，`metrics=false` 可关）
@@ -70,6 +71,9 @@ npm run mcp:start
 - 量刀图长轴用 `xsxb_measure_image`：厚端是柄，薄端是尖；`t=0.5` 中间、`t=2/3` 或 `"2/3"` 是柄往尖的三分之二；`localFromCenter` 是相对图心的握点，附加图 offset = 手位置 − localFromCenter
 - `xsxb_find_duplicates` 回执若带 `autoAdjustedThreshold`，不要直接 `reorganize` 那个 `order`，除非传了 `auto_adjust`
 - 挂件/音效用 `file_path`；拖尾可传 `sticks` 与 `texture_path`
+- 武器附加图先 `xsxb_measure_image` 选握点，再用 `xsxb_plan_attachment` 提供逐帧 hand/tip 锚点并看标注预览；确认后 `xsxb_add_attachment plan=... confirm=true`
+- 已确认的多帧武器可用 `xsxb_add_attack_trail attachment_id=...` 直接派生刀尖/握点 sticks，仍可保留手写 sticks 的高级用法
+- GIF / Sheet 默认按工作台顺序合成下层附加图、behind 拖影、人物、上层附加图、front 拖影；可分别关闭 attachments 或 trails
 - `xsxb_open_tuner` 会在本机 Tuner 没起来时拉起服务
 - 默认项目用 `xsxb_set_active_project`
 - 先改框和时长，再显式同步
@@ -82,6 +86,6 @@ npm run mcp:start
 
 ## 当前工具
 
-`xsxb_list_projects` · `xsxb_get_project` · `xsxb_set_active_project` · `xsxb_bind_godot` · `xsxb_import_animation` · `xsxb_import_video` · `xsxb_get_animation` · `xsxb_find_loop` · `xsxb_find_duplicates` · `xsxb_find_motion` · `xsxb_cutout` · `xsxb_estimate_visual` · `xsxb_set_visual_transform` · `xsxb_estimate_boxes` · `xsxb_update_frame_boxes` · `xsxb_update_timing` · `xsxb_replace_frame` · `xsxb_reorganize_frames` · `xsxb_add_attack_trail` · `xsxb_add_attachment` · `xsxb_add_sfx` · `xsxb_remove_binding` · `xsxb_delete_animation` · `xsxb_sync_godot` · `xsxb_validate_project` · `xsxb_export_gif` · `xsxb_export_sheet` · `xsxb_measure_image` · `xsxb_open_tuner`
+`xsxb_list_projects` · `xsxb_get_project` · `xsxb_get_workflow` · `xsxb_set_active_project` · `xsxb_bind_godot` · `xsxb_import_animation` · `xsxb_import_video` · `xsxb_get_animation` · `xsxb_find_loop` · `xsxb_find_duplicates` · `xsxb_find_motion` · `xsxb_cutout` · `xsxb_estimate_visual` · `xsxb_set_visual_transform` · `xsxb_estimate_boxes` · `xsxb_update_frame_boxes` · `xsxb_update_timing` · `xsxb_replace_frame` · `xsxb_reorganize_frames` · `xsxb_plan_attachment` · `xsxb_add_attack_trail` · `xsxb_add_attachment` · `xsxb_add_sfx` · `xsxb_remove_binding` · `xsxb_delete_animation` · `xsxb_sync_godot` · `xsxb_validate_project` · `xsxb_export_gif` · `xsxb_export_sheet` · `xsxb_measure_image` · `xsxb_open_tuner`
 
 工具只接受项目、角色、动画、帧等业务标识，不接受任意 Shell 或不受限文件路径。

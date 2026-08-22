@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { validateToolArguments } = require("../xsxb_mcp_schema");
+const { validateToolArguments, validateToolResult } = require("../xsxb_mcp_schema");
 const { toolDefinitions } = require("../xsxb_mcp_service");
 
 const SCHEMA = Object.freeze({
@@ -111,6 +111,20 @@ test("a valid argument set passes", () => {
       protected_colors: ["#ffffff"],
     }),
     "",
+  );
+});
+
+test("declared MCP output schemas reject non-object successful receipts", () => {
+  assert.deepEqual(validateToolResult("xsxb_example", { type: "object" }, { ok: true }), {
+    ok: true,
+  });
+  assert.throws(
+    () => validateToolResult("xsxb_example", { type: "object" }, ["wrong"]),
+    /xsxb_example.*output must be object/u,
+  );
+  assert.throws(
+    () => validateToolResult("xsxb_example", { type: "object" }, null),
+    /xsxb_example.*output must be object/u,
   );
 });
 

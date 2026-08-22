@@ -501,6 +501,7 @@ test("cutout receipts include body-height and near-white metrics", async () => {
       animation_id: "slash",
     });
     const cut = await current.service.call("xsxb_cutout", { animation_id: "slash" });
+    assert.equal(cut.metricsSource, "in_memory");
     assert.equal(cut.metrics.bodyHeight.median, 6);
     assert.ok(cut.metrics.frames[0].opaque >= 12);
     const silent = await current.service.call("xsxb_cutout", { animation_id: "slash", metrics: false });

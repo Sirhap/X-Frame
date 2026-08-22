@@ -54,11 +54,11 @@ weapon planner, compose attachment/trail rendering in one export boundary, and k
 
 ### Task 5: MCP contract and architecture
 
-- [ ] Add failing catalog tests for 31 tools, workflow content, annotations, and output schemas.
-- [ ] Add protocol negotiation and service-close transport tests.
-- [ ] Implement `xsxb_get_workflow`, concise instructions, annotations, output schemas, and negotiation.
-- [ ] Extract domain handlers without changing the compatibility facade.
-- [ ] Update MCP and architecture documentation.
+- [x] Add failing catalog tests for 31 tools, workflow content, annotations, and output schemas.
+- [x] Add protocol negotiation and service-close transport tests.
+- [x] Implement `xsxb_get_workflow`, concise instructions, annotations, output schemas, and negotiation.
+- [x] Extract domain handlers without changing the compatibility facade.
+- [x] Update MCP and architecture documentation.
 
 ### Task 6: Verification and delivery
 
