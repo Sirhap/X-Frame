@@ -25,12 +25,14 @@ function frame(withArc = false) {
   return { data, width, height };
 }
 
-function translatedFrame(left, top) {
+function translatedFrame(left, top, bodyWidth = 8) {
   const width = 72;
   const height = 72;
   const data = new Uint8ClampedArray(width * height * 4);
   for (let y = top; y < top + 30; y += 1) {
-    for (let x = left; x < left + 8; x += 1) data.set([35, 95, 55, 255], (y * width + x) * 4);
+    for (let x = left; x < left + bodyWidth; x += 1) {
+      data.set([35, 95, 55, 255], (y * width + x) * 4);
+    }
   }
   return { data, width, height };
 }
@@ -43,6 +45,23 @@ test("box patches preserve unspecified rotation and geometry", () => {
     rotation: 37,
   };
   assert.deepEqual(mergeBox(existing, { enabled: false }), { ...existing, enabled: false });
+});
+
+test("frame semantics keeps temporal votes when translated body widths change parity", () => {
+  const analyzed = analyzeFrameSequence([
+    translatedFrame(6, 24, 8),
+    translatedFrame(30, 18, 9),
+    translatedFrame(55, 30, 10),
+  ]);
+  assert.ok(analyzed.persistentPixelCount >= 150, JSON.stringify(analyzed));
+  assert.ok(
+    analyzed.frames.every((entry) => entry.confidence >= 0.7),
+    JSON.stringify(analyzed),
+  );
+  assert.ok(
+    analyzed.frames.every((entry) => entry.body.height === 30),
+    JSON.stringify(analyzed),
+  );
 });
 
 test("frame semantics separates one-frame baked FX from the persistent body", () => {

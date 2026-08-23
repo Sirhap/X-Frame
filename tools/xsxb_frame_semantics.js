@@ -174,26 +174,28 @@ function analyzeFrameSequence(inputFrames) {
   const totalCandidatePixels = candidates.reduce((sum, candidate) => sum + candidate.candidateCount, 0);
   const sampleStep = Math.max(1, Math.ceil(Math.sqrt(totalCandidatePixels / 500_000)));
   const normalizedYSpan = height * 2 + 1;
-  const normalizedXOffset = width * 2;
+  const normalizedXOffset = width;
   const normalizedYOffset = height;
-  const normalizedKey = (index, candidate) => {
-    const x = index % width;
-    const y = Math.floor(index / width);
-    const normalizedX2 = x * 2 - candidate.anchorX2;
-    const normalizedY = y - candidate.anchorY;
-    return (normalizedX2 + normalizedXOffset) * normalizedYSpan + normalizedY + normalizedYOffset;
+  const normalizedCoordinates = (x, y, candidate) => ({
+    x: Math.round((x * 2 - candidate.anchorX2) / 2),
+    y: y - candidate.anchorY,
+  });
+  const normalizedKey = (coordinates) => {
+    return (coordinates.x + normalizedXOffset) * normalizedYSpan + coordinates.y + normalizedYOffset;
   };
+  const alignedToSample = (value) => ((value % sampleStep) + sampleStep) % sampleStep === 0;
   const frequency = new Map();
   const sampledCounts = [];
   for (let frameIndex = 0; frameIndex < candidates.length; frameIndex += 1) {
     const candidate = candidates[frameIndex];
     const frame = frames[frameIndex];
     let sampled = 0;
-    for (let y = candidate.region.top; y < candidate.region.bottom; y += sampleStep) {
-      for (let x = candidate.region.left; x < candidate.region.right; x += sampleStep) {
+    for (let y = candidate.region.top; y < candidate.region.bottom; y += 1) {
+      for (let x = candidate.region.left; x < candidate.region.right; x += 1) {
         if (!visible(frame, x, y)) continue;
-        const index = y * width + x;
-        const key = normalizedKey(index, candidate);
+        const coordinates = normalizedCoordinates(x, y, candidate);
+        if (!alignedToSample(coordinates.x) || !alignedToSample(coordinates.y)) continue;
+        const key = normalizedKey(coordinates);
         frequency.set(key, Number(frequency.get(key) || 0) + 1);
         sampled += 1;
       }
@@ -202,31 +204,31 @@ function analyzeFrameSequence(inputFrames) {
   }
   const threshold = frames.length === 1 ? 1 : Math.max(2, Math.ceil(frames.length * 0.5));
   let persistentPixelCount = 0;
-  let persistentMinX2 = Infinity;
-  let persistentMaxX2 = -Infinity;
+  let persistentMinX = Infinity;
+  let persistentMaxX = -Infinity;
   let persistentMinY = Infinity;
   let persistentMaxY = -Infinity;
   for (const [key, count] of frequency) {
     if (count < threshold) continue;
     persistentPixelCount += 1;
-    const normalizedX2 = Math.floor(key / normalizedYSpan) - normalizedXOffset;
+    const normalizedX = Math.floor(key / normalizedYSpan) - normalizedXOffset;
     const normalizedY = (key % normalizedYSpan) - normalizedYOffset;
-    persistentMinX2 = Math.min(persistentMinX2, normalizedX2);
-    persistentMaxX2 = Math.max(persistentMaxX2, normalizedX2);
+    persistentMinX = Math.min(persistentMinX, normalizedX);
+    persistentMaxX = Math.max(persistentMaxX, normalizedX);
     persistentMinY = Math.min(persistentMinY, normalizedY);
     persistentMaxY = Math.max(persistentMaxY, normalizedY);
   }
   const persistentBounds = persistentPixelCount
     ? {
-        minX2: persistentMinX2,
-        maxX2: persistentMaxX2,
+        minX: persistentMinX,
+        maxX: persistentMaxX,
         minY: persistentMinY,
         maxY: persistentMaxY,
       }
     : null;
-  const paddingX2 = Math.max(
-    4,
-    Math.round(Number((persistentBounds?.maxX2 || width * 2) - (persistentBounds?.minX2 || 0) + 1) * 0.2),
+  const paddingX = Math.max(
+    2,
+    Math.round(Number((persistentBounds?.maxX || width) - (persistentBounds?.minX || 0) + 1) * 0.2),
   );
   const paddingY = Math.max(
     2,
@@ -243,17 +245,15 @@ function analyzeFrameSequence(inputFrames) {
     for (let y = candidate.region.top; y < candidate.region.bottom; y += 1) {
       for (let x = candidate.region.left; x < candidate.region.right; x += 1) {
         if (!visible(frame, x, y)) continue;
-        const index = y * width + x;
-        const normalizedX2 = x * 2 - candidate.anchorX2;
-        const normalizedY = y - candidate.anchorY;
-        const key = normalizedKey(index, candidate);
+        const coordinates = normalizedCoordinates(x, y, candidate);
+        const key = normalizedKey(coordinates);
         const persistentPixel = Number(frequency.get(key) || 0) >= threshold;
         const nearCore =
           persistentBounds &&
-          normalizedX2 >= persistentBounds.minX2 - paddingX2 &&
-          normalizedX2 <= persistentBounds.maxX2 + paddingX2 &&
-          normalizedY >= persistentBounds.minY - paddingY &&
-          normalizedY <= persistentBounds.maxY + paddingY;
+          coordinates.x >= persistentBounds.minX - paddingX &&
+          coordinates.x <= persistentBounds.maxX + paddingX &&
+          coordinates.y >= persistentBounds.minY - paddingY &&
+          coordinates.y <= persistentBounds.maxY + paddingY;
         const transientHighlight = !persistentPixel && luma(frame, x, y) >= 185;
         if (persistentPixel || (nearCore && !transientHighlight)) {
           bodyPixelCount += 1;
