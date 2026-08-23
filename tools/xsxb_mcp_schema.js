@@ -45,6 +45,7 @@ function parseNumeric(value) {
 }
 
 function matchesType(value, expected) {
+  if (Array.isArray(expected)) return expected.some((candidate) => matchesType(value, candidate));
   const actual = typeOf(value);
   if (expected === "string") return actual === "string";
   if (expected === "array") return actual === "array";
@@ -105,8 +106,6 @@ function closestName(unknown, candidates) {
  * @throws {Error} When an argument is missing, unknown, or unusable.
  */
 function validateToolArguments(toolName, schema, args) {
-  const properties = schema?.properties || {};
-  const declared = Object.keys(properties);
   /**
    * Raises a validation failure naming the tool and the property at fault.
    * @param {string} message Problem description.
@@ -118,47 +117,79 @@ function validateToolArguments(toolName, schema, args) {
     throw error;
   };
 
+  /**
+   * Recursively validates the schema subset used by tool descriptors.
+   * @param {object} nodeSchema Current schema node.
+   * @param {unknown} value Current value.
+   * @param {string} location Human-readable argument path.
+   */
+  function validateNode(nodeSchema, value, location) {
+    if (value === undefined) return;
+    if (nodeSchema?.type && !matchesType(value, nodeSchema.type)) {
+      reject(
+        `${location} must be ${Array.isArray(nodeSchema.type) ? nodeSchema.type.join(" or ") : nodeSchema.type}, received ${typeOf(value)}.`,
+      );
+    }
+    if (Array.isArray(nodeSchema?.enum) && !nodeSchema.enum.includes(value)) {
+      reject(`${location} must be one of: ${nodeSchema.enum.join(", ")}. Received "${value}".`);
+    }
+    if (nodeSchema?.minimum !== undefined && asNumber(value) < nodeSchema.minimum) {
+      reject(`${location} must be at least ${nodeSchema.minimum}. Received ${value}.`);
+    }
+    if (nodeSchema?.exclusiveMinimum !== undefined && asNumber(value) <= nodeSchema.exclusiveMinimum) {
+      reject(`${location} must be greater than ${nodeSchema.exclusiveMinimum}. Received ${value}.`);
+    }
+    if (nodeSchema?.maximum !== undefined && asNumber(value) > nodeSchema.maximum) {
+      reject(`${location} must be at most ${nodeSchema.maximum}. Received ${value}.`);
+    }
+    if (nodeSchema?.type === "array" && Array.isArray(value) && nodeSchema.items) {
+      value.forEach((item, index) => validateNode(nodeSchema.items, item, `${location}[${index}]`));
+    }
+    if (nodeSchema?.type !== "object" || !value || typeof value !== "object" || Array.isArray(value)) {
+      return;
+    }
+    const properties = nodeSchema.properties || {};
+    const declared = Object.keys(properties);
+    for (const name of nodeSchema.required || []) {
+      const requiredValue = value[name];
+      if (requiredValue === undefined || requiredValue === null || requiredValue === "") {
+        reject(`${location} is missing required property "${name}".`);
+      }
+    }
+    for (const [name, child] of Object.entries(value)) {
+      const property = properties[name];
+      if (!property) {
+        if (nodeSchema.additionalProperties !== false) continue;
+        const suggestion = closestName(name, declared);
+        reject(
+          `${location} has unknown property "${name}".${suggestion ? ` Did you mean "${suggestion}"?` : ""} ` +
+            `Accepted properties: ${declared.length ? declared.join(", ") : "none"}.`,
+        );
+      }
+      validateNode(property, child, `${location}.${name}`);
+    }
+  }
+
+  const root = args && typeof args === "object" && !Array.isArray(args) ? args : {};
+  const properties = schema?.properties || {};
   for (const name of schema?.required || []) {
-    const value = args?.[name];
+    const value = root[name];
     if (value === undefined || value === null || value === "") {
       reject(`missing required argument "${name}".`);
     }
   }
-
-  for (const [name, value] of Object.entries(args || {})) {
+  for (const [name, value] of Object.entries(root)) {
     const property = properties[name];
     if (!property) {
       if (schema?.additionalProperties !== false) continue;
+      const declared = Object.keys(properties);
       const suggestion = closestName(name, declared);
       reject(
         `unknown argument "${name}".${suggestion ? ` Did you mean "${suggestion}"?` : ""} ` +
           `Accepted arguments: ${declared.length ? declared.join(", ") : "none"}.`,
       );
     }
-    // An omitted optional argument arrives as undefined from spread call sites.
-    if (value === undefined) continue;
-    if (property.type && !matchesType(value, property.type)) {
-      reject(`argument "${name}" must be ${property.type}, received ${typeOf(value)}.`);
-    }
-    if (Array.isArray(property.enum) && !property.enum.includes(value)) {
-      reject(`argument "${name}" must be one of: ${property.enum.join(", ")}. Received "${value}".`);
-    }
-    if (property.type === "array" && property.items?.type) {
-      for (const [index, item] of value.entries()) {
-        if (!matchesType(item, property.items.type)) {
-          reject(`argument "${name}"[${index}] must be ${property.items.type}, received ${typeOf(item)}.`);
-        }
-      }
-    }
-    if (property.minimum !== undefined && asNumber(value) < property.minimum) {
-      reject(`argument "${name}" must be at least ${property.minimum}. Received ${value}.`);
-    }
-    if (property.exclusiveMinimum !== undefined && asNumber(value) <= property.exclusiveMinimum) {
-      reject(`argument "${name}" must be greater than ${property.exclusiveMinimum}. Received ${value}.`);
-    }
-    if (property.maximum !== undefined && asNumber(value) > property.maximum) {
-      reject(`argument "${name}" must be at most ${property.maximum}. Received ${value}.`);
-    }
+    validateNode(property, value, `argument "${name}"`);
   }
   return args;
 }

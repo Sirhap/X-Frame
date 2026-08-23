@@ -3,7 +3,12 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
-const { parsePng, unfilterPng } = require("./attachment_sequence_analysis");
+const {
+  MAX_PNG_DIMENSION,
+  MAX_PNG_PIXELS,
+  parsePng,
+  unfilterPng,
+} = require("./attachment_sequence_analysis");
 const { NUMERIC_PARAMETER_LIMITS } = require("./animation_tuner/public/batch_cutout_session_core");
 const {
   REGULAR_AUTO_BACKGROUND_PARAMETERS,
@@ -73,6 +78,11 @@ function encodePngRgba(rgba, width, height) {
     throw new RangeError("PNG dimensions must be positive integers.");
   }
   if (rgba.length !== width * height * 4) throw new RangeError("RGBA length does not match the PNG size.");
+  if (width > MAX_PNG_DIMENSION || height > MAX_PNG_DIMENSION || width * height > MAX_PNG_PIXELS) {
+    throw new RangeError(
+      `PNG dimensions exceed the ${MAX_PNG_DIMENSION}px / ${MAX_PNG_PIXELS}-pixel encode budget.`,
+    );
+  }
   const stride = width * 4;
   const filtered = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y += 1) {
@@ -132,8 +142,8 @@ function writeRgbaPixel(packed, colorType, index, rgba) {
  * @param {string} filePath PNG path.
  * @returns {{data:Uint8ClampedArray,width:number,height:number}} Decoded image.
  */
-function decodePngRgba(filePath) {
-  const parsed = parsePng(fs.readFileSync(filePath));
+function decodePngRgbaBuffer(buffer) {
+  const parsed = parsePng(buffer);
   const packed = unfilterPng(parsed);
   const pixelCount = parsed.width * parsed.height;
   const data = new Uint8ClampedArray(pixelCount * 4);
@@ -141,6 +151,10 @@ function decodePngRgba(filePath) {
     writeRgbaPixel(packed, parsed.colorType, index, data);
   }
   return { data, width: parsed.width, height: parsed.height };
+}
+
+function decodePngRgba(filePath) {
+  return decodePngRgbaBuffer(fs.readFileSync(filePath));
 }
 
 /**
@@ -556,7 +570,11 @@ function placeFramesOnCanvas(frames, canvasWidth, canvasHeight, options = {}) {
 function cutoutFrameFiles(filePaths, options = {}) {
   const paths = (Array.isArray(filePaths) ? filePaths : []).filter((filePath) => fs.existsSync(filePath));
   if (!paths.length) throw new Error("Cutout found no on-disk frames to process.");
-  const frames = paths.map((filePath) => decodePngRgba(filePath));
+  const frames = paths.map((filePath, index) => {
+    const frame = decodePngRgba(filePath);
+    options.progressImpl?.({ stage: "decode", completed: index + 1, total: paths.length * 3 });
+    return frame;
+  });
   const requestedBackground = parseHexColor(options.keyColor);
   const uncut = frames.filter((frame) => !alreadyCutOut(frame.data, frame.width, frame.height));
   const shouldKey = uncut.length > 0 || (Boolean(options.force) && Boolean(requestedBackground));
@@ -566,17 +584,24 @@ function cutoutFrameFiles(filePaths, options = {}) {
     : null;
   const cutoutOptions = backgroundColor ? buildCutoutOptions(backgroundColor, options) : {};
   let skippedFrameCount = 0;
-  const cutFrames = frames.map((frame) => {
+  const cutFrames = frames.map((frame, index) => {
     const already = alreadyCutOut(frame.data, frame.width, frame.height);
     if (!shouldKey || (!options.force && already)) {
       skippedFrameCount += 1;
+      options.progressImpl?.({
+        stage: "cutout",
+        completed: paths.length + index + 1,
+        total: paths.length * 3,
+      });
       return frame;
     }
-    return {
+    const cutFrame = {
       data: applyProtectedSmartCutout(frame.data, frame.width, frame.height, backgroundColor, options),
       width: frame.width,
       height: frame.height,
     };
+    options.progressImpl?.({ stage: "cutout", completed: paths.length + index + 1, total: paths.length * 3 });
+    return cutFrame;
   });
   const canvasWidth = Number.isInteger(Number(options.outputWidth))
     ? Math.max(8, Number(options.outputWidth))
@@ -594,6 +619,11 @@ function cutoutFrameFiles(filePaths, options = {}) {
     : cutFrames;
   outputFrames.forEach((frame, index) => {
     fs.writeFileSync(paths[index], encodePngRgba(frame.data, frame.width, frame.height));
+    options.progressImpl?.({
+      stage: "write",
+      completed: paths.length * 2 + index + 1,
+      total: paths.length * 3,
+    });
   });
   const frameMetrics =
     typeof options.metricsImpl === "function"
@@ -664,6 +694,7 @@ module.exports = {
   cutoutFrameFiles,
   cutoutPngFile,
   decodePngRgba,
+  decodePngRgbaBuffer,
   encodePngRgba,
   parseHexColor,
   parseProtectedColors,

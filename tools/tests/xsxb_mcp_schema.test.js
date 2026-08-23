@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { validateToolArguments, validateToolResult } = require("../xsxb_mcp_schema");
 const { toolDefinitions } = require("../xsxb_mcp_service");
+const { mergeBox } = require("../xsxb_mcp_arguments");
 
 const SCHEMA = Object.freeze({
   type: "object",
@@ -83,6 +84,24 @@ test("a structurally wrong type is rejected", () => {
 
 test("array items are checked against their declared type", () => {
   assert.match(validationError({ file_path: "/tmp/a.mp4", protected_colors: [{}] }), /protected_colors/u);
+});
+
+test("nested object properties, bounds, and additionalProperties are validated recursively", () => {
+  const schema = toolDefinitions().find((tool) => tool.name === "xsxb_update_frame_boxes").inputSchema;
+  assert.throws(
+    () => validateToolArguments("xsxb_update_frame_boxes", schema, { hurtbox: { rotation: "oops" } }),
+    /hurtbox.*rotation.*number/iu,
+  );
+  assert.throws(
+    () => validateToolArguments("xsxb_update_frame_boxes", schema, { hurtbox: { size: { x: -1 } } }),
+    /hurtbox.*size.*x.*at least 0/iu,
+  );
+  assert.throws(
+    () => validateToolArguments("xsxb_update_frame_boxes", schema, { hurtbox: { rotaton: 12 } }),
+    /rotaton.*rotation/iu,
+  );
+  validateToolArguments("xsxb_update_frame_boxes", schema, { hurtbox: { enabled: "false" } });
+  assert.equal(mergeBox(undefined, { enabled: "false" }).enabled, false);
 });
 
 // The handlers deliberately accept the stringified numbers and booleans that

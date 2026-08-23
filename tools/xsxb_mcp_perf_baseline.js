@@ -5,7 +5,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { cutoutFrameFiles, encodePngRgba } = require("./xsxb_mcp_cutout");
+const { createMcpExecutionCoordinator } = require("./xsxb_mcp_execution");
+const { createReviewArtifactStore } = require("./xsxb_mcp_review_artifacts");
 const { createCompositeSession } = require("./xsxb_mcp_trail_preview");
+const { createProjectStore } = require("./project_store");
 
 /** @param {number} size Edge. @param {number[]} color RGBA. @returns {Buffer} PNG. */
 function solidPng(size, color) {
@@ -60,14 +63,82 @@ async function runMcpPerfBaseline(options = {}) {
       const composited = await session.composite(job);
       if (composited.tempDir) fs.rmSync(composited.tempDir, { recursive: true, force: true });
     }
+    const projectStore = createProjectStore(root);
+    projectStore.addProject({ id: "perf", label: "Perf" });
+    const project = projectStore.activeProject("perf");
+    let projectJsonReads = 0;
+    const originalReadJson = projectStore.readJson.bind(projectStore);
+    projectStore.readJson = (...args) => {
+      projectJsonReads += 1;
+      return originalReadJson(...args);
+    };
+    projectStore.readJson(projectStore.projectPaths(project).manifest, { profiles: [] });
+    const artifactStore = createReviewArtifactStore({
+      root,
+      projectStore,
+      maxEdge: 64,
+      maxInlineBytes: 128 * 1024,
+    });
+    const artifact = artifactStore.create({
+      project,
+      kind: "perf",
+      sourcePath: framePaths[0],
+      revision: "perf-revision",
+      parameters: { pass: 1 },
+    });
+    artifactStore.create({
+      project,
+      kind: "perf",
+      sourcePath: framePaths[0],
+      revision: "perf-revision",
+      parameters: { pass: 1 },
+    });
+    const coordinator = createMcpExecutionCoordinator({ maxLongJobs: 1, maxQueue: 2 });
+    let cancelledCleanups = 0;
+    let markStarted;
+    const started = new Promise((resolve) => {
+      markStarted = resolve;
+    });
+    const cancelTask = coordinator.run(
+      { requestId: "cancel", projectId: "perf", mode: "write", long: true },
+      async ({ signal }) => {
+        markStarted();
+        await new Promise((done, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              cancelledCleanups += 1;
+              reject(signal.reason);
+            },
+            { once: true },
+          );
+        });
+      },
+    );
+    cancelTask.catch(() => {});
+    await started;
+    coordinator.cancel("cancel", "baseline cancel");
+    await cancelTask.catch(() => {});
     const result = {
       cutout: { frameCount: framePaths.length, metricPasses },
       composite: { ...session.stats },
+      review: {
+        ...artifactStore.stats,
+        receiptBytes: Buffer.byteLength(JSON.stringify(artifact)),
+      },
+      execution: { cancelledCleanups, ...coordinator.stats() },
+      projectJsonReads,
     };
     if (
       result.cutout.metricPasses !== result.cutout.frameCount ||
       result.composite.browserLaunches !== 1 ||
-      result.composite.uniqueAttachmentLoads !== 1
+      result.composite.uniqueAttachmentLoads !== 1 ||
+      result.review.created !== 1 ||
+      result.review.reused !== 1 ||
+      result.review.peakThumbnailPixels > 64 * 64 ||
+      result.execution.cancelledCleanups !== 1 ||
+      result.execution.inFlight !== 0 ||
+      result.projectJsonReads !== 1
     ) {
       throw new Error(`MCP count baseline regressed: ${JSON.stringify(result)}`);
     }

@@ -2,12 +2,23 @@
 "use strict";
 
 const readline = require("node:readline");
+const path = require("node:path");
 const { createXsxbMcpService } = require("./xsxb_mcp_service");
+const { createRuntimeInfo } = require("./xsxb_mcp_runtime");
 
-const SERVER_INFO = Object.freeze({ name: "xsxb-frame-tuner", version: "0.1.0" });
 const SUPPORTED_PROTOCOL_VERSIONS = Object.freeze(["2025-11-25", "2025-06-18"]);
+const LOGGING_LEVELS = new Set([
+  "debug",
+  "info",
+  "notice",
+  "warning",
+  "error",
+  "critical",
+  "alert",
+  "emergency",
+]);
 const INSTRUCTIONS =
-  "XSXB-Frame-Tuner is a local animation-production MCP. Read state with xsxb_list_projects, xsxb_get_project, or xsxb_get_animation before mutation; create a missing local project with xsxb_create_project. Use xsxb_get_workflow for video loops, one-shots, cutout, visual matching, attachments, weapon placement, weapon trails, Godot sync, and export. Weapon placement requires explicit hand/tip anchors: measure with xsxb_measure_image, preview with xsxb_plan_attachment response_mode=compact, then apply plan_id with xsxb_add_attachment confirm=true in the same service session. Derive a matching smear with xsxb_add_attack_trail attachment_id and dry_run first. GIF and sheet exports include workbench attachments and trails unless disabled. Bind Godot before sync; edit first, sync explicitly, then validate standalone, bind, and gameplay layers. Use dry_run before deletion or binding removal. Report receipts exactly. If a tool errors, a capability is missing, or you must leave MCP, tell the user and raise it to XSXB-Frame-Tuner with tool, arguments, receipt/error, expected result, and actual result.";
+  "XSXB-Frame-Tuner is a local multimodal animation-production MCP. Read state before mutation and use xsxb_get_workflow for ordered operations. Visual tools return a bounded image plus an xsxb:// full resource; inspect it with image input or use the declared human_review fallback. Weapon placement requires explicit hand/tip anchors: measure, plan, inspect the review artifact, then apply the persisted plan_id with confirm=true and an artifact-bound review_confirmation. Use apply_mode=replace for atomic weapon resizing or replacement. Derive trails with dry_run first and review baked-FX overlap. Every project write creates a restorable mutation revision; list revisions and dry-run restore before confirmation. GIF and sheet exports include attachments and trails unless disabled. Bind and sync Godot explicitly, then validate standalone, bind, and gameplay layers. Report receipts exactly; never claim visual approval without reviewing the returned artifact. If a capability is missing or work must leave MCP, tell the user and raise it to XSXB-Frame-Tuner with the tool, arguments, expected result, and actual result.";
 /**
  * Creates one successful JSON-RPC response.
  * @param {string|number|null} id Request id.
@@ -33,12 +44,17 @@ function failure(id, code, message) {
  * Handles one MCP JSON-RPC request.
  * @param {object} message Parsed request.
  * @param {{tools:object[],call:Function}} service XSXB service.
+ * @param {{notify?:(message:object)=>void}} [options] Transport hooks.
  * @returns {Promise<object|null>} Response, or null for notifications.
  */
-async function handleMessage(message, service) {
+async function handleMessage(message, service, options = {}) {
   const id = Object.prototype.hasOwnProperty.call(message || {}, "id") ? message.id : null;
   const method = String(message?.method || "");
   if (!method) return failure(id, -32600, "Invalid JSON-RPC request.");
+  if (method === "notifications/cancelled") {
+    service.cancel?.(message.params?.requestId, message.params?.reason);
+    return null;
+  }
   if (id === null) return null;
   if (method === "initialize") {
     const requestedVersion = String(message.params?.protocolVersion || "");
@@ -46,28 +62,112 @@ async function handleMessage(message, service) {
       protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion)
         ? requestedVersion
         : SUPPORTED_PROTOCOL_VERSIONS[0],
-      capabilities: { tools: { listChanged: false } },
-      serverInfo: SERVER_INFO,
+      capabilities: {
+        tools: { listChanged: false },
+        resources: { listChanged: true },
+        prompts: { listChanged: false },
+        logging: {},
+      },
+      serverInfo: createRuntimeInfo(path.resolve(__dirname, ".."), service.tools),
       instructions: INSTRUCTIONS,
     });
   }
   if (method === "ping") return success(id, {});
+  if (method === "logging/setLevel") {
+    const level = String(message.params?.level || "");
+    if (!LOGGING_LEVELS.has(level)) {
+      return failure(id, -32602, `Invalid MCP logging level: ${level || "missing"}`);
+    }
+    service.setLogLevel?.(level);
+    return success(id, {});
+  }
   if (method === "tools/list") return success(id, { tools: service.tools });
   if (method === "tools/call") {
+    const params = message.params;
+    if (!params || typeof params !== "object" || Array.isArray(params)) {
+      return failure(id, -32602, "tools/call params must be an object.");
+    }
+    const name = typeof params.name === "string" ? params.name : "";
+    if (!name) return failure(id, -32602, "tools/call requires a non-empty tool name.");
+    if (
+      params.arguments !== undefined &&
+      (!params.arguments || typeof params.arguments !== "object" || Array.isArray(params.arguments))
+    ) {
+      return failure(id, -32602, "tools/call arguments must be an object.");
+    }
+    if (!Array.isArray(service.tools) || !service.tools.some((tool) => tool.name === name)) {
+      return failure(id, -32602, `Unknown XSXB MCP tool: ${name}`);
+    }
     try {
-      const result = await service.call(String(message.params?.name || ""), message.params?.arguments || {});
-      return success(id, {
+      const result = await service.call(name, params.arguments || {}, {
+        requestId: id,
+        progressToken: params._meta?.progressToken,
+        progress(update = {}) {
+          const progressToken = params._meta?.progressToken;
+          if (progressToken === undefined || progressToken === null || !options.notify) return;
+          options.notify({
+            jsonrpc: "2.0",
+            method: "notifications/progress",
+            params: { progressToken, ...update },
+          });
+        },
+      });
+      const formatted = service.formatToolResult?.(result) || {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         structuredContent: result,
         isError: false,
-      });
+      };
+      return success(id, formatted);
     } catch (error) {
-      const result = { ok: false, error: error.message, code: error.code || "xsxb_tool_error" };
+      const result = {
+        ok: false,
+        error: error.message,
+        code: error.code || "xsxb_tool_error",
+        ...(error.retryable === true ? { retryable: true } : {}),
+      };
       return success(id, {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-        structuredContent: result,
         isError: true,
       });
+    }
+  }
+  if (method === "resources/list") {
+    if (!service.resources?.list) return failure(id, -32601, "Resources are unavailable.");
+    return success(id, await service.resources.list(message.params || {}));
+  }
+  if (method === "resources/templates/list") {
+    if (!service.resources?.templates) return failure(id, -32601, "Resource templates are unavailable.");
+    return success(id, await service.resources.templates(message.params || {}));
+  }
+  if (method === "resources/read") {
+    if (!service.resources?.read) return failure(id, -32601, "Resources are unavailable.");
+    const uri = message.params?.uri;
+    if (typeof uri !== "string" || !uri.trim()) {
+      return failure(id, -32602, "resources/read requires a non-empty uri.");
+    }
+    try {
+      return success(id, await service.resources.read(uri));
+    } catch (error) {
+      const messageText = String(error?.message || "");
+      const invalid = /invalid .*resource URI|unsafe/iu.test(messageText);
+      const unavailable = /not found|expired/iu.test(messageText);
+      return failure(
+        id,
+        invalid ? -32602 : unavailable ? -32002 : -32603,
+        error.message || "Resource read failed.",
+      );
+    }
+  }
+  if (method === "prompts/list") {
+    if (!service.prompts?.list) return failure(id, -32601, "Prompts are unavailable.");
+    return success(id, await service.prompts.list(message.params || {}));
+  }
+  if (method === "prompts/get") {
+    if (!service.prompts?.get) return failure(id, -32601, "Prompts are unavailable.");
+    try {
+      return success(id, await service.prompts.get(message.params || {}));
+    } catch (error) {
+      return failure(id, Number.isInteger(error.code) ? error.code : -32602, error.message);
     }
   }
   return failure(id, -32601, `Method not found: ${method}`);
@@ -81,29 +181,45 @@ async function handleMessage(message, service) {
 function startServer(options = {}) {
   const input = options.input || process.stdin;
   const output = options.output || process.stdout;
-  const service = options.service || createXsxbMcpService();
+  const service =
+    options.service ||
+    createXsxbMcpService({
+      root: process.env.XSXB_ROOT ? path.resolve(process.env.XSXB_ROOT) : undefined,
+    });
   const lines = readline.createInterface({ input, crlfDelay: Infinity });
-  let queue = Promise.resolve();
+  const pending = new Set();
+  const writeMessage = (message) => output.write(`${JSON.stringify(message)}\n`);
+  service.setNotifier?.(writeMessage);
   lines.on("line", (line) => {
-    queue = queue
-      .then(async () => {
-        if (!line.trim()) return;
-        let message;
-        try {
-          message = JSON.parse(line);
-        } catch (error) {
-          output.write(`${JSON.stringify(failure(null, -32700, `Parse error: ${error.message}`))}\n`);
-          return;
-        }
-        const response = await handleMessage(message, service);
-        if (response) output.write(`${JSON.stringify(response)}\n`);
+    if (!line.trim()) return;
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch (error) {
+      writeMessage(failure(null, -32700, `Parse error: ${error.message}`));
+      return;
+    }
+    if (message.method === "notifications/cancelled") {
+      void handleMessage(message, service);
+      return;
+    }
+    const task = handleMessage(message, service, { notify: writeMessage })
+      .then((response) => {
+        if (response) writeMessage(response);
       })
       .catch((error) => {
-        output.write(`${JSON.stringify(failure(null, -32603, error.message || "Internal MCP error."))}\n`);
+        writeMessage(failure(message.id ?? null, -32603, error.message || "Internal MCP error."));
+      })
+      .finally(() => {
+        pending.delete(task);
       });
+    pending.add(task);
   });
   lines.once("close", () => {
-    queue.finally(() => service.close?.()).catch(() => {});
+    service.cancelAll?.();
+    Promise.allSettled([...pending])
+      .then(() => service.close?.())
+      .catch(() => {});
   });
   return lines;
 }

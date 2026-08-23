@@ -633,17 +633,36 @@ function drawMarkBorder(rgba, width, originX, originY, cell) {
  */
 function renderContactSheet(frames, options = {}) {
   const items = Array.isArray(frames) ? frames : [];
-  const cell = Math.max(8, Number(options.cell || 220));
-  const pad = Math.max(1, Number(options.pad || 8));
-  const columns = Math.max(1, Number(options.columns || Math.min(items.length || 1, 8)));
+  const requestedCell = Number(options.cell || 220);
+  const requestedPad = Number(options.pad || 8);
+  const requestedColumns = Number(options.columns || Math.min(items.length || 1, 8));
+  if (![requestedCell, requestedPad, requestedColumns].every(Number.isFinite)) {
+    throw new Error("Contact-sheet cell, pad, and columns must be finite numbers.");
+  }
+  let cell = Math.max(8, Math.floor(requestedCell));
+  let pad = Math.max(1, Math.floor(requestedPad));
+  const columns = Math.min(Math.max(1, items.length || 1), Math.max(1, Math.floor(requestedColumns)));
   const startIndex = Math.max(0, Math.floor(Number(options.startIndex || 0)));
   const labels = options.labels !== false;
   const grid = options.grid !== false;
   const anchorMode = String(options.anchorMode || "canvas_bottom_center");
   const markFrame = options.markFrame === undefined ? startIndex : Number(options.markFrame);
   const rows = Math.max(1, Math.ceil((items.length || 1) / columns));
-  const width = columns * cell + (columns + 1) * pad;
-  const height = rows * cell + (rows + 1) * pad;
+  const maxPixels = 16_777_216;
+  const dimensions = () => ({
+    width: columns * cell + (columns + 1) * pad,
+    height: rows * cell + (rows + 1) * pad,
+  });
+  let { width, height } = dimensions();
+  while (width * height > maxPixels && (cell > 8 || pad > 1)) {
+    const scale = Math.min(0.95, Math.sqrt(maxPixels / (width * height)) * 0.98);
+    cell = Math.max(8, Math.floor(cell * scale));
+    pad = Math.max(1, Math.floor(pad * scale));
+    ({ width, height } = dimensions());
+  }
+  if (width * height > maxPixels) {
+    throw new Error(`Contact sheet exceeds the ${maxPixels}-pixel preview budget.`);
+  }
   const rgba = new Uint8ClampedArray(width * height * 4);
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) writePixel(rgba, width, x, y, 40, 40, 44, 255);
@@ -697,7 +716,7 @@ function renderContactSheet(frames, options = {}) {
       );
     }
   });
-  return { data: rgba, width, height };
+  return { data: rgba, width, height, cell, pad, columns, rows };
 }
 
 /**

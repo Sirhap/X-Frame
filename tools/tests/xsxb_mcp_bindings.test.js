@@ -83,6 +83,14 @@ async function importedFixture() {
   return current;
 }
 
+function approveReview(planned, mode = "multimodal") {
+  return {
+    artifact_id: planned.reviewArtifactId,
+    mode,
+    decision: "approve",
+  };
+}
+
 test("get_animation include reads back boxes, timing, sfx, attachments, and trails", async () => {
   const current = await importedFixture();
   try {
@@ -134,7 +142,7 @@ test("get_animation include reads back boxes, timing, sfx, attachments, and trai
 
     await assert.rejects(
       current.service.call("xsxb_get_animation", { animation_id: "walk", include: ["nope"] }),
-      /Unknown include section/,
+      /Unknown include section|must be one of/,
     );
   } finally {
     current.cleanup();
@@ -362,12 +370,43 @@ test("xsxb_plan_attachment previews a revision-bound weapon plan and add_attachm
     assert.deepEqual(current.store.readJson(paths.frameImageAttachments, []), []);
     assert.deepEqual(current.store.readJson(paths.attachmentAssets, []), []);
 
+    const repeatedPlan = await current.service.call("xsxb_plan_attachment", {
+      animation_id: "walk",
+      file_path: weaponPath,
+      kind: "weapon",
+      grip_t: 0.2,
+      anchors: [
+        { frame: 0, hand: { x: -2, y: -6 }, tip: { x: 6, y: -10 }, layer: "below" },
+        { frame: 1, hand: { x: 2, y: -7 }, tip: { x: 10, y: -3 }, layer: "above" },
+      ],
+    });
+    assert.equal(repeatedPlan.planId, planResult.planId);
+    assert.deepEqual(repeatedPlan.plan, planResult.plan);
+
+    const imported = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    const ownerPath = imported.animation.frames[0].absolutePath;
+    const ownerBytes = fs.readFileSync(ownerPath);
+    fs.writeFileSync(ownerPath, bodyFrame(2));
+    await assert.rejects(
+      current.service.call("xsxb_add_attachment", {
+        animation_id: "walk",
+        file_path: weaponPath,
+        plan: planResult.plan,
+        confirm: true,
+        review_confirmation: approveReview(planResult),
+        sync: false,
+      }),
+      /frame.*changed|pixels.*changed/iu,
+    );
+    fs.writeFileSync(ownerPath, ownerBytes);
+
     await assert.rejects(
       current.service.call("xsxb_add_attachment", {
         animation_id: "walk",
         file_path: weaponPath,
         plan: planResult.plan,
         confirm: false,
+        review_confirmation: approveReview(planResult),
         sync: false,
       }),
       /explicit confirmation/u,
@@ -380,6 +419,7 @@ test("xsxb_plan_attachment previews a revision-bound weapon plan and add_attachm
         file_path: weaponPath,
         plan: planResult.plan,
         confirm: true,
+        review_confirmation: approveReview(planResult),
         sync: false,
       }),
       /source changed/u,
@@ -394,6 +434,7 @@ test("xsxb_plan_attachment previews a revision-bound weapon plan and add_attachm
         file_path: weaponPath,
         plan: tamperedPlan,
         confirm: true,
+        review_confirmation: approveReview(planResult),
         sync: false,
       }),
       /changed after visual review/u,
@@ -407,6 +448,7 @@ test("xsxb_plan_attachment previews a revision-bound weapon plan and add_attachm
         file_path: weaponPath,
         plan: planResult.plan,
         confirm: true,
+        review_confirmation: approveReview(planResult),
         sync: false,
       }),
       /Project data changed after planning/u,
@@ -418,6 +460,7 @@ test("xsxb_plan_attachment previews a revision-bound weapon plan and add_attachm
       file_path: weaponPath,
       plan: planResult.plan,
       confirm: true,
+      review_confirmation: approveReview(planResult),
       sync: false,
     });
     assert.equal(applied.status, "applied");
@@ -460,10 +503,154 @@ test("compact attachment plans apply by immutable plan_id without replaying the 
       animation_id: "walk",
       plan_id: planned.planId,
       confirm: true,
+      review_confirmation: approveReview(planned),
       sync: false,
     });
     assert.equal(applied.updatedFrames, 2);
     assert.equal(applied.planId, planned.planId);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("v2 attachment plans survive restart, require their review artifact, and replace atomically", async () => {
+  const current = await importedFixture();
+  let service = current.service;
+  try {
+    const weaponPath = path.join(current.root, "durable-weapon.png");
+    fs.writeFileSync(weaponPath, weaponFrame());
+    const planArgs = {
+      animation_id: "walk",
+      file_path: weaponPath,
+      kind: "weapon",
+      id: "durable-sword",
+      grip_t: 0.2,
+      response_mode: "compact",
+      apply_mode: "create",
+      anchors: [
+        { frame: 0, hand: { x: -2, y: -6 }, tip: { x: 6, y: -10 } },
+        { frame: 1, hand: { x: 2, y: -7 }, tip: { x: 10, y: -3 } },
+      ],
+    };
+    const planned = await service.call("xsxb_plan_attachment", planArgs);
+    assert.equal(planned.planSchemaVersion, 2);
+    assert.match(planned.reviewArtifactId, /^review_/u);
+    assert.match(planned.reviewArtifactHash, /^[a-f0-9]{64}$/u);
+    const previewImage = decodePngRgba(planned.previewPath);
+    assert.ok(previewImage.width <= 2648);
+    assert.ok(previewImage.height <= 1064);
+    const formatted = service.formatToolResult(planned);
+    assert.deepEqual(
+      formatted.content.map((entry) => entry.type),
+      ["text", "image", "resource_link"],
+    );
+    const resource = formatted.content.find((entry) => entry.type === "resource_link");
+    const read = await service.resources.read(resource.uri);
+    assert.equal(read.contents[0].mimeType, "image/png");
+    assert.ok(Buffer.from(read.contents[0].blob, "base64").length > 100);
+    await service.close();
+    service = createXsxbMcpService({ root: current.root });
+    await assert.rejects(
+      service.call("xsxb_add_attachment", {
+        animation_id: "walk",
+        plan_id: planned.planId,
+        confirm: true,
+        sync: false,
+      }),
+      /review_confirmation/u,
+    );
+    const created = await service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      plan_id: planned.planId,
+      confirm: true,
+      review_confirmation: {
+        artifact_id: planned.reviewArtifactId,
+        mode: "multimodal",
+        decision: "approve",
+      },
+      receipt_mode: "compact",
+      sync: false,
+    });
+    assert.equal(created.status, "applied");
+    assert.equal(created.bindings, undefined);
+    assert.equal(created.updatedFrames, 2);
+    assert.ok(Buffer.byteLength(JSON.stringify(created)) < 4000);
+
+    const replacement = await service.call("xsxb_plan_attachment", {
+      ...planArgs,
+      apply_mode: "replace",
+      anchors: [
+        { frame: 0, hand: { x: -2, y: -6 }, tip: { x: 10, y: -12 } },
+        { frame: 1, hand: { x: 2, y: -7 }, tip: { x: 14, y: -1 } },
+      ],
+    });
+    await service.close();
+    service = createXsxbMcpService({ root: current.root });
+    const replaced = await service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      plan_id: replacement.planId,
+      confirm: true,
+      review_confirmation: {
+        artifact_id: replacement.reviewArtifactId,
+        mode: "human",
+        decision: "approve",
+      },
+      receipt_mode: "compact",
+      sync: false,
+    });
+    assert.equal(replaced.status, "replaced");
+    assert.equal(replaced.updatedFrames, 2);
+    const readBack = await service.call("xsxb_get_animation", {
+      animation_id: "walk",
+      include: ["attachments"],
+    });
+    assert.equal(readBack.attachments.length, 2, "replace must not duplicate or require removals");
+    assert.ok(readBack.attachments.every((entry) => entry.automation.planId === replacement.planId));
+  } finally {
+    await service.close();
+    current.cleanup();
+  }
+});
+
+test("revision tools list mutations and restore only after dry-run confirmation", async () => {
+  const current = await importedFixture();
+  try {
+    await current.service.call("xsxb_update_timing", { frame: 0, duration: 2 });
+    const revisions = await current.service.call("xsxb_list_project_revisions", {
+      project_id: "bind-test",
+    });
+    assert.ok(revisions.count >= 1);
+    const revision = revisions.revisions.find((entry) => entry.tool === "xsxb_update_timing");
+    assert.ok(revision);
+    const resources = await current.service.resources.list();
+    const revisionResource = resources.resources.find((entry) => entry.uri.includes(revision.revisionId));
+    assert.ok(revisionResource);
+    const revisionRead = await current.service.resources.read(revisionResource.uri);
+    assert.match(revisionRead.contents[0].text, /xsxb_update_timing/u);
+    const preview = await current.service.call("xsxb_restore_project_revision", {
+      project_id: "bind-test",
+      revision_id: revision.revisionId,
+      dry_run: true,
+    });
+    assert.equal(preview.dryRun, true);
+    await assert.rejects(
+      current.service.call("xsxb_restore_project_revision", {
+        project_id: "bind-test",
+        revision_id: revision.revisionId,
+        confirm: true,
+      }),
+      /restore_token/u,
+    );
+    const restored = await current.service.call("xsxb_restore_project_revision", {
+      project_id: "bind-test",
+      revision_id: revision.revisionId,
+      restore_token: preview.restoreToken,
+      confirm: true,
+      sync: false,
+    });
+    assert.equal(restored.status, "restored");
+    const readBack = await current.service.call("xsxb_get_animation", { include: ["timing"] });
+    assert.equal(readBack.timing.frameOverrides["0"], undefined);
   } finally {
     current.cleanup();
   }
@@ -491,6 +678,14 @@ test("xsxb_plan_attachment keeps alpha-bounds effect placement explicitly review
         (entry) => entry.alignment.spatialMode === "alpha_bounds" && entry.alignment.spatialConfidence < 1,
       ),
     );
+    const shorter = await current.service.call("xsxb_plan_attachment", {
+      animation_id: "walk",
+      file_path: effectPath,
+      kind: "effect",
+      start_frame: 0,
+      end_frame: 0,
+    });
+    assert.notEqual(shorter.planId, planned.planId);
   } finally {
     current.cleanup();
   }
@@ -517,6 +712,7 @@ test("xsxb_add_attack_trail derives blade sticks from a confirmed weapon attachm
       file_path: weaponPath,
       plan: planned.plan,
       confirm: true,
+      review_confirmation: approveReview(planned),
       sync: false,
     });
     const imported = await current.service.call("xsxb_get_animation", {
@@ -537,6 +733,7 @@ test("xsxb_add_attack_trail derives blade sticks from a confirmed weapon attachm
     const boxes = await current.service.call("xsxb_estimate_boxes", {
       animation_id: "walk",
       attachment_id: "held-sword",
+      active_frames: [1],
       replace: true,
       dry_run: true,
     });
@@ -548,6 +745,8 @@ test("xsxb_add_attack_trail derives blade sticks from a confirmed weapon attachm
     assert.ok(Math.abs(boxes.frames[0].boxes.hitbox.offset.x - expectedCenter.x) <= 0.001);
     assert.ok(Math.abs(boxes.frames[0].boxes.hitbox.offset.y - expectedCenter.y) <= 0.001);
     assert.ok(Math.abs(boxes.frames[0].boxes.hitbox.rotation + 26.565) <= 0.01);
+    assert.equal(boxes.frames[0].boxes.hitbox.enabled, false);
+    assert.equal(boxes.frames[1].boxes.hitbox.enabled, true);
 
     const trailPreview = await current.service.call("xsxb_add_attack_trail", {
       animation_id: "walk",

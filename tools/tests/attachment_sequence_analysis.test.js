@@ -9,6 +9,7 @@ const zlib = require("node:zlib");
 const {
   analyzePngAlpha,
   evenlySpacedIndexes,
+  parsePng,
   recommendSpatialTransform,
   selectSequenceAssets,
 } = require("../attachment_sequence_analysis");
@@ -107,6 +108,21 @@ test("PNG alpha analysis reports visible mass, bounds, and centroid", () => {
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("PNG parsing rejects decompression-bomb dimensions before allocating pixels", () => {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(100_000, 0);
+  header.writeUInt32BE(100_000, 4);
+  header[8] = 8;
+  header[9] = 6;
+  const bomb = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk("IHDR", header),
+    pngChunk("IDAT", zlib.deflateSync(Buffer.from([0]))),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+  assert.throws(() => parsePng(bomb), /dimensions|pixel budget|too large/iu);
 });
 
 test("normalized resampling preserves endpoints for 18 assets and 8 target frames", () => {

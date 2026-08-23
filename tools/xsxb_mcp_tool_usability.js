@@ -13,6 +13,7 @@ const {
   toolDefinitions,
 } = require("./xsxb_mcp_service");
 const { decodePngRgba, encodePngRgba, subjectAnchor } = require("./xsxb_mcp_cutout");
+const { auditProbeCoverage } = require("./xsxb_mcp_tool_registry");
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XkM0WQAAAABJRU5ErkJggg==",
@@ -195,6 +196,42 @@ const PROBES = {
       return verdict("xsxb_create_project", "fail", JSON.stringify({ preview, created }));
     }
     return verdict("xsxb_create_project", "ready", "dry_run previews; create activates local project");
+  },
+
+  async xsxb_list_project_revisions(fixture) {
+    await importSequence(fixture, "revision-list");
+    const listed = await fixture.service.call("xsxb_list_project_revisions", { project_id: "usable" });
+    if (listed.count < 1 || !listed.revisions.some((entry) => entry.tool === "xsxb_import_animation")) {
+      return verdict("xsxb_list_project_revisions", "fail", JSON.stringify(listed));
+    }
+    return verdict("xsxb_list_project_revisions", "ready", `count=${listed.count}`);
+  },
+
+  async xsxb_restore_project_revision(fixture) {
+    await importSequence(fixture, "revision-restore");
+    await fixture.service.call("xsxb_update_timing", {
+      animation_id: "revision-restore",
+      frame: 0,
+      duration: 2,
+    });
+    const listed = await fixture.service.call("xsxb_list_project_revisions", { project_id: "usable" });
+    const revision = listed.revisions.find((entry) => entry.tool === "xsxb_update_timing");
+    const preview = await fixture.service.call("xsxb_restore_project_revision", {
+      project_id: "usable",
+      revision_id: revision?.revisionId,
+      dry_run: true,
+    });
+    const restored = await fixture.service.call("xsxb_restore_project_revision", {
+      project_id: "usable",
+      revision_id: revision?.revisionId,
+      restore_token: preview.restoreToken,
+      confirm: true,
+      sync: false,
+    });
+    if (restored.status !== "restored") {
+      return verdict("xsxb_restore_project_revision", "fail", JSON.stringify(restored));
+    }
+    return verdict("xsxb_restore_project_revision", "ready", "dry_run token restores managed JSON");
   },
 
   async xsxb_get_project(fixture) {
@@ -950,8 +987,12 @@ async function probeOpenTuner() {
  */
 async function runUsabilityAudit() {
   const catalog = toolDefinitions().map((tool) => tool.name);
-  const missing = MCP_TOOL_NAMES.filter((name) => name !== "xsxb_open_tuner" && !PROBES[name]);
-  const extra = catalog.filter((name) => !MCP_TOOL_NAMES.includes(name));
+  const coverage = auditProbeCoverage(
+    MCP_TOOL_NAMES.filter((name) => name !== "xsxb_open_tuner"),
+    Object.keys(PROBES),
+  );
+  const missing = coverage.missing;
+  const extra = coverage.extra;
   const results = [];
   for (const name of MCP_TOOL_NAMES) {
     if (name === "xsxb_open_tuner") {

@@ -124,7 +124,7 @@ function resolveImportSource(args = {}) {
 function mergeBox(existing, patch, options = {}) {
   const current = existing && typeof existing === "object" ? existing : {};
   const next = {
-    enabled: patch.enabled === undefined ? current.enabled !== false : Boolean(patch.enabled),
+    enabled: patch.enabled === undefined ? current.enabled !== false : booleanFlag(patch.enabled),
     offset: {
       x: Number(patch.offset?.x ?? current.offset?.x ?? 0),
       y: Number(patch.offset?.y ?? current.offset?.y ?? 0),
@@ -133,7 +133,10 @@ function mergeBox(existing, patch, options = {}) {
       x: Number(patch.size?.x ?? current.size?.x ?? 0),
       y: Number(patch.size?.y ?? current.size?.y ?? 0),
     },
+    rotation: Number(patch.rotation ?? current.rotation ?? 0),
   };
+  const numericValues = [next.offset.x, next.offset.y, next.size.x, next.size.y, next.rotation];
+  if (!numericValues.every(Number.isFinite)) throw new Error("Box geometry must contain finite numbers.");
   if (options.ground && patch.offset?.y === undefined && next.size.y > 0) {
     next.offset.y = -next.size.y * 0.5;
   }
@@ -232,6 +235,56 @@ function isInsideDirectory(childPath, parentPath) {
 }
 
 /**
+ * Resolves an output under one managed directory and rejects lexical or symlink escapes.
+ * @param {string} baseDirectory Managed output root.
+ * @param {string} requested Relative or absolute requested path.
+ * @param {string} label Argument label.
+ * @returns {string} Safe absolute output path.
+ */
+function resolveManagedOutputPath(baseDirectory, requested, label = "output_path") {
+  const base = path.resolve(baseDirectory);
+  fs.mkdirSync(base, { recursive: true });
+  if (fs.lstatSync(base).isSymbolicLink()) {
+    throw new Error(`${label} project exports directory must not be a symlink (${base}).`);
+  }
+  const candidate = path.isAbsolute(String(requested || ""))
+    ? path.resolve(String(requested))
+    : path.resolve(base, String(requested || ""));
+  if (!isInsideDirectory(candidate, base)) {
+    throw new Error(`${label} must stay inside the managed output directory (${base}).`);
+  }
+  const realBase = fs.realpathSync(base);
+  let ancestor = candidate;
+  while (!fs.existsSync(ancestor)) {
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  if (!isInsideDirectory(fs.realpathSync(ancestor), realBase)) {
+    throw new Error(`${label} resolves through a symlink outside the managed output directory (${base}).`);
+  }
+  return candidate;
+}
+
+/**
+ * Preserves legacy workspace-relative output paths while denying mutable project asset stores.
+ * @param {string} workspaceDirectory Selected project workspace.
+ * @param {string} requested Relative or absolute output path.
+ * @param {string} label Argument label.
+ * @returns {string} Safe output path.
+ */
+function resolveProjectOutputPath(workspaceDirectory, requested, label = "output_path") {
+  const workspace = path.resolve(workspaceDirectory);
+  const candidate = resolveManagedOutputPath(workspace, requested, label);
+  for (const protectedName of [".xsxb", "assets", "attachments", "audio", "attack_trails"]) {
+    if (isInsideDirectory(candidate, path.join(workspace, protectedName))) {
+      throw new Error(`${label} targets a protected project workspace path: ${protectedName}.`);
+    }
+  }
+  return candidate;
+}
+
+/**
  * MIME type for a supported SFX file.
  * @param {string} filePath Audio path.
  * @returns {string} MIME type.
@@ -257,6 +310,8 @@ module.exports = {
   requireExistingFile,
   requireFps,
   requireFrameIndex,
+  resolveManagedOutputPath,
+  resolveProjectOutputPath,
   resolveImportSource,
   sliceExtractedFrames,
 };

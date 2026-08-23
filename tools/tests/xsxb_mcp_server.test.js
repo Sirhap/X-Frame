@@ -50,7 +50,11 @@ function fixture(options = {}) {
       return framePath;
     });
   };
-  const serviceOptions = { root, extractVideoFramesImpl };
+  const serviceOptions = {
+    root,
+    extractVideoFramesImpl: options.extractVideoFramesImpl || extractVideoFramesImpl,
+  };
+  if (options.compositeTrailImpl) serviceOptions.compositeTrailImpl = options.compositeTrailImpl;
   if (!options.realCutout) {
     serviceOptions.cutoutPngFileImpl = async (inputPath, outputPath) => {
       fs.copyFileSync(inputPath, outputPath);
@@ -81,9 +85,12 @@ test("MCP tool catalog exposes the required XSXB tools in the requested order", 
     }
     assert.equal(tool.annotations.openWorldHint, false, `${tool.name} stays on the local machine`);
   }
-  assert.equal(MCP_TOOL_NAMES.length, 32);
+  assert.equal(MCP_TOOL_NAMES.length, 34);
   assert.ok(MCP_TOOL_NAMES.includes("xsxb_get_workflow"));
   assert.ok(MCP_TOOL_NAMES.includes("xsxb_create_project"));
+  assert.ok(MCP_TOOL_NAMES.includes("xsxb_list_project_revisions"));
+  assert.ok(MCP_TOOL_NAMES.includes("xsxb_restore_project_revision"));
+  assert.ok(toolDefinitions().every((tool) => tool.outputSchema.additionalProperties === false));
 });
 
 test("create_project previews and creates an unbound local project", async () => {
@@ -130,6 +137,9 @@ test("MCP transport initializes, lists tools, and returns structured tool result
   );
   assert.equal(initialized.result.serverInfo.name, "xsxb-frame-tuner");
   assert.equal(initialized.result.protocolVersion, "2025-06-18");
+  assert.deepEqual(initialized.result.capabilities.resources, { listChanged: true });
+  assert.deepEqual(initialized.result.capabilities.prompts, { listChanged: false });
+  assert.deepEqual(initialized.result.capabilities.logging, {});
   assert.match(initialized.result.instructions, /XSXB-Frame-Tuner/);
   assert.match(initialized.result.instructions, /missing capability|leave MCP|raise it/i);
   assert.equal(initialized.result.instructions, INSTRUCTIONS);
@@ -171,6 +181,9 @@ test("get_workflow returns on-demand weapon attachment and trail completion step
       ],
     );
     assert.ok(attachment.completionChecks.some((check) => /grip/i.test(check)));
+    assert.deepEqual(attachment.requiredCapabilities, ["image_input"]);
+    assert.equal(attachment.fallback, "human_review");
+    assert.equal(attachment.canAutoApplyWithoutVision, false);
 
     const trail = await current.service.call("xsxb_get_workflow", { workflow: "weapon_trail" });
     assert.ok(trail.steps.some((step) => step.tool === "xsxb_add_attack_trail"));
@@ -219,10 +232,17 @@ test("a failing tool answers with an MCP error result instead of a transport err
 
   assert.equal(called.error, undefined, "a tool failure is not a JSON-RPC error");
   assert.equal(called.result.isError, true);
-  assert.equal(called.result.structuredContent.ok, false);
-  assert.equal(called.result.structuredContent.error, "Animation not found: ghost");
-  assert.equal(called.result.structuredContent.code, "xsxb_missing_animation");
+  assert.equal(
+    called.result.structuredContent,
+    undefined,
+    "error content does not violate success outputSchema",
+  );
   assert.match(called.result.content[0].text, /ghost/u);
+  assert.deepEqual(JSON.parse(called.result.content[0].text), {
+    ok: false,
+    error: "Animation not found: ghost",
+    code: "xsxb_missing_animation",
+  });
 });
 
 test("unknown methods and malformed requests answer with JSON-RPC errors", async () => {
@@ -240,8 +260,170 @@ test("unknown methods and malformed requests answer with JSON-RPC errors", async
     { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "xsxb_nope" } },
     { tools: [], call: createXsxbMcpService().call },
   );
-  assert.equal(unknownTool.result.isError, true);
-  assert.match(unknownTool.result.structuredContent.error, /Unknown XSXB MCP tool/u);
+  assert.equal(unknownTool.error.code, -32602);
+  assert.match(unknownTool.error.message, /Unknown XSXB MCP tool/u);
+
+  const malformedArguments = await handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: { name: "xsxb_list_projects", arguments: ["not", "an", "object"] },
+    },
+    service,
+  );
+  assert.equal(malformedArguments.error.code, -32602);
+  assert.match(malformedArguments.error.message, /arguments.*object/iu);
+});
+
+test("transport preserves mixed multimodal content and exposes resources and prompts", async () => {
+  const service = {
+    tools: [{ name: "visual", inputSchema: { type: "object" } }],
+    call: async () => ({ ok: true, artifactId: "review_1" }),
+    formatToolResult: (result) => ({
+      content: [
+        { type: "text", text: JSON.stringify(result) },
+        { type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+        {
+          type: "resource_link",
+          uri: "xsxb://projects/demo/reviews/review_1/full.png",
+          name: "full.png",
+          mimeType: "image/png",
+        },
+      ],
+      structuredContent: result,
+      isError: false,
+    }),
+    resources: {
+      list: async () => ({ resources: [{ uri: "xsxb://projects/demo/reviews/review_1/full.png" }] }),
+      templates: async () => ({
+        resourceTemplates: [{ uriTemplate: "xsxb://projects/{project}/reviews/{id}/{asset}" }],
+      }),
+      read: async () => ({
+        contents: [{ uri: "xsxb://projects/demo/reviews/review_1/full.png", blob: "aGVsbG8=" }],
+      }),
+    },
+    prompts: {
+      list: async () => ({ prompts: [{ name: "weapon_attachment" }] }),
+      get: async () => ({ description: "weapon", messages: [] }),
+    },
+  };
+  const called = await handleMessage(
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "visual", arguments: {} } },
+    service,
+  );
+  assert.deepEqual(
+    called.result.content.map((entry) => entry.type),
+    ["text", "image", "resource_link"],
+  );
+  assert.equal(called.result.structuredContent.artifactId, "review_1");
+  assert.equal(
+    (await handleMessage({ jsonrpc: "2.0", id: 2, method: "resources/list" }, service)).result.resources
+      .length,
+    1,
+  );
+  assert.equal(
+    (await handleMessage({ jsonrpc: "2.0", id: 3, method: "resources/templates/list" }, service)).result
+      .resourceTemplates.length,
+    1,
+  );
+  assert.equal(
+    (
+      await handleMessage(
+        {
+          jsonrpc: "2.0",
+          id: 4,
+          method: "resources/read",
+          params: { uri: "xsxb://projects/demo/reviews/review_1/full.png" },
+        },
+        service,
+      )
+    ).result.contents[0].blob,
+    "aGVsbG8=",
+  );
+  assert.equal(
+    (await handleMessage({ jsonrpc: "2.0", id: 5, method: "prompts/list" }, service)).result.prompts[0].name,
+    "weapon_attachment",
+  );
+  assert.equal(
+    (
+      await handleMessage(
+        { jsonrpc: "2.0", id: 6, method: "prompts/get", params: { name: "weapon_attachment" } },
+        service,
+      )
+    ).result.description,
+    "weapon",
+  );
+});
+
+test("resource failures and logging level negotiation use MCP protocol responses", async () => {
+  let selectedLevel = "";
+  const service = {
+    tools: [],
+    resources: {
+      async read() {
+        throw new Error("Review artifact not found: review_missing");
+      },
+    },
+    setLogLevel(level) {
+      selectedLevel = level;
+    },
+  };
+
+  const missingUri = await handleMessage(
+    { jsonrpc: "2.0", id: 1, method: "resources/read", params: {} },
+    service,
+  );
+  assert.equal(missingUri.error.code, -32602);
+
+  const missingResource = await handleMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "resources/read",
+      params: { uri: "xsxb://projects/demo/reviews/review_missing/full.png" },
+    },
+    service,
+  );
+  assert.equal(missingResource.error.code, -32002);
+  assert.match(missingResource.error.message, /not found/u);
+
+  const configured = await handleMessage(
+    { jsonrpc: "2.0", id: 3, method: "logging/setLevel", params: { level: "notice" } },
+    service,
+  );
+  assert.deepEqual(configured.result, {});
+  assert.equal(selectedLevel, "notice");
+
+  const invalidLevel = await handleMessage(
+    { jsonrpc: "2.0", id: 4, method: "logging/setLevel", params: { level: "verbose" } },
+    service,
+  );
+  assert.equal(invalidLevel.error.code, -32602);
+});
+
+test("service logging emits sanitized MCP notifications at the negotiated threshold", async () => {
+  const current = fixture();
+  const notifications = [];
+  try {
+    current.service.setNotifier((message) => notifications.push(message));
+    current.service.setLogLevel("info");
+    await current.service.call("xsxb_list_projects", {}, { requestId: "log-probe" });
+    const completed = notifications.find(
+      (message) =>
+        message.method === "notifications/message" && message.params?.data?.event === "tool_completed",
+    );
+    assert.equal(completed.params.level, "info");
+    assert.equal(completed.params.logger, "xsxb-frame-tuner");
+    assert.deepEqual(completed.params.data, {
+      event: "tool_completed",
+      tool: "xsxb_list_projects",
+      requestId: "log-probe",
+    });
+  } finally {
+    await current.service.close();
+    current.cleanup();
+  }
 });
 
 test("notifications are executed without a response", async () => {
@@ -302,6 +484,231 @@ test("STDIO server accepts newline-delimited JSON-RPC", async () => {
   assert.equal(response.result.tools.length, MCP_TOOL_NAMES.length);
 });
 
+test("STDIO transport emits progress and cancellation bypasses an in-flight call", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const messages = [];
+  let cancelled = null;
+  let release;
+  output.on("data", (chunk) => {
+    for (const line of chunk.toString().trim().split("\n").filter(Boolean)) messages.push(JSON.parse(line));
+  });
+  const service = {
+    tools: [{ name: "slow", inputSchema: { type: "object" } }],
+    async call(_name, _args, execution) {
+      execution.progress({ progress: 1, total: 2, message: "half" });
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+      return { ok: true };
+    },
+    cancel(requestId, reason) {
+      cancelled = { requestId, reason };
+      release?.();
+      return true;
+    },
+    close: async () => {},
+  };
+  const lines = startServer({ input, output, service });
+  input.write(
+    `${JSON.stringify({
+      jsonrpc: "2.0",
+      id: 42,
+      method: "tools/call",
+      params: { name: "slow", arguments: {}, _meta: { progressToken: "progress-42" } },
+    })}\n`,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  input.write(
+    `${JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/cancelled",
+      params: { requestId: 42, reason: "stop" },
+    })}\n`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  input.end();
+  await new Promise((resolve) => lines.once("close", resolve));
+  assert.deepEqual(cancelled, { requestId: 42, reason: "stop" });
+  const progress = messages.find((message) => message.method === "notifications/progress");
+  assert.equal(progress.params.progressToken, "progress-42");
+  assert.equal(progress.params.message, "half");
+  assert.ok(messages.some((message) => message.id === 42));
+});
+
+test("nested cutout review progress remains strictly increasing", async () => {
+  const current = fixture({
+    async compositeTrailImpl(job) {
+      return {
+        framePaths: job.framePaths,
+        tempDir: null,
+        bakedTrails: false,
+        bakedAttachments: false,
+        trailIds: [],
+        attachmentIds: [],
+      };
+    },
+  });
+  const updates = [];
+  try {
+    const framePng = encodePngRgba(new Uint8ClampedArray([255, 0, 0, 255]), 1, 1);
+    await current.service.call("xsxb_import_animation", {
+      source: "items",
+      items: Array.from({ length: 5 }, (_, index) => ({
+        name: `frame_${index}.png`,
+        data: `data:image/png;base64,${framePng.toString("base64")}`,
+      })),
+      animation_id: "progress",
+    });
+    await current.service.call(
+      "xsxb_cutout",
+      { animation_id: "progress", metrics: false },
+      { requestId: "cutout-progress", progress: (update) => updates.push(update) },
+    );
+    assert.ok(updates.length > 5);
+    for (let index = 1; index < updates.length; index += 1) {
+      assert.ok(updates[index].progress > updates[index - 1].progress, JSON.stringify(updates));
+      assert.ok(updates[index].total >= updates[index].progress);
+    }
+  } finally {
+    await current.service.close();
+    current.cleanup();
+  }
+});
+
+test("real cutout worker cancellation stays responsive and rolls back frame files", async () => {
+  const current = fixture({
+    realCutout: true,
+    async compositeTrailImpl(job) {
+      return {
+        framePaths: job.framePaths,
+        tempDir: null,
+        bakedTrails: false,
+        bakedAttachments: false,
+        trailIds: [],
+        attachmentIds: [],
+      };
+    },
+  });
+  try {
+    const width = 768;
+    const height = 768;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let offset = 0; offset < rgba.length; offset += 4) {
+      rgba.set([24, 24, 24, 255], offset);
+    }
+    const framePng = encodePngRgba(rgba, width, height);
+    await current.service.call("xsxb_import_animation", {
+      source: "items",
+      items: Array.from({ length: 6 }, (_, index) => ({
+        name: `frame_${index}.png`,
+        data: `data:image/png;base64,${framePng.toString("base64")}`,
+      })),
+      animation_id: "cancel_cutout",
+    });
+    const imported = await current.service.call("xsxb_get_animation", {
+      animation_id: "cancel_cutout",
+    });
+    const framePaths = imported.animation.frames.map((frame) => frame.absolutePath);
+    const before = framePaths.map((filePath) => fs.readFileSync(filePath));
+    const pending = current.service.call(
+      "xsxb_cutout",
+      {
+        animation_id: "cancel_cutout",
+        key_color: "#000000",
+        force: true,
+        metrics: false,
+      },
+      {
+        requestId: "real-cutout-cancel",
+        progress(update) {
+          if (update.message === "cutout_write") {
+            current.service.cancel("real-cutout-cancel", "stop-real-cutout");
+          }
+        },
+      },
+    );
+    await assert.rejects(pending, /stop-real-cutout/u);
+    framePaths.forEach((filePath, index) => {
+      assert.deepEqual(fs.readFileSync(filePath), before[index]);
+    });
+  } finally {
+    await current.service.close();
+    current.cleanup();
+  }
+});
+
+test("a queued implicit-project write keeps the project selected when it entered the queue", async () => {
+  let releaseFirstComposite;
+  let signalFirstComposite;
+  let compositeCount = 0;
+  const firstCompositeStarted = new Promise((resolve) => {
+    signalFirstComposite = resolve;
+  });
+  const current = fixture({
+    async compositeTrailImpl(job) {
+      compositeCount += 1;
+      if (compositeCount === 1) {
+        signalFirstComposite();
+        await new Promise((resolve) => {
+          releaseFirstComposite = resolve;
+        });
+      }
+      return {
+        framePaths: job.framePaths,
+        tempDir: null,
+        bakedTrails: true,
+        bakedAttachments: false,
+        trailIds: ["trail"],
+        attachmentIds: [],
+      };
+    },
+  });
+  try {
+    await current.service.call("xsxb_create_project", { id: "other-project", label: "Other" });
+    const framePng = encodePngRgba(new Uint8ClampedArray([255, 0, 0, 255]), 1, 1);
+    const item = { name: "frame.png", data: `data:image/png;base64,${framePng.toString("base64")}` };
+    await current.service.call("xsxb_import_animation", {
+      project_id: "other-project",
+      source: "items",
+      items: [item],
+      animation_id: "attack",
+    });
+    await current.service.call("xsxb_import_animation", {
+      project_id: "mcp-test",
+      source: "items",
+      items: [item],
+      animation_id: "attack",
+    });
+    await current.service.call("xsxb_import_animation", {
+      project_id: "mcp-test",
+      source: "items",
+      items: [item],
+      animation_id: "attack_alt",
+    });
+    await current.service.call("xsxb_set_active_project", { project_id: "mcp-test" });
+    const blocker = current.service.call("xsxb_add_attack_trail", {
+      project_id: "mcp-test",
+      animation_id: "attack_alt",
+      dry_run: true,
+    });
+    await firstCompositeStarted;
+    const queued = current.service.call("xsxb_add_attack_trail", {
+      dry_run: true,
+    });
+    await current.service.call("xsxb_set_active_project", { project_id: "other-project" });
+    releaseFirstComposite();
+
+    const [, queuedReceipt] = await Promise.all([blocker, queued]);
+    assert.equal(queuedReceipt.projectId, "mcp-test");
+    assert.equal(queuedReceipt.segment.animationId, "attack_alt");
+  } finally {
+    releaseFirstComposite?.();
+    await current.service.close();
+    current.cleanup();
+  }
+});
+
 test("the dispatcher rejects arguments the declared schema does not allow", async () => {
   const current = fixture();
   try {
@@ -339,7 +746,7 @@ test("GIF export refuses to write outside the project workspace", async () => {
 
     await assert.rejects(
       () => current.service.call("xsxb_export_gif", { animation_id: "walk", output_path: outside }),
-      /must stay inside the XSXB workspace root/u,
+      /managed output/u,
     );
     assert.equal(fs.existsSync(outside), false, "the escaping path is never created");
     await assert.rejects(
@@ -348,7 +755,7 @@ test("GIF export refuses to write outside the project workspace", async () => {
           animation_id: "walk",
           output_path: "../../../../../../escape.gif",
         }),
-      /must stay inside the XSXB workspace root/u,
+      /managed output/u,
     );
   } finally {
     fs.rmSync(outside, { force: true });
@@ -378,6 +785,58 @@ test("oversized agent-supplied files are refused before they are read", async ()
       /too large/iu,
     );
   } finally {
+    current.cleanup();
+  }
+});
+
+test("MCP items import enforces frame budgets before project mutation", async () => {
+  const current = fixture();
+  try {
+    const framePng = encodePngRgba(new Uint8ClampedArray([255, 0, 0, 255]), 1, 1);
+    const data = `data:image/png;base64,${framePng.toString("base64")}`;
+    await assert.rejects(
+      current.service.call("xsxb_import_animation", {
+        source: "items",
+        animation_id: "too_many",
+        items: Array.from({ length: 513 }, (_, index) => ({ name: `${index}.png`, data })),
+      }),
+      /limited to 512|frame budget/iu,
+    );
+    const project = await current.service.call("xsxb_get_project");
+    assert.equal(
+      project.animations.some((animation) => animation.id === "too_many"),
+      false,
+    );
+  } finally {
+    await current.service.close();
+    current.cleanup();
+  }
+});
+
+test("MCP items import can be cancelled while materializing a bounded batch", async () => {
+  const current = fixture();
+  try {
+    const framePng = encodePngRgba(new Uint8ClampedArray([255, 0, 0, 255]), 1, 1);
+    const data = `data:image/png;base64,${framePng.toString("base64")}`;
+    const pending = current.service.call(
+      "xsxb_import_animation",
+      {
+        source: "items",
+        animation_id: "cancel_import",
+        items: Array.from({ length: 200 }, (_, index) => ({ name: `${index}.png`, data })),
+      },
+      { requestId: "cancel-items-import" },
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(current.service.cancel("cancel-items-import", "stop-items-import"), true);
+    await assert.rejects(pending, /stop-items-import/u);
+    const project = await current.service.call("xsxb_get_project");
+    assert.equal(
+      project.animations.some((animation) => animation.id === "cancel_import"),
+      false,
+    );
+  } finally {
+    await current.service.close();
     current.cleanup();
   }
 });

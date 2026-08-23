@@ -121,6 +121,7 @@ function projectDataRevision(projectStore, project) {
     paths.frameAudio,
     paths.frameImageAttachments,
     paths.attachmentAssets,
+    paths.attackTrails,
   ]) {
     hash.update(path.basename(filePath));
     hash.update(fs.readFileSync(filePath));
@@ -652,6 +653,7 @@ function attachmentFromEntry(plan, entry) {
             },
           }
         : {}),
+      ...(plan.reviewConfirmation ? { review: clone(plan.reviewConfirmation) } : {}),
     },
   };
 }
@@ -662,7 +664,10 @@ function attachmentFromEntry(plan, entry) {
  * @returns {void}
  */
 function assertPlan(plan) {
-  if (plan?.kind !== "xsxb-attachment-alignment-plan" || plan.schemaVersion !== PLAN_SCHEMA_VERSION) {
+  if (
+    plan?.kind !== "xsxb-attachment-alignment-plan" ||
+    ![PLAN_SCHEMA_VERSION, 2].includes(Number(plan.schemaVersion))
+  ) {
     throw new Error("Unsupported attachment alignment plan.");
   }
   if (!plan.planId || !plan.projectId || !plan.profileId || !plan.animationId) {
@@ -683,6 +688,9 @@ function assertPlan(plan) {
       !entry.key
     ) {
       throw new Error(`Incomplete attachment plan entry: ${entry.entryId || "unknown"}`);
+    }
+    if (Number(plan.schemaVersion) >= 2 && !/^[a-f0-9]{64}$/u.test(String(entry.ownerFrameHash || ""))) {
+      throw new Error(`Attachment plan entry is missing its owner frame hash: ${entry.entryId}`);
     }
     if (entryIds.has(String(entry.entryId)) || instanceIds.has(String(entry.instanceId))) {
       throw new Error("Attachment alignment plan contains duplicate entry identities.");
@@ -711,14 +719,64 @@ function applyAlignmentPlan(options) {
   const attachments = Array.isArray(originalAttachments) ? originalAttachments : [];
   const plannedIds = new Set(plan.entries.map((entry) => String(entry.instanceId)));
   const existingPlanned = attachments.filter((attachment) => plannedIds.has(String(attachment.id)));
-  if (existingPlanned.length === plannedIds.size) {
+  const plannedEntryById = new Map(plan.entries.map((entry) => [String(entry.instanceId), entry]));
+  const matchesAppliedEntry = (attachment) => {
+    const entry = plannedEntryById.get(String(attachment.id));
+    if (!entry) return false;
+    return (
+      String(attachment.automation?.planId || "") === String(plan.planId) &&
+      String(attachment.assetId || "") === String(entry.asset.id) &&
+      String(attachment.key || "") === String(entry.key) &&
+      Number(attachment.frame ?? attachment.metadata?.frame) === Number(entry.frameIndex) &&
+      Number(attachment.layerOrder) === Number(entry.layerOrder) &&
+      JSON.stringify(attachment.transform || {}) === JSON.stringify(entry.transform || {})
+    );
+  };
+  const replaceExisting = Number(plan.schemaVersion) >= 2 && String(plan.applyMode || "create") === "replace";
+  if (
+    replaceExisting &&
+    existingPlanned.length === plannedIds.size &&
+    existingPlanned.every(matchesAppliedEntry)
+  ) {
+    const validation = validateAlignment({ root, plan });
+    if (!validation.ok) {
+      throw new Error(`Existing replacement application is invalid: ${validation.errors.join(" ")}`);
+    }
+    return { ok: true, status: "already_applied", applied: 0, validation, godotSync: null, backups: [] };
+  }
+  if (
+    !replaceExisting &&
+    existingPlanned.length === plannedIds.size &&
+    existingPlanned.every(matchesAppliedEntry)
+  ) {
     const validation = validateAlignment({ root, plan });
     if (!validation.ok)
       throw new Error(`Existing plan application is invalid: ${validation.errors.join(" ")}`);
     return { ok: true, status: "already_applied", applied: 0, validation, godotSync: null, backups: [] };
   }
-  if (existingPlanned.length)
-    throw new Error("Plan was only partially applied; refusing to create duplicate instances.");
+  if (!replaceExisting && existingPlanned.length) {
+    throw new Error(
+      "Attachment instance collision or partial application belongs to a different plan; refusing duplicates.",
+    );
+  }
+  if (replaceExisting && existingPlanned.length !== plannedIds.size) {
+    throw new Error("Replacement target changed after planning; every planned attachment must still exist.");
+  }
+  if (replaceExisting) {
+    const previousHashes = new Map(
+      (Array.isArray(plan.previousBindings) ? plan.previousBindings : []).map((entry) => [
+        String(entry.id),
+        String(entry.hash),
+      ]),
+    );
+    for (const attachment of existingPlanned) {
+      const expectedHash = previousHashes.get(String(attachment.id));
+      const actualHash = crypto.createHash("sha256").update(JSON.stringify(attachment)).digest("hex");
+      if (!expectedHash || expectedHash !== actualHash) {
+        throw new Error(`Replacement target changed after planning: ${attachment.id}`);
+      }
+    }
+  }
   if (!options.confirmed) throw new Error("Applying a plan requires explicit confirmation (--confirm). ");
   const currentRevision = projectDataRevision(projectStore, project);
   if (currentRevision !== plan.baseRevision) {
@@ -738,6 +796,12 @@ function applyAlignmentPlan(options) {
     const digest = fileHash(entry.asset.sourcePath);
     if (digest !== String(entry.asset.assetHash))
       throw new Error(`Attachment source changed: ${entry.asset.sourcePath}`);
+    if (Number(plan.schemaVersion) >= 2) {
+      const ownerPath = resolveAssetFile(root, project, frame.path);
+      if (fileHash(ownerPath) !== String(entry.ownerFrameHash)) {
+        throw new Error(`Target frame pixels changed after planning: ${entry.displayFrame}`);
+      }
+    }
   }
   const originalAssets = projectStore.readJson(paths.attachmentAssets, []);
   const nextAssets = Array.isArray(originalAssets) ? clone(originalAssets) : [];
@@ -779,7 +843,10 @@ function applyAlignmentPlan(options) {
         });
       }
     }
-    nextAttachments = [...attachments, ...plan.entries.map((entry) => attachmentFromEntry(plan, entry))];
+    nextAttachments = [
+      ...attachments.filter((attachment) => !replaceExisting || !plannedIds.has(String(attachment.id))),
+      ...plan.entries.map((entry) => attachmentFromEntry(plan, entry)),
+    ];
     backups = [backupJson(paths.frameImageAttachments, currentRevision)];
     if (JSON.stringify(nextAssets) !== JSON.stringify(originalAssets)) {
       backups.push(backupJson(paths.attachmentAssets, currentRevision));
@@ -810,7 +877,7 @@ function applyAlignmentPlan(options) {
   }
   return {
     ok: true,
-    status: "applied",
+    status: replaceExisting ? "replaced" : "applied",
     applied: plan.entries.length,
     validation,
     godotSync,

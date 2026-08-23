@@ -110,6 +110,13 @@ test("renderContactSheet places every source frame into a shared cell grid", () 
   assert.ok(sheet.data.some((value, index) => index % 4 === 3 && value > 16));
 });
 
+test("renderContactSheet reduces oversized layouts before allocating the output buffer", () => {
+  const frames = Array.from({ length: 40 }, () => bodyFrame(16, 4, 8));
+  const sheet = renderContactSheet(frames, { cell: 2048, pad: 32, columns: 5 });
+  assert.ok(sheet.width * sheet.height <= 16_777_216);
+  assert.ok(sheet.cell < 2048);
+});
+
 /**
  * Reads one RGBA pixel from a sheet.
  * @param {{data:Uint8ClampedArray,width:number}} sheet Sheet buffer.
@@ -395,6 +402,13 @@ test("export_sheet writes a PNG inside the workspace and rejects escapes", async
       pad: 2,
       columns: 2,
     });
+    assert.match(exported.reviewArtifactId, /^review_/u);
+    assert.equal(exported.requiredCapabilities[0], "image_input");
+    const formatted = current.service.formatToolResult(exported);
+    assert.deepEqual(
+      formatted.content.map((entry) => entry.type),
+      ["text", "image", "resource_link"],
+    );
     assert.equal(exported.frameCount, 2);
     assert.equal(exported.width, 2 * 16 + 3 * 2);
     assert.deepEqual(exported.indexes, [0, 1]);
@@ -448,7 +462,7 @@ test("export_sheet writes a PNG inside the workspace and rejects escapes", async
         animation_id: "walk",
         output_path: "/tmp/outside.png",
       }),
-      /must stay inside the XSXB workspace root/,
+      /managed output/,
     );
     await assert.rejects(
       current.service.call("xsxb_export_sheet", {

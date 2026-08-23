@@ -14,7 +14,7 @@ const {
   validateAttackTrails,
 } = require("./attack_trails");
 const { deleteAnimation } = require("./animation_mutations");
-const { applyAlignmentPlan } = require("./attachment_alignment_core");
+const { applyAlignmentPlan, projectDataRevision } = require("./attachment_alignment_core");
 const { frameBoxKey, upsertEstimatedFrameBoxes } = require("./box_estimator");
 const { importAnimation, reorganizeAnimation } = require("./frame_organizer");
 const { syncGodotProject, validGodotProjectRoot } = require("./godot_sync");
@@ -27,8 +27,8 @@ const {
 } = require("./animation_tuner/public/app_attachment_utils");
 const {
   collectWorkbenchExtras,
-  cutoutFrameFiles,
   decodePngRgba,
+  decodePngRgbaBuffer,
   encodePngRgba,
   placeFramesOnCanvas,
 } = require("./xsxb_mcp_cutout");
@@ -54,11 +54,25 @@ const {
 } = require("./xsxb_mcp_visual_qa");
 const { validateToolArguments, validateToolResult } = require("./xsxb_mcp_schema");
 const { createPlanAttachmentHandler } = require("./xsxb_mcp_attachment_plan_handler");
+const { createMcpExecutionCoordinator } = require("./xsxb_mcp_execution");
+const {
+  createImportBudget,
+  materializeImportItems,
+  materializePngFiles,
+  yieldForCancellation,
+} = require("./xsxb_mcp_import_budget");
+const { runCutoutTask } = require("./xsxb_mcp_cutout_task");
+const { createReviewedPlanStore } = require("./xsxb_mcp_plan_store");
 const { createProjectHandlers } = require("./xsxb_mcp_project_handler");
+const { createPromptRegistry } = require("./xsxb_mcp_prompts");
+const { createReviewArtifactStore } = require("./xsxb_mcp_review_artifacts");
+const { createProjectMutationJournal } = require("./xsxb_mcp_revision_journal");
+const { analyzeFrameSequence, renderBoxReviewFrame } = require("./xsxb_frame_semantics");
 const { createOpenTunerHandler } = require("./xsxb_mcp_tuner_handler");
 const { deriveWeaponTrailSticks, transformAttachmentPoint } = require("./xsxb_mcp_attachment_planner");
 const { createCompositeSession } = require("./xsxb_mcp_trail_preview");
 const { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions } = require("./xsxb_mcp_tool_catalog");
+const { createMcpToolRegistry } = require("./xsxb_mcp_tool_registry");
 const { getWorkflow } = require("./xsxb_mcp_workflows");
 const {
   PNG_NAME,
@@ -68,10 +82,10 @@ const {
   isInsideDirectory,
   listPngSequence,
   mergeBox,
-  pngFileToItem,
   requireExistingFile,
   requireFps,
   requireFrameIndex,
+  resolveProjectOutputPath,
   resolveImportSource,
   sliceExtractedFrames,
 } = require("./xsxb_mcp_arguments");
@@ -84,6 +98,27 @@ const {
 } = require("./xsxb_mcp_processes");
 
 const BOX_NAMES = Object.freeze(["hurtbox", "collisionbox", "hitbox"]);
+const JOURNALED_TOOLS = new Set([
+  "xsxb_import_video",
+  "xsxb_import_animation",
+  "xsxb_update_frame_boxes",
+  "xsxb_estimate_boxes",
+  "xsxb_update_timing",
+  "xsxb_set_visual_transform",
+  "xsxb_estimate_visual",
+  "xsxb_reorganize_frames",
+  "xsxb_replace_frame",
+  "xsxb_add_attack_trail",
+  "xsxb_add_attachment",
+  "xsxb_add_sfx",
+  "xsxb_remove_binding",
+  "xsxb_delete_animation",
+  "xsxb_sync_godot",
+  "xsxb_bind_godot",
+  "xsxb_cutout",
+]);
+const GLOBAL_WRITE_TOOLS = new Set(["xsxb_create_project", "xsxb_set_active_project", "xsxb_bind_godot"]);
+const REGISTRY_READ_TOOLS = new Set(["xsxb_list_projects"]);
 
 /**
  * Reads PNG dimensions from the stable IHDR boundary without decoding pixels.
@@ -100,6 +135,18 @@ function pngHeaderDimensions(buffer) {
   const height = buffer.readUInt32BE(20);
   if (width < 1 || height < 1) throw new Error("Attachment image must have positive dimensions.");
   return { width, height };
+}
+
+function pngFileHeaderDimensions(filePath) {
+  const descriptor = fs.openSync(filePath, "r");
+  const header = Buffer.alloc(24);
+  try {
+    const bytesRead = fs.readSync(descriptor, header, 0, header.length, 0);
+    if (bytesRead < header.length) throw new Error(`PNG header is truncated: ${filePath}`);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return pngHeaderDimensions(header);
 }
 
 /**
@@ -193,6 +240,126 @@ function createXsxbMcpService(options = {}) {
   const launchTunerImpl = options.launchTunerImpl || launchTunerProcess;
   const context = { projectId: "", profileId: "", animationId: "" };
   const reviewedAttachmentPlans = new Map();
+  let transportNotifier = () => {};
+  const logSeverities = new Map(
+    ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"].map((level, index) => [
+      level,
+      index,
+    ]),
+  );
+  let minimumLogLevel = "warning";
+
+  /**
+   * Emits one structured MCP log without exposing tool arguments or local asset contents.
+   * @param {string} level MCP logging severity.
+   * @param {object} data Sanitized event data.
+   */
+  function emitLog(level, data) {
+    if (logSeverities.get(level) < logSeverities.get(minimumLogLevel)) return;
+    try {
+      transportNotifier({
+        jsonrpc: "2.0",
+        method: "notifications/message",
+        params: { level, logger: "xsxb-frame-tuner", data },
+      });
+    } catch {
+      // Logging is advisory and must never fail a project operation.
+    }
+  }
+  const reviewArtifacts = createReviewArtifactStore({
+    root,
+    projectStore,
+    onListChanged() {
+      transportNotifier({ jsonrpc: "2.0", method: "notifications/resources/list_changed" });
+    },
+  });
+  const reviewedPlanStore = createReviewedPlanStore({
+    projectStore,
+    onRemove(project, plan) {
+      if (plan.reviewArtifactId) {
+        try {
+          reviewArtifacts.setPinned(project, plan.reviewArtifactId, false);
+        } catch {
+          // Artifact retention independently cleans incomplete entries.
+        }
+      }
+    },
+  });
+  const mutationJournal = createProjectMutationJournal({
+    root,
+    projectStore,
+    onListChanged() {
+      transportNotifier({ jsonrpc: "2.0", method: "notifications/resources/list_changed" });
+    },
+  });
+  const executionCoordinator = createMcpExecutionCoordinator({
+    maxLongJobs: 2,
+    maxQueue: 32,
+    lockRoot: path.join(root, ".xsxb", "mcp-locks"),
+  });
+  const prompts = createPromptRegistry();
+  const frameSemanticsCache = new Map();
+  const frameSemanticsCacheBudget = 128 * 1024 * 1024;
+  let frameSemanticsCacheBytes = 0;
+
+  function frameSemantics(filePaths) {
+    if (filePaths.length > 512) {
+      throw new Error("Frame semantics is limited to 512 frames per analysis.");
+    }
+    const sourceBytes = filePaths.reduce((sum, filePath) => sum + fs.statSync(filePath).size, 0);
+    if (sourceBytes > 256 * 1024 * 1024) {
+      throw new Error("Frame semantics source files exceed the 256 MB analysis budget.");
+    }
+    const digest = crypto.createHash("sha256");
+    let totalPixels = 0;
+    const buffers = filePaths.map((filePath) => {
+      const buffer = fs.readFileSync(filePath);
+      digest.update(buffer);
+      const size = pngHeaderDimensions(buffer);
+      totalPixels += size.width * size.height;
+      return buffer;
+    });
+    if (totalPixels > 16 * 1024 * 1024) {
+      throw new Error("Frame semantics decoded pixels exceed the 16-megapixel analysis budget.");
+    }
+    const key = digest.digest("hex");
+    if (frameSemanticsCache.has(key)) return { ...frameSemanticsCache.get(key), reused: true };
+    const decodedFrames = buffers.map((buffer) => decodePngRgbaBuffer(buffer));
+    const semantics = analyzeFrameSequence(decodedFrames);
+    const bytes = decodedFrames.reduce((sum, frame) => sum + Number(frame.data?.byteLength || 0), 0);
+    const value = { semantics, decodedFrames, key, bytes, reused: false };
+    frameSemanticsCache.set(key, value);
+    frameSemanticsCacheBytes += bytes;
+    while (frameSemanticsCache.size > 64 || frameSemanticsCacheBytes > frameSemanticsCacheBudget) {
+      const oldestKey = frameSemanticsCache.keys().next().value;
+      const oldest = frameSemanticsCache.get(oldestKey);
+      frameSemanticsCache.delete(oldestKey);
+      frameSemanticsCacheBytes = Math.max(0, frameSemanticsCacheBytes - Number(oldest?.bytes || 0));
+    }
+    return value;
+  }
+
+  function reportExecution(args, stage, completed, total, artifact) {
+    const execution = args?.__execution;
+    if (execution?.signal?.aborted) {
+      throw execution.signal.reason || new Error("MCP request cancelled.");
+    }
+    if (!execution?.progress) return;
+    const stageProgress = Number(completed || 0);
+    const stageTotal = Math.max(1, Number(total || 1));
+    const progress = Math.max(stageProgress, Number(execution.lastReportedProgress ?? -1) + 1);
+    const normalizedTotal = Math.max(progress, stageTotal, Number(execution.lastReportedTotal || 0));
+    execution.lastReportedProgress = progress;
+    execution.lastReportedTotal = normalizedTotal;
+    execution.progress({
+      progress,
+      total: normalizedTotal,
+      message: String(stage || "working"),
+      stageProgress,
+      stageTotal,
+      ...(artifact ? { artifact } : {}),
+    });
+  }
 
   /**
    * Composites authored attack-trail meshes onto export frames.
@@ -206,8 +373,9 @@ function createXsxbMcpService(options = {}) {
   function bakeTrailsOnto(selection, framePaths, frameIndexes, durations, fps, options = {}) {
     const { project, profile, animation } = selection;
     const paths = projectStore.projectPaths(project);
-    const trails =
-      options.includeTrails === false
+    const trails = options.trailsOverride
+      ? normalizeAttackTrails(options.trailsOverride)
+      : options.includeTrails === false
         ? normalizeAttackTrails(EMPTY_ATTACK_TRAILS)
         : normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
     const rawAttachments =
@@ -231,6 +399,7 @@ function createXsxbMcpService(options = {}) {
       visualTransforms: options.visualTransforms,
       bindingKey: `${profile.id}/${animation.id || animation.name}`,
       root,
+      signal: options.signal,
     });
   }
 
@@ -288,10 +457,16 @@ function createXsxbMcpService(options = {}) {
   }
 
   function animationFor(args = {}) {
+    const previousProjectId = context.projectId;
     const project = registryProject(args.project_id || args.project, false);
     const manifest = manifestFor(project);
-    const profileId = String(args.profile_id || args.profile || context.profileId || "").trim();
-    const animationId = String(args.animation_id || args.animation || context.animationId || "").trim();
+    const sameContextProject = previousProjectId === project.id;
+    const profileId = String(
+      args.profile_id || args.profile || (sameContextProject ? context.profileId : "") || "",
+    ).trim();
+    const animationId = String(
+      args.animation_id || args.animation || (sameContextProject ? context.animationId : "") || "",
+    ).trim();
     const profiles = Array.isArray(manifest.profiles) ? manifest.profiles : [];
     const profile = profileId ? profiles.find((entry) => entry.id === profileId) : profiles[0];
     if (!profile) throw new Error(`Animation profile not found: ${profileId || "(default)"}`);
@@ -412,6 +587,74 @@ function createXsxbMcpService(options = {}) {
     return { requested: true, ...result };
   }
 
+  function mutationJournalPaths(project, toolName, args) {
+    const paths = projectStore.projectPaths(project);
+    const candidates = [...Object.values(paths)];
+    if (toolName === "xsxb_bind_godot") candidates.push(projectStore.path);
+    const explicitMediaPaths = [];
+    const workspaceDir = projectStore.projectWorkspaceDir(project);
+    if (toolName === "xsxb_import_video" || toolName === "xsxb_import_animation") {
+      explicitMediaPaths.push(path.join(workspaceDir, "assets"));
+    }
+    if (toolName === "xsxb_add_attachment") {
+      explicitMediaPaths.push(path.join(workspaceDir, "attachments"));
+    }
+    if (toolName === "xsxb_add_sfx") explicitMediaPaths.push(path.join(workspaceDir, "audio"));
+    if (toolName === "xsxb_add_attack_trail") {
+      explicitMediaPaths.push(path.join(workspaceDir, "attack_trails"));
+    }
+    if (
+      new Set(["xsxb_cutout", "xsxb_replace_frame", "xsxb_reorganize_frames", "xsxb_delete_animation"]).has(
+        toolName,
+      )
+    ) {
+      try {
+        const selection = animationFor(args);
+        if (toolName === "xsxb_reorganize_frames" || toolName === "xsxb_delete_animation") {
+          const sourceDirectory = path.resolve(root, String(selection.animation.source || ""));
+          if (isInsideDirectory(sourceDirectory, workspaceDir)) {
+            explicitMediaPaths.push(sourceDirectory);
+          }
+        } else {
+          candidates.push(...collectFramePaths(project, selection.animation));
+        }
+      } catch {
+        // The handler reports missing animation/frame errors with its normal actionable receipt.
+      }
+    }
+    const managedFiles = [...new Set(candidates)].filter((filePath) => {
+      try {
+        return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+      } catch {
+        return false;
+      }
+    });
+    return [...new Set([...managedFiles, ...explicitMediaPaths])];
+  }
+
+  function withReviewArtifact(receipt, options = {}) {
+    if (options.skip === true) return receipt;
+    const artifact = reviewArtifacts.create({
+      project: options.project,
+      kind: options.kind,
+      sourcePath: options.sourcePath,
+      thumbnailSourcePath: options.thumbnailSourcePath,
+      revision: options.revision || projectDataRevision(projectStore, options.project),
+      parameters: options.parameters || {},
+      pinned: options.pinned === true,
+    });
+    return {
+      ...receipt,
+      reviewArtifactId: artifact.artifactId,
+      reviewArtifactHash: artifact.artifactHash,
+      reviewArtifactUri: artifact.uri,
+      reviewPolicy: artifact.reviewPolicy,
+      requiredCapabilities: ["image_input"],
+      fallback: "human_review",
+      canAutoApplyWithoutVision: false,
+    };
+  }
+
   async function listProjects() {
     const registry = projectStore.readRegistry();
     return {
@@ -439,6 +682,7 @@ function createXsxbMcpService(options = {}) {
   }
 
   async function importVideo(args = {}) {
+    reportExecution(args, "validate_source", 0, 4);
     const videoPath = path.resolve(String(args.file_path || args.path || ""));
     if (!fs.existsSync(videoPath) || !fs.statSync(videoPath).isFile()) {
       throw new Error(`Video file not found: ${videoPath}`);
@@ -465,17 +709,24 @@ function createXsxbMcpService(options = {}) {
     const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-mcp-video-"));
     try {
       const extracted = sliceExtractedFrames(
-        await extractVideoFramesImpl(videoPath, temporaryDirectory, args),
+        await extractVideoFramesImpl(videoPath, temporaryDirectory, {
+          ...args,
+          signal: args.__execution?.signal,
+        }),
         args,
       );
+      reportExecution(args, "extract_frames", 1, 4);
       if (!extracted.paths.length) throw new Error("Video extraction produced no PNG frames.");
+      const items = await materializePngFiles(extracted.paths, {
+        signal: args.__execution?.signal,
+        onProgress(completed, total) {
+          reportExecution(args, "materialize_frames", completed, total);
+        },
+      });
+      await yieldForCancellation(args.__execution?.signal);
       if (replaced) {
         deleteAnimation({ root, projectStore, project, profileId, animationId: baseAnimationId });
       }
-      const items = extracted.paths.map((framePath) => ({
-        name: path.basename(framePath),
-        data: `data:image/png;base64,${fs.readFileSync(framePath).toString("base64")}`,
-      }));
       const imported = importAnimation({
         root,
         projectStore,
@@ -487,7 +738,9 @@ function createXsxbMcpService(options = {}) {
         animationType: "actor",
         fps: requireFps(args.fps),
         items,
+        signal: args.__execution?.signal,
       });
+      reportExecution(args, "import_frames", 3, 4);
       context.projectId = project.id;
       context.profileId = profileId;
       context.animationId = animationId;
@@ -495,6 +748,7 @@ function createXsxbMcpService(options = {}) {
       const validation = booleanFlag(args.validate)
         ? validateImport({ project: project.id }, { root, projectStore })
         : { requested: false, ok: null, errors: [], warnings: [], summary: {} };
+      reportExecution(args, "complete", 4, 4, imported.targetDir);
       return {
         projectId: project.id,
         profileId,
@@ -530,7 +784,7 @@ function createXsxbMcpService(options = {}) {
     return animationId;
   }
 
-  function importPngItems(args, items, sourceLabel) {
+  async function importPngItems(args, items, sourceLabel) {
     if (!items.length) throw new Error(`No PNG frames provided for ${sourceLabel} import.`);
     const syncRequested = booleanFlag(args.sync);
     const project = registryProject(args.project_id || args.project, syncRequested);
@@ -551,6 +805,7 @@ function createXsxbMcpService(options = {}) {
       sourceLabel === "png_sequence" ? "png_sequence" : "imported",
       booleanFlag(args.replace),
     );
+    await yieldForCancellation(args.__execution?.signal);
     if (replaced) {
       deleteAnimation({ root, projectStore, project, profileId, animationId });
     }
@@ -565,6 +820,7 @@ function createXsxbMcpService(options = {}) {
       animationType: "actor",
       fps: requireFps(args.fps),
       items,
+      signal: args.__execution?.signal,
     });
     context.projectId = project.id;
     context.profileId = profileId;
@@ -595,8 +851,14 @@ function createXsxbMcpService(options = {}) {
     if (source === "png_sequence") {
       const directory = path.resolve(String(args.directory || args.file_path || args.path || ""));
       const sliced = sliceExtractedFrames(listPngSequence(directory), args);
+      const items = await materializePngFiles(sliced.paths, {
+        signal: args.__execution?.signal,
+        onProgress(completed, total) {
+          reportExecution(args, "materialize_frames", completed, total);
+        },
+      });
       return {
-        ...importPngItems(args, sliced.paths.map(pngFileToItem), "png_sequence"),
+        ...(await importPngItems(args, items, "png_sequence")),
         startFrame: sliced.startFrame,
         endFrame: sliced.endFrame,
         sourceFrameCount: sliced.extractedCount,
@@ -604,17 +866,15 @@ function createXsxbMcpService(options = {}) {
     }
     if (source === "items") {
       const items = Array.isArray(args.items) ? args.items : [];
-      const normalized = items.map((item, index) => {
-        if (item?.data) return { name: item.name || `frame_${index + 1}.png`, data: item.data };
-        const filePath = path.resolve(String(item?.path || item?.file_path || ""));
-        if (!filePath || !fs.existsSync(filePath)) {
-          throw new Error(`Import item ${index + 1} needs PNG data or an existing file path.`);
-        }
-        return pngFileToItem(filePath);
+      const normalized = await materializeImportItems(items, {
+        signal: args.__execution?.signal,
+        onProgress(completed, total) {
+          reportExecution(args, "materialize_items", completed, total);
+        },
       });
       const sliced = sliceExtractedFrames(normalized, args);
       return {
-        ...importPngItems(args, sliced.paths, "items"),
+        ...(await importPngItems(args, sliced.paths, "items")),
         startFrame: sliced.startFrame,
         endFrame: sliced.endFrame,
         sourceFrameCount: sliced.extractedCount,
@@ -632,14 +892,21 @@ function createXsxbMcpService(options = {}) {
       if (!animations.length) throw new Error(`No PNG animations found in ${filePath}`);
       const profileId = slug(args.profile_id || args.profile || DEFAULT_PROFILE_ID, DEFAULT_PROFILE_ID);
       const imported = [];
+      const budget = createImportBudget();
       for (const animation of animations) {
         const sliced = sliceExtractedFrames(
-          animation.frames.map((frame) => pngFileToItem(frame.source)),
+          animation.frames.map((frame) => frame.source),
           args,
         );
-        const items = sliced.paths;
+        const items = await materializePngFiles(sliced.paths, {
+          signal: args.__execution?.signal,
+          budget,
+          onProgress(completed, total) {
+            reportExecution(args, "materialize_spriteframes", completed, total);
+          },
+        });
         imported.push(
-          importPngItems(
+          await importPngItems(
             {
               ...args,
               profile_id: profileId,
@@ -780,6 +1047,26 @@ function createXsxbMcpService(options = {}) {
       }
       return absolute;
     });
+    let decodedFrames = [];
+    let semanticWarning = null;
+    let semantics = {
+      frames: [],
+      provenance: { body: "unavailable", sourceFx: "unavailable" },
+    };
+    try {
+      const semanticResult = frameSemantics(frameFiles);
+      decodedFrames = semanticResult.decodedFrames;
+      semantics = semanticResult.semantics;
+      semantics.reused = semanticResult.reused;
+      if (
+        semantics.provenance?.body === "single_frame_fallback" ||
+        semantics.frames.some((frame) => Number(frame.confidence || 0) < 0.7)
+      ) {
+        semanticWarning = "Frame semantics confidence is low; visually review body and FX separation.";
+      }
+    } catch (error) {
+      semanticWarning = `Frame semantics unavailable: ${error.message}`;
+    }
     const replace = booleanFlag(args.replace);
     const dryRun = booleanFlag(args.dry_run);
     const animationId = String(animation.id || animation.name);
@@ -795,6 +1082,7 @@ function createXsxbMcpService(options = {}) {
     );
     upsertEstimatedFrameBoxes(tuning, profile.id, { ...animation, id: animationId }, frameFiles, {
       replace,
+      semanticFrames: semantics.frames,
     });
     let attachmentHitboxFrames = 0;
     const sourceAttachmentId = String(args.attachment_id || "").trim();
@@ -841,13 +1129,18 @@ function createXsxbMcpService(options = {}) {
         const width = Math.max(1, Number(args.hitbox_width ?? Math.max(8, length * 0.22)) || 1);
         const key = keyFor(frame);
         const current = tuning.frame_box_overrides[key] || {};
+        const explicitActiveFrames = Array.isArray(args.active_frames)
+          ? new Set(args.active_frames.map(Number))
+          : null;
         tuning.frame_box_overrides[key] = {
           ...current,
           hitbox: {
             offset: { x: (grip.x + tip.x) / 2, y: (grip.y + tip.y) / 2 },
             size: { x: length + padding * 2, y: width },
             rotation: (Math.atan2(tip.y - grip.y, tip.x - grip.x) * 180) / Math.PI,
-            enabled: true,
+            enabled: explicitActiveFrames
+              ? explicitActiveFrames.has(frame)
+              : current.hitbox?.enabled !== false,
           },
         };
         attachmentHitboxFrames += 1;
@@ -865,7 +1158,7 @@ function createXsxbMcpService(options = {}) {
       };
     });
     if (!dryRun) projectStore.writeJson(paths.tuning, tuning);
-    return {
+    const receipt = {
       projectId: project.id,
       profileId: profile.id,
       animationId,
@@ -876,9 +1169,43 @@ function createXsxbMcpService(options = {}) {
       dryRun,
       sourceAttachmentId: sourceAttachmentId || null,
       attachmentHitboxFrames,
+      semanticProvenance: semantics.provenance,
+      semanticFrames: semantics.frames,
+      semanticCacheReused: semantics.reused === true,
+      warnings: semanticWarning ? [semanticWarning] : [],
       frames: results,
       sync: synchronize(project, dryRun ? false : booleanFlag(args.sync)),
     };
+    if (!dryRun || !decodedFrames.length) return receipt;
+    const reviewFrames = decodedFrames.map((frame, index) =>
+      renderBoxReviewFrame(
+        frame,
+        results[index].boxes || {},
+        String(animation.anchorMode || "canvas_bottom_center"),
+      ),
+    );
+    const review = renderContactSheet(reviewFrames, {
+      cell: 220,
+      pad: 8,
+      columns: Math.min(8, reviewFrames.length),
+      startIndex: 0,
+      markFrame: 0,
+      grid: true,
+      anchorMode: String(animation.anchorMode || "canvas_bottom_center"),
+    });
+    const reviewPath = path.join(
+      projectStore.projectWorkspaceDir(project),
+      "exports",
+      `${profile.id}_${animationId}_boxes_review.png`,
+    );
+    fs.mkdirSync(path.dirname(reviewPath), { recursive: true });
+    fs.writeFileSync(reviewPath, encodePngRgba(review.data, review.width, review.height));
+    return withReviewArtifact(receipt, {
+      project,
+      kind: "box_estimate",
+      sourcePath: reviewPath,
+      parameters: { replace, sourceAttachmentId: sourceAttachmentId || null },
+    });
   }
 
   function updateTiming(args = {}) {
@@ -1361,15 +1688,28 @@ function createXsxbMcpService(options = {}) {
     const external = resolveExternalLoopFrames(args);
     const source = external?.source || "animation";
     let filePaths = external?.filePaths || [];
+    let selectedAnimation = null;
     const payload = { source, applied: false };
     if (!external) {
       const selection = animationFor(args);
+      selectedAnimation = selection;
       payload.projectId = selection.project.id;
       payload.profileId = selection.profile.id;
       payload.animationId = String(selection.animation.id || selection.animation.name);
       filePaths = collectFramePaths(selection.project, selection.animation);
     }
     const measured = measureFrameFiles(filePaths);
+    let semanticSummary = null;
+    try {
+      const semanticResult = frameSemantics(filePaths);
+      semanticSummary = {
+        provenance: semanticResult.semantics.provenance,
+        frames: semanticResult.semantics.frames,
+        reused: semanticResult.reused,
+      };
+    } catch {
+      semanticSummary = null;
+    }
     const found = findMotionWindow(
       measured.map((frame) => ({
         opaque: frame.opaque,
@@ -1394,7 +1734,7 @@ function createXsxbMcpService(options = {}) {
       : [
           "Frames are almost fully opaque, so motion bounds are unreliable. Run xsxb_cutout before applying this order.",
         ];
-    return {
+    const receipt = {
       ...payload,
       frameCount: filePaths.length,
       preset,
@@ -1409,6 +1749,9 @@ function createXsxbMcpService(options = {}) {
       analysisReliable,
       warnings,
       activity: found.activity,
+      semanticProvenance: semanticSummary?.provenance,
+      semanticFrames: semanticSummary?.frames,
+      semanticCacheReused: semanticSummary?.reused === true,
       frames: measured.map((frame) => ({
         index: frame.index,
         bodyHeight: frame.bodyHeight,
@@ -1416,6 +1759,30 @@ function createXsxbMcpService(options = {}) {
         cy: frame.cy,
       })),
     };
+    if (!selectedAnimation) return receipt;
+    const previewFrames = filePaths.map((filePath) => decodePngRgba(filePath));
+    const preview = renderContactSheet(previewFrames, {
+      cell: 220,
+      pad: 8,
+      columns: Math.min(8, previewFrames.length),
+      startIndex: 0,
+      markFrame: start,
+      grid: true,
+      anchorMode: String(selectedAnimation.animation.anchorMode || "canvas_bottom_center"),
+    });
+    const previewPath = path.join(
+      projectStore.projectWorkspaceDir(selectedAnimation.project),
+      "exports",
+      `${selectedAnimation.profile.id}_${selectedAnimation.animation.id || selectedAnimation.animation.name}_motion_review.png`,
+    );
+    fs.mkdirSync(path.dirname(previewPath), { recursive: true });
+    fs.writeFileSync(previewPath, encodePngRgba(preview.data, preview.width, preview.height));
+    return withReviewArtifact(receipt, {
+      project: selectedAnimation.project,
+      kind: "motion_window",
+      sourcePath: previewPath,
+      parameters: { rawStart: found.start, rawEnd: found.end, start, end, preset },
+    });
   }
 
   /**
@@ -1533,10 +1900,43 @@ function createXsxbMcpService(options = {}) {
   }
 
   function setActiveProject(args = {}) {
+    const previousProjectId = context.projectId;
     const project = registryProject(args.project_id || args.project, false);
     projectStore.setActiveProject(project.id);
     context.projectId = project.id;
+    if (previousProjectId !== project.id) {
+      context.profileId = "";
+      context.animationId = "";
+    }
     return { activeProjectId: project.id, project: projectStore.projectForClient(project) };
+  }
+
+  function listProjectRevisions(args = {}) {
+    const project = registryProject(args.project_id || args.project, false);
+    const limit = Math.max(1, Math.min(100, Number(args.limit || 20)));
+    const revisions = mutationJournal.list(project).slice(0, limit);
+    return {
+      projectId: project.id,
+      count: revisions.length,
+      revisions,
+    };
+  }
+
+  async function restoreProjectRevision(args = {}) {
+    const project = registryProject(args.project_id || args.project, false);
+    if (booleanFlag(args.dry_run)) {
+      return mutationJournal.previewRestore(project, String(args.revision_id || ""));
+    }
+    const restored = await mutationJournal.restore({
+      project,
+      revisionId: String(args.revision_id || ""),
+      restoreToken: String(args.restore_token || ""),
+      confirm: booleanFlag(args.confirm),
+    });
+    return {
+      ...restored,
+      sync: synchronize(project, booleanFlag(args.sync)),
+    };
   }
 
   function bindGodot(args = {}) {
@@ -1560,6 +1960,7 @@ function createXsxbMcpService(options = {}) {
   }
 
   async function cutoutAnimation(args = {}) {
+    reportExecution(args, "prepare_cutout", 0, 4);
     const selection = animationFor(args);
     const { project, profile, animation } = selection;
     const explicitCanvas = Number.isInteger(Number(args.output_width || args.canvas))
@@ -1627,6 +2028,7 @@ function createXsxbMcpService(options = {}) {
     };
     if (cutoutPngFileImpl) {
       for (const job of jobs) {
+        reportExecution(args, "cutout_frames", processedFrameCount, jobs.length);
         const temporaryPath = `${job.absolutePath}.cutout-tmp.png`;
         await cutoutPngFileImpl(job.absolutePath, temporaryPath, {
           ...collectWorkbenchExtras(args),
@@ -1645,19 +2047,24 @@ function createXsxbMcpService(options = {}) {
         }
       }
     } else {
-      receipt = cutoutFrameFiles(
-        jobs.map((job) => job.absolutePath),
-        {
+      receipt = await runCutoutTask({
+        filePaths: jobs.map((job) => job.absolutePath),
+        options: {
           ...collectWorkbenchExtras(args),
           keyColor,
           outputWidth,
           outputHeight,
           force: booleanFlag(args.force),
           frameScales: visualScales,
-          metricsImpl: booleanFlag(args.metrics, true) ? measureFrame : undefined,
         },
-      );
+        metrics: booleanFlag(args.metrics, true),
+        signal: args.__execution?.signal,
+        onProgress(update) {
+          reportExecution(args, `cutout_${update.stage}`, update.completed, update.total);
+        },
+      });
       processedFrameCount = receipt.processedFrameCount;
+      reportExecution(args, "cutout_frames", jobs.length, jobs.length);
       jobs.forEach((job, order) => {
         if (!stored?.frames?.[job.index]) return;
         const size = receipt.frameSizes?.[order];
@@ -1705,7 +2112,27 @@ function createXsxbMcpService(options = {}) {
       boxesReestimated = jobs.length;
     }
     const boxesStale = processedFrameCount > 0 && staleBoxFrameCount > 0 && !shouldReestimateBoxes;
-    return {
+    reportExecution(args, "render_review", 3, 4);
+    let reviewSheet = null;
+    let reviewWarning = null;
+    try {
+      reviewSheet = await exportSheet({
+        project_id: project.id,
+        profile_id: profile.id,
+        animation_id: animationId,
+        output_path: path.join(
+          projectStore.projectWorkspaceDir(project),
+          "exports",
+          `${profile.id}_${animationId}_cutout_review.png`,
+        ),
+        include_attachments: false,
+        include_trails: false,
+        __skip_review_artifact: true,
+      });
+    } catch (error) {
+      reviewWarning = `Cutout review artifact unavailable: ${error.message}`;
+    }
+    const result = {
       projectId: project.id,
       profileId: profile.id,
       animationId,
@@ -1752,6 +2179,17 @@ function createXsxbMcpService(options = {}) {
         : undefined,
       sync: synchronize(project, booleanFlag(args.sync)),
     };
+    if (reviewWarning) {
+      result.warnings = [...(result.warnings || []), reviewWarning];
+      return result;
+    }
+    reportExecution(args, "complete", 4, 4, reviewSheet.outputPath);
+    return withReviewArtifact(result, {
+      project,
+      kind: "cutout_review",
+      sourcePath: reviewSheet.outputPath,
+      parameters: { processedFrameCount, boxesStale, boxesReestimated },
+    });
   }
 
   function summarizeAttackTrailSticks(sticks) {
@@ -1988,7 +2426,7 @@ function createXsxbMcpService(options = {}) {
     ];
     if (!dryRun) projectStore.writeJson(paths.attackTrails, normalized);
     const written = normalized.bindings[bindingKey].find((entry) => entry.id === segment.id);
-    return {
+    const receipt = {
       projectId: project.id,
       dryRun,
       applied: !dryRun,
@@ -2003,6 +2441,57 @@ function createXsxbMcpService(options = {}) {
       warnings,
       sync: synchronize(project, dryRun ? false : booleanFlag(args.sync, true)),
     };
+    if (!dryRun) return receipt;
+    const framePaths = collectFramePaths(project, animation);
+    const indexes = framePaths.map((_, index) => index);
+    const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+    const baked = await bakeTrailsOnto(
+      selection,
+      framePaths,
+      indexes,
+      playbackDurations(
+        tuning,
+        profile.id,
+        String(animation.id || animation.name),
+        framePaths.length,
+        Number(animation.fps || 12),
+      ),
+      Number(animation.fps || 12),
+      {
+        trailsOverride: normalized,
+        includeAttachments: true,
+        includeTrails: true,
+        signal: args.__execution?.signal,
+      },
+    );
+    let reviewFrames;
+    try {
+      reviewFrames = baked.framePaths.map((filePath) => decodePngRgba(filePath));
+    } finally {
+      if (baked.tempDir) fs.rmSync(baked.tempDir, { recursive: true, force: true });
+    }
+    const review = renderContactSheet(reviewFrames, {
+      cell: 220,
+      pad: 8,
+      columns: Math.min(8, reviewFrames.length),
+      startIndex: 0,
+      markFrame: startFrame,
+      grid: true,
+      anchorMode: String(animation.anchorMode || "canvas_bottom_center"),
+    });
+    const reviewPath = path.join(
+      projectStore.projectWorkspaceDir(project),
+      "exports",
+      `${profile.id}_${animation.id || animation.name}_${segment.id}_trail_review.png`,
+    );
+    fs.mkdirSync(path.dirname(reviewPath), { recursive: true });
+    fs.writeFileSync(reviewPath, encodePngRgba(review.data, review.width, review.height));
+    return withReviewArtifact(receipt, {
+      project,
+      kind: "attack_trail",
+      sourcePath: reviewPath,
+      parameters: { segmentId: segment.id, sourceAttachmentId: receipt.sourceAttachmentId },
+    });
   }
 
   async function addAttachment(args = {}) {
@@ -2016,13 +2505,56 @@ function createXsxbMcpService(options = {}) {
       }
       const submittedPlan = args.plan;
       const requestedPlanId = String(args.plan_id || submittedPlan?.planId || "");
-      const plan = reviewedAttachmentPlans.get(requestedPlanId);
+      let plan = null;
+      if (requestedPlanId) {
+        if (Number(submittedPlan?.schemaVersion) === 1) {
+          plan = reviewedAttachmentPlans.get(requestedPlanId) || submittedPlan;
+        } else {
+          plan = reviewedPlanStore.load(project, requestedPlanId);
+        }
+        reviewedAttachmentPlans.set(requestedPlanId, plan);
+      }
       if (!plan || (submittedPlan && JSON.stringify(submittedPlan) !== JSON.stringify(plan))) {
         throw new Error("Attachment plan changed after visual review; generate and review a new plan.");
       }
       const absolute = requireExistingFile(args.file_path || plan.sourcePath, "Attachment image");
       if (!booleanFlag(args.confirm)) {
         throw new Error("Applying an attachment plan requires explicit confirmation.");
+      }
+      const legacyWarnings = [];
+      let reviewConfirmation = null;
+      if (Number(plan.schemaVersion) >= 2) {
+        const review = args.review_confirmation;
+        if (!review || typeof review !== "object") {
+          throw new Error("review_confirmation is required for v2 attachment plans.");
+        }
+        if (String(review.artifact_id || "") !== String(plan.reviewArtifactId || "")) {
+          throw new Error("review_confirmation artifact_id does not match the reviewed plan artifact.");
+        }
+        if (!new Set(["multimodal", "human"]).has(String(review.mode || ""))) {
+          throw new Error('review_confirmation mode must be "multimodal" or "human".');
+        }
+        if (String(review.decision || "") !== "approve") {
+          throw new Error('review_confirmation decision must be "approve".');
+        }
+        const artifact = reviewArtifacts.get(project, plan.reviewArtifactId);
+        if (String(artifact.artifactHash || "") !== String(plan.reviewArtifactHash || "")) {
+          throw new Error("Reviewed attachment artifact hash changed after planning.");
+        }
+        if (String(artifact.thumbnail?.hash || "") !== String(plan.reviewThumbnailHash || "")) {
+          throw new Error("Reviewed attachment thumbnail changed after planning.");
+        }
+        reviewConfirmation = {
+          artifactId: String(review.artifact_id),
+          mode: String(review.mode),
+          decision: "approve",
+          notes: String(review.notes || ""),
+          reviewedAt: new Date().toISOString(),
+        };
+      } else {
+        legacyWarnings.push(
+          "Legacy v1 attachment plan applied without an artifact-bound review confirmation.",
+        );
       }
       if (
         String(plan.projectId || "") !== String(project.id) ||
@@ -2038,24 +2570,27 @@ function createXsxbMcpService(options = {}) {
       if (sourceHash !== String(plan.sourceHash || "")) {
         throw new Error("Attachment source changed after planning.");
       }
+      const applicablePlan = reviewConfirmation ? { ...plan, reviewConfirmation } : plan;
       const applied = applyAlignmentPlan({
         root,
-        plan,
+        plan: applicablePlan,
         confirmed: true,
         syncGodot: booleanFlag(args.sync, true),
       });
+      if (plan.reviewArtifactId) reviewArtifacts.setPinned(project, plan.reviewArtifactId, false);
       const paths = projectStore.projectPaths(project);
       const persisted = projectStore.readJson(paths.frameImageAttachments, []);
       const bindings = (Array.isArray(persisted) ? persisted : []).filter(
         (entry) => String(entry?.automation?.planId || "") === String(plan.planId),
       );
-      return {
+      const receiptMode = String(
+        args.receipt_mode || (Number(plan.schemaVersion) >= 2 || args.plan_id ? "compact" : "full"),
+      );
+      const receipt = {
         projectId: project.id,
         planId: String(plan.planId),
         status: applied.status,
         updatedFrames: bindings.length,
-        bindings,
-        binding: bindings.at(-1),
         bindingCount: Array.isArray(persisted) ? persisted.length : 0,
         requiresVisualReview: plan.requiresVisualReview === true,
         previewPath: String(plan.previewPath || ""),
@@ -2064,10 +2599,19 @@ function createXsxbMcpService(options = {}) {
         validation: applied.validation,
         backups: applied.backups,
         revision: applied.revision,
+        warnings: legacyWarnings,
+        reviewArtifactId: String(plan.reviewArtifactId || ""),
+        reviewArtifactHash: String(plan.reviewArtifactHash || ""),
+        syncPending: applied.godotSync?.ok === false,
         sync: applied.godotSync
           ? { requested: true, ...applied.godotSync }
           : { requested: booleanFlag(args.sync, true), ok: null },
       };
+      if (receiptMode === "full") {
+        receipt.bindings = bindings;
+        receipt.binding = bindings.at(-1);
+      }
+      return receipt;
     }
     if (!args.file_path) throw new Error('missing required argument "file_path" for manual attachment.');
     const batch = Array.isArray(args.frames) && args.frames.length > 0;
@@ -2420,6 +2964,7 @@ function createXsxbMcpService(options = {}) {
   }
 
   async function exportGif(args = {}) {
+    reportExecution(args, "prepare_gif", 0, 3);
     const { project, profile, animation } = animationFor(args);
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot export an animation without frames.");
@@ -2463,22 +3008,18 @@ function createXsxbMcpService(options = {}) {
     if (!framePaths.length) {
       throw new Error("No exportable frames in the selected range (all frames are disabled).");
     }
-    const exportRoot = projectStore.projectWorkspaceDir(project);
+    const workspaceRoot = projectStore.projectWorkspaceDir(project);
     let outputPath;
     if (args.output_path) {
-      // A relative path is anchored to the project workspace, and an absolute one
-      // has to stay under the XSXB root. Frame paths are already sandboxed, and an
-      // export must not be the one tool that creates directories anywhere on disk.
       const requested = String(args.output_path);
-      outputPath = path.resolve(exportRoot, requested);
-      if (!/\.gif$/i.test(outputPath)) throw new Error("output_path must end with .gif.");
-      if (!isInsideDirectory(outputPath, root)) {
-        throw new Error(
-          `output_path must stay inside the XSXB workspace root (${root}). Received: ${requested}`,
-        );
-      }
+      if (!/\.gif$/i.test(requested)) throw new Error("output_path must end with .gif.");
+      outputPath = resolveProjectOutputPath(workspaceRoot, requested, "output_path");
     } else {
-      outputPath = path.join(exportRoot, "exports", `${profile.id}_${animationId}.gif`);
+      outputPath = resolveProjectOutputPath(
+        workspaceRoot,
+        path.join("exports", `${profile.id}_${animationId}.gif`),
+        "output_path",
+      );
     }
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     const appliedVisual = selectedTransforms.some(
@@ -2529,8 +3070,10 @@ function createXsxbMcpService(options = {}) {
           includeTrails: booleanFlag(args.include_trails, true),
           visualScales: selectedScales,
           visualTransforms: selectedTransforms,
+          signal: args.__execution?.signal,
         },
       );
+      reportExecution(args, "composite_gif", 1, 3);
       bakedTrails = baked.bakedTrails === true;
       trailIds = baked.trailIds || [];
       bakedAttachments = baked.bakedAttachments === true;
@@ -2539,13 +3082,35 @@ function createXsxbMcpService(options = {}) {
         encodePaths = baked.framePaths;
         trailTemp = baked.tempDir;
       }
-      await encodeGifImpl({ framePaths: encodePaths, durations, fps, outputPath });
+      await encodeGifImpl({
+        framePaths: encodePaths,
+        durations,
+        fps,
+        outputPath,
+        signal: args.__execution?.signal,
+      });
+      reportExecution(args, "encode_gif", 2, 3, outputPath);
     } finally {
       if (visualTemp) fs.rmSync(visualTemp, { recursive: true, force: true });
       if (trailTemp) fs.rmSync(trailTemp, { recursive: true, force: true });
     }
     if (!fs.existsSync(outputPath)) throw new Error("GIF export produced no output file.");
-    return {
+    let reviewSheet = null;
+    let reviewWarning = null;
+    if (args.__skip_review_artifact !== true) {
+      const reviewPath = outputPath.replace(/\.gif$/iu, "_review.png");
+      try {
+        reviewSheet = await exportSheet({
+          ...args,
+          output_path: reviewPath,
+          mark_frame: startFrame,
+          __skip_review_artifact: true,
+        });
+      } catch (error) {
+        reviewWarning = `GIF review artifact unavailable: ${error.message}`;
+      }
+    }
+    const receipt = {
       projectId: project.id,
       profileId: profile.id,
       animationId,
@@ -2563,7 +3128,28 @@ function createXsxbMcpService(options = {}) {
       frameScales: appliedVisual ? selectedScales : undefined,
       totalDurationMs: Math.round(durations.reduce((sum, value) => sum + value, 0) * 1000),
       bytes: fs.statSync(outputPath).size,
+      warnings: reviewWarning ? [reviewWarning] : [],
     };
+    if (!reviewSheet) {
+      reportExecution(args, "complete", 3, 3, outputPath);
+      return receipt;
+    }
+    const reviewed = withReviewArtifact(receipt, {
+      project,
+      kind: "animation_gif",
+      sourcePath: outputPath,
+      thumbnailSourcePath: reviewSheet?.outputPath,
+      parameters: {
+        startFrame,
+        endFrame,
+        fps,
+        includeAttachments: args.include_attachments !== false,
+        includeTrails: args.include_trails !== false,
+      },
+      skip: args.__skip_review_artifact === true,
+    });
+    reportExecution(args, "complete", 3, 3, outputPath);
+    return reviewed;
   }
 
   /**
@@ -2572,6 +3158,7 @@ function createXsxbMcpService(options = {}) {
    * @returns {object} Sheet receipt.
    */
   async function exportSheet(args = {}) {
+    reportExecution(args, "prepare_sheet", 0, 3);
     const { project, profile, animation } = animationFor(args);
     const frames = animation.frames || [];
     if (!frames.length) throw new Error("Cannot export a sheet without frames.");
@@ -2631,10 +3218,21 @@ function createXsxbMcpService(options = {}) {
         includeTrails: booleanFlag(args.include_trails, true),
         visualScales: selectedScales,
         visualTransforms: selectedTransforms,
+        signal: args.__execution?.signal,
       },
     );
+    reportExecution(args, "composite_sheet", 1, 3);
     let selected;
     try {
+      const decodedPixels = baked.framePaths.reduce((sum, filePath) => {
+        const dimensions = pngFileHeaderDimensions(filePath);
+        return sum + dimensions.width * dimensions.height;
+      }, 0);
+      if (decodedPixels > 32 * 1024 * 1024) {
+        throw new Error(
+          "Sheet source frames exceed the 32-megapixel decode budget; export a smaller frame range.",
+        );
+      }
       selected = baked.framePaths.map((filePath) => decodePngRgba(filePath));
     } finally {
       if (baked.tempDir) fs.rmSync(baked.tempDir, { recursive: true, force: true });
@@ -2663,23 +3261,23 @@ function createXsxbMcpService(options = {}) {
       grid,
       anchorMode,
     });
-    const exportRoot = projectStore.projectWorkspaceDir(project);
+    const workspaceRoot = projectStore.projectWorkspaceDir(project);
     let outputPath;
     if (args.output_path) {
       const requested = String(args.output_path);
-      outputPath = path.resolve(exportRoot, requested);
-      if (!/\.png$/i.test(outputPath)) throw new Error("output_path must end with .png.");
-      if (!isInsideDirectory(outputPath, root)) {
-        throw new Error(
-          `output_path must stay inside the XSXB workspace root (${root}). Received: ${requested}`,
-        );
-      }
+      if (!/\.png$/i.test(requested)) throw new Error("output_path must end with .png.");
+      outputPath = resolveProjectOutputPath(workspaceRoot, requested, "output_path");
     } else {
-      outputPath = path.join(exportRoot, "exports", `${profile.id}_${animationId}_sheet.png`);
+      outputPath = resolveProjectOutputPath(
+        workspaceRoot,
+        path.join("exports", `${profile.id}_${animationId}_sheet.png`),
+        "output_path",
+      );
     }
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     fs.writeFileSync(outputPath, encodePngRgba(sheet.data, sheet.width, sheet.height));
-    return {
+    reportExecution(args, "encode_sheet", 2, 3, outputPath);
+    const receipt = {
       projectId: project.id,
       profileId: profile.id,
       animationId,
@@ -2689,10 +3287,10 @@ function createXsxbMcpService(options = {}) {
       endFrame,
       indexes,
       markFrame,
-      columns,
-      rows: Math.ceil(selected.length / columns),
-      cell,
-      pad,
+      columns: sheet.columns,
+      rows: sheet.rows,
+      cell: sheet.cell,
+      pad: sheet.pad,
       width: sheet.width,
       height: sheet.height,
       bytes: fs.statSync(outputPath).size,
@@ -2703,22 +3301,36 @@ function createXsxbMcpService(options = {}) {
       appliedVisual,
       frameScales: appliedVisual ? selectedScales : undefined,
       grid:
-        grid && cell >= GROUP_GRID_MIN_CELL
+        grid && sheet.cell >= GROUP_GRID_MIN_CELL
           ? {
               enabled: true,
               anchorMode,
               ySign: "down",
               note: "Group (0,0) is the canvas foot origin. Body is negative y. Axes match the tuner stage.",
-              step: selected[0] ? groupGridStep(cell, selected[0].width) : undefined,
+              step: selected[0] ? groupGridStep(sheet.cell, selected[0].width) : undefined,
               originCell: selected[0]
-                ? paintedOriginCell(selected[0].width, selected[0].height, cell, anchorMode)
+                ? paintedOriginCell(selected[0].width, selected[0].height, sheet.cell, anchorMode)
                 : undefined,
             }
           : {
               enabled: false,
-              reason: grid ? `cell ${cell} is below ${GROUP_GRID_MIN_CELL}` : "grid disabled",
+              reason: grid ? `cell ${sheet.cell} is below ${GROUP_GRID_MIN_CELL}` : "grid disabled",
             },
     };
+    const reviewed = withReviewArtifact(receipt, {
+      project,
+      kind: "animation_sheet",
+      sourcePath: outputPath,
+      parameters: {
+        startFrame,
+        endFrame,
+        includeAttachments: args.include_attachments !== false,
+        includeTrails: args.include_trails !== false,
+      },
+      skip: args.__skip_review_artifact === true,
+    });
+    reportExecution(args, "complete", 3, 3, outputPath);
+    return reviewed;
   }
 
   /**
@@ -2751,6 +3363,10 @@ function createXsxbMcpService(options = {}) {
     animationFor,
     resolveAnimationFramePath,
     attachmentBindingForSelection,
+    reviewArtifacts,
+    savePlan(project, plan) {
+      return reviewedPlanStore.save(project, plan);
+    },
     registerPlan(plan) {
       reviewedAttachmentPlans.set(String(plan.planId), plan);
     },
@@ -2800,6 +3416,8 @@ function createXsxbMcpService(options = {}) {
     xsxb_remove_binding: removeBinding,
     xsxb_reorganize_frames: reorganizeFrames,
     xsxb_delete_animation: removeAnimation,
+    xsxb_list_project_revisions: listProjectRevisions,
+    xsxb_restore_project_revision: restoreProjectRevision,
     xsxb_sync_godot: syncGodot,
     xsxb_set_active_project: setActiveProject,
     xsxb_bind_godot: bindGodot,
@@ -2807,24 +3425,167 @@ function createXsxbMcpService(options = {}) {
     xsxb_open_tuner: openTuner,
   };
 
-  const tools = toolDefinitions();
+  const toolRegistry = createMcpToolRegistry({ tools: toolDefinitions(), handlers });
+  const tools = toolRegistry.tools;
   const schemas = new Map(tools.map((tool) => [tool.name, tool.inputSchema]));
   const outputSchemas = new Map(tools.map((tool) => [tool.name, tool.outputSchema]));
   return {
     tools,
+    prompts,
+    resources: {
+      list: async () => ({
+        resources: [...reviewArtifacts.list().resources, ...mutationJournal.listResources()],
+      }),
+      templates: async () => ({
+        resourceTemplates: [
+          ...reviewArtifacts.templates().resourceTemplates,
+          {
+            uriTemplate: "xsxb://projects/{projectId}/revisions/{revisionId}",
+            name: "xsxb_project_revision",
+            title: "XSXB project revision",
+            description: "Restorable MCP mutation journal metadata.",
+            mimeType: "application/json",
+          },
+        ],
+      }),
+      read: async (uri) => ({
+        contents: [
+          String(uri).includes("/revisions/") ? mutationJournal.readResource(uri) : reviewArtifacts.read(uri),
+        ],
+      }),
+    },
+    formatToolResult(result) {
+      const content = [{ type: "text", text: JSON.stringify(result, null, 2) }];
+      if (result?.projectId && result?.reviewArtifactId) {
+        content.push(...reviewArtifacts.contentFor(result.projectId, result.reviewArtifactId));
+      }
+      return { content, structuredContent: result, isError: false };
+    },
+    cancel(requestId, reason) {
+      return executionCoordinator.cancel(requestId, reason);
+    },
+    cancelAll() {
+      executionCoordinator.close();
+    },
+    setNotifier(notifier) {
+      transportNotifier = typeof notifier === "function" ? notifier : () => {};
+    },
+    setLogLevel(level) {
+      const normalized = String(level || "");
+      if (!logSeverities.has(normalized)) throw new Error(`Invalid MCP logging level: ${normalized}`);
+      minimumLogLevel = normalized;
+    },
     async close() {
       reviewedAttachmentPlans.clear();
+      frameSemanticsCache.clear();
+      frameSemanticsCacheBytes = 0;
+      transportNotifier = () => {};
+      executionCoordinator.close();
       await compositeSession?.close();
     },
-    async call(name, args = {}) {
-      if (!MCP_TOOL_NAMES.includes(name) || !handlers[name])
-        throw new Error(`Unknown XSXB MCP tool: ${name}`);
+    async call(name, args = {}, execution = {}) {
+      const descriptor = toolRegistry.descriptor(name);
       const callArgs = args && typeof args === "object" && !Array.isArray(args) ? args : {};
       // The catalog advertises closed schemas, so honor them here: a misspelled
       // argument used to be dropped and the tool ran with its defaults instead.
       validateToolArguments(name, schemas.get(name), callArgs);
-      const result = await handlers[name](callArgs);
-      return validateToolResult(name, outputSchemas.get(name), result);
+      const projectScoped = Boolean(schemas.get(name)?.properties?.project_id);
+      let selectedProjectId = String(callArgs.project_id || callArgs.project || context.projectId || "");
+      if (projectScoped && !selectedProjectId) {
+        const registry = projectStore.readRegistry();
+        selectedProjectId = String(projectStore.resolveProject(registry)?.id || "");
+      }
+      if (selectedProjectId) selectedProjectId = slug(selectedProjectId);
+      let effectiveCallArgs = callArgs;
+      if (
+        projectScoped &&
+        selectedProjectId &&
+        (!GLOBAL_WRITE_TOOLS.has(name) || name === "xsxb_bind_godot")
+      ) {
+        effectiveCallArgs = { ...callArgs, project_id: selectedProjectId };
+        const sameContextProject = selectedProjectId === context.projectId;
+        if (
+          sameContextProject &&
+          schemas.get(name)?.properties?.profile_id &&
+          !callArgs.profile_id &&
+          context.profileId
+        ) {
+          effectiveCallArgs.profile_id = context.profileId;
+        }
+        if (
+          sameContextProject &&
+          schemas.get(name)?.properties?.animation_id &&
+          !callArgs.animation_id &&
+          context.animationId
+        ) {
+          effectiveCallArgs.animation_id = context.animationId;
+        }
+      }
+      let result;
+      try {
+        const executionLocks = [];
+        if (GLOBAL_WRITE_TOOLS.has(name)) {
+          executionLocks.push({ projectId: "__registry__", mode: "write" });
+          if (name === "xsxb_bind_godot" && selectedProjectId) {
+            executionLocks.push({ projectId: selectedProjectId, mode: "write" });
+          }
+        } else if (projectScoped && selectedProjectId) {
+          executionLocks.push({ projectId: selectedProjectId, mode: descriptor.mode });
+        } else if (REGISTRY_READ_TOOLS.has(name)) {
+          executionLocks.push({ projectId: "__registry__", mode: "read" });
+        } else {
+          executionLocks.push({ projectId: selectedProjectId || "__global__", mode: descriptor.mode });
+        }
+        result = await executionCoordinator.run(
+          {
+            requestId: execution.requestId,
+            projectId: GLOBAL_WRITE_TOOLS.has(name) ? "__registry__" : selectedProjectId || "__global__",
+            mode: descriptor.mode,
+            locks: executionLocks,
+            long: new Set([
+              "xsxb_import_video",
+              "xsxb_import_animation",
+              "xsxb_plan_attachment",
+              "xsxb_cutout",
+              "xsxb_estimate_boxes",
+              "xsxb_export_gif",
+              "xsxb_export_sheet",
+            ]).has(name),
+            progress: execution.progress,
+          },
+          async ({ signal, progress }) => {
+            const invoke = () =>
+              descriptor.handler({ ...effectiveCallArgs, __execution: { signal, progress } });
+            const dryRun = booleanFlag(effectiveCallArgs.dry_run);
+            const readOnlyEstimate = name === "xsxb_estimate_visual" && !booleanFlag(effectiveCallArgs.apply);
+            if (!JOURNALED_TOOLS.has(name) || dryRun || readOnlyEstimate) return invoke();
+            const project = registryProject(effectiveCallArgs.project_id || effectiveCallArgs.project, false);
+            return mutationJournal.run({
+              project,
+              tool: name,
+              arguments: effectiveCallArgs,
+              paths: mutationJournalPaths(project, name, effectiveCallArgs),
+              mutate: invoke,
+            });
+          },
+        );
+      } catch (error) {
+        emitLog("error", {
+          event: "tool_failed",
+          tool: name,
+          requestId: execution.requestId ?? null,
+          code: error.code || "xsxb_tool_error",
+          message: String(error.message || error),
+        });
+        throw error;
+      }
+      const validated = validateToolResult(name, outputSchemas.get(name), result);
+      emitLog("info", {
+        event: "tool_completed",
+        tool: name,
+        requestId: execution.requestId ?? null,
+      });
+      return validated;
     },
   };
 }

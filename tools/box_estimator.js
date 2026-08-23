@@ -263,14 +263,15 @@ function opaqueBoundsForPng(filePath, cache = null) {
       bodyMaxY = Math.max(bodyMaxY, y);
     }
   }
-  const body = bodyMaxX >= bodyMinX && bodyMaxY >= bodyMinY
-    ? {
-        x: bodyMinX,
-        y: bodyMinY,
-        width: Math.max(1, bodyMaxX - bodyMinX + 1),
-        height: Math.max(1, bodyMaxY - bodyMinY + 1),
-      }
-    : null;
+  const body =
+    bodyMaxX >= bodyMinX && bodyMaxY >= bodyMinY
+      ? {
+          x: bodyMinX,
+          y: bodyMinY,
+          width: Math.max(1, bodyMaxX - bodyMinX + 1),
+          height: Math.max(1, bodyMaxY - bodyMinY + 1),
+        }
+      : null;
   const bounds = {
     x: xSpan.min,
     y: ySpan.min,
@@ -286,8 +287,12 @@ function opaqueBoundsForPng(filePath, cache = null) {
 
 function animationLooksAttack(animationId, animationName = "") {
   const text = `${animationId} ${animationName}`.toLowerCase();
-  if (/(^|[\s_-])(attack|atk|slash|strike|shoot|shot|fire|skill|cast|stab|punch|kick|bite|claw|parry|counter)(?=$|[\s_-]|\d)/.test(text)
-    || /(攻击|攻擊|斩|斬|劈|刺|射击|射擊|技能|格挡|格擋|招架|反击|反擊|砍)/.test(text)) {
+  if (
+    /(^|[\s_-])(attack|atk|slash|strike|shoot|shot|fire|skill|cast|stab|punch|kick|bite|claw|parry|counter)(?=$|[\s_-]|\d)/.test(
+      text,
+    ) ||
+    /(攻击|攻擊|斩|斬|劈|刺|射击|射擊|技能|格挡|格擋|招架|反击|反擊|砍)/.test(text)
+  ) {
     return true;
   }
   return false;
@@ -368,9 +373,16 @@ function estimateFrameBoxes(filePath, options = {}) {
     width: options.groupCanvasWidth,
     height: options.groupCanvasHeight,
   });
-  const body = bounds.body || bounds;
+  const semanticFrame = options.semanticFrame;
+  const semanticBody =
+    Number(semanticFrame?.confidence || 0) >= 0.7 &&
+    Number(semanticFrame?.body?.width || 0) > 1 &&
+    Number(semanticFrame?.body?.height || 0) > 1
+      ? semanticFrame.body
+      : null;
+  const body = semanticBody || bounds.body || bounds;
   const attackLike = animationLooksAttack(options.animationId, options.animationName);
-  const centerX = (body.x + body.width * (attackLike ? 0.62 : 0.5)) - anchor.x;
+  const centerX = body.x + body.width * (attackLike ? 0.62 : 0.5) - anchor.x;
   const centerY = body.y + body.height / 2 - anchor.y;
   const hurtWidth = clamp(body.width * (attackLike ? 0.88 : 0.78), 8, body.width);
   const hurtHeight = clamp(body.height * 0.82, 8, body.height);
@@ -403,7 +415,7 @@ function estimateFrameBoxes(filePath, options = {}) {
     const reachWidth = Math.max(8, Math.abs(reachEnd - reachStart));
     const hitWidth = clamp(reachWidth * 0.78, 8, bounds.width);
     const hitHeight = clamp(body.height * 0.22, 6, body.height);
-    const hitCenterX = ((reachStart + reachEnd) / 2) - anchor.x;
+    const hitCenterX = (reachStart + reachEnd) / 2 - anchor.x;
     boxes.hitbox = normalizeBox("hitbox", {
       offset: {
         x: hitCenterX,
@@ -411,7 +423,12 @@ function estimateFrameBoxes(filePath, options = {}) {
       },
       size: { x: hitWidth, y: hitHeight },
       rotation: 0,
-      enabled: hitboxEnabledByDefault(options.frameIndex || 0, options.frameCount || 1, options.animationId, options.animationName),
+      enabled: hitboxEnabledByDefault(
+        options.frameIndex || 0,
+        options.frameCount || 1,
+        options.animationId,
+        options.animationName,
+      ),
     });
   }
   return boxes;
@@ -422,9 +439,10 @@ function frameBoxKey(profileId, animationId, frameIndex) {
 }
 
 function clearAnimationBoxOverrides(tuning, profileId, animationId) {
-  tuning.frame_box_overrides = tuning.frame_box_overrides && typeof tuning.frame_box_overrides === "object"
-    ? tuning.frame_box_overrides
-    : {};
+  tuning.frame_box_overrides =
+    tuning.frame_box_overrides && typeof tuning.frame_box_overrides === "object"
+      ? tuning.frame_box_overrides
+      : {};
   const prefix = `${profileId}/${animationId}:`;
   for (const key of Object.keys(tuning.frame_box_overrides)) {
     if (key.startsWith(prefix)) delete tuning.frame_box_overrides[key];
@@ -432,9 +450,10 @@ function clearAnimationBoxOverrides(tuning, profileId, animationId) {
 }
 
 function upsertEstimatedFrameBoxes(tuning, profileId, animation, frameFiles, options = {}) {
-  tuning.frame_box_overrides = tuning.frame_box_overrides && typeof tuning.frame_box_overrides === "object"
-    ? tuning.frame_box_overrides
-    : {};
+  tuning.frame_box_overrides =
+    tuning.frame_box_overrides && typeof tuning.frame_box_overrides === "object"
+      ? tuning.frame_box_overrides
+      : {};
   if (options.replace) clearAnimationBoxOverrides(tuning, profileId, animation.id);
   const boundsCache = createOpaqueBoundsCache();
   const groupCanvas = groupCanvasForFrameFiles(frameFiles, boundsCache);
@@ -451,6 +470,7 @@ function upsertEstimatedFrameBoxes(tuning, profileId, animation, frameFiles, opt
       groupCanvasWidth: groupCanvas?.width,
       groupCanvasHeight: groupCanvas?.height,
       boundsCache,
+      semanticFrame: options.semanticFrames?.[frameIndex],
     });
     if (Object.keys(boxes).length) tuning.frame_box_overrides[key] = boxes;
   });

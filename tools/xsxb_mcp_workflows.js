@@ -14,6 +14,16 @@ const WORKFLOW_NAMES = Object.freeze([
 
 const FAILURE_FEEDBACK =
   "If a tool errors, a capability is missing, or completing the request requires leaving MCP, report it to the user and raise it to XSXB-Frame-Tuner with the tool, arguments, receipt/error, expected result, and actual result.";
+const VISUAL_WORKFLOWS = new Set([
+  "video_loop",
+  "one_shot",
+  "cutout",
+  "visual_match",
+  "attachments",
+  "weapon_attachment",
+  "weapon_trail",
+  "export",
+]);
 
 const WORKFLOWS = Object.freeze({
   video_loop: {
@@ -137,7 +147,22 @@ function getWorkflow(name) {
   const definition = WORKFLOWS[workflow];
   if (!definition)
     throw new Error(`Unknown XSXB workflow: ${workflow}. Available: ${WORKFLOW_NAMES.join(", ")}`);
-  return { workflow, ...definition, failureFeedback: FAILURE_FEEDBACK };
+  return {
+    workflow,
+    ...definition,
+    ...(VISUAL_WORKFLOWS.has(workflow)
+      ? {
+          requiredCapabilities: ["image_input"],
+          fallback: "human_review",
+          canAutoApplyWithoutVision: false,
+        }
+      : {
+          requiredCapabilities: [],
+          fallback: "none",
+          canAutoApplyWithoutVision: true,
+        }),
+    failureFeedback: FAILURE_FEEDBACK,
+  };
 }
 
 module.exports = { FAILURE_FEEDBACK, WORKFLOW_NAMES, getWorkflow };

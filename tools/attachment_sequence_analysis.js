@@ -5,6 +5,8 @@ const zlib = require("node:zlib");
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const CHANNELS_BY_COLOR_TYPE = Object.freeze({ 0: 1, 2: 3, 4: 2, 6: 4 });
+const MAX_PNG_DIMENSION = 8192;
+const MAX_PNG_PIXELS = 16_777_216;
 
 /**
  * Clamps a finite number to an inclusive range.
@@ -73,6 +75,15 @@ function parsePng(buffer) {
   if (!header || !header.width || !header.height || !dataChunks.length) {
     throw new Error("PNG is missing IHDR or IDAT data.");
   }
+  if (
+    header.width > MAX_PNG_DIMENSION ||
+    header.height > MAX_PNG_DIMENSION ||
+    header.width * header.height > MAX_PNG_PIXELS
+  ) {
+    throw new Error(
+      `PNG dimensions exceed the ${MAX_PNG_DIMENSION}px / ${MAX_PNG_PIXELS}-pixel decode budget: ${header.width}x${header.height}.`,
+    );
+  }
   if (header.bitDepth !== 8 || header.interlace !== 0 || !channels) {
     throw new Error(
       `Unsupported PNG format: bit depth ${header.bitDepth}, color type ${header.colorType}, interlace ${header.interlace}.`,
@@ -94,8 +105,8 @@ function parsePng(buffer) {
  */
 function unfilterPng(png) {
   const stride = png.width * png.channels;
-  const inflated = zlib.inflateSync(png.compressed);
   const expected = png.height * (stride + 1);
+  const inflated = zlib.inflateSync(png.compressed, { maxOutputLength: expected });
   if (inflated.length !== expected) {
     throw new Error(`Unexpected PNG payload size: ${inflated.length}, expected ${expected}.`);
   }
@@ -383,6 +394,8 @@ function recommendSpatialTransform(options) {
 }
 
 module.exports = {
+  MAX_PNG_DIMENSION,
+  MAX_PNG_PIXELS,
   analyzePngAlpha,
   evenlySpacedIndexes,
   parsePng,

@@ -351,12 +351,6 @@ function importAnimation(options) {
   if (!items.length) throw new Error("Import at least one animation frame.");
   if (items.length > 5000) throw new Error("Animation import limit is 5000 frames.");
 
-  const buffers = items.map((item, index) => {
-    const buffer = decodePngDataUrl(item.data);
-    if (!buffer) throw new Error(`Frame ${index + 1} is not PNG image data.`);
-    pngSize(buffer);
-    return buffer;
-  });
   const paths = projectStore.projectPaths(project);
   const manifest = projectStore.readJson(paths.manifest, { schemaVersion: 1, profiles: [] });
   const tuning = projectStore.readJson(paths.tuning, {
@@ -402,12 +396,18 @@ function importAnimation(options) {
   try {
     const frameFiles = [];
     const usedFrameIds = new Set();
-    frames = buffers.map((buffer, index) => {
+    frames = items.map((item, index) => {
+      if (options.signal?.aborted) {
+        throw options.signal.reason || new Error("Animation import cancelled.");
+      }
+      const buffer = decodePngDataUrl(item.data);
+      if (!buffer) throw new Error(`Frame ${index + 1} is not PNG image data.`);
+      pngSize(buffer);
       const frameName = `frame_${String(index + 1).padStart(4, "0")}.png`;
       const stagingPath = path.join(stagingDir, frameName);
       fs.writeFileSync(stagingPath, buffer);
       frameFiles.push(stagingPath);
-      const requestedFrameId = String(items[index]?.frameId || items[index]?.id || "")
+      const requestedFrameId = String(item?.frameId || item?.id || "")
         .replace(/[\u0000-\u001f]/g, "")
         .slice(0, 160);
       const fallbackFrameId = `frame_${String(index + 1).padStart(4, "0")}`;
@@ -422,7 +422,7 @@ function importAnimation(options) {
         id: frameId,
         name: frameName,
         path: reslash(path.relative(root, path.join(targetDir, frameName))),
-        assetRevision: Math.max(0, Number(items[index]?.assetRevision) || 0),
+        assetRevision: Math.max(0, Number(item?.assetRevision) || 0),
         duration: 1,
         ...pngSize(buffer),
       };

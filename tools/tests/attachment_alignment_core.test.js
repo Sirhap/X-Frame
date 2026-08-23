@@ -202,6 +202,22 @@ test("apply requires confirmation, backs up data, validates, and is idempotent",
     assert.equal(repeated.status, "already_applied");
     assert.equal(repeated.applied, 0);
     assert.equal(fixture.store.readJson(fixture.paths.frameImageAttachments, []).length, 2);
+
+    const collided = fixture.store.readJson(fixture.paths.frameImageAttachments, []);
+    collided[0].transform.offset.x += 1;
+    fixture.store.writeJson(fixture.paths.frameImageAttachments, collided);
+    assert.throws(
+      () => applyAlignmentPlan({ root: fixture.root, plan, confirmed: true, syncGodot: false }),
+      /collision|partial|different plan/iu,
+    );
+    collided[0].transform.offset.x -= 1;
+    delete collided[0].automation.planId;
+    delete collided[1].automation.planId;
+    fixture.store.writeJson(fixture.paths.frameImageAttachments, collided);
+    assert.throws(
+      () => applyAlignmentPlan({ root: fixture.root, plan, confirmed: true, syncGodot: false }),
+      /collision|different plan|instance/iu,
+    );
   } finally {
     fixture.dispose();
   }

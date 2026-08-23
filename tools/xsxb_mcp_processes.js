@@ -31,9 +31,10 @@ async function extractVideoFrames(videoPath, outputDirectory, options = {}) {
     await execFileAsync(
       options.ffmpegBinary || process.env.XSXB_FFMPEG || "ffmpeg",
       ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-map", "0:v:0", "-vsync", "0", outputPattern],
-      { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 },
+      { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, signal: options.signal },
     );
   } catch (error) {
+    if (options.signal?.aborted) throw options.signal.reason || error;
     throw new Error(`FFmpeg video extraction failed: ${error.stderr || error.message}`);
   }
   return fs
@@ -83,9 +84,10 @@ async function encodeGifWithFfmpeg(job) {
         "0",
         job.outputPath,
       ],
-      { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 },
+      { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, signal: job.signal },
     );
   } catch (error) {
+    if (job.signal?.aborted) throw job.signal.reason || error;
     throw new Error(
       `FFmpeg GIF export failed (install ffmpeg or set XSXB_FFMPEG): ${error.stderr || error.message}`,
     );

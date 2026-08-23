@@ -315,15 +315,40 @@ test("export_gif honors timing, skips disabled frames, and validates the output 
     const withDisabled = await current.service.call("xsxb_export_gif", { include_disabled: true });
     assert.equal(withDisabled.frameCount, 2);
 
-    const customPath = path.join(current.root, "out", "preview.gif");
+    const customPath = path.join(current.workspaceDir, "exports", "custom", "preview.gif");
     const custom = await current.service.call("xsxb_export_gif", { output_path: customPath });
     assert.equal(custom.outputPath, customPath);
     assert.ok(fs.existsSync(customPath), "parent directory is created");
 
-    // A relative output_path is anchored to the project workspace rather than
+    // A relative output_path is anchored to the project's managed exports rather than
     // to whatever directory the server happens to be running in.
     const relative = await current.service.call("xsxb_export_gif", { output_path: "previews/walk.gif" });
     assert.equal(relative.outputPath, path.join(current.workspaceDir, "previews", "walk.gif"));
+
+    await assert.rejects(
+      current.service.call("xsxb_export_gif", { output_path: "assets/mcp_imports/walk/frame_0001.gif" }),
+      /protected project workspace path/iu,
+    );
+
+    const sourceTarget = path.join(current.root, "tools", "must-not-overwrite.gif");
+    fs.writeFileSync(sourceTarget, "original");
+    await assert.rejects(
+      current.service.call("xsxb_export_gif", { output_path: sourceTarget }),
+      /managed output/iu,
+    );
+    assert.equal(fs.readFileSync(sourceTarget, "utf8"), "original");
+    const exportLink = path.join(current.workspaceDir, "exports", "linked-tools");
+    fs.symlinkSync(path.join(current.root, "tools"), exportLink, "dir");
+    await assert.rejects(
+      current.service.call("xsxb_export_gif", { output_path: "exports/linked-tools/escape.gif" }),
+      /symlink outside.*managed output/iu,
+    );
+    fs.rmSync(path.join(current.workspaceDir, "exports"), { recursive: true, force: true });
+    fs.symlinkSync(path.join(current.root, "tools"), path.join(current.workspaceDir, "exports"), "dir");
+    await assert.rejects(
+      current.service.call("xsxb_export_gif", { output_path: "exports/escape.gif" }),
+      /symlink outside|managed output/iu,
+    );
 
     await assert.rejects(
       current.service.call("xsxb_export_gif", { output_path: "/tmp/not-a-gif.png" }),

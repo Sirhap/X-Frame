@@ -83,6 +83,7 @@ async function launchPreviewBrowser() {
  * @returns {Promise<{framePaths:string[],bakedTrails:boolean,trailIds:string[],tempDir:?string}>}
  */
 async function compositeWithPage(job, page) {
+  if (job.signal?.aborted) throw job.signal.reason || new Error("MCP request cancelled.");
   const framePaths = Array.isArray(job.framePaths) ? job.framePaths : [];
   const bindingKey = String(job.bindingKey || "");
   const segments = usableTrailSegments(job.trails, bindingKey);
@@ -129,6 +130,7 @@ async function compositeWithPage(job, page) {
   }
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-trail-preview-"));
   try {
+    if (job.signal?.aborted) throw job.signal.reason || new Error("MCP request cancelled.");
     const pngs = await page.evaluate(
       async ({
         trails,
@@ -351,6 +353,7 @@ async function compositeWithPage(job, page) {
     };
   } catch (error) {
     fs.rmSync(tempDir, { recursive: true, force: true });
+    if (job.signal?.aborted) throw job.signal.reason || error;
     throw new Error(`Failed to bake attack trails into the export: ${error.message}`);
   }
 }
@@ -427,9 +430,14 @@ function createCompositeSession(options = {}) {
       attachmentImageSources[absolutePath] = attachmentSourceCache.get(cacheKey);
     }
     const activePage = await ensurePage();
+    const abort = () => {
+      if (!activePage.isClosed?.()) void activePage.close().catch(() => {});
+    };
+    job.signal?.addEventListener("abort", abort, { once: true });
     try {
       return await compositeWithPage({ ...job, attachmentImageSources }, activePage);
     } finally {
+      job.signal?.removeEventListener("abort", abort);
       scheduleIdleClose();
     }
   }
