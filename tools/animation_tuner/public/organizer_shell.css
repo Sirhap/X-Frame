@@ -266,10 +266,49 @@ body.organizerOpen .organizerClose {
   margin-inline-start: auto;
 }
 
-.organizerToolbarPrimary .organizerEditTools,
-.organizerToolbarSecondary .organizerAnalysisTools {
+.organizerToolbarPrimary .organizerEditTools {
   min-width: 0;
   flex: 1 1 auto;
+  justify-content: flex-start;
+}
+
+.organizerToolGroup.organizerEditTools > button,
+.organizerEditTools .organizerReduceControl button {
+  min-height: 24px;
+  padding: 2px 6px;
+  font-size: 9px;
+}
+
+.organizerEditTools .organizerReduceControl {
+  grid-template-columns: auto 36px auto;
+  gap: 3px;
+  font-size: 9px;
+}
+
+.organizerEditTools .organizerReduceControl input {
+  width: 36px;
+  min-height: 24px;
+  padding: 2px;
+}
+
+.organizerEditTools .organizerDangerTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-inline-start: auto;
+  padding: 0 0 0 6px;
+  border: 0;
+  border-inline-start: 2px solid color-mix(in srgb, var(--danger) 56%, var(--line));
+  border-radius: 0;
+  background: transparent;
+}
+
+.organizerEditTools .organizerDangerTools button {
+  min-height: 24px;
+  padding: 2px 6px;
+  font-size: 9px;
 }
 
 .organizerToolGroup {
@@ -371,14 +410,9 @@ body.organizerOpen .organizerClose {
     margin-inline-start: 0;
   }
 
-  .organizerSourceTools,
-  .organizerDangerTools {
+  .organizerSourceTools {
     justify-content: flex-start;
   }
-}
-
-.organizerAnalysisTools {
-  flex: 0 0 auto;
 }
 
 .organizerToolMenu {
@@ -431,13 +465,6 @@ body.organizerOpen .organizerClose {
 
 .organizerDangerTools {
   flex: 0 0 auto;
-  align-self: start;
-  border-color: color-mix(in srgb, var(--danger) 72%, var(--line));
-  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
-}
-
-.organizerDangerTools > summary {
-  color: var(--danger);
 }
 
 .organizerReduceControl {

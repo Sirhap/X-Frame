@@ -67,12 +67,15 @@
 .organizerPanelHeading {
   min-height: 40px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
 }
 
 .organizerPanelHeading > div:first-child {
+  min-width: 0;
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -94,6 +97,41 @@
   gap: 6px;
 }
 
+.organizerTagTools {
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.organizerTagTools .organizerAnalysisTools {
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px 5px;
+}
+
+.organizerTagTools .organizerThreshold {
+  flex: 0 0 156px;
+  grid-template-columns: auto minmax(52px, 1fr) 20px;
+  gap: 4px;
+  margin: 0;
+  padding: 2px 6px;
+  border-width: 2px;
+  border-radius: 6px;
+  font-size: 9px;
+}
+
+.organizerTagTools .organizerThreshold span {
+  color: inherit;
+  font: inherit;
+}
+
+.organizerTagTools .organizerThreshold input {
+  min-height: 14px;
+}
+
 .organizerTagTools button,
 .organizerViewToggle button {
   min-height: 34px;
@@ -101,11 +139,36 @@
   font-size: 11px;
 }
 
+.organizerTagTools .organizerAnalysisTools button {
+  min-height: 24px;
+  padding: 2px 6px;
+  font-size: 9px;
+}
+
+.organizerTagTools .organizerAnalysisTools .premiumOption::after {
+  min-width: 20px;
+  margin-left: 4px;
+  padding: 1px 3px;
+  font-size: 6px;
+}
+
+.organizerTagTools .organizerScopedAction {
+  justify-items: stretch;
+}
+
+.organizerTagTools .organizerScopedAction small {
+  font-size: 9px;
+}
+
 .organizerTagTools .organizerBatchCutout {
-  min-width: 132px;
+  width: 100%;
+  min-width: 88px;
+  min-height: 28px;
+  padding: 3px 8px;
   border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
   background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
+  font-size: 10px;
   font-weight: 900;
 }
 

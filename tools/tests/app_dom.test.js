@@ -82,22 +82,43 @@ test("single-frame filmstrip keeps room for the thumbnail", () => {
   assert.match(css, /@media \(max-width: 759px\)/);
 });
 
-test("organizer analysis and danger tools collapse behind labeled menus", () => {
+test("organizer analysis tools sit next to batch cutout instead of a toolbar menu", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
-  const css = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/organizer_shell.css"), "utf8");
-  assert.match(html, /<details class="organizerToolGroup organizerToolMenu organizerAnalysisTools"/u);
-  assert.match(html, /<details class="organizerToolGroup organizerToolMenu organizerDangerTools"/u);
-  assert.doesNotMatch(
-    html,
-    /<details class="organizerToolGroup organizerToolMenu organizerAnalysisTools"[^>]*\bopen\b/u,
+  const css = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/organizer_workspace.css"),
+    "utf8",
   );
-  assert.doesNotMatch(
-    html,
-    /<details class="organizerToolGroup organizerToolMenu organizerDangerTools"[^>]*\bopen\b/u,
+  const heading = html.match(/<div class="organizerTagTools">[\s\S]*?<div class="organizerScopedAction">/u);
+  assert.ok(heading, "analysis tools belong in the frames heading");
+  assert.match(heading[0], /class="[^"]*organizerAnalysisTools"/u);
+  assert.match(heading[0], /id="organizerFindJump"/u);
+  assert.match(heading[0], /id="organizerFindDuplicate"/u);
+  assert.match(heading[0], /id="organizerFindLoop"/u);
+  assert.match(heading[0], /id="organizerThreshold"/u);
+  assert.doesNotMatch(html, /<details[^>]*class="[^"]*organizerAnalysisTools"/su);
+  assert.doesNotMatch(html, /<summary[^>]*data-organizer-i18n="analysisTools"/u);
+  assert.match(css, /\.organizerTagTools \.organizerAnalysisTools button\s*\{[\s\S]*?min-height:\s*24px/u);
+});
+
+test("organizer delete tools sit on the right of the invert group", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const css = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/organizer_shell.css"),
+    "utf8",
   );
-  assert.match(html, /<summary[^>]*data-organizer-i18n="analysisTools"/u);
-  assert.match(html, /<summary[^>]*data-organizer-i18n="dangerTools"/u);
-  assert.match(css, /\.organizerToolMenuPanel\s*\{[\s\S]*?position:\s*absolute/u);
+  const editGroup = html.match(
+    /<div class="organizerToolGroup organizerEditTools"[\s\S]*?<\/div>\s*<div class="organizerToolbarActions">/u,
+  );
+  assert.ok(editGroup, "delete tools belong inside the invert/edit group");
+  assert.match(editGroup[0], /class="organizerDangerTools"/u);
+  assert.match(editGroup[0], /id="organizerDeleteSelected"/u);
+  assert.match(editGroup[0], /id="organizerDeleteExcluded"/u);
+  assert.match(editGroup[0], /id="organizerClearWorkset"/u);
+  assert.match(editGroup[0], /id="organizerInvert"/u);
+  assert.doesNotMatch(html, /<details[^>]*class="[^"]*organizerDangerTools"/su);
+  assert.doesNotMatch(html, /<summary[^>]*data-organizer-i18n="dangerTools"/u);
+  assert.match(css, /\.organizerEditTools \.organizerDangerTools\s*\{[\s\S]*?margin-inline-start:\s*auto/u);
+  assert.match(css, /\.organizerEditTools \.organizerDangerTools button\s*\{[\s\S]*?min-height:\s*24px/u);
 });
 
 test("export number fields expose their own accessible names", () => {

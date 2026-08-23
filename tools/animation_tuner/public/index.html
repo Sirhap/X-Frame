@@ -3149,76 +3149,37 @@
                 恢复导入顺序
               </button>
               <button id="organizerFlip" type="button" data-organizer-i18n="flip">水平翻转</button>
-            </div>
-            <div class="organizerToolbarSecondary">
-              <details class="organizerToolGroup organizerToolMenu organizerAnalysisTools" aria-label="序列分析">
-                <summary data-organizer-i18n="analysisTools">分析</summary>
-                <div class="organizerToolMenuPanel">
-                  <label class="organizerThreshold">
-                    <span data-organizer-i18n="threshold">相似度阈值</span>
-                    <input id="organizerThreshold" type="range" min="55" max="100" step="1" value="88" />
-                    <output id="organizerThresholdValue">88</output>
-                  </label>
-                  <button
-                    id="organizerFindJump"
-                    type="button"
-                    class="secondary premiumOption"
-                    data-organizer-i18n="findJump"
-                  >
-                    寻找跳变帧
-                  </button>
-                  <button
-                    id="organizerFindDuplicate"
-                    type="button"
-                    class="secondary premiumOption"
-                    data-organizer-i18n="findDuplicate"
-                  >
-                    寻找重复帧
-                  </button>
-                  <button
-                    id="organizerFindLoop"
-                    type="button"
-                    class="secondary premiumOption"
-                    data-organizer-i18n="findLoop"
-                  >
-                    寻找循环段
-                  </button>
-                  <output
-                    id="organizerAnalysisFeedback"
-                    class="organizerAnalysisFeedback"
-                    aria-live="polite"
-                  ></output>
-                </div>
-              </details>
-              <details class="organizerToolGroup organizerToolMenu organizerDangerTools" aria-label="删除操作">
-                <summary data-organizer-i18n="dangerTools">移除</summary>
-                <div class="organizerToolMenuPanel">
-                  <button
-                    id="organizerDeleteSelected"
-                    type="button"
-                    class="dangerActive"
-                    data-organizer-i18n="deleteSelected"
-                  >
-                    删除选中
-                  </button>
-                  <button
-                    id="organizerDeleteExcluded"
-                    type="button"
-                    class="dangerActive"
-                    data-organizer-i18n="deleteExcluded"
-                  >
-                    删除未入集
-                  </button>
-                  <button
-                    id="organizerClearWorkset"
-                    type="button"
-                    class="dangerActive"
-                    data-organizer-i18n="clearWorkset"
-                  >
-                    清空工作集
-                  </button>
-                </div>
-              </details>
+              <div
+                class="organizerDangerTools"
+                role="group"
+                aria-label="删除操作"
+                data-organizer-i18n-aria-label="dangerTools"
+              >
+                <button
+                  id="organizerDeleteSelected"
+                  type="button"
+                  class="dangerActive"
+                  data-organizer-i18n="deleteSelected"
+                >
+                  删除选中
+                </button>
+                <button
+                  id="organizerDeleteExcluded"
+                  type="button"
+                  class="dangerActive"
+                  data-organizer-i18n="deleteExcluded"
+                >
+                  删除未入集
+                </button>
+                <button
+                  id="organizerClearWorkset"
+                  type="button"
+                  class="dangerActive"
+                  data-organizer-i18n="clearWorkset"
+                >
+                  清空工作集
+                </button>
+              </div>
             </div>
             <div class="organizerToolbarActions">
               <button
@@ -3568,6 +3529,47 @@
                 <span id="organizerSelection">选中 0 帧</span>
               </div>
               <div class="organizerTagTools">
+                <div
+                  class="organizerToolGroup organizerAnalysisTools"
+                  role="group"
+                  aria-label="序列分析"
+                  data-organizer-i18n-aria-label="analysisTools"
+                >
+                  <label class="organizerThreshold">
+                    <span data-organizer-i18n="threshold">相似度阈值</span>
+                    <input id="organizerThreshold" type="range" min="55" max="100" step="1" value="88" />
+                    <output id="organizerThresholdValue">88</output>
+                  </label>
+                  <button
+                    id="organizerFindJump"
+                    type="button"
+                    class="secondary premiumOption"
+                    data-organizer-i18n="findJump"
+                  >
+                    寻找跳变帧
+                  </button>
+                  <button
+                    id="organizerFindDuplicate"
+                    type="button"
+                    class="secondary premiumOption"
+                    data-organizer-i18n="findDuplicate"
+                  >
+                    寻找重复帧
+                  </button>
+                  <button
+                    id="organizerFindLoop"
+                    type="button"
+                    class="secondary premiumOption"
+                    data-organizer-i18n="findLoop"
+                  >
+                    寻找循环段
+                  </button>
+                  <output
+                    id="organizerAnalysisFeedback"
+                    class="organizerAnalysisFeedback"
+                    aria-live="polite"
+                  ></output>
+                </div>
                 <div class="organizerScopedAction">
                   <button
                     id="organizerBatchCutout"

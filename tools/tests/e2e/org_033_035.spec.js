@@ -1,6 +1,6 @@
 "use strict";
 
-const { expect, test } = require("./fixtures");
+const { expect, test, openOrganizerAnalysisMenu } = require("./fixtures");
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3n0AAAAASUVORK5CYII=",
@@ -27,6 +27,7 @@ async function importWorkset(page, count) {
 
 test("ORG-033 loop dialog title matches 寻找循环段", async ({ page }) => {
   await importWorkset(page, 4);
+  await openOrganizerAnalysisMenu(page);
   await expect(page.locator("#organizerFindLoop")).toHaveText("寻找循环段");
   await page.locator("#organizerFindLoop").click();
   await expect(page.locator("#organizerLoopPanel")).toBeVisible();
@@ -35,6 +36,7 @@ test("ORG-033 loop dialog title matches 寻找循环段", async ({ page }) => {
 
 test("ORG-034 empty loop search shows 没有循环段 and the preference hint", async ({ page }) => {
   await importWorkset(page, 10);
+  await openOrganizerAnalysisMenu(page);
   await page.locator("#organizerFindLoop").click();
   await expect(page.locator("#organizerLoopPanel")).toBeVisible();
   await page.locator("#organizerLoopStartCustom").check();

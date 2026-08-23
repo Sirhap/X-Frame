@@ -1,6 +1,6 @@
 "use strict";
 
-const { expect, test } = require("./fixtures");
+const { expect, test, openOrganizerAnalysisMenu, openOrganizerDangerMenu } = require("./fixtures");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -999,13 +999,24 @@ test("native image import accepts valid files and reports unsupported input", as
 test("loaded organizer keeps tools visible and can restore import settings", async ({ page }) => {
   await page.goto("/tools/import");
   await expect(page.locator(".organizerEditTools")).toBeVisible();
-  await expect(page.locator(".organizerToolbarSecondary")).toBeVisible();
-  await expect(page.locator(".organizerAnalysisTools > summary")).toBeVisible();
-  await expect(page.locator(".organizerDangerTools > summary")).toBeVisible();
-  await expect(page.locator("#organizerFindLoop")).toBeHidden();
-  await page.locator(".organizerAnalysisTools > summary").click();
+  await expect(page.locator(".organizerEditTools .organizerDangerTools")).toBeVisible();
+  await expect(page.locator(".organizerTagTools .organizerAnalysisTools")).toBeVisible();
+  await expect(page.locator("#organizerDeleteSelected")).toBeVisible();
+  await expect(page.locator("#organizerDeleteExcluded")).toBeVisible();
+  const invertBox = await page.locator("#organizerInvert").boundingBox();
+  const deleteBox = await page.locator("#organizerDeleteSelected").boundingBox();
+  expect(invertBox, "反选工作集 must render").not.toBeNull();
+  expect(deleteBox, "删除选中 must sit in the invert strip").not.toBeNull();
+  expect(deleteBox.x).toBeGreaterThan(invertBox.x);
+  expect(Math.abs(invertBox.y - deleteBox.y)).toBeLessThan(40);
   await expect(page.locator("#organizerFindLoop")).toBeVisible();
   await expect(page.locator("#organizerFindLoop")).toBeDisabled();
+  await expect(page.locator("#organizerBatchCutout")).toBeVisible();
+  const analysisBox = await page.locator(".organizerTagTools .organizerAnalysisTools").boundingBox();
+  const cutoutBox = await page.locator("#organizerBatchCutout").boundingBox();
+  expect(analysisBox, "analysis tools must render next to 智能抠图").not.toBeNull();
+  expect(cutoutBox, "智能抠图 must stay in the frames heading").not.toBeNull();
+  expect(Math.abs(analysisBox.y - cutoutBox.y)).toBeLessThan(48);
 
   await page.locator("#organizerFileInput").setInputFiles({
     name: "frame.png",
@@ -1014,7 +1025,7 @@ test("loaded organizer keeps tools visible and can restore import settings", asy
   });
 
   await expect(page.locator("#organizerImportSetup")).toBeHidden();
-  await expect(page.locator(".organizerToolbarSecondary")).toBeVisible();
+  await expect(page.locator(".organizerEditTools .organizerDangerTools")).toBeVisible();
   await expect(page.locator("#organizerToggleImportSetup")).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator("#organizerViewEdited")).toBeDisabled();
 
@@ -1455,6 +1466,7 @@ test("compact organizer keeps undo clear of preview controls", async ({ page }) 
     { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
   ]);
   await page.locator(".organizerFrameSelect").nth(1).click();
+  await openOrganizerDangerMenu(page);
   await page.locator("#organizerDeleteSelected").click();
   await expect(page.locator("#organizerUndoDelete")).toBeVisible();
 
@@ -2056,6 +2068,7 @@ test("loop finder cancel closes the dialog", async ({ page }) => {
     { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
     { name: "frame_0004.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
   ]);
+  await openOrganizerAnalysisMenu(page);
   await expect(page.locator("#organizerFindLoop")).toBeEnabled();
   await page.locator("#organizerFindLoop").click();
   await expect(page.locator("#organizerLoopPanel")).toBeVisible();

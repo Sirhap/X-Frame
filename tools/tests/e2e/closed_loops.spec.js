@@ -1,6 +1,6 @@
 "use strict";
 
-const { expect, test } = require("./fixtures");
+const { expect, test, openOrganizerAnalysisMenu } = require("./fixtures");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -652,6 +652,7 @@ test("video extraction produces frames and opens loop analysis", async ({ page }
     await expect
       .poll(() => page.locator(".organizerFrame").count(), { timeout: 20000 })
       .toBeGreaterThanOrEqual(4);
+    await openOrganizerAnalysisMenu(page);
     await page.locator("#organizerFindLoop").click();
     await expect(page.locator("#organizerLoopPanel")).toBeVisible();
     await page.locator("#organizerLoopStartSearch").click();

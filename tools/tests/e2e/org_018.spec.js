@@ -1,6 +1,6 @@
 "use strict";
 
-const { expect, test } = require("./fixtures");
+const { expect, test, openOrganizerAnalysisMenu } = require("./fixtures");
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3n0AAAAASUVORK5CYII=",
@@ -24,6 +24,7 @@ async function openLoopStartParams(page) {
     })),
   );
   await expect(page.locator(".organizerFrame")).toHaveCount(WORKSET_SIZE);
+  await openOrganizerAnalysisMenu(page);
   await expect(page.locator("#organizerFindLoop")).toBeEnabled();
   await page.locator("#organizerFindLoop").click();
   await expect(page.locator("#organizerLoopPanel")).toBeVisible();
