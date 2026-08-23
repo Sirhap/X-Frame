@@ -14,6 +14,24 @@ function gdString(value) {
 }
 
 /**
+ * Converts a workbench group-coordinate attachment center into VisualOwner local coordinates.
+ * @param {{x:number,y:number}} groupOffset Attachment group offset.
+ * @param {string} anchorMode Animation canvas anchor mode.
+ * @param {{x:number,y:number}} frameSize Current frame or texture size.
+ * @returns {{x:number,y:number}} VisualOwner-local center.
+ */
+function attachmentVisualOwnerLocalPosition(groupOffset, anchorMode, frameSize) {
+  const width = Number(frameSize?.x || 0);
+  const height = Number(frameSize?.y || 0);
+  const anchorX = anchorMode === "canvas_left_bottom" ? 0 : width * 0.5;
+  const anchorY = height;
+  return {
+    x: Number(groupOffset?.x || 0) + anchorX - width * 0.5,
+    y: Number(groupOffset?.y || 0) + anchorY - height * 0.5,
+  };
+}
+
+/**
  * Creates the generated Godot runtime actor script.
  * @param {string} projectId Frame-tuner project identifier.
  * @returns {string} GDScript source.
@@ -103,6 +121,7 @@ position = Vector2(640, 640)
 
 module.exports = {
   actorScene,
+  attachmentVisualOwnerLocalPosition,
   runtimeScript,
   testScene,
 };

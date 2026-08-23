@@ -268,7 +268,26 @@ func _configure_frame_image_attachment(sprite: Sprite2D, attachment: Dictionary)
 	sprite.texture = texture
 	sprite.centered = true
 	var local: Dictionary = attachment.get("transform", {}) if attachment.get("transform", {}) is Dictionary else {}
-	sprite.position = _vector_from_value(local.get("offset", {}), Vector2.ZERO)
+	var animation: Dictionary = _animations.get(_current_animation, {})
+	var frames: Array = animation.get("frames", []) as Array
+	var fallback_width := 0.0
+	var fallback_height := 0.0
+	if _frame_sprite != null and _frame_sprite.texture != null:
+		fallback_width = float(_frame_sprite.texture.get_width())
+		fallback_height = float(_frame_sprite.texture.get_height())
+	var frame_size := Vector2(fallback_width, fallback_height)
+	if _current_frame >= 0 and _current_frame < frames.size() and frames[_current_frame] is Dictionary:
+		var frame: Dictionary = frames[_current_frame]
+		frame_size = Vector2(
+			float(frame.get("width", fallback_width)),
+			float(frame.get("height", fallback_height)),
+		)
+	var anchor: Vector2 = _source_anchor(
+		String(animation.get("anchor_mode", "canvas_bottom_center")),
+		frame_size,
+	)
+	var group_offset: Vector2 = _vector_from_value(local.get("offset", {}), Vector2.ZERO)
+	sprite.position = group_offset + anchor - frame_size * 0.5
 	sprite.scale = _scale_vector_from_value(local.get("visual_scale", local.get("scale", {})), Vector2.ONE)
 	sprite.rotation_degrees = float(local.get("rotation", 0.0))
 

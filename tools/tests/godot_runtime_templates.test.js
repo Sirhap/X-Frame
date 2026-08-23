@@ -23,3 +23,25 @@ test("godot runtime templates preserve generated project and scene identifiers",
   assert.match(actor, /frame_animation = "idle"/);
   assert.match(smokeTest, /node name="XSXBRuntimeTest"/);
 });
+
+test("godot runtime converts attachment group coordinates into VisualOwner local coordinates", () => {
+  const script = templates.runtimeScript("demo-project");
+  assert.match(script, /var group_offset: Vector2 = _vector_from_value/u);
+  assert.match(script, /frame\.get\("width", fallback_width\)/u);
+  assert.match(script, /frame\.get\("height", fallback_height\)/u);
+  assert.match(script, /sprite\.position = group_offset \+ anchor - frame_size \* 0\.5/u);
+  assert.deepEqual(
+    templates.attachmentVisualOwnerLocalPosition({ x: 220, y: -333 }, "canvas_bottom_center", {
+      x: 1168,
+      y: 768,
+    }),
+    { x: 220, y: 51 },
+  );
+  assert.deepEqual(
+    templates.attachmentVisualOwnerLocalPosition({ x: 220, y: -333 }, "canvas_left_bottom", {
+      x: 1168,
+      y: 768,
+    }),
+    { x: -364, y: 51 },
+  );
+});
