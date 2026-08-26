@@ -57,6 +57,46 @@ function copyFileIfChanged(source, target, force = false) {
 }
 
 /**
+ * Drops Godot's imported .ctex when the PNG changed or the cached source_md5 is stale.
+ * Sync writes pixels; Godot will not reload them until this cache is gone.
+ * @param {string} projectRoot Bound Godot root with project.godot.
+ * @param {string} pngPath Absolute PNG path inside the Godot project.
+ * @returns {number} Deleted cache files.
+ */
+function invalidateGodotImport(projectRoot, pngPath) {
+  const importPath = `${pngPath}.import`;
+  if (!fs.existsSync(importPath) || !projectRoot) return 0;
+  const importRoot = path.join(projectRoot, ".godot", "imported");
+  const text = fs.readFileSync(importPath, "utf8");
+  const dests = new Set();
+  for (const match of text.matchAll(/res:\/\/(\.godot\/imported\/[^\s"\]]+)/g)) {
+    dests.add(match[1].replace(/\.md5$/i, ".ctex"));
+  }
+  if (!dests.size) return 0;
+  const sourceMd5 = crypto.createHash("md5").update(fs.readFileSync(pngPath)).digest("hex");
+  let deleted = 0;
+  for (const rel of dests) {
+    const ctex = path.join(projectRoot, rel);
+    if (!isInside(ctex, importRoot)) continue;
+    const md5Path = ctex.replace(/\.ctex$/i, ".md5");
+    let stale = !fs.existsSync(ctex);
+    if (!stale && fs.existsSync(md5Path)) {
+      const recorded = /source_md5="([0-9a-f]+)"/i.exec(fs.readFileSync(md5Path, "utf8"));
+      stale = !recorded || recorded[1] !== sourceMd5;
+    } else if (!stale) {
+      stale = true;
+    }
+    if (!stale) continue;
+    for (const filePath of [ctex, md5Path]) {
+      if (!fs.existsSync(filePath)) continue;
+      fs.rmSync(filePath, { force: true });
+      deleted += 1;
+    }
+  }
+  return deleted;
+}
+
+/**
  * Removes unreferenced files from one generated asset directory and prunes empty folders.
  * @param {string} directory Generated directory to prune.
  * @param {Set<string>} retainedPaths Absolute file paths that must remain available.
@@ -112,6 +152,7 @@ function syncManifest(root, projectStore, project, manifestInput = null, options
   const manifest = clone(manifestInput || projectStore.readJson(paths.manifest, EMPTY_MANIFEST));
   let copiedFrames = 0;
   let frameCount = 0;
+  let invalidatedImports = 0;
 
   for (const profile of Array.isArray(manifest.profiles) ? manifest.profiles : []) {
     for (const animation of Array.isArray(profile.animations) ? profile.animations : []) {
@@ -126,13 +167,14 @@ function syncManifest(root, projectStore, project, manifestInput = null, options
         if (!isInside(target, path.join(projectRoot, GODOT_SYNC_ROOT))) continue;
         if (!source || path.extname(source).toLowerCase() !== ".png") continue;
         if (copyFileIfChanged(source, target, options.force === true)) copiedFrames += 1;
+        if (fs.existsSync(target)) invalidatedImports += invalidateGodotImport(projectRoot, target);
       }
     }
   }
 
   const targetManifest = path.join(godotDataDir(projectRoot, project), "animation_manifest.json");
   writeJson(targetManifest, manifest);
-  return { copiedFrames, frameCount };
+  return { copiedFrames, frameCount, invalidatedImports };
 }
 
 function syncTuning(projectStore, project, tuningInput = null) {
@@ -358,6 +400,7 @@ function syncGodotProject(root, projectStore, project, options = {}) {
       reason: "No bound Godot project root",
       copiedFrames: 0,
       frameCount: 0,
+      invalidatedImports: 0,
       audioCount: 0,
       copiedAudio: 0,
       imageAttachmentCount: 0,
@@ -402,5 +445,6 @@ module.exports = {
   syncGodotProject,
   syncManifest,
   syncTuning,
+  invalidateGodotImport,
   validGodotProjectRoot,
 };

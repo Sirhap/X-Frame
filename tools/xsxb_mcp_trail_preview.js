@@ -110,8 +110,9 @@ async function compositeAttackTrails(job) {
     throw new Error(`AttackTrailEditor script is missing: ${EDITOR_SCRIPT}`);
   }
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-trail-preview-"));
-  const browser = await launchPreviewBrowser();
+  let browser;
   try {
+    browser = await launchPreviewBrowser();
     const page = await browser.newPage({ viewport: { width: 64, height: 64 } });
     await page.addScriptTag({ path: EDITOR_SCRIPT });
     const pngs = await page.evaluate(
@@ -232,7 +233,7 @@ async function compositeAttackTrails(job) {
     fs.rmSync(tempDir, { recursive: true, force: true });
     throw new Error(`Failed to bake attack trails into the export: ${error.message}`);
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
   }
 }
 

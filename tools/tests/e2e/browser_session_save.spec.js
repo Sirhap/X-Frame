@@ -191,3 +191,37 @@ test("SAV-004 typed horizontal 0→1 stays 1 after autosave and hard reload", as
   await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);
   await expect.poll(async () => Number(await baseX.inputValue())).toBe(1);
 });
+
+test("HUB-001 browser session can be cleared and a created project can be deleted", async ({ page }) => {
+  await page.addInitScript(() => {
+    globalThis.__XSXB_PRODUCTION__ = true;
+    document.documentElement.dataset.runtimeMode = "browser";
+  });
+
+  await page.goto("/projects");
+  await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);
+  const sessionCard = page.locator(".projectHubCard").filter({ hasText: "浏览器临时工作区" });
+  await expect(sessionCard.locator('[data-project-action="clear"]')).toBeVisible();
+  await expect(sessionCard.locator('[data-project-action="delete"]')).toHaveCount(0);
+  await expect(page.locator("#projectHubRecentDanger [data-project-action='clear']")).toBeVisible();
+  await expect(page.locator("#projectHubRecentDanger [data-project-action='delete']")).toHaveCount(0);
+
+  await sessionCard.locator('[data-project-action="clear"]').click();
+  await expect(page.locator("#appConfirmTitle")).toHaveText("清空项目");
+  await page.locator("#appConfirmAccept").click();
+  await expect(page.locator("#status")).toContainText("项目已清空");
+  await expect(sessionCard).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept("HubDelete"));
+  await page.locator("#projectHubNew").click();
+  await expect(page).toHaveURL(/project=hubdelete/i);
+  await page.goto("/projects");
+  const created = page.locator(".projectHubCard").filter({ hasText: "HubDelete" });
+  await expect(created.locator('[data-project-action="delete"]')).toBeVisible();
+  await created.locator('[data-project-action="delete"]').click();
+  await expect(page.locator("#appConfirmTitle")).toHaveText("删除项目");
+  await page.locator("#appConfirmAccept").click();
+  await expect(page.locator("#status")).toContainText("项目已删除");
+  await expect(created).toHaveCount(0);
+  await expect(page.locator(".projectHubCard").filter({ hasText: "浏览器临时工作区" })).toBeVisible();
+});

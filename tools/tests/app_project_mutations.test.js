@@ -123,6 +123,40 @@ test("clear and delete project mutations restore controls in finally", async () 
   assert.ok(fixture.events.includes("status:projectDeleted:Project A"));
 });
 
+test("clearProject can target a listed project without resetting the active session", async () => {
+  const fixture = createFixture();
+  fixture.state.config.projects = [
+    { id: "project-a", name: "Project A" },
+    { id: "project-b", name: "Project B" },
+  ];
+
+  assert.equal(await fixture.controller.clearProject("project-b"), true);
+  const clearCall = fixture.events.find((event) => event.url === "/api/projects/clear");
+  assert.deepEqual(JSON.parse(clearCall.options.body), { projectId: "project-b" });
+  assert.equal(
+    fixture.events.includes("reset"),
+    false,
+    "clearing a background project must not wipe the open workbench",
+  );
+});
+
+test("deleteProject refuses the browser temporary workspace", async () => {
+  const fixture = createFixture();
+  fixture.state.activeProjectId = "browser-session";
+  fixture.state.config = {
+    activeProject: { id: "browser-session", name: "浏览器临时工作区" },
+    dataRevision: "browser-session",
+    projects: [{ id: "browser-session", name: "浏览器临时工作区" }],
+  };
+
+  assert.equal(await fixture.controller.deleteProject("browser-session"), false);
+  assert.equal(
+    fixture.events.some((event) => event.url === "/api/projects/delete"),
+    false,
+  );
+  assert.ok(fixture.events.some((event) => String(event).includes("browserSessionCannotDelete")));
+});
+
 test("project mutation errors propagate while busy controls recover", async () => {
   const fixture = createFixture({
     fetchImpl: async () => response({ ok: false, status: 500, body: "failed" }),

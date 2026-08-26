@@ -68,7 +68,7 @@ function pngChunk(type, data) {
  * @param {number} height Image height.
  * @returns {Buffer} PNG file bytes.
  */
-function encodePngRgba(rgba, width, height) {
+function encodePngRgba(rgba, width, height, options = {}) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
     throw new RangeError("PNG dimensions must be positive integers.");
   }
@@ -85,12 +85,43 @@ function encodePngRgba(rgba, width, height) {
   header.writeUInt32BE(height, 4);
   header[8] = 8;
   header[9] = 6;
+  const level =
+    options && Number.isInteger(options.level) ? options.level : zlib.constants.Z_DEFAULT_COMPRESSION;
   return Buffer.concat([
     PNG_SIGNATURE,
     pngChunk("IHDR", header),
-    pngChunk("IDAT", zlib.deflateSync(filtered)),
+    pngChunk("IDAT", zlib.deflateSync(filtered, { level })),
     pngChunk("IEND", Buffer.alloc(0)),
   ]);
+}
+
+/**
+ * Lossless-reencodes one PNG with max zlib. Pixels stay identical. Writes only
+ * when the new file is strictly smaller.
+ * @param {string} filePath PNG path.
+ * @param {{dryRun?:boolean}} [options] When dryRun, skip the write.
+ * @returns {{path:string,bytesBefore:number,bytesAfter:number,wrote:boolean,width:number,height:number}}
+ */
+function compressPngFile(filePath, options = {}) {
+  const original = fs.readFileSync(filePath);
+  const decoded = decodePngRgba(filePath);
+  const recompressed = encodePngRgba(decoded.data, decoded.width, decoded.height, {
+    level: zlib.constants.Z_BEST_COMPRESSION,
+  });
+  const smaller = recompressed.length < original.length;
+  if (smaller && !options.dryRun) {
+    const tempPath = `${filePath}.tmp-${process.pid}`;
+    fs.writeFileSync(tempPath, recompressed);
+    fs.renameSync(tempPath, filePath);
+  }
+  return {
+    path: filePath,
+    bytesBefore: original.length,
+    bytesAfter: smaller ? recompressed.length : original.length,
+    wrote: smaller && !options.dryRun,
+    width: decoded.width,
+    height: decoded.height,
+  };
 }
 
 /**
@@ -467,7 +498,44 @@ function pickBodyComponent(components, width) {
 }
 
 /**
+ * Bright slash / spark / glow. Connected FX hangs below boots and must not set feetY.
+ * @param {number} r Red 0-255.
+ * @param {number} g Green 0-255.
+ * @param {number} b Blue 0-255.
+ * @returns {boolean} True when the pixel is effect, not body.
+ */
+function isSlashGlow(r, g, b) {
+  const luma = (r + g + b) / 3;
+  if (luma >= 155) return true;
+  return r >= 185 && g >= 145 && b <= 125;
+}
+
+/**
+ * Lowest body row inside the subject, ignoring cream slash and gold sparks.
+ * @param {Uint8ClampedArray|Uint8Array} rgba RGBA pixels.
+ * @param {number} width Image width.
+ * @param {object} body Chosen opaque component.
+ * @param {number} threshold Visible alpha threshold.
+ * @returns {number} feetY.
+ */
+function bodyFeetY(rgba, width, body, threshold) {
+  const minRun = Math.max(2, Math.floor(body.width * 0.08));
+  for (let y = body.maxY; y >= body.minY; y -= 1) {
+    let count = 0;
+    for (let x = body.minX; x <= body.maxX; x += 1) {
+      const offset = (y * width + x) * 4;
+      if (rgba[offset + 3] <= threshold) continue;
+      if (isSlashGlow(rgba[offset], rgba[offset + 1], rgba[offset + 2])) continue;
+      count += 1;
+    }
+    if (count >= minRun) return y;
+  }
+  return body.maxY;
+}
+
+/**
  * Finds the standing subject. Disconnected slash / glow below the feet is ignored.
+ * Connected bright slash on the same island is also ignored when placing feet.
  * @param {Uint8ClampedArray|Uint8Array} rgba RGBA pixels.
  * @param {number} width Image width.
  * @param {number} height Image height.
@@ -481,7 +549,7 @@ function subjectAnchor(rgba, width, height, threshold = ALPHA_VISIBLE) {
     minX: body.minX,
     minY: body.minY,
     maxX: body.maxX,
-    feetY: body.maxY,
+    feetY: bodyFeetY(rgba, width, body, threshold),
     width: body.width,
     height: body.height,
     centerX: body.centerX,
@@ -542,7 +610,10 @@ function placeFramesOnCanvas(frames, canvasWidth, canvasHeight, options = {}) {
  * }} Receipt.
  */
 function cutoutFrameFiles(filePaths, options = {}) {
-  const paths = (Array.isArray(filePaths) ? filePaths : []).filter((filePath) => fs.existsSync(filePath));
+  const requested = Array.isArray(filePaths) ? filePaths : [];
+  const missing = requested.find((filePath) => !fs.existsSync(filePath));
+  if (missing) throw new Error(`Cutout refused missing on-disk frame: ${missing}`);
+  const paths = requested;
   if (!paths.length) throw new Error("Cutout found no on-disk frames to process.");
   const frames = paths.map((filePath) => decodePngRgba(filePath));
   const requestedBackground = parseHexColor(options.keyColor);
@@ -643,6 +714,7 @@ module.exports = {
   ALPHA_VISIBLE,
   alreadyCutOut,
   collectWorkbenchExtras,
+  compressPngFile,
   cutoutFrameFiles,
   cutoutPngFile,
   decodePngRgba,

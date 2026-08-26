@@ -20,6 +20,7 @@
    *   editCutout?:(workset:{name:string,onLiveApply?:(outputs:Array<object>)=>void,items:Array<{name:string,image:HTMLCanvasElement,frame:object}>})=>Promise<Array<{canvas?:HTMLCanvasElement,data?:string,frame?:object}>|null>,
    *   onOpen?:(mode:"edit"|"import")=>void,
    *   onClose?:()=>void,
+   *   autoCommitImportOnLeave?:()=>boolean,
    *   onStatus?:(message:string)=>void
    *   onWorksetChanged?:(workset:{name:string,mode:string,frames:object[]})=>void
    * }} hooks Host integration hooks.
@@ -29,8 +30,7 @@
     const imagePixelBudget = root.ImagePixelBudget;
     if (!imagePixelBudget) throw new Error("ImagePixelBudget is required.");
     const appUtils =
-      root.XSXBAppUtils ||
-      (typeof module === "object" && module.exports ? require("./app_utils") : null);
+      root.XSXBAppUtils || (typeof module === "object" && module.exports ? require("./app_utils") : null);
     const extractFrameCrop = appUtils?.extractFrameCrop;
     if (typeof extractFrameCrop !== "function") throw new Error("XSXBAppUtils.extractFrameCrop is required.");
     if (!textModule) throw new Error("FrameOrganizerText is required.");
@@ -343,6 +343,11 @@
 
     function applyPlan(...args) {
       return organizerActionCall("applyPlan", ...args);
+    }
+
+    /** Adds the active import workset to its current project before leaving. */
+    function commitImportOnLeave(...args) {
+      return organizerActionCall("commitImportOnLeave", ...args);
     }
 
     function importIntoSession(...args) {
@@ -677,6 +682,7 @@
       const animation = hooks.getCurrentAnimation?.();
       if (!animation?.frames?.length || animation.images?.length !== animation.frames.length) {
         state.frames = [];
+        state.partialLoadSkipped = 0;
         state.baselineFrameIds = [];
         state.acceptedWorksetSignature = "";
         state.animationName = "";
@@ -685,26 +691,52 @@
         setStatus(text("noGroup"), "error");
         return;
       }
-      const croppedImages = animation.frames.map((frame, index) =>
-        extractFrameCrop(animation.images[index], frame.crop, document),
-      );
-      try {
-        let retainedPixels = 0;
-        croppedImages.forEach((image) => {
-          retainedPixels = assertImagePixelBudget(image, retainedPixels).totalPixels;
-        });
-      } catch (error) {
+      const budget = imagePixelBudget.takeUntilBudget(animation.images, 0, IMAGE_PIXEL_LIMITS);
+      if (!budget.kept.length) {
         state.frames = [];
+        state.partialLoadSkipped = 0;
         state.baselineFrameIds = [];
         state.acceptedWorksetSignature = "";
         state.animationName = "";
         renderGrid();
         renderPreview();
-        setStatus(error.message, "error");
+        try {
+          assertImagePixelBudget(animation.images[0], 0);
+        } catch (error) {
+          setStatus(error.message, "error");
+          return;
+        }
+        setStatus(text("noGroup"), "error");
         return;
       }
-      state.frames = animation.frames.map((frame, index) => {
-        const sourceImage = croppedImages[index];
+      const croppedImages = [];
+      let cropSkipped = 0;
+      for (const { source, index } of budget.kept) {
+        const frame = animation.frames[index];
+        try {
+          croppedImages.push({
+            frame,
+            sourceImage: extractFrameCrop(source, frame.crop, document),
+            index,
+          });
+        } catch {
+          cropSkipped += 1;
+        }
+      }
+      if (!croppedImages.length) {
+        state.frames = [];
+        state.partialLoadSkipped = 0;
+        state.baselineFrameIds = [];
+        state.acceptedWorksetSignature = "";
+        state.animationName = "";
+        renderGrid();
+        renderPreview();
+        setStatus(text("importInvalid"), "error");
+        return;
+      }
+      const skipped = budget.skipped + cropSkipped;
+      state.partialLoadSkipped = skipped;
+      state.frames = croppedImages.map(({ frame, sourceImage, index }) => {
         const organizerFrame = createFrame(sourceImage, {
           sourceIndex: index,
           originalIndex: index,
@@ -724,10 +756,26 @@
       state.anchorIndex = -1;
       state.previewIndex = 0;
       restoreWorksetIncludes();
+      if (typeof organizerUi?.worksetChangeSignature === "function") {
+        state.acceptedWorksetSignature = organizerUi.worksetChangeSignature(state.frames);
+      }
       if (canvasSync) await canvasSync.hydrateFrames(currentProjectId(), state.animationName, state.frames);
+      if (typeof organizerUi?.worksetChangeSignature === "function") {
+        state.acceptedWorksetSignature = organizerUi.worksetChangeSignature(state.frames);
+      }
       renderGrid();
       restartPreview();
-      setStatus(text("loaded", { name: animation.name, count: state.frames.length }), "success");
+      setStatus(
+        skipped
+          ? text("loadedPartial", {
+              name: animation.name,
+              count: state.frames.length,
+              total: animation.frames.length,
+              skipped,
+            })
+          : text("loaded", { name: animation.name, count: state.frames.length }),
+        skipped ? "idle" : "success",
+      );
     }
 
     /**
@@ -1073,13 +1121,23 @@
     async function requestClose(options = {}) {
       if (state.busy || state.videoExtracting) return false;
       if (uiController.hasUnsavedChanges() && !options.force) {
-        const confirmed = await uiController.requestConfirmation(text("discardConfirm"), [], {
-          title: text("discardTitle"),
-          confirmLabel: text("discardAccept"),
-          cancelLabel: text("discardStay"),
-          tone: "danger",
-        });
-        if (!confirmed) return false;
+        if (state.mode === "import" && hooks.autoCommitImportOnLeave?.() === true) {
+          const committed = await commitImportOnLeave();
+          if (!committed) return false;
+        } else {
+          const confirmed = await uiController.requestConfirmation(text("discardConfirm"), [], {
+            title: text("discardTitle"),
+            confirmLabel: text("discardAccept"),
+            cancelLabel: text("discardStay"),
+            tone: "danger",
+          });
+          if (!confirmed) return false;
+          state.frames = [];
+          state.baselineFrameIds = [];
+          state.acceptedWorksetSignature = "";
+          state.deletedFramesSnapshot = null;
+          if (elements.organizerUndoDelete) elements.organizerUndoDelete.hidden = true;
+        }
       }
       close(options);
       return true;

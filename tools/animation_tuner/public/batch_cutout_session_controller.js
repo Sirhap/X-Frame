@@ -8,9 +8,43 @@
   "use strict";
 
   /**
+   * Captures cutout queue mutations that should prompt before leaving.
+   * Preview-arming `processingActivated` is not included: merely rendering the
+   * result view is not a user edit.
+   * @param {object[]} items Cutout queue items.
+   * @returns {string} Stable session signature.
+   */
+  function sessionChangeSignature(items) {
+    return Array.from(items || [])
+      .map((item) =>
+        [
+          String(item.id || ""),
+          item.excluded ? 1 : 0,
+          Number(item.processingRevision || 0),
+          JSON.stringify(item.processingParameters || {}),
+          JSON.stringify(item.backgroundSamples || []),
+          JSON.stringify(item.protectedColors || []),
+          JSON.stringify(item.seedPoints || []),
+          String((item.repairs || []).length),
+        ].join("\u001f"),
+      )
+      .join("\u001e");
+  }
+
+  /**
+   * Marks the current queue as the accepted leave-confirm baseline.
+   * @param {object} state Cutout session state.
+   * @returns {void}
+   */
+  function acceptSession(state) {
+    if (!state) return;
+    state.acceptedSessionSignature = sessionChangeSignature(state.items);
+  }
+
+  /**
    * Creates the modal and isolated-workset session controller.
    * @param {object} dependencies Modal/session dependencies supplied by the host.
-   * @returns {{clear:Function,deleteSelectedItems:Function,open:Function,openWorkset:Function,close:Function,requestClose:Function,hasWorksetChanges:Function}}
+   * @returns {{clear:Function,deleteSelectedItems:Function,open:Function,openWorkset:Function,close:Function,requestClose:Function,hasWorksetChanges:Function,hasUnsavedChanges:Function}}
    */
   function createController(dependencies = {}) {
     const {
@@ -65,6 +99,7 @@
       "protectionPreview",
       "samplingProtectedColor",
       "samplingBackgroundColor",
+      "acceptedSessionSignature",
     ];
 
     /** Preserves a standalone batch while an organizer-owned workset is edited. @returns {void} */
@@ -168,6 +203,7 @@
       if (!state.items.length) {
         onSessionReset();
         resetBatchPreviewState();
+        acceptSession(state);
         setStatus(text("ready"));
         return true;
       }
@@ -198,6 +234,7 @@
       state.batchTrayCollapsed = true;
       state.previewMode = "result";
       state.qualityOnly = false;
+      acceptSession(state);
       renderQueue();
       renderPreview();
       setStatus(text("ready"));
@@ -361,6 +398,7 @@
             "success",
           );
         }
+        acceptSession(state);
       });
     }
     /**
@@ -410,7 +448,10 @@
      */
     async function requestClose(worksetResult = null, options = {}) {
       const discardsWorkset =
-        worksetResult === null && typeof state.worksetResolver === "function" && hasWorksetChanges();
+        worksetResult === null &&
+        !options.force &&
+        (typeof state.worksetResolver === "function" || state.sourceKind === "group") &&
+        hasWorksetChanges();
       if (discardsWorkset && !options.force) {
         const confirmed = await requestConfirmation(text("discardConfirm"), [], {
           title: text("discardTitle"),
@@ -425,21 +466,38 @@
 
     /**
      * Returns whether an isolated workset has generated or edited output.
-     * Merely opening a single image on its original view is not a modification.
+     * Loading a group, restoring persisted cutout parameters, or preview-arming
+     * automatic processing is not a modification.
      * @returns {boolean}
      */
     function hasWorksetChanges() {
-      return state.items.some(
-        (item) =>
-          item.processingActivated ||
-          item.repairs?.length ||
-          item.backgroundSamples?.length ||
-          item.protectedColors?.length,
-      );
+      return sessionChangeSignature(state.items) !== String(state.acceptedSessionSignature || "");
     }
 
-    return { clear, deleteSelectedItems, open, openWorkset, close, requestClose, hasWorksetChanges };
+    /**
+     * Returns whether leaving would discard cutout work the user actually made.
+     * Loading the current animation or clearing the batch is not a modification.
+     * @returns {boolean}
+     */
+    function hasUnsavedChanges() {
+      if (state.busy) return true;
+      if (!Array.from(state.items || []).length) return false;
+      if (state.sourceKind === "group" || state.sourceKind === "workset") return hasWorksetChanges();
+      return true;
+    }
+
+    acceptSession(state);
+    return {
+      clear,
+      deleteSelectedItems,
+      open,
+      openWorkset,
+      close,
+      requestClose,
+      hasWorksetChanges,
+      hasUnsavedChanges,
+    };
   }
 
-  return { createController };
+  return { createController, sessionChangeSignature, acceptSession };
 });

@@ -8,6 +8,7 @@ const test = require("node:test");
 const { createProjectStore } = require("../project_store");
 const { createXsxbMcpService } = require("../xsxb_mcp_service");
 const { decodePngRgba, encodePngRgba } = require("../xsxb_mcp_cutout");
+const { encodeGifWithFfmpeg } = require("../xsxb_mcp_processes");
 
 const TRAIL_PRESET = path.join(
   __dirname,
@@ -168,6 +169,20 @@ async function importWalk(current) {
   });
 }
 
+/**
+ * Builds an easily compressible RGBA PNG so compress_frames has bytes to save.
+ * @param {number} width Pixel width.
+ * @param {number} height Pixel height.
+ * @returns {Buffer} PNG bytes encoded at zlib level 0.
+ */
+function bulkyRgbaPng(width, height) {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < rgba.length; offset += 4) {
+    rgba.set([offset % 250, 40, 200, offset % 5 === 0 ? 0 : 255], offset);
+  }
+  return encodePngRgba(rgba, width, height, { level: 0 });
+}
+
 test("set_visual_transform writes character, group, and frame levels with clear support", async () => {
   const current = fixture();
   try {
@@ -278,6 +293,86 @@ test("replace_frame swaps the PNG, keeps tuning, and refreshes the stored size",
       current.service.call("xsxb_replace_frame", { frame: 99, file_path: replacementPath }),
       /Frame must be an integer/,
     );
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("compress_frames reencodes stored PNGs losslessly and dry_run does not write", async () => {
+  const current = fixture();
+  try {
+    const bulky = bulkyRgbaPng(24, 16);
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), bulky);
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), bulky);
+    await importWalk(current);
+    const animation = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    const firstPath = animation.animation.frames[0].absolutePath;
+    const sizeBefore = fs.statSync(firstPath).size;
+    const preview = await current.service.call("xsxb_compress_frames", {
+      animation_id: "walk",
+      dry_run: true,
+    });
+    assert.equal(preview.dryRun, true);
+    assert.ok(preview.savedBytes > 0);
+    assert.equal(fs.statSync(firstPath).size, sizeBefore);
+    const originalPixels = decodePngRgba(firstPath).data;
+    const written = await current.service.call("xsxb_compress_frames", { animation_id: "walk" });
+    assert.ok(written.rewritten >= 1);
+    assert.ok(written.bytesAfter < written.bytesBefore);
+    assert.deepEqual(
+      Buffer.from(decodePngRgba(firstPath).data),
+      Buffer.from(originalPixels),
+      "pixels stay identical",
+    );
+    assert.ok(fs.statSync(firstPath).size < sizeBefore);
+    const again = await current.service.call("xsxb_compress_frames", { animation_id: "walk" });
+    assert.equal(again.rewritten, 0);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("compress_frames start_frame/end_frame only rewrites the selected slice", async () => {
+  const current = fixture();
+  try {
+    const bulky = bulkyRgbaPng(24, 16);
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), bulky);
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), bulky);
+    await importWalk(current);
+    const animation = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    const firstPath = animation.animation.frames[0].absolutePath;
+    const secondPath = animation.animation.frames[1].absolutePath;
+    const firstBefore = fs.statSync(firstPath).size;
+    const secondBefore = fs.statSync(secondPath).size;
+    const written = await current.service.call("xsxb_compress_frames", {
+      animation_id: "walk",
+      start_frame: 1,
+      end_frame: 1,
+    });
+    assert.equal(written.frameCount, 1);
+    assert.equal(written.frames[0].index, 1);
+    assert.equal(fs.statSync(firstPath).size, firstBefore);
+    assert.ok(fs.statSync(secondPath).size < secondBefore);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("compress_frames names the first missing on-disk frame instead of succeeding", async () => {
+  const current = fixture();
+  try {
+    const bulky = bulkyRgbaPng(24, 16);
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), bulky);
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), bulky);
+    await importWalk(current);
+    const animation = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    const secondPath = animation.animation.frames[1].absolutePath;
+    fs.rmSync(secondPath);
+    await assert.rejects(
+      () => current.service.call("xsxb_compress_frames", { animation_id: "walk" }),
+      /missing on-disk frame 1/,
+    );
+    assert.equal(fs.existsSync(animation.animation.frames[0].absolutePath), true);
   } finally {
     current.cleanup();
   }
@@ -514,4 +609,17 @@ test("export_gif paints a trailing smear behind a rotating blade", async () => {
   } finally {
     current.cleanup();
   }
+});
+
+test("encodeGifWithFfmpeg rejects missing durations instead of writing NaN", async () => {
+  await assert.rejects(
+    () =>
+      encodeGifWithFfmpeg({
+        framePaths: ["/tmp/a.png", "/tmp/b.png"],
+        durations: [0.08],
+        outputPath: "/tmp/out.gif",
+        ffmpegBinary: "true",
+      }),
+    /GIF duration is missing for frame 2/,
+  );
 });

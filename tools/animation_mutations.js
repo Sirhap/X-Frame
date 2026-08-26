@@ -239,6 +239,13 @@ function deleteAnimation(options) {
     (asset) => !animationKeys.has(String(asset.groupKey || "")),
   );
 
+  projectStore.writeJson(paths.manifest, manifest);
+  projectStore.writeJson(paths.tuning, tuning);
+  projectStore.writeJson(paths.frameAudio, nextAudio);
+  projectStore.writeJson(paths.frameImageAttachments, nextAttachments);
+  projectStore.writeJson(paths.attachmentAssets, nextAssets);
+  projectStore.writeJson(paths.attackTrails, attackTrails);
+
   const workspaceDir = projectStore.projectWorkspaceDir(project);
   const source = String(animation.source || path.dirname(animation.frames?.[0]?.path || ""));
   const removedDirectory = safeResolve(root, source);
@@ -278,12 +285,6 @@ function deleteAnimation(options) {
       fs.rmSync(textureDirectory, { recursive: true, force: true });
     }
   }
-  projectStore.writeJson(paths.manifest, manifest);
-  projectStore.writeJson(paths.tuning, tuning);
-  projectStore.writeJson(paths.frameAudio, nextAudio);
-  projectStore.writeJson(paths.frameImageAttachments, nextAttachments);
-  projectStore.writeJson(paths.attachmentAssets, nextAssets);
-  projectStore.writeJson(paths.attackTrails, attackTrails);
   return {
     manifest,
     tuning,

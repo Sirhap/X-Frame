@@ -131,10 +131,48 @@
   }
 
   /**
+   * Creates a detached quick-tool workset from one project animation snapshot.
+   * Every image passes through the injected copier so later tool edits cannot
+   * mutate project-owned Canvas resources by reference.
+   * @param {{name?:string,fps?:number,frames?:object[],images?:object[]}} source Project animation source.
+   * @param {{copyImage:(image:object,frame:object,index:number)=>object,copyNamespace?:string}} options Copy adapters.
+   * @returns {{name:string,sourceTool:"project-copy",frames:object[]}} Independent workset.
+   */
+  function createIndependentToolWorkset(source, options = {}) {
+    if (typeof options.copyImage !== "function") {
+      throw new TypeError("Project animation copy requires an image copier.");
+    }
+    const frames = Array.from(source?.frames || []);
+    const images = Array.from(source?.images || []);
+    if (!frames.length || frames.length !== images.length) {
+      throw new Error("当前项目动画尚未准备好可复制的完整帧序列。");
+    }
+    const copyNamespace =
+      String(options.copyNamespace || root?.crypto?.randomUUID?.() || Date.now()).trim() ||
+      String(Date.now());
+    const fallbackDurationMs = Math.max(1, Math.round(1000 / Math.max(1, Number(source?.fps) || 12)));
+    return {
+      name: String(source?.name || "项目动画副本"),
+      sourceTool: "project-copy",
+      frames: frames.map((frame, index) => ({
+        id: `${copyNamespace}:${index + 1}`,
+        name: String(frame?.name || `frame_${String(index + 1).padStart(4, "0")}.png`),
+        image: options.copyImage(images[index], frame, index),
+        enabled: frame?.enabled !== false && frame?.disabled !== true,
+        assetRevision: 0,
+        durationMs: Math.max(
+          1,
+          Number(frame?.durationMs || frame?.duration || fallbackDurationMs) || fallbackDurationMs,
+        ),
+      })),
+    };
+  }
+
+  /**
    * Chooses the export workset for the delivery page without inventing frames.
-   * Standalone /tools/export is the same page: it inherits the current session
-   * animation when one exists, and only shows the empty state when there are
-   * truly no frames in either the temp workset or the current animation.
+   * Standalone tools only consume temporary worksets; project delivery only
+   * consumes the current project animation. Crossing that boundary requires an
+   * explicit copy operation.
    * @param {{navigationContext?:string,temporaryWorkset?:{frames?:object[]}|null,currentGroup?:{frames?:object[]}|null}} input Visible sources.
    * @returns {{kind:"temporary"|"current"|"empty",workset?:object,message?:string}} Mount source.
    */
@@ -142,9 +180,12 @@
     const temporaryFrames = Array.isArray(input.temporaryWorkset?.frames)
       ? input.temporaryWorkset.frames
       : [];
-    if (temporaryFrames.length) return { kind: "temporary", workset: input.temporaryWorkset };
+    const standalone = input.navigationContext === "standalone";
+    if (standalone && temporaryFrames.length) {
+      return { kind: "temporary", workset: input.temporaryWorkset };
+    }
     const currentFrames = Array.isArray(input.currentGroup?.frames) ? input.currentGroup.frames : [];
-    if (currentFrames.length) return { kind: "current" };
+    if (!standalone && currentFrames.length) return { kind: "current" };
     return {
       kind: "empty",
       message:
@@ -160,7 +201,7 @@
 
   /**
    * Creates the project and quick-tool hub renderer.
-   * @param {{documentRef?:Document,windowRef?:Window,projectLabel?:(project:object)=>string,translate?:(key:string,vars?:object)=>string,prompt?:(message:string)=>string|null,createProject?:(label:string)=>Promise<object|void>|object|void,onError?:(error:Error)=>void}} dependencies Hub dependencies.
+   * @param {{documentRef?:Document,windowRef?:Window,projectLabel?:(project:object)=>string,translate?:(key:string,vars?:object)=>string,prompt?:(message:string)=>string|null,createProject?:(label:string)=>Promise<object|void>|object|void,clearProject?:(project:object)=>Promise<boolean>|boolean,deleteProject?:(project:object)=>Promise<boolean>|boolean,onError?:(error:Error)=>void}} dependencies Hub dependencies.
    * @returns {{bind:()=>void,renderProjects:(config:object|null)=>void}} Hub operations.
    */
   function createController(dependencies = {}) {
@@ -182,6 +223,8 @@
           projectGroupSummary: `${vars.count ?? 0} 个动画组`,
           projectReadySummary: `${vars.count ?? 0} 个动画组 · ${vars.frames ?? 0} 帧`,
           browserSessionProject: "浏览器临时工作区",
+          clearProject: "清空项目",
+          deleteProject: "删除项目",
           importProject: "导入视频 / 图片序列 →",
           projectNeedsImportSummary: "还没有动画帧 · 可从视频抽帧或导入 PNG",
           newProjectPrompt: "项目名称",
@@ -197,6 +240,7 @@
       recentTitle: documentRef.querySelector("#projectHubRecentTitle"),
       recentSummary: documentRef.querySelector("#projectHubRecentSummary"),
       continueLink: documentRef.querySelector("#projectHubContinue"),
+      recentDanger: documentRef.querySelector("#projectHubRecentDanger"),
       list: documentRef.querySelector("#projectHubList"),
       empty: documentRef.querySelector("#projectHubEmpty"),
       newProject: documentRef.querySelector("#projectHubNew"),
@@ -275,15 +319,87 @@
       return projectLabel(project) || project?.id || translate("unnamedProject");
     }
 
+    /**
+     * Returns which destructive hub actions a project may expose.
+     * @param {object} project Project registry entry.
+     * @returns {{canClear:boolean,canDelete:boolean}}
+     */
+    function projectHubActions(project) {
+      const protectedSystem = project?.id === "codex_pets" || project?.kind === "codex_pets";
+      return {
+        canClear: !protectedSystem,
+        canDelete: !protectedSystem && project?.id !== "browser-session",
+      };
+    }
+
+    /**
+     * Runs a hub-level clear or delete through the host.
+     * @param {"clear"|"delete"} action Requested action.
+     * @param {object} project Target project.
+     * @returns {Promise<void>}
+     */
+    async function runProjectAction(action, project) {
+      const handler = action === "delete" ? dependencies.deleteProject : dependencies.clearProject;
+      if (typeof handler !== "function") return;
+      try {
+        await handler(project);
+      } catch (error) {
+        dependencies.onError?.(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+
+    /**
+     * Builds the clear/delete controls for a project card or the recent row.
+     * @param {object} project Project registry entry.
+     * @returns {HTMLElement} Action row.
+     */
+    function createProjectActionButtons(project) {
+      const actions = documentRef.createElement("div");
+      actions.className = "projectHubCardActions";
+      const { canClear, canDelete } = projectHubActions(project);
+      if (canClear) {
+        const button = documentRef.createElement("button");
+        button.type = "button";
+        button.className = "secondary";
+        button.dataset.projectAction = "clear";
+        button.dataset.projectId = String(project.id || "");
+        button.textContent = translate("clearProject");
+        button.addEventListener("click", (event) => {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          void runProjectAction("clear", project);
+        });
+        actions.append(button);
+      }
+      if (canDelete) {
+        const button = documentRef.createElement("button");
+        button.type = "button";
+        button.className = "secondary dangerAction";
+        button.dataset.projectAction = "delete";
+        button.dataset.projectId = String(project.id || "");
+        button.textContent = translate("deleteProject");
+        button.addEventListener("click", (event) => {
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          void runProjectAction("delete", project);
+        });
+        actions.append(button);
+      }
+      actions.hidden = !canClear && !canDelete;
+      return actions;
+    }
+
     /** Creates one accessible project card without HTML string interpolation. */
     function createProjectCard(project, activeProjectId, config) {
-      const card = documentRef.createElement("a");
+      const card = documentRef.createElement("article");
       card.className = "projectHubCard";
       const groupCount = projectAnimationGroupCount(project, config, activeProjectId);
       const needsImport = groupCount === 0;
-      card.href = projectHref(project, config, activeProjectId);
+      const link = documentRef.createElement("a");
+      link.className = "projectHubCardLink";
+      link.href = projectHref(project, config, activeProjectId);
       if (groupCount !== null) card.dataset.projectState = needsImport ? "needs-import" : "ready";
-      card.setAttribute("data-document-navigation", "");
+      link.setAttribute("data-document-navigation", "");
       const eyebrow = documentRef.createElement("span");
       eyebrow.textContent = translate(
         project.id === activeProjectId ? "currentProjectEyebrow" : "projectEyebrow",
@@ -296,7 +412,8 @@
         : projectReadySummaryText(project, config, activeProjectId);
       const action = documentRef.createElement("strong");
       action.textContent = translate(needsImport ? "importProject" : "openProject");
-      card.append(eyebrow, title, summary, action);
+      link.append(eyebrow, title, summary, action);
+      card.append(link, createProjectActionButtons(project));
       return card;
     }
 
@@ -327,6 +444,12 @@
           elements.continueLink.dataset.projectState = recentNeedsImport ? "needs-import" : "ready";
         }
         setProjectActionLabel(elements.continueLink, recentNeedsImport ? "importProject" : "continueProject");
+      }
+      if (elements.recentDanger) {
+        const recentActions = createProjectActionButtons(recent);
+        elements.recentDanger.replaceChildren(...recentActions.children);
+        elements.recentDanger.hidden = recentActions.hidden;
+        elements.recentDanger.className = recentActions.className;
       }
     }
 
@@ -366,6 +489,7 @@
 
   return Object.freeze({
     MAX_NAME_LENGTH,
+    createIndependentToolWorkset,
     createController,
     normalizeProjectName,
     resolveCurrentAnimationSource,

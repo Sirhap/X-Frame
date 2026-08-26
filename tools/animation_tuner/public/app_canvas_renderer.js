@@ -390,11 +390,13 @@
 
     function drawCoordinateMarker(point, label, color) {
       if (!point) return;
-      const size = 10 * getDevicePixelRatio();
+      const dpr = getDevicePixelRatio();
+      const size = 10 * dpr;
+      const labelOffset = coordinateMarkerLabelOffset(dpr);
       ctx.save();
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
-      ctx.lineWidth = Math.max(1.5 * getDevicePixelRatio(), 1.5);
+      ctx.lineWidth = Math.max(1.5 * dpr, 1.5);
       ctx.beginPath();
       ctx.moveTo(point.x - size, point.y);
       ctx.lineTo(point.x + size, point.y);
@@ -402,10 +404,11 @@
       ctx.lineTo(point.x, point.y + size);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(point.x, point.y, 3.2 * getDevicePixelRatio(), 0, Math.PI * 2);
+      ctx.arc(point.x, point.y, 3.2 * dpr, 0, Math.PI * 2);
       ctx.fill();
-      ctx.font = `${12 * getDevicePixelRatio()}px system-ui, sans-serif`;
-      ctx.fillText(label, point.x + 9 * getDevicePixelRatio(), point.y - 18 * getDevicePixelRatio());
+      ctx.font = `${12 * dpr}px system-ui, sans-serif`;
+      ctx.textBaseline = labelOffset.baseline;
+      ctx.fillText(label, point.x + labelOffset.x, point.y + labelOffset.y);
       ctx.restore();
     }
 
@@ -500,8 +503,8 @@
       const stageRect = els.stage.getBoundingClientRect();
       const x = (event.clientX - stageRect.left) * getDevicePixelRatio();
       const y = (event.clientY - stageRect.top) * getDevicePixelRatio();
-      const padding = Math.max(18 * getDevicePixelRatio(), Math.min(rect.width, rect.height) * 0.18);
-      const minSize = 72 * getDevicePixelRatio();
+      const padding = Math.max(24 * getDevicePixelRatio(), Math.min(rect.width, rect.height) * 0.22);
+      const minSize = 96 * getDevicePixelRatio();
       const extraX = Math.max(0, minSize - rect.width) * 0.5;
       const extraY = Math.max(0, minSize - rect.height) * 0.5;
       return (
@@ -715,5 +718,16 @@
     };
   }
 
-  return { createController };
+  /**
+   * Offset for the Current/Owner origin caption so it sits under the crosshair,
+   * not over the sprite torso.
+   * @param {number} dpr Device pixel ratio.
+   * @returns {{x:number,y:number,baseline:CanvasTextBaseline}}
+   */
+  function coordinateMarkerLabelOffset(dpr = 1) {
+    const scale = Number(dpr) || 1;
+    return { x: 9 * scale, y: 16 * scale, baseline: "top" };
+  }
+
+  return { createController, coordinateMarkerLabelOffset };
 });

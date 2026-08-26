@@ -326,6 +326,7 @@ test("route application force-closes the organizer when switching stages", async
     getFrameOrganizer: () => ({
       isOpen: () => true,
       getMode: () => "edit",
+      hasUnsavedChanges: () => false,
       async requestClose(options) {
         events.push(options?.force ? "force-close" : "ask-close");
         return Boolean(options?.force);
@@ -337,6 +338,29 @@ test("route application force-closes the organizer when switching stages", async
   assert.equal(await controller.applyWorkbenchRoute(), true);
   assert.equal(windowRef.location.pathname, "/workspace/delivery/export");
   assert.deepEqual(events, ["force-close", "activate:export"]);
+});
+
+test("stage switching cannot force-close an unsaved import workset", async () => {
+  const windowRef = createWindow("http://localhost/workspace/animation/transform");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getFrameOrganizer: () => ({
+      isOpen: () => true,
+      getMode: () => "import",
+      hasUnsavedChanges: () => true,
+      async requestClose(options) {
+        events.push(options?.force ? "force-close" : "protected-close");
+        return false;
+      },
+    }),
+    activateWorkspaceRoute: (route) => events.push(`activate:${route}`),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), false);
+  assert.equal(windowRef.location.pathname, "/workspace/resources/import");
+  assert.deepEqual(events, ["protected-close"]);
 });
 
 test("returning to projects asks before discarding organizer work", async () => {
@@ -533,6 +557,28 @@ test("scatter route stays put when a leftover organizer refuses to close", async
   assert.equal(await controller.applyWorkbenchRoute(), true);
   assert.equal(windowRef.location.pathname, "/tools/scatter-slice");
   assert.deepEqual(events, ["force-close"]);
+});
+
+test("project scatter restores the import route when an unsaved workset stays open", async () => {
+  const windowRef = createWindow("http://localhost/workspace/resources/scatter");
+  const events = [];
+  const controller = createController({
+    windowRef,
+    documentRef: { title: "" },
+    getFrameOrganizer: () => ({
+      isOpen: () => true,
+      getMode: () => "import",
+      hasUnsavedChanges: () => true,
+      async requestClose(options) {
+        events.push(options?.force ? "force-close" : "protected-close");
+        return false;
+      },
+    }),
+  });
+
+  assert.equal(await controller.applyWorkbenchRoute(), false);
+  assert.equal(windowRef.location.pathname, "/workspace/resources/import");
+  assert.deepEqual(events, ["protected-close"]);
 });
 
 test("choosing scatter from a dirty workspace does not ask before leaving tuning", async () => {

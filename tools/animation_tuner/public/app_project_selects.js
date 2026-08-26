@@ -64,10 +64,13 @@
       elements.projectContext?.classList?.toggle("singleProject", projects.length <= 1);
       const protectedSystemProject =
         activeProject?.id === "codex_pets" || activeProject?.kind === "codex_pets";
+      const protectedDelete = protectedSystemProject || activeProject?.id === "browser-session";
       if (elements.clearProject) elements.clearProject.disabled = !active || protectedSystemProject;
       if (elements.deleteProject) {
-        elements.deleteProject.disabled = !active || protectedSystemProject;
-        elements.deleteProject.title = protectedSystemProject ? translate("codexPetsProjectProtected") : "";
+        elements.deleteProject.disabled = !active || protectedDelete;
+        elements.deleteProject.title = protectedDelete
+          ? translate(protectedSystemProject ? "codexPetsProjectProtected" : "browserSessionCannotDelete")
+          : "";
       }
       renderGodotHandoff();
     }

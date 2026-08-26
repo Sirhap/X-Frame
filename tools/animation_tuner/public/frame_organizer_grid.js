@@ -229,6 +229,7 @@
           <button type="button" class="organizerFrameSelect"></button>
           <span class="organizerFrameNumber"></span>
           <span class="organizerFrameAnalysisBadge"></span>
+          <span class="organizerFrameSelectionBadge"></span>
           <img alt="" width="156" height="156" loading="lazy">
           <span class="organizerFrameName"></span>
           <span class="organizerFrameTag"></span>
@@ -309,9 +310,13 @@
         const analysisBadge = card.querySelector(".organizerFrameAnalysisBadge");
         analysisBadge.textContent = frame.analysisMatch ? text(`${frame.analysisMatch}Badge`) : "";
         analysisBadge.hidden = !frame.analysisMatch;
+        const selectionBadge = card.querySelector(".organizerFrameSelectionBadge");
+        selectionBadge.textContent = text("selectedBadge");
+        selectionBadge.hidden = !frame.selected;
         const includeInput = card.querySelector("input");
         includeInput.checked = frame.included;
         includeInput.setAttribute("aria-label", text("includeFrame", { name: frame.name }));
+        card.querySelector(".organizerFrameInclude").title = text("worksetCheckHint");
         const selectButton = card.querySelector(".organizerFrameSelect");
         selectButton.setAttribute("aria-label", text("selectFrame", { name: frame.name }));
         selectButton.setAttribute("aria-pressed", String(frame.selected));

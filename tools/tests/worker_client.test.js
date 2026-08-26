@@ -231,6 +231,64 @@ test("cutout executor does not retry algorithm failures", async () => {
   assert.equal(instances.length, 1);
 });
 
+test("cutout executor rebuilds a poisoned Worker and retries one engine execution failure", async () => {
+  const instances = [];
+  const requestContexts = [];
+  class RecoveringEngineWorker {
+    constructor() {
+      this.instanceIndex = instances.length;
+      this.terminated = false;
+      instances.push(this);
+    }
+
+    postMessage(message) {
+      requestContexts.push({
+        analysisMode: message.analysisMode,
+        protocolVersion: message.protocolVersion,
+      });
+      if (this.instanceIndex === 0) {
+        queueMicrotask(() =>
+          this.onmessage({
+            data: { id: message.id, ok: false, error: "ENGINE_EXECUTION_FAILED" },
+          }),
+        );
+        return;
+      }
+      const received = new Uint8ClampedArray(message.sourceBuffer);
+      queueMicrotask(() =>
+        this.onmessage({
+          data: {
+            id: message.id,
+            ok: true,
+            dataBuffer: new Uint8ClampedArray(received).buffer,
+            automaticBuffer: new Uint8ClampedArray(received).buffer,
+          },
+        }),
+      );
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+
+  const executor = createExecutor({ WorkerConstructor: RecoveringEngineWorker });
+  const source = Uint8ClampedArray.from([20, 40, 60, 255]);
+  const result = await executor.process(source, 1, 1, {}, [], {
+    analysisMode: "pixels-only",
+    protocolVersion: 1,
+  });
+
+  assert.deepEqual(Array.from(result.data), Array.from(source));
+  assert.deepEqual(requestContexts, [
+    { analysisMode: "pixels-only", protocolVersion: 1 },
+    { analysisMode: "pixels-only", protocolVersion: 1 },
+  ]);
+  assert.equal(instances.length, 2);
+  assert.equal(instances[0].terminated, true);
+  assert.equal(instances[1].terminated, false);
+});
+
 test("cutout executor transports protected selection analysis without a synchronous fallback", async () => {
   const received = [];
   class SelectionWorker {

@@ -185,6 +185,58 @@ function organizerThumbnailTransparency(page) {
 }
 
 /**
+ * Wraps browser Workers to observe cutout request modes and optionally inject
+ * one protected-engine failure before allowing the fresh Worker retry through.
+ * @param {import("@playwright/test").Page} page Browser page.
+ * @param {{failFirstExecution?:boolean}} [options] Failure injection policy.
+ * @returns {Promise<void>}
+ */
+async function instrumentCutoutWorkers(page, options = {}) {
+  await page.addInitScript(({ failFirstExecution }) => {
+    const NativeWorker = window.Worker;
+    window.__cutoutWorkerRequests = [];
+    window.__cutoutWorkerInstances = 0;
+    window.__cutoutEngineFailureInjected = false;
+    window.Worker = class InstrumentedWorker {
+      constructor(...args) {
+        this.nativeWorker = new NativeWorker(...args);
+        this.lastOperation = "";
+        window.__cutoutWorkerInstances += 1;
+        this.nativeWorker.onmessage = (event) => {
+          if (
+            failFirstExecution &&
+            !window.__cutoutEngineFailureInjected &&
+            this.lastOperation === "product-cutout" &&
+            event.data?.ok
+          ) {
+            window.__cutoutEngineFailureInjected = true;
+            this.onmessage?.({
+              data: { id: event.data.id, ok: false, error: "ENGINE_EXECUTION_FAILED" },
+            });
+            return;
+          }
+          this.onmessage?.(event);
+        };
+        this.nativeWorker.onerror = (event) => this.onerror?.(event);
+        this.nativeWorker.onmessageerror = (event) => this.onmessageerror?.(event);
+      }
+
+      postMessage(message, transfer) {
+        this.lastOperation = message.operation;
+        if (message.operation === "product-cutout") {
+          window.__cutoutWorkerRequests.push({ analysisMode: message.analysisMode });
+        }
+        this.nativeWorker.postMessage(message, transfer);
+      }
+
+      terminate() {
+        this.nativeWorker.terminate();
+      }
+    };
+  }, options);
+}
+
+/**
  * Opens the sidebar batch panel after its queue is ready.
  * @param {import("@playwright/test").Page} page Browser page.
  * @returns {Promise<void>}
@@ -239,6 +291,28 @@ test("organizer smart cutout processes the workset without opening the batch edi
   await expect(page.locator("#organizerViewEdited")).toHaveClass(/active/);
 });
 
+test("organizer smart cutout rebuilds a poisoned engine Worker and completes the batch", async ({ page }) => {
+  await instrumentCutoutWorkers(page, { failFirstExecution: true });
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles(
+    [0, 2].map((shift, index) => ({
+      name: `frame_${String(index + 1).padStart(4, "0")}.png`,
+      mimeType: "image/png",
+      buffer: subjectOnBackgroundPng(64, shift, [255, 255, 255]),
+    })),
+  );
+
+  await page.locator("#organizerBatchCutout").click();
+
+  await expect(page.locator("#organizerStatus")).toContainText("已回写 2 帧", { timeout: 60000 });
+  const diagnostics = await page.evaluate(() => ({
+    failureInjected: window.__cutoutEngineFailureInjected,
+    instances: window.__cutoutWorkerInstances,
+  }));
+  expect(diagnostics.failureInjected).toBe(true);
+  expect(diagnostics.instances).toBeGreaterThanOrEqual(2);
+});
+
 for (const [label, background] of [
   ["white", [255, 255, 255]],
   ["green screen", [0, 177, 64]],
@@ -273,6 +347,7 @@ test("organizer smart cutout reports progress and encodes every frame once", asy
   const errors = [];
   const frameCount = 20;
   page.on("pageerror", (error) => errors.push(error.message));
+  await instrumentCutoutWorkers(page);
   await page.addInitScript(() => {
     window.__frameEncodes = 0;
     const encode = HTMLCanvasElement.prototype.toDataURL;
@@ -323,6 +398,7 @@ test("organizer smart cutout reports progress and encodes every frame once", asy
     }).observe(overlay, { attributes: true, attributeFilter: ["hidden"] });
   });
   const baselineEncodes = await page.evaluate(() => window.__frameEncodes);
+  const baselineWorkerRequests = await page.evaluate(() => window.__cutoutWorkerRequests.length);
 
   await page.locator("#organizerBatchCutout").click();
 
@@ -338,6 +414,12 @@ test("organizer smart cutout reports progress and encodes every frame once", asy
 
   const encodes = (await page.evaluate(() => window.__frameEncodes)) - baselineEncodes;
   expect(encodes).toBeLessThanOrEqual(frameCount * 7);
+  const requestModes = await page.evaluate(
+    (baseline) => window.__cutoutWorkerRequests.slice(baseline).map((request) => request.analysisMode),
+    baselineWorkerRequests,
+  );
+  expect(requestModes.filter((mode) => mode === "pixels-only")).toHaveLength(frameCount);
+  expect(requestModes.filter((mode) => mode !== "pixels-only").length).toBeLessThanOrEqual(1);
 
   const previewLabel = await page.locator("#organizerPreviewFrame").textContent();
   await expect.poll(() => page.locator("#organizerPreviewFrame").textContent()).not.toBe(previewLabel);
@@ -536,7 +618,7 @@ test("the website home, import flow, and tuning workbench use separate URLs", as
   await page.getByRole("link", { name: "转到动画项目" }).click();
   await expect(page).toHaveURL(/\/projects$/);
   await expect(page.locator("#projectHubContinue")).toHaveAttribute("data-document-navigation", "");
-  await expect(page.locator(".projectHubCard").first()).toHaveAttribute("data-document-navigation", "");
+  await expect(page.locator(".projectHubCardLink").first()).toHaveAttribute("data-document-navigation", "");
   await page.locator("#projectHubContinue").click();
   await expect(page).toHaveURL(/\/workspace/);
   await expect(page.locator("#stage")).toBeVisible();
@@ -593,6 +675,40 @@ test("transform sidebar lets the main animation frame move directly on the canva
   await page.mouse.up();
 
   await expect.poll(async () => Number(await page.locator("#baseX").inputValue())).not.toBe(offsetBefore);
+});
+
+test("transform stage wheel and Space do not scroll the page", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 700 });
+  await page.goto("/workspace/animation/transform");
+  await expect(page.locator("#stage")).toBeVisible();
+  const stageBox = await page.locator("#stage").boundingBox();
+  expect(stageBox).not.toBeNull();
+  await page.mouse.move(stageBox.x + stageBox.width * 0.5, stageBox.y + stageBox.height * 0.5);
+
+  const scrollBeforeWheel = await page.evaluate(() => window.scrollY);
+  await page.mouse.wheel(0, 480);
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBeforeWheel);
+
+  await page.locator("#stage").click();
+  const scrollBeforeSpace = await page.evaluate(() => window.scrollY);
+  await page.keyboard.press("Space");
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBeforeSpace);
+});
+
+test("transform right-drag pans the stage without moving the character", async ({ page }) => {
+  await page.goto("/workspace/animation/transform");
+  await page.locator("#adjustGroup").check();
+  const offsetBefore = Number(await page.locator("#baseX").inputValue());
+  const stageBox = await page.locator("#stage").boundingBox();
+  const startX = stageBox.x + stageBox.width * 0.5;
+  const startY = stageBox.y + stageBox.height * 0.5;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(startX + 40, startY + 24, { steps: 4 });
+  await page.mouse.up({ button: "right" });
+
+  await expect.poll(async () => Number(await page.locator("#baseX").inputValue())).toBe(offsetBefore);
 });
 
 test("every stage keeps naming the project and animation being worked on", async ({ page }) => {
@@ -729,6 +845,7 @@ test("tool rail keeps the active animation when opening contextual processing to
   await expect(page).toHaveURL(/\/workspace\/resources\/import/);
   await expect(page.locator("#organizerModal")).toBeVisible();
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await expect(page.locator("#organizerApply")).toBeFocused();
 });
 
 test("position stepper incrementing X does not change Y, and tab switch does not nudge", async ({ page }) => {
@@ -1054,7 +1171,7 @@ test("organizer preview reports the currently playing frame", async ({ page }) =
     { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
     { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
   ]);
-  await expect(page.locator("#organizerPreviewFrame")).toContainText("/ 3 帧");
+  await expect(page.locator("#organizerPreviewFrame")).toContainText("共选中 3 帧");
   await expect(page.locator(".organizerSpeed")).toBeVisible();
   const [previewBox, speedControlBox] = await Promise.all([
     page.locator("#organizerPreview").boundingBox(),
@@ -1386,6 +1503,91 @@ test("a cancelled brush pointer commits the collected stroke", async ({ page }) 
   await expect(page.locator("#cutoutRepairUndo")).toBeEnabled();
 });
 
+test("cleared import workset returns without a second discard prompt", async ({ page }) => {
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles({
+    name: "frame.png",
+    mimeType: "image/png",
+    buffer: ONE_PIXEL_PNG,
+  });
+  await expect(page.locator(".organizerFrame")).toHaveCount(1);
+  await page.locator(".organizerDownstreamMenu > summary").click();
+  await page.locator("#organizerReset").click();
+  await expect(page.locator("#organizerConfirmTitle")).toHaveText("清空当前工作集？");
+  await page.locator("#organizerConfirmAccept").click();
+  await expect(page.locator(".organizerFrame")).toHaveCount(0);
+
+  await page.locator("#workspaceFlowBack").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeHidden();
+  await expect(page.locator("#organizerModal")).toBeHidden();
+  await expect(page).toHaveURL(/\/tools$/);
+});
+
+test("opening the current animation and returning does not ask to discard", async ({ page }) => {
+  await page.goto(
+    `/workspace/resources/import?project=seed-project&group=${encodeURIComponent("player:actor:Idle:0")}&frame=0`,
+  );
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await page.locator("#workspaceFlowBack").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeHidden();
+  await expect(page.locator("#organizerModal")).toBeHidden();
+});
+
+test("nested cutout return does not also discard organizer edits", async ({ page }) => {
+  await page.goto(
+    `/workspace/resources/import?project=seed-project&group=${encodeURIComponent("player:actor:Idle:0")}&frame=0`,
+  );
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await page.locator("#organizerFlip").click();
+  await page.locator(".organizerFrameCutout").first().click();
+  await expect(page.locator("#cutoutModal")).toBeVisible();
+
+  await page.locator("#workspaceFlowBack").click();
+  await expect(page.locator("#cutoutConfirmPanel")).toBeHidden();
+  await expect(page.locator("#organizerConfirmPanel")).toBeHidden();
+  await expect(page.locator("#cutoutModal")).toBeHidden();
+  await expect(page.locator("#organizerModal")).toBeVisible();
+});
+
+test("discarding organizer edits does not ask again on the next return", async ({ page }) => {
+  await page.goto(
+    `/workspace/resources/import?project=seed-project&group=${encodeURIComponent("player:actor:Idle:0")}&frame=0`,
+  );
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await page.locator("#organizerFlip").click();
+  await page.locator("#workspaceFlowBack").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeVisible();
+  await page.locator("#organizerConfirmAccept").click();
+  await expect(page.locator("#organizerModal")).toBeHidden();
+
+  await page.goto(
+    `/workspace/resources/import?project=seed-project&group=${encodeURIComponent("player:actor:Idle:0")}&frame=0`,
+  );
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await page.locator("#workspaceFlowBack").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeHidden();
+  await expect(page.locator("#organizerModal")).toBeHidden();
+});
+
+test("cleared project workset returns to tuning without a second discard prompt", async ({ page }) => {
+  await page.goto(
+    `/workspace/resources/import?project=seed-project&group=${encodeURIComponent("player:actor:Idle:0")}&frame=0`,
+  );
+  await expect(page.locator("#organizerModal")).toBeVisible();
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+  await page.locator("#organizerClearWorkset").click();
+  await expect(page.locator("#organizerConfirmTitle")).toHaveText("清空当前工作集？");
+  await page.locator("#organizerConfirmAccept").click();
+  await expect(page.locator(".organizerFrame")).toHaveCount(0);
+
+  await page.locator("#workspaceFlowBack").click();
+  await expect(page.locator("#organizerConfirmPanel")).toBeHidden();
+  await expect(page.locator("#organizerModal")).toBeHidden();
+  await expect(page).toHaveURL(/\/workspace/);
+});
+
 test("organizer confirms before discarding an imported workset", async ({ page }) => {
   await page.goto("/tools/import");
   await page.locator("#organizerFileInput").setInputFiles({
@@ -1410,7 +1612,36 @@ test("organizer confirms before discarding an imported workset", async ({ page }
   await expect(page).toHaveURL(/\/tools$/);
 });
 
-test("imported organizer checks agree with 选中 count and 删除选中", async ({ page }) => {
+test("animation-stage navigation automatically adds an import workset to the current project", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    globalThis.__XSXB_PRODUCTION__ = true;
+    document.documentElement.dataset.runtimeMode = "browser";
+  });
+  await page.goto("/projects");
+  const sessionCard = page.locator(".projectHubCard").filter({ hasText: "浏览器临时工作区" });
+  await sessionCard.locator('[data-project-action="clear"]').click();
+  await expect(page.locator("#appConfirmTitle")).toHaveText("清空项目");
+  await page.locator("#appConfirmAccept").click();
+  await expect(page.locator("#status")).toContainText("项目已清空");
+
+  await page.goto("/workspace/resources/import?project=browser-session");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator(".organizerFrame")).toHaveCount(2);
+
+  await page.locator('[data-workbench-route="animation"]').first().click();
+
+  await expect(page.locator("#organizerConfirmPanel")).toBeHidden();
+  await expect(page.locator("#organizerModal")).toBeHidden();
+  await expect(page).toHaveURL(/\/workspace\/animation\/transform/);
+  await expect(page.locator(".thumb")).toHaveCount(2);
+});
+
+test("organizer distinguishes workset checks from the current selection", async ({ page }) => {
   await page.goto("/tools/organizer");
   await page.locator("#organizerFileInput").setInputFiles([
     { name: "frame_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
@@ -1420,9 +1651,15 @@ test("imported organizer checks agree with 选中 count and 删除选中", async
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
   await expect(page.locator(".organizerFrameInclude input:checked")).toHaveCount(2);
   await expect(page.locator("#organizerCount")).toContainText("2 / 2");
-  await expect(page.locator("#organizerSelection")).toContainText(/选中 [1-9]/);
-  await expect(page.locator("#organizerSelection")).not.toContainText("选中 0");
+  await expect(page.locator("#organizerSelection")).toContainText("选中 2 帧");
   await expect(page.locator("#organizerDeleteSelected")).toBeEnabled();
+
+  await page.locator(".organizerFrameSelect").first().click();
+
+  await expect(page.locator(".organizerFrameInclude input:checked")).toHaveCount(2);
+  await expect(page.locator(".organizerFrame.selected")).toHaveCount(1);
+  await expect(page.locator(".organizerFrameSelectionBadge:visible")).toHaveCount(1);
+  await expect(page.locator("#organizerSelection")).toContainText("选中 1 帧");
 });
 
 test("inverting the organizer workset flips include checks without touching the other pair", async ({

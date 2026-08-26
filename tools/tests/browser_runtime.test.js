@@ -22,6 +22,52 @@ test("browser runtime discards an abandoned transient project", async () => {
   assert.equal(browserRuntime.getSessionProjectConfig(created.projectId), null);
 });
 
+test("browser runtime clears project content while keeping the shell", async () => {
+  const memory = memoryProjectStorage();
+  const runtime = browserRuntime.createRuntime({ projectStorage: memory.store });
+  try {
+    const created = await runtime.createSessionProject("KeepMe");
+    await runtime.commitSessionProjectConfig(created.projectId, {
+      ...runtime.getSessionProjectConfig(created.projectId),
+      groups: [{ id: "idle", frames: [{ id: "a" }] }],
+    });
+    assert.equal(await runtime.clearSessionProject(created.projectId), true);
+    const config = runtime.getSessionProjectConfig(created.projectId);
+    assert.deepEqual(config.groups, []);
+    assert.equal(config.activeProject.label, "KeepMe");
+    assert.equal(await runtime.discardSessionProject("browser-session"), false);
+  } finally {
+    browserRuntime.createRuntime();
+  }
+});
+
+test("browser runtime project mutation fetch clears and rejects deleting the session shell", async () => {
+  const memory = memoryProjectStorage();
+  const runtime = browserRuntime.createRuntime({ projectStorage: memory.store });
+  try {
+    const created = await runtime.createSessionProject("MutateMe");
+    await runtime.commitSessionProjectConfig(created.projectId, {
+      ...runtime.getSessionProjectConfig(created.projectId),
+      groups: [{ id: "run", frames: [{ id: "a" }, { id: "b" }] }],
+    });
+    const cleared = await runtime.fetchProjectMutation("/api/projects/clear", {
+      method: "POST",
+      body: JSON.stringify({ projectId: created.projectId }),
+    });
+    assert.equal(cleared.ok, true);
+    assert.deepEqual(runtime.getSessionProjectConfig(created.projectId).groups, []);
+
+    const blocked = await runtime.fetchProjectMutation("/api/projects/delete", {
+      method: "POST",
+      body: JSON.stringify({ projectId: "browser-session" }),
+    });
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.status, 409);
+  } finally {
+    browserRuntime.createRuntime();
+  }
+});
+
 /** Builds an in-memory project snapshot store for isolated runtime tests. */
 function memoryProjectStorage() {
   let persisted = null;

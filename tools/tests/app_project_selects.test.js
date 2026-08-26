@@ -91,6 +91,26 @@ test("project selects protect the Codex Pets system project from clear and delet
   assert.equal(elements.deleteProject.title, "protected");
 });
 
+test("project selects keep browser-session clearable but not deletable", () => {
+  const elements = createElements();
+  const controller = createController({
+    elements,
+    getConfig: () => ({
+      activeProjectId: "browser-session",
+      projects: [{ id: "browser-session", label: "浏览器临时工作区" }],
+    }),
+    projectLabel: (project) => project.label,
+    translate: (key) => key,
+    storage: { setItem() {} },
+  });
+
+  controller.renderProjectSelect();
+
+  assert.equal(elements.clearProject.disabled, false);
+  assert.equal(elements.deleteProject.disabled, true);
+  assert.equal(elements.deleteProject.title, "browserSessionCannotDelete");
+});
+
 test("small group lists stay visible and chain select preserves its value", () => {
   const elements = createElements();
   let groupSearch = "slash";

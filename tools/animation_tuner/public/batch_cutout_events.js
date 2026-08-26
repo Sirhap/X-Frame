@@ -230,8 +230,9 @@
     function bind() {
       elements.cutoutOpen.addEventListener("click", open);
       const cutoutHome = elements.cutoutHome || document.querySelector("#workspaceFlowBack");
-      cutoutHome?.addEventListener("click", () => {
+      cutoutHome?.addEventListener("click", (event) => {
         if (elements.cutoutModal.hidden) return;
+        event.stopImmediatePropagation();
         requestClose().catch((error) => setStatus(text("failed", { message: error.message }), "error"));
       });
       elements.cutoutClose.addEventListener("click", () => {

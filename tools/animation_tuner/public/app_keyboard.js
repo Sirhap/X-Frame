@@ -55,6 +55,9 @@
       getStageSpacePan = () => false,
       getStageSpacePanConsumed = () => false,
       setStageSpacePanConsumed = () => {},
+      getStageSpacePanCanPlay = () => false,
+      setStageSpacePanCanPlay = () => {},
+      stepOffsetByArrowKey = () => false,
       playPauseElement = null,
       clearHeldAttachmentTransformKeys = () => {},
       getCurrentWorkbenchRoute = () => "",
@@ -225,6 +228,17 @@
       }
       if (
         canHandleApplicationShortcut &&
+        event.altKey &&
+        !command &&
+        arrowDelta &&
+        getCurrentWorkbenchRoute() !== "boxes"
+      ) {
+        event.preventDefault?.();
+        stepOffsetByArrowKey(event.key, event.shiftKey ? 10 : 1);
+        return;
+      }
+      if (
+        canHandleApplicationShortcut &&
         !command &&
         (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
         frameCount
@@ -260,17 +274,18 @@
         setStageZoom(getStageZoom() * 0.92);
         return;
       }
+      const isSpace = event.code === "Space" || event.key === " ";
       if (
-        !interactiveTarget &&
-        isStagePlayTarget(event) &&
+        isSpace &&
         !command &&
         !event.altKey &&
         !event.repeat &&
-        event.code === "Space"
+        (!interactiveTarget || isStagePlayTarget(event))
       ) {
         event.preventDefault?.();
         setStageSpacePan(true);
         setStageSpacePanConsumed(false);
+        setStageSpacePanCanPlay(isStagePlayTarget(event));
         return;
       }
     }
@@ -293,10 +308,12 @@
       if (event.code === "Space") {
         const wasArmed = getStageSpacePan();
         const consumed = getStageSpacePanConsumed();
+        const canPlay = getStageSpacePanCanPlay();
         setStageSpacePan(false);
         setStageSpacePanConsumed(false);
-        // Only Space that we armed on keydown may toggle play (tap without pan).
-        if (wasArmed && !consumed && !isModalOpen() && playPauseElement) {
+        setStageSpacePanCanPlay(false);
+        // Only Space armed on the stage, without a pan drag, may toggle play.
+        if (wasArmed && !consumed && canPlay && !isModalOpen() && playPauseElement) {
           playPauseElement.click?.();
         }
         return;
@@ -312,6 +329,7 @@
       clearHeldAttachmentTransformKeys();
       setStageSpacePan(false);
       setStageSpacePanConsumed(false);
+      setStageSpacePanCanPlay(false);
       if (!getReferenceFrameHiddenByKey()) return;
       setReferenceFrameHiddenByKey(false);
       draw();

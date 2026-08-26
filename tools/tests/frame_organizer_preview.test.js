@@ -93,3 +93,27 @@ test("organizer preview names the primary selected frame", () => {
   controller.renderPreview();
   assert.equal(preview.textContent, "previewPrimary:1:2");
 });
+
+test("organizer preview uses the empty-state label when no frames are loaded", () => {
+  const preview = { textContent: "" };
+  const controller = createController({
+    elements: {
+      organizerPreview: {
+        clientWidth: 480,
+        clientHeight: 320,
+        getContext: () => null,
+      },
+      organizerPreviewFrame: preview,
+      organizerModal: { hidden: false },
+      organizerSpeed: { min: "40", max: "600", value: "400" },
+    },
+    state: { previewIndex: 0, previewTimer: 0, viewMode: "edited", frames: [] },
+    text: (key) => key,
+    includedFrames: () => [],
+    clamp: (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value)),
+    window: { clearTimeout() {}, setTimeout: () => 1 },
+  });
+
+  controller.renderPreview();
+  assert.equal(preview.textContent, "previewFrameEmpty");
+});

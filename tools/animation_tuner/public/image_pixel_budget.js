@@ -61,7 +61,34 @@
     return Array.from(sources || []).reduce((total, source) => total + measure(source).pixels, 0);
   }
 
-  const api = Object.freeze({ DEFAULT_LIMITS, evaluate, measure, totalPixels });
+  /**
+   * Keeps the longest prefix of sources that still fits the decoded-pixel budget.
+   * @param {CanvasImageSource[]} sources Ordered image sources.
+   * @param {number} [currentPixels] Pixels already retained by the caller.
+   * @param {{maxPixelsPerImage?:number,maxTotalPixels?:number}} [limits] Memory limits.
+   * @returns {{kept:Array<{source:CanvasImageSource,index:number,width:number,height:number,pixels:number,totalPixels:number}>,skipped:number,reason:string,limit:number}}
+   */
+  function takeUntilBudget(sources, currentPixels = 0, limits = {}) {
+    const list = Array.from(sources || []);
+    const kept = [];
+    let pixels = Math.max(0, Number(currentPixels) || 0);
+    for (let index = 0; index < list.length; index += 1) {
+      const result = evaluate(list[index], pixels, limits);
+      if (!result.allowed) {
+        return {
+          kept,
+          skipped: list.length - kept.length,
+          reason: result.reason,
+          limit: result.limit,
+        };
+      }
+      pixels = result.totalPixels;
+      kept.push({ source: list[index], index, ...result });
+    }
+    return { kept, skipped: 0, reason: "", limit: 0 };
+  }
+
+  const api = Object.freeze({ DEFAULT_LIMITS, evaluate, measure, totalPixels, takeUntilBudget });
   root.ImagePixelBudget = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : window);

@@ -145,12 +145,12 @@
 .adjustModeCopy strong {
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  white-space: normal;
   color: inherit;
-  font-size: 14px;
-  line-height: 1;
+  font-size: 13px;
+  line-height: 1.15;
+  text-align: center;
 }
 
 .adjustModeCopy small {

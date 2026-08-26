@@ -25,6 +25,40 @@ test("NAV-013 workbench cutout deep-link loads the current animation batch", asy
   await expect(page.locator("#cutoutModal")).toHaveClass(/hasItems/);
 });
 
+test("NAV-013b loaded cutout group without edits returns without a discard prompt", async ({ page }) => {
+  await page.goto(`/workspace/resources/cutout?${SEED_QUERY}`);
+  await expect(page.locator(".cutoutQueueItem")).toHaveCount(2);
+  await expect(page.locator("#cutoutStatus")).toContainText("2");
+  await expect(page.locator("#cutoutResult")).toBeVisible();
+  await page.locator("#workspaceFlowBack").click();
+  await expect(page.locator("#cutoutConfirmPanel")).toBeHidden();
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+  await expect(page.locator("#cutoutModal")).toBeHidden();
+  await expect(page).toHaveURL(/\/workspace/);
+});
+
+test("NAV-013c current-frame cutout original view returns without a discard prompt", async ({ page }) => {
+  await page.goto(`/workspace/animation/transform?${SEED_QUERY}`);
+  await page.locator("#toolRailTools").hover();
+  await expect(page.locator("#toolRailContextMenu")).toBeVisible();
+  await page.locator('[data-context-tool="current-frame-cutout"]').click();
+  await expect(page.locator("#cutoutModal")).toBeVisible();
+  await expect(page.locator(".cutoutQueueItem")).toHaveCount(1);
+  await page.locator("#workspaceFlowBack").click();
+  await expect(page.locator("#cutoutConfirmPanel")).toBeHidden();
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+  await expect(page.locator("#cutoutModal")).toBeHidden();
+});
+
+test("NAV-013d empty project scatter returns to tuning without a discard prompt", async ({ page }) => {
+  await page.goto(`/workspace/resources/scatter?${SEED_QUERY}`);
+  await expect(page.locator("#scatterSliceSurface")).toBeVisible();
+  await page.locator("#workspaceFlowBack").click();
+  await expect(page.locator("#appConfirmPanel")).toBeHidden();
+  await expect(page).not.toHaveURL(/scatter/);
+  await expect(page).toHaveURL(/\/workspace/);
+});
+
 test("NAV-014 delivery export deep-link estimates the current animation frames", async ({ page }) => {
   await page.goto(`/workspace/delivery/export?${SEED_QUERY}`);
   await expect(page.locator("#workspaceFlowProject")).toContainText("E2E Seed Project");

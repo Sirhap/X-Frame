@@ -738,6 +738,82 @@
   }
 
   /**
+   * Empties one browser project's animations while keeping the project shell.
+   * @param {string} projectId Target project id.
+   * @returns {Promise<boolean>} Whether the project was cleared.
+   */
+  async function clearSessionProject(projectId) {
+    const id = String(projectId || "");
+    await hydrateSessionProjects();
+    ensureSessionProjects();
+    const project = sessionRegistry.projects.find((entry) => entry.id === id);
+    if (!id || !project) return false;
+    sessionProjects.set(id, createEmptyConfig(project));
+    await persistSessionProjectsIfAvailable();
+    return true;
+  }
+
+  /**
+   * Handles browser-session project mutations that the local server would serve.
+   * @param {string} input Request URL.
+   * @param {{method?:string,body?:string}} [options] Fetch options.
+   * @returns {Promise<{ok:boolean,status:number,json:()=>Promise<object>,text:()=>Promise<string>}>}
+   */
+  async function fetchProjectMutation(input, options = {}) {
+    const parsed = new URL(String(input || ""), "https://xsxb.local");
+    const method = String(options.method || "GET").toUpperCase();
+    let payload = {};
+    if (options.body) {
+      try {
+        payload = JSON.parse(String(options.body));
+      } catch {
+        payload = {};
+      }
+    }
+    const jsonResponse = (status, body) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    });
+    if (method === "POST" && parsed.pathname === "/api/projects/clear") {
+      const cleared = await clearSessionProject(payload.projectId);
+      if (!cleared) return jsonResponse(404, { error: `Project not found: ${payload.projectId}` });
+      return jsonResponse(200, {
+        ok: true,
+        projectId: payload.projectId,
+        dataRevision: "browser-session",
+      });
+    }
+    if (method === "POST" && parsed.pathname === "/api/projects/delete") {
+      if (String(payload.projectId || "") === "browser-session") {
+        return jsonResponse(409, {
+          error: "The browser temporary workspace cannot be deleted.",
+          code: "protected_system_project",
+        });
+      }
+      const deleted = await discardSessionProject(payload.projectId);
+      if (!deleted) return jsonResponse(404, { error: `Project not found: ${payload.projectId}` });
+      return jsonResponse(200, {
+        ok: true,
+        projectId: payload.projectId,
+        activeProjectId: sessionRegistry.activeProjectId,
+        dataRevision: "browser-session",
+      });
+    }
+    if (method === "POST" && parsed.pathname === "/api/projects/active") {
+      if (!payload.projectId) return jsonResponse(400, { error: "Project name is required." });
+      await ensureSessionProject(payload.projectId);
+      return jsonResponse(200, {
+        ok: true,
+        activeProjectId: sessionRegistry.activeProjectId,
+        projects: projectSummaries(),
+      });
+    }
+    return fetchConfig(input);
+  }
+
+  /**
    * Returns a response-like transient configuration without making a network request.
    * @returns {Promise<{ok:boolean,status:number,json:()=>Promise<object>,text:()=>Promise<string>}>} Config response.
    */
@@ -1219,6 +1295,7 @@
   }
 
   api = {
+    clearSessionProject,
     commitSessionProjectConfig,
     createRuntime,
     createSessionExportSnapshot,
@@ -1233,6 +1310,7 @@
     exportAnimationPackage,
     exportWorkbenchPackage,
     fetchConfig,
+    fetchProjectMutation,
     getSessionProjectConfig,
     isEnabled,
     reorganizeSessionAnimation,

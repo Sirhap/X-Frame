@@ -254,13 +254,18 @@
             <strong data-i18n="shortcutGuide">快捷键</strong>
             <span><kbd>Space</kbd><b data-i18n="shortcutPlay">播放 / 暂停</b></span>
             <span
-              ><kbd data-i18n="shortcutPanKeys">中键 / Space+拖</kbd
-              ><b data-i18n="shortcutPan">中键或空格拖动画布</b></span
+              ><kbd data-i18n="shortcutPanKeys">中键 / 右键 / Space+拖</kbd
+              ><b data-i18n="shortcutPan">中键、右键或空格拖动画布</b></span
             >
             <span
-              ><kbd data-i18n="shortcutWheelKeys">滚轮</kbd
-              ><b data-i18n="shortcutWheel">滚轮缩放画布</b></span
+              ><kbd data-i18n="shortcutWheelKeys">滚轮 / 捏合</kbd
+              ><b data-i18n="shortcutWheel">滚轮或捏合缩放；触控板双指平移</b></span
             >
+            <span
+              ><kbd data-i18n="shortcutCharacterKeys">拖人物 / Z / R</kbd
+              ><b data-i18n="shortcutCharacter">拖人物移动；Z 滚轮缩放；R 滚轮旋转</b></span
+            >
+            <span><kbd>Alt ←↑↓→</kbd><b data-i18n="shortcutNudge">微调人物位置</b></span>
             <span><kbd>← / →</kbd><b data-i18n="shortcutFrame">上一帧 / 下一帧</b></span>
             <span><kbd>⇧ ← / →</kbd><b data-i18n="shortcutExtend">扩展帧选区</b></span>
             <span><kbd>⌘ A</kbd><b data-i18n="shortcutAll">选择全部帧</b></span>
@@ -439,6 +444,39 @@
             带着当前项目和动画组进入，完成后可明确应用并返回。
           </p>
           <div class="projectProcessingActions"></div>
+          <section class="projectToolCopy" aria-labelledby="projectToolCopyTitle">
+            <header>
+              <span>DETACHED COPY</span>
+              <strong id="projectToolCopyTitle" data-i18n="copyAnimationToTools">复制到快速工具</strong>
+            </header>
+            <p data-i18n="copyAnimationToToolsHint">创建独立副本；工具内的修改不会回写当前项目。</p>
+            <div class="projectToolCopyActions" role="group" aria-label="复制动画到快速工具">
+              <button
+                type="button"
+                class="secondary"
+                data-copy-animation-to-tool="organizer"
+                data-i18n="copyToOrganizer"
+              >
+                复制并整理
+              </button>
+              <button
+                type="button"
+                class="secondary"
+                data-copy-animation-to-tool="cutout"
+                data-i18n="copyToCutout"
+              >
+                复制并抠图
+              </button>
+              <button
+                type="button"
+                class="secondary"
+                data-copy-animation-to-tool="export"
+                data-i18n="copyToExport"
+              >
+                复制并导出
+              </button>
+            </div>
+          </section>
         </section>
         <details class="panel" data-panel="scene-reference">
           <summary>
@@ -1043,8 +1081,7 @@
           <div class="toolbarMain" hidden>
             <strong id="canvasTitle" data-i18n="canvas">画布</strong>
             <span id="hint" data-i18n="hint"
-              >滚轮缩放；拖空画布/中键/空格拖平移。选中附加帧：拖动移动，按住 R 滚轮旋转，按住 Z
-              滚轮缩放。</span
+              >变换页左键拖即移动人物。右键/空格拖或双指平移画布；滚轮缩放。</span
             >
             <div id="selectionHud" class="selectionHud">帧 -</div>
             <div class="kunkunSignature" aria-hidden="true">
@@ -1277,9 +1314,12 @@
             <h2 id="projectHubRecentTitle" data-i18n="recentProject">最近项目</h2>
             <p id="projectHubRecentSummary" data-i18n="projectLoading">正在读取项目…</p>
           </div>
-          <a id="projectHubContinue" class="modeHubPrimary" href="/workspace" data-document-navigation
-            ><span data-i18n="continueProject">继续项目</span></a
-          >
+          <div class="projectHubRecentActions">
+            <a id="projectHubContinue" class="modeHubPrimary" href="/workspace" data-document-navigation
+              ><span data-i18n="continueProject">继续项目</span></a
+            >
+            <div id="projectHubRecentDanger" class="projectHubCardActions"></div>
+          </div>
         </section>
         <div class="modeHubSectionHeading">
           <div>
@@ -1844,7 +1884,7 @@
                   </div>
                   <small data-cutout-i18n="settingsHint">调整后自动刷新预览</small>
                 </div>
-                <div class="cutoutSettingsContext" aria-live="polite">
+                <div id="cutoutSettingsContext" class="cutoutSettingsContext" aria-live="polite">
                   <span data-cutout-i18n="activeTool">当前工具</span>
                   <strong id="cutoutActiveToolTitle" data-cutout-i18n="repairAutomatic">背景清除</strong>
                   <small id="cutoutActiveToolHint" data-cutout-i18n="automaticToolSettingsHint"
@@ -2762,12 +2802,28 @@
                 ></canvas>
               </figure>
               <div class="cutoutZoomControls" aria-label="Preview zoom">
-                <button id="cutoutZoomOut" type="button" class="secondary" aria-label="Zoom out">−</button>
+                <button
+                  id="cutoutZoomOut"
+                  type="button"
+                  class="secondary"
+                  data-cutout-i18n-aria-label="zoomOut"
+                  aria-label="缩小"
+                >
+                  −
+                </button>
                 <label class="cutoutZoomSlider">
                   <input id="cutoutZoom" type="range" min="12" max="800" step="1" value="100" />
                   <output id="cutoutZoomValue">FIT</output>
                 </label>
-                <button id="cutoutZoomIn" type="button" class="secondary" aria-label="Zoom in">+</button>
+                <button
+                  id="cutoutZoomIn"
+                  type="button"
+                  class="secondary"
+                  data-cutout-i18n-aria-label="zoomIn"
+                  aria-label="放大"
+                >
+                  +
+                </button>
                 <button id="cutoutZoomFit" type="button" class="secondary active" data-cutout-i18n="zoomFit">
                   适应
                 </button>
@@ -3527,6 +3583,28 @@
                 <strong data-organizer-i18n="frames">帧缩略图</strong>
                 <span id="organizerCount">工作集 0 / 0 帧</span>
                 <span id="organizerSelection">选中 0 帧</span>
+                <div
+                  class="organizerStateLegend"
+                  aria-label="帧状态图例"
+                  data-organizer-i18n-aria-label="stateLegendAria"
+                >
+                  <span
+                    ><i class="workset" aria-hidden="true"></i
+                    ><b data-organizer-i18n="worksetLegend">勾选：工作集</b></span
+                  >
+                  <span
+                    ><i class="selection" aria-hidden="true"></i
+                    ><b data-organizer-i18n="selectedLegend">绿色：当前选择</b></span
+                  >
+                  <span
+                    ><i class="jump" aria-hidden="true"></i
+                    ><b data-organizer-i18n="jumpLegend">黄色：跳变</b></span
+                  >
+                  <span
+                    ><i class="duplicate" aria-hidden="true"></i
+                    ><b data-organizer-i18n="duplicateLegend">紫色：重复</b></span
+                  >
+                </div>
               </div>
               <div class="organizerTagTools">
                 <div
@@ -3584,9 +3662,11 @@
               </div>
             </div>
             <div id="organizerBatchScope" class="organizerBatchScope" role="status" aria-live="polite" hidden>
-              <span>批量选择</span>
+              <span data-organizer-i18n="batchScopeTitle">批量选择</span>
               <strong id="organizerBatchScopeText">将操作应用到 0 帧</strong>
-              <small>橙色边框表示当前选择；右上角勾选表示参与工作集。</small>
+              <small data-organizer-i18n="batchScopeHint"
+                >绿色描边与“已选”标记表示当前选择；右上角勾选表示参与工作集。</small
+              >
             </div>
             <div class="organizerEmptyState" role="status">
               <strong data-organizer-i18n="emptyWorksetTitle">先导入动画素材</strong>
@@ -3705,7 +3785,7 @@
             <div class="organizerPreviewStage">
               <canvas id="organizerPreview" width="520" height="520"></canvas>
               <output id="organizerPreviewFrame" class="organizerPreviewFrame" aria-live="off"
-                >第 - / 0 帧</output
+                >暂无预览帧</output
               >
             </div>
           </aside>

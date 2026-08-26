@@ -91,7 +91,7 @@
    *   cssEscape?:(value:string)=>string,
    *   premiumFeatures?:{normalizeFeatureIds?:(featureIds:Iterable<string>)=>string[]}
    * }} dependencies Organizer state and host callbacks.
-   * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,editBatchCutout:()=>Promise<void>,applyPlan:()=>Promise<void>,importIntoSession:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>,addIncludedFramesToProject:()=>Promise<void>,exportIncludedFrames:()=>Promise<void>}}
+   * @returns {{editImportCutout:(targetFrame:object)=>Promise<void>,editBatchCutout:()=>Promise<void>,applyPlan:(options?:{confirmed?:boolean,closeWhenComplete?:boolean})=>Promise<boolean>,commitImportOnLeave:()=>Promise<boolean>,importIntoSession:()=>Promise<void>,addIncludedFramesToAssets:()=>Promise<void>,addIncludedFramesToProject:()=>Promise<void>,exportIncludedFrames:()=>Promise<void>}}
    */
   function createController(dependencies = {}) {
     const {
@@ -204,7 +204,7 @@
           // working canvas. Later parameter edits (and a second smart cutout)
           // reprocess this source so restoring params restores the image.
           if (!frame.cutoutSourceCanvas) frame.cutoutSourceCanvas = frame.editedCanvas;
-          frame.editedCanvas = imageCanvas(output.canvas);
+          frame.editedCanvas = options.direct ? output.canvas : imageCanvas(output.canvas);
           frame.hasEditedResult = true;
           frame.assetRevision = Math.max(0, Number(frame.assetRevision) || 0) + 1;
           frame.imported = true;
@@ -338,9 +338,12 @@
 
     /**
      * Applies the staged frame plan through the host application.
-     * @returns {Promise<void>}
+     * @param {{confirmed?:boolean,closeWhenComplete?:boolean}} [options] Confirmation and close behavior.
+     * @returns {Promise<boolean>} Whether the staged plan was committed.
      */
-    async function applyPlan() {
+    async function applyPlan(options = {}) {
+      const confirmed = options.confirmed === true;
+      const closeWhenComplete = options.closeWhenComplete !== false;
       const frames = includedFrames();
       const sourceGroupCount = new Set(frames.map((frame) => frame.groupId).filter(Boolean)).size;
       const writeCurrent =
@@ -353,7 +356,7 @@
         if (state.mode === "import" && !writeCurrent) metadata = importMetadata();
       } catch (error) {
         setStatus(error.message, "error");
-        return;
+        return false;
       }
       const controller = uiController();
       const usedPremiumFeatures =
@@ -391,7 +394,13 @@
               [text("detailAnimation"), state.animationName],
               [text("detailFrames"), frames.length],
             ];
-      if (!frames.length || !(await controller.requestConfirmation(confirmation, details))) return;
+      if (Number(state.partialLoadSkipped) > 0) {
+        setStatus(text("applyPartialLoad"), "error");
+        return false;
+      }
+      if (!frames.length || (!confirmed && !(await controller.requestConfirmation(confirmation, details)))) {
+        return false;
+      }
       state.busy = true;
       renderCounts();
       try {
@@ -441,9 +450,9 @@
           setStatus(text(browserExportOnly ? "exportedZip" : "created", { count: items.length }), "success");
           if (!browserExportOnly) state.mode = "edit";
           renderLanguage();
-          if (typeof closeOrganizer === "function") {
+          if (closeWhenComplete && typeof closeOrganizer === "function") {
             closeOrganizer();
-            return;
+            return true;
           }
         } else {
           await hooks.applyPlan?.(items, { premiumFeatures: usedPremiumFeatures });
@@ -451,15 +460,17 @@
           if (writeCurrent) {
             state.mode = "edit";
             renderLanguage();
-            if (typeof closeOrganizer === "function") {
+            if (closeWhenComplete && typeof closeOrganizer === "function") {
               closeOrganizer();
-              return;
+              return true;
             }
           }
         }
         await loadCurrentAnimation();
+        return true;
       } catch (error) {
         setStatus(text("failed", { message: error.message }), "error");
+        return false;
       } finally {
         state.busy = false;
         renderCounts();
@@ -467,11 +478,22 @@
     }
 
     /**
-     * Imports the current browser workset into a transient tuning-session animation group.
+     * Imports the current browser workset into its active project animation group.
      * @returns {Promise<void>}
      */
     async function importIntoSession() {
       await applyPlan();
+    }
+
+    /**
+     * Adds an imported workset to the current project before navigating away.
+     * The import page is one stage of the project workflow, so this transition
+     * must not require a second confirmation or discard the newly added frames.
+     * @returns {Promise<boolean>} Whether the workset is available in the project.
+     */
+    async function commitImportOnLeave() {
+      if (state.mode !== "import" || !includedFrames().length) return true;
+      return applyPlan({ confirmed: true, closeWhenComplete: false });
     }
 
     /**
@@ -643,6 +665,7 @@
       editImportCutout,
       editBatchCutout,
       applyPlan,
+      commitImportOnLeave,
       importIntoSession,
       addIncludedFramesToAssets,
       addIncludedFramesToProject,

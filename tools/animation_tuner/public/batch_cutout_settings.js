@@ -477,6 +477,7 @@
       const itemAvailable = Boolean(selectedItem());
       const automatic = state.settingsMode === "automatic";
       elements.cutoutSettingsEmpty.hidden = itemAvailable;
+      if (elements.cutoutSettingsContext) elements.cutoutSettingsContext.hidden = !itemAvailable;
       elements.cutoutAutomaticSettings.hidden = !itemAvailable || !automatic;
       elements.cutoutLocalSettings.hidden = !itemAvailable || automatic;
       elements.cutoutSettings.classList.toggle("empty", !itemAvailable);

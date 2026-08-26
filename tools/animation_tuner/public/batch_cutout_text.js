@@ -55,6 +55,8 @@
       translucentEffect: "适用于半透明图像（如特效）",
       complexKey: "复杂背景与柔性色键",
       keyAdvanced: "展开色键高级参数",
+      zoomOut: "缩小",
+      zoomIn: "放大",
       zoomFit: "适应",
       zoomActual: "100%",
       zoomHint: "滚轮缩放；空闲画布可直接拖拽平移；使用修正工具时按住空格拖拽平移",
@@ -73,7 +75,8 @@
       toleranceClosedHint: "容差 -1 为关闭档：颜色匹配已关闭，像素不会被改写，也不会自动估算容差。",
       alphaWindowRangeHint: "半透明高阈值必须大于低阈值，单独调高阈值不会产生效果。",
       engineMemoryExhausted: "图片太大，处理引擎内存不足。请缩小尺寸或改用较小的 RGBA PNG 后重试。",
-      engineExecutionFailed: "处理引擎执行失败。大尺寸 RGB 图可先缩小或转为 RGBA PNG 再试。",
+      engineExecutionFailed:
+        "处理引擎已自动重启并重试，但仍未完成；原图没有被覆盖。请保存当前工作集并重新打开页面后再试。",
       toolSettingsHint: "显示当前工具的参数或画布操作说明",
       settingsEmptyTitle: "请先选择图片",
       settingsEmptyHint: "载入图片后再选择工具，这里会自动切换为对应参数或操作说明。",
@@ -176,6 +179,8 @@
       fileImportPartial: "已载入 {count} 张；跳过 {skipped} 个不支持、过大或无法读取的文件。",
       groupUnavailable: "当前没有可用的动画",
       groupLoaded: "已载入当前动画：{name}（{count} 帧）",
+      groupLoadedPartial:
+        "已载入当前动画「{name}」{count}/{total} 帧。其余 {skipped} 帧超出内存上限。回写需要全部 {total} 帧。",
       loadGroupReplaceTitle: "替换当前批次？",
       loadGroupReplaceConfirm:
         "当前批次有 {count} 张图片和 {repairs} 条本地修正。载入当前动画会替换这些内容。",
@@ -378,6 +383,8 @@
       translucentEffect: "For translucent images and effects",
       complexKey: "Complex background and perceptual key",
       keyAdvanced: "Show advanced key controls",
+      zoomOut: "Zoom out",
+      zoomIn: "Zoom in",
       zoomFit: "Fit",
       zoomActual: "100%",
       zoomHint: "Wheel to zoom; drag an idle canvas to pan; hold Space and drag while using a repair tool",
@@ -401,7 +408,7 @@
       engineMemoryExhausted:
         "The image is too large for the processing engine. Reduce its size or use a smaller RGBA PNG.",
       engineExecutionFailed:
-        "The processing engine failed. For large RGB images, shrink the file or convert it to RGBA PNG and retry.",
+        "The processing engine restarted and retried automatically but still could not finish. The source was preserved; save the workset, reopen the page, and retry.",
       toolSettingsHint: "Shows controls or canvas instructions for the active tool",
       settingsEmptyTitle: "Select an image first",
       settingsEmptyHint: "Load an image, then choose a tool. Its controls or instructions will appear here.",
@@ -508,6 +515,8 @@
       fileImportPartial: "Loaded {count}; skipped {skipped} unsupported, oversized, or unreadable files.",
       groupUnavailable: "No animation is currently available",
       groupLoaded: "Loaded current animation: {name} ({count} frames)",
+      groupLoadedPartial:
+        "Loaded {count} of {total} frames from {name}. {skipped} more exceed the memory limit. Applying needs the full {total} frames.",
       loadGroupReplaceTitle: "Replace the current batch?",
       loadGroupReplaceConfirm:
         "The current batch contains {count} images and {repairs} local edits. Loading the animation replaces them.",

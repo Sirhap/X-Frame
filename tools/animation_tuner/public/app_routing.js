@@ -299,13 +299,26 @@
     }
 
     /**
-     * Stage switches close resource tools immediately. Home and project list
-     * still confirm so unfinished organizer work is not discarded silently.
+     * Identifies routes that may immediately close a clean resource tool.
+     * Home and project list always retain their explicit close decision.
      * @param {string} route Destination route.
      * @returns {boolean} Whether close may skip the unsaved prompt.
      */
     function shouldForceCloseTools(route) {
       return Boolean(route) && route !== "projects" && route !== "tools" && FREE_STAGE_ROUTES.has(route);
+    }
+
+    /**
+     * Allows silent tool handoff only when the workset is retained elsewhere or
+     * the current project tool has no unapplied changes.
+     * @param {string} route Destination route.
+     * @param {{hasUnsavedChanges?:()=>boolean}|null} controller Tool being closed.
+     * @returns {boolean} Whether the tool may close without a discard decision.
+     */
+    function canForceCloseTool(route, controller) {
+      if (!shouldForceCloseTools(route)) return false;
+      if (currentNavigationContext() === "standalone") return true;
+      return controller?.hasUnsavedChanges?.() !== true;
     }
 
     /**
@@ -376,10 +389,25 @@
         }
         if (STICKY_STANDALONE_ROUTES.has(route)) {
           if (batchCutout?.isOpen()) {
-            await closeWorkbench(batchCutout, null, { syncRoute: false, force: true });
+            const closed = await closeWorkbench(batchCutout, null, {
+              syncRoute: false,
+              force: canForceCloseTool(route, batchCutout),
+            });
+            if (!closed && currentNavigationContext() !== "standalone") {
+              syncWorkbenchRoute("cutout");
+              return false;
+            }
           }
           if (frameOrganizer?.isOpen()) {
-            await closeWorkbench(frameOrganizer, { syncRoute: false, force: true });
+            const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
+            const closed = await closeWorkbench(frameOrganizer, {
+              syncRoute: false,
+              force: canForceCloseTool(route, frameOrganizer),
+            });
+            if (!closed && currentNavigationContext() !== "standalone") {
+              syncWorkbenchRoute(organizerRoute);
+              return false;
+            }
           }
           return true;
         }
@@ -388,7 +416,7 @@
             const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
             const closed = await closeWorkbench(frameOrganizer, {
               syncRoute: false,
-              force: shouldForceCloseTools(route),
+              force: canForceCloseTool(route, frameOrganizer),
             });
             if (!closed) {
               syncWorkbenchRoute(organizerRoute);
@@ -415,7 +443,7 @@
         if (batchCutout?.isOpen()) {
           const closed = await closeWorkbench(batchCutout, null, {
             syncRoute: false,
-            force: shouldForceCloseTools(route),
+            force: canForceCloseTool(route, batchCutout),
           });
           if (!closed) {
             syncWorkbenchRoute("cutout");
@@ -431,7 +459,7 @@
               const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
               const closed = await closeWorkbench(frameOrganizer, {
                 syncRoute: false,
-                force: shouldForceCloseTools(route),
+                force: canForceCloseTool(route, frameOrganizer),
               });
               if (!closed) {
                 syncWorkbenchRoute(organizerRoute);
@@ -453,7 +481,7 @@
           const organizerRoute = frameOrganizer.getMode?.() === "import" ? "import" : "organizer";
           const closed = await closeWorkbench(frameOrganizer, {
             syncRoute: false,
-            force: shouldForceCloseTools(route),
+            force: canForceCloseTool(route, frameOrganizer),
           });
           if (!closed) {
             syncWorkbenchRoute(organizerRoute);

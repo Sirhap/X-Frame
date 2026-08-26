@@ -47,7 +47,9 @@
    * @returns {{
    *   activateProject:(projectId:string)=>Promise<boolean>,
    *   clearActiveProject:()=>Promise<boolean>,
+   *   clearProject:(projectId?:string)=>Promise<boolean>,
    *   deleteActiveProject:()=>Promise<boolean>,
+   *   deleteProject:(projectId?:string)=>Promise<boolean>,
    *   readMutationResponse:typeof readMutationResponse,
    *   setProjectMutationBusy:(busy:boolean)=>void,
    * }} Project mutation operations.
@@ -87,6 +89,29 @@
     }
 
     /**
+     * Resolves a project from the active config, including listed-but-inactive shells.
+     * @param {string} [projectId] Requested project id.
+     * @returns {object|null} Project record.
+     */
+    function resolveProject(projectId) {
+      const config = getConfig() || {};
+      const id = String(projectId || getActiveProjectId() || "");
+      if (!id) return null;
+      if (config.activeProject?.id === id) return config.activeProject;
+      return Array.from(config.projects || []).find((project) => project.id === id) || null;
+    }
+
+    /** Codex Pets cannot be cleared or deleted from the project list. */
+    function isProtectedClear(project) {
+      return project?.id === "codex_pets" || project?.kind === "codex_pets";
+    }
+
+    /** Browser session and Codex Pets cannot be deleted. */
+    function isProtectedDelete(project) {
+      return isProtectedClear(project) || project?.id === "browser-session";
+    }
+
+    /**
      * Activates a project and reloads the editor session.
      * @param {string} projectId Target project identifier.
      * @returns {Promise<boolean>} Whether activation completed.
@@ -119,12 +144,17 @@
     }
 
     /**
-     * Clears content owned by the active project.
+     * Clears content owned by one project.
+     * @param {string} [projectId] Target project; defaults to the active project.
      * @returns {Promise<boolean>} Whether the project was cleared.
      */
-    async function clearActiveProject() {
-      const project = getConfig()?.activeProject;
+    async function clearProject(projectId) {
+      const project = resolveProject(projectId);
       if (!project?.id) return false;
+      if (isProtectedClear(project)) {
+        status(translate("codexPetsProjectProtected"));
+        return false;
+      }
       const label = projectLabel(project);
       if (
         !(await confirm(translate("clearProjectConfirm", { project: label }), {
@@ -134,20 +164,87 @@
         }))
       )
         return false;
+      const isActive = project.id === getActiveProjectId();
       setProjectMutationBusy(true);
       try {
         if (typeof fetchImpl !== "function") throw new Error("fetch is unavailable");
+        const body = { projectId: project.id };
+        if (isActive && getConfig()?.dataRevision) body.baseRevision = getConfig().dataRevision;
         const response = await fetchImpl("/api/projects/clear", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ projectId: project.id, baseRevision: getConfig().dataRevision }),
+          body: JSON.stringify(body),
         });
         await readMutationResponse(response);
-        resetProjectSession();
-        setDirty(false);
+        if (isActive) {
+          resetProjectSession();
+          setDirty(false);
+        }
         await loadConfig();
-        resizeCanvas();
+        if (isActive) resizeCanvas();
         status(translate("projectCleared", { project: label }));
+        return true;
+      } finally {
+        setProjectMutationBusy(false);
+      }
+    }
+
+    /**
+     * Clears content owned by the active project.
+     * @returns {Promise<boolean>} Whether the project was cleared.
+     */
+    function clearActiveProject() {
+      return clearProject(getActiveProjectId());
+    }
+
+    /**
+     * Deletes one project without touching its external Godot root.
+     * @param {string} [projectId] Target project; defaults to the active project.
+     * @returns {Promise<boolean>} Whether the project was deleted.
+     */
+    async function deleteProject(projectId) {
+      const project = resolveProject(projectId);
+      if (!project?.id) return false;
+      if (isProtectedDelete(project)) {
+        status(
+          translate(
+            project.id === "browser-session" ? "browserSessionCannotDelete" : "codexPetsProjectProtected",
+          ),
+        );
+        return false;
+      }
+      const label = projectLabel(project);
+      if (
+        !(await confirm(translate("deleteProjectConfirm", { project: label }), {
+          title: translate("deleteProject"),
+          confirmLabel: translate("deleteProject"),
+          tone: "danger",
+        }))
+      )
+        return false;
+      const isActive = project.id === getActiveProjectId();
+      setProjectMutationBusy(true);
+      try {
+        if (typeof fetchImpl !== "function") throw new Error("fetch is unavailable");
+        const body = { projectId: project.id };
+        if (isActive && getConfig()?.dataRevision) body.baseRevision = getConfig().dataRevision;
+        const response = await fetchImpl("/api/projects/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const result = await readMutationResponse(response);
+        if (isActive) {
+          const nextProjectId = String(result.activeProjectId || "");
+          setSelectedProjectId(nextProjectId);
+          if (nextProjectId) writeStorage("xsxbFrameTuner.project", nextProjectId);
+          else removeStorage("xsxbFrameTuner.project");
+          resetProjectSession();
+          setDirty(false);
+        }
+        await loadConfig();
+        if (isActive) resizeCanvas();
+        status(translate("projectDeleted", { project: label }));
         return true;
       } finally {
         setProjectMutationBusy(false);
@@ -158,40 +255,8 @@
      * Deletes the active project without touching its external Godot root.
      * @returns {Promise<boolean>} Whether the project was deleted.
      */
-    async function deleteActiveProject() {
-      const project = getConfig()?.activeProject;
-      if (!project?.id) return false;
-      const label = projectLabel(project);
-      if (
-        !(await confirm(translate("deleteProjectConfirm", { project: label }), {
-          title: translate("deleteProject"),
-          confirmLabel: translate("deleteProject"),
-          tone: "danger",
-        }))
-      )
-        return false;
-      setProjectMutationBusy(true);
-      try {
-        if (typeof fetchImpl !== "function") throw new Error("fetch is unavailable");
-        const response = await fetchImpl("/api/projects/delete", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ projectId: project.id, baseRevision: getConfig().dataRevision }),
-        });
-        const result = await readMutationResponse(response);
-        const nextProjectId = String(result.activeProjectId || "");
-        setSelectedProjectId(nextProjectId);
-        if (nextProjectId) writeStorage("xsxbFrameTuner.project", nextProjectId);
-        else removeStorage("xsxbFrameTuner.project");
-        resetProjectSession();
-        setDirty(false);
-        await loadConfig();
-        resizeCanvas();
-        status(translate("projectDeleted", { project: label }));
-        return true;
-      } finally {
-        setProjectMutationBusy(false);
-      }
+    function deleteActiveProject() {
+      return deleteProject(getActiveProjectId());
     }
 
     /**
@@ -224,7 +289,9 @@
     return {
       activateProject,
       clearActiveProject,
+      clearProject,
       deleteActiveProject,
+      deleteProject,
       readMutationResponse,
       setProjectMutationBusy,
     };

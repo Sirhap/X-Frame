@@ -144,6 +144,18 @@ function createFixture() {
   return { frame, state, calls, controller };
 }
 
+test("edit-mode applyPlan refuses a memory-limited prefix so unloaded frames are not deleted", async () => {
+  const fixture = createFixture();
+  fixture.state.confirmApply = true;
+  fixture.state.partialLoadSkipped = 4;
+
+  await fixture.controller.applyPlan();
+
+  assert.equal(fixture.calls.applied, null);
+  assert.deepEqual(fixture.calls.status, ["applyPartialLoad"]);
+  assert.equal(fixture.state.busy, false);
+});
+
 test("organizer actions add included frames without changing host payloads", async () => {
   const fixture = createFixture();
   await fixture.controller.addIncludedFramesToAssets();
@@ -281,7 +293,7 @@ test("direct batch cutout applies live partial outputs before the batch finishes
   assert.ok(fixture.calls.status.some((message) => message === "cutoutFrameProgress"));
 });
 
-test("live cutout progress rewrites each frame once instead of the whole applied prefix", async () => {
+test("live cutout progress reuses each direct output canvas without full-size copies", async () => {
   const fixture = createFixture();
   fixture.frame.hasEditedResult = false;
   const frames = [fixture.frame];
@@ -306,7 +318,11 @@ test("live cutout progress rewrites each frame once instead of the whole applied
 
   await fixture.controller.editBatchCutout();
 
-  assert.equal(fixture.calls.imageCanvases, frames.length);
+  assert.equal(fixture.calls.imageCanvases, 0);
+  assert.deepEqual(
+    frames.map((frame) => frame.editedCanvas),
+    outputs.map((output) => output.canvas),
+  );
   assert.deepEqual(
     frames.map((frame) => frame.assetRevision),
     frames.map(() => 2),
@@ -504,6 +520,21 @@ test("import mode creates an animation and enters the tuning workbench", async (
   assert.deepEqual(fixture.calls.status, ["created"]);
   assert.equal(fixture.calls.languages, 1);
   assert.equal(fixture.state.busy, false);
+});
+
+test("project navigation commits an import workset without a second confirmation", async () => {
+  const fixture = createFixture();
+  fixture.state.mode = "import";
+  fixture.state.importMetadata = { projectId: "project-a", profileLabel: "Hero", animationName: "demo" };
+
+  const committed = await fixture.controller.commitImportOnLeave();
+
+  assert.equal(committed, true);
+  assert.equal(fixture.state.mode, "edit");
+  assert.equal(fixture.calls.closes, 0);
+  assert.equal(fixture.calls.reloads, 1);
+  assert.equal(fixture.calls.animation.metadata.animationName, "demo");
+  assert.deepEqual(fixture.calls.status, ["created"]);
 });
 
 test("failed animation creation keeps the import workbench and staged frames open", async () => {

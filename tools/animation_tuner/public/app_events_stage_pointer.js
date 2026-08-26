@@ -34,6 +34,7 @@
     const {
       activateFrameAttachmentForEditing,
       applySelectedAttachmentWheel,
+      applySelectedFrameWheel = () => false,
       attachmentFrameIndex,
       attachmentOffsetDeltaFromClientDelta,
       boxOffsetDeltaFromScreenDelta,
@@ -51,6 +52,7 @@
       markDirty,
       moveDirectManipulationFrameByClientDelta = () => {},
       normalizeAttachmentTransform,
+      panViewBy = () => {},
       pushUndo,
       renderFilmstrip,
       resizeFrameBox,
@@ -92,13 +94,48 @@
 
     /**
      * Returns whether this pointerdown should pan instead of editing.
-     * Middle mouse always pans; primary + held Space pans like cutout preview.
+     * Middle/right mouse always pan. Primary pans while Space is held.
      * @param {PointerEvent} event Pointerdown event.
      * @returns {boolean} True when navigation should own the gesture.
      */
     function shouldPanFromPointer(event) {
-      if (event.button === 1) return true;
-      return event.button === 0 && Boolean(state.stageSpacePan);
+      if (event.button === 1 || event.button === 2) return true;
+      if (event.button !== 0) return false;
+      return Boolean(state.stageSpacePan);
+    }
+
+    /**
+     * Trackpad two-finger and Shift+wheel pan; pinch and mouse-wheel still zoom.
+     * @param {WheelEvent} event Stage wheel event.
+     * @returns {boolean} True when the wheel should pan the viewport.
+     */
+    function shouldPanFromWheel(event) {
+      if (event.ctrlKey || event.metaKey) return false;
+      if (event.shiftKey) return true;
+      const dx = Math.abs(Number(event.deltaX) || 0);
+      const dy = Math.abs(Number(event.deltaY) || 0);
+      if (dx > dy) return true;
+      if (event.deltaMode === 0 && dx > 0) return true;
+      return (
+        event.deltaMode === 0 &&
+        Number.isFinite(event.wheelDeltaY) &&
+        event.wheelDeltaY !== 0 &&
+        event.wheelDeltaY === -3 * event.deltaY
+      );
+    }
+
+    /**
+     * Shows move over the sprite and grab only on empty canvas.
+     * @param {PointerEvent|null} [event] Latest pointer event.
+     * @returns {void}
+     */
+    function refreshStageCursor(event) {
+      const panning = Boolean(state.drag?.mode === "pan" || state.stageSpacePan);
+      const overSprite = Boolean(
+        !panning && state.drag?.mode !== "frame-transform" && event && hitTestDirectManipulationFrame(event),
+      );
+      stage.classList.toggle("isOverSprite", overSprite || state.drag?.mode === "frame-transform");
+      stage.classList.toggle("isPanning", panning);
     }
 
     function bind() {
@@ -106,8 +143,18 @@
       stage.addEventListener("auxclick", (event) => {
         if (event.button === 1) event.preventDefault();
       });
+      stage.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+      });
 
       stage.addEventListener("pointerdown", (event) => {
+        if (typeof stage.focus === "function") {
+          try {
+            stage.focus({ preventScroll: true });
+          } catch (_error) {
+            stage.focus();
+          }
+        }
         state.pointerStagePoint = stagePoint(event);
         updateCoordHud();
         const beginDrag = (nextDrag) => {
@@ -118,6 +165,7 @@
         if (shouldPanFromPointer(event)) {
           event.preventDefault?.();
           beginPanDrag(event, beginDrag);
+          refreshStageCursor(event);
           return;
         }
         // The Transform sidebar is dedicated to moving the visible animation frame.
@@ -194,6 +242,7 @@
       stage.addEventListener("pointermove", (event) => {
         state.pointerStagePoint = stagePoint(event);
         if (!state.drag) {
+          refreshStageCursor(event);
           updateCoordHud();
           return;
         }
@@ -287,9 +336,10 @@
         updateCoordHud();
       });
 
-      stage.addEventListener("pointerup", () => {
+      stage.addEventListener("pointerup", (event) => {
         state.drag = null;
         stage.classList.remove("dragging");
+        refreshStageCursor(event);
         updateCoordHud();
       });
 
@@ -297,12 +347,14 @@
         state.drag = null;
         state.pointerStagePoint = null;
         stage.classList.remove("dragging");
+        refreshStageCursor(null);
         updateCoordHud();
       });
 
       stage.addEventListener("lostpointercapture", () => {
         state.drag = null;
         stage.classList.remove("dragging");
+        refreshStageCursor(null);
         updateCoordHud();
       });
 
@@ -315,12 +367,17 @@
       stage.addEventListener(
         "wheel",
         (event) => {
-          const pageScroll =
-            Number(getViewportWidth()) <= 1120 && !event.ctrlKey && !event.metaKey;
-          if (pageScroll) return;
           event.preventDefault();
           state.pointerStagePoint = stagePoint(event);
           if (applySelectedAttachmentWheel(event)) return;
+          if (applySelectedFrameWheel(event)) return;
+          if (shouldPanFromWheel(event)) {
+            const panX = -(Number(event.deltaX) || 0) || 0;
+            const panY = -(Number(event.deltaY) || 0) || 0;
+            panViewBy(panX, panY);
+            draw();
+            return;
+          }
           zoomViewAt(event);
         },
         { passive: false },

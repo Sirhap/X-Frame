@@ -496,7 +496,11 @@
             normalized.height,
             parameters.processingOptions || parameters,
             parameters.repairs || [],
-            { cancellationId, protocolVersion: RUNTIME_PROTOCOL_VERSION },
+            {
+              cancellationId,
+              protocolVersion: RUNTIME_PROTOCOL_VERSION,
+              analysisMode: parameters.analysisMode,
+            },
           );
         } finally {
           activeCutoutRequests.delete(cancellationId);
@@ -721,13 +725,13 @@
     const activeIds = new Set();
     let requestSequence = 0;
     return Object.freeze({
-      async process(source, width, height, processingOptions = {}, repairs = []) {
+      async process(source, width, height, processingOptions = {}, repairs = [], requestOptions = {}) {
         const cancellationId = `cutout-${++requestSequence}`;
         activeIds.add(cancellationId);
         try {
           return await runtime.applyProductCutout(
             { data: source, width, height },
-            { processingOptions, repairs },
+            { processingOptions, repairs, analysisMode: requestOptions.analysisMode },
             cancellationId,
           );
         } finally {

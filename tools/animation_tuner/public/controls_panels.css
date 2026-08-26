@@ -236,8 +236,8 @@
 }
 
 .browserOnlyMode .sidebarHint,
-.browserOnlyMode #save,
-.browserOnlyMode #saveState {
+.browserOnlyMode .sidebar #save,
+.browserOnlyMode .sidebar #saveState {
   display: none;
 }
 
@@ -417,7 +417,9 @@
   font-size: 10px;
 }
 
-.browserOnlyMode .projectContextBody > :not(.godotHandoffCard) {
+.browserOnlyMode
+  .projectContextBody
+  > :not(.godotHandoffCard):not(.projectDangerActions):not(.projectDangerHint) {
   display: none;
 }
 

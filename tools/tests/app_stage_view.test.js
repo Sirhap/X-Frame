@@ -4,6 +4,32 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { createController } = require("../animation_tuner/public/app_stage_view");
 
+test("panViewBy moves the viewport in device pixels and marks the view custom", () => {
+  let view = { zoom: 2, x: 10, y: 20 };
+  let mode = "fit";
+  const controller = createController({
+    stage: { width: 800, height: 600 },
+    getView: () => view,
+    setView: (nextView) => {
+      view = nextView;
+    },
+    getStageViewMode: () => mode,
+    setStageViewMode: (nextMode) => {
+      mode = nextMode;
+    },
+    getCurrentGroup: () => null,
+    getImages: () => [],
+    currentFrameRect: () => null,
+    draw() {},
+    getDevicePixelRatio: () => 2,
+  });
+
+  controller.panViewBy(5, -3);
+
+  assert.equal(mode, "custom");
+  assert.deepEqual(view, { zoom: 2, x: 20, y: 14 });
+});
+
 test("stage view restores state after measuring unit content", () => {
   let view = { zoom: 2, x: 10, y: 20 };
   const controller = createController({

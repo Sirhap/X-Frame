@@ -11,6 +11,7 @@ const { measureFrame } = require("../xsxb_mcp_visual_qa");
 const {
   alreadyCutOut,
   cutoutFrameFiles,
+  compressPngFile,
   decodePngRgba,
   encodePngRgba,
   placeFramesOnCanvas,
@@ -104,6 +105,20 @@ test("subject anchor uses the standing body, not slash pixels below", () => {
   assert.equal(idle.height, hit.height);
 });
 
+test("subject anchor ignores a cream slash that is still connected to the body", () => {
+  const width = 16;
+  const height = 16;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 6; y <= 11; y += 1) {
+    setPixel(rgba, width, 7, y, BODY);
+    setPixel(rgba, width, 8, y, BODY);
+  }
+  for (let y = 11; y <= 15; y += 1) setPixel(rgba, width, 9, y, SLASH);
+  for (let x = 8; x <= 14; x += 1) setPixel(rgba, width, x, 15, SLASH);
+  const anchor = subjectAnchor(rgba, width, height);
+  assert.equal(anchor.feetY, 11);
+});
+
 test("shared canvas placement keeps hit-frame feet on the same ground line", () => {
   const placed = placeFramesOnCanvas(
     [greenScreenFrame({ transparent: true }), greenScreenFrame({ slash: true, transparent: true })],
@@ -116,6 +131,20 @@ test("shared canvas placement keeps hit-frame feet on the same ground line", () 
   assert.equal(hitFeet.feetY, 15);
   assert.ok(placed[0].data[(15 * 16 + 8) * 4 + 3] > 16, "idle feet land on the canvas bottom");
   assert.ok(placed[1].data[(15 * 16 + 8) * 4 + 3] > 16, "hit feet land on the same canvas bottom");
+});
+
+test("cutoutFrameFiles names the first missing path instead of dropping it", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-missing-"));
+  const idlePath = path.join(folder, "idle.png");
+  try {
+    fs.writeFileSync(idlePath, encodePngRgba(greenScreenFrame().data, 16, 16));
+    assert.throws(
+      () => cutoutFrameFiles([idlePath, path.join(folder, "missing.png")]),
+      /missing on-disk frame/,
+    );
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
 });
 
 test("cutoutFrameFiles uses the tuner smart-cutout path and keeps source layout by default", () => {
@@ -475,6 +504,41 @@ test("workbench tolerance -1 turns the MCP cutout into a no-op", () => {
     assert.equal(receipt.options.tolerance, -1);
     assert.equal(clearedPixels(decodePngRgba(framePath).data), 0, "the off-stop must leave every pixel");
     assert.equal(decodePngRgba(framePath).data[(6 * 16 + 6) * 4 + 3], 255);
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("compressPngFile shrinks a stored PNG without changing pixels", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-compress-"));
+  const framePath = path.join(folder, "frame.png");
+  try {
+    const width = 48;
+    const height = 32;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const offset = (y * width + x) * 4;
+        rgba.set([x * 5, y * 7, (x + y) * 3, x % 3 === 0 ? 0 : 255], offset);
+      }
+    }
+    fs.writeFileSync(framePath, encodePngRgba(rgba, width, height, { level: 0 }));
+    const before = fs.statSync(framePath).size;
+    const preview = compressPngFile(framePath, { dryRun: true });
+    assert.equal(preview.wrote, false);
+    assert.equal(fs.statSync(framePath).size, before, "dry_run must not write");
+    assert.ok(preview.bytesAfter < preview.bytesBefore, "stored PNG must shrink under level 9");
+
+    const result = compressPngFile(framePath);
+    assert.equal(result.wrote, true);
+    assert.ok(result.bytesAfter < before);
+    const roundTrip = decodePngRgba(framePath);
+    assert.equal(roundTrip.width, width);
+    assert.equal(roundTrip.height, height);
+    assert.deepEqual(Buffer.from(roundTrip.data), Buffer.from(rgba), "pixels must stay identical");
+
+    const again = compressPngFile(framePath);
+    assert.equal(again.wrote, false, "already tight PNG must not rewrite");
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }

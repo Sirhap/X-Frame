@@ -885,3 +885,37 @@ test("EXP-006 sidecar checkbox does not reset the selected resolution pill", asy
     global.requestAnimationFrame = originalRaf;
   }
 });
+
+test("submit with no preview frames reports missing frames instead of cancelling", async () => {
+  const originalDocument = global.document;
+  global.document = {
+    activeElement: null,
+    addEventListener() {},
+    body: { classList: { add() {}, remove() {} } },
+    createElement: () => element(),
+  };
+  try {
+    const elements = createElements();
+    let exported = false;
+    const controller = createController({
+      elements,
+      getLanguage: () => "zh",
+      getSummary: () => ({ frameCount: 0, fps: 12, canvas: "—" }),
+      getPreviewItems: () => [],
+      onExport: async () => {
+        exported = true;
+        return { downloads: [] };
+      },
+      fetchImpl: async () => ({ ok: false, json: async () => ({}) }),
+    });
+
+    await controller.submit();
+
+    assert.equal(exported, false);
+    assert.match(elements.mediaExportStatus.textContent, /没有可导出的帧|请先/);
+    assert.equal(elements.mediaExportStatus.dataset.tone, "error");
+    assert.equal(elements.mediaExportSubmit.disabled, true);
+  } finally {
+    global.document = originalDocument;
+  }
+});

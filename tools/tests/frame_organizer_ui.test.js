@@ -95,6 +95,38 @@ test("adding a workset to a project accepts the current organizer session as sav
   assert.equal(hasUnsavedWorksetChanges(state), true);
 });
 
+test("restored include flags are clean once the loaded workset is accepted", () => {
+  const frames = [
+    { uid: "idle-1", included: true, flipped: false, imported: false, tag: "", originalCanvas: {}, editedCanvas: {} },
+    { uid: "idle-2", included: false, flipped: false, imported: false, tag: "", originalCanvas: {}, editedCanvas: {} },
+  ];
+  frames[0].editedCanvas = frames[0].originalCanvas;
+  frames[1].editedCanvas = frames[1].originalCanvas;
+  const state = {
+    mode: "edit",
+    videoExtracting: false,
+    frames,
+    baselineFrameIds: ["idle-1", "idle-2"],
+    acceptedWorksetSignature: "",
+  };
+  assert.equal(hasUnsavedWorksetChanges(state), true);
+  state.acceptedWorksetSignature = worksetChangeSignature(frames);
+  assert.equal(hasUnsavedWorksetChanges(state), false);
+});
+
+test("a cleared workset is not unsaved because leaving restores the project animation", () => {
+  const state = {
+    mode: "edit",
+    videoExtracting: false,
+    frames: [],
+    baselineFrameIds: ["idle-3"],
+    acceptedWorksetSignature: "",
+  };
+  assert.equal(hasUnsavedWorksetChanges(state), false);
+  assert.equal(hasUnsavedWorksetChanges({ mode: "import", videoExtracting: false, frames: [] }), false);
+  assert.equal(hasUnsavedWorksetChanges({ videoExtracting: true, frames: [] }), true);
+});
+
 test("ENV-004 reopening the same animation keeps unchecked frames instead of reloading", () => {
   const state = {
     mode: "edit",
@@ -111,10 +143,7 @@ test("ENV-004 reopening the same animation keeps unchecked frames instead of rel
   assert.equal(canReuseLoadedAnimation(state, animation), true);
   assert.equal(canReuseLoadedAnimation({ ...state, mode: "import" }, animation), false);
   assert.equal(canReuseLoadedAnimation(state, { name: "run", frames: animation.frames }), false);
-  assert.equal(
-    canReuseLoadedAnimation(state, { name: "idle", frames: [{ id: "idle-1" }] }),
-    false,
-  );
+  assert.equal(canReuseLoadedAnimation(state, { name: "idle", frames: [{ id: "idle-1" }] }), false);
 });
 
 test("ENV-004 included flags persist across organizer sessions of the same animation", () => {

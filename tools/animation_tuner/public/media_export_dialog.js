@@ -115,8 +115,10 @@
           elements.mediaExportEstimate.textContent = english() ? "Estimate: — · 0 frames" : "预估：— · 0 帧";
         }
         elements.mediaExportFrameCount.textContent = "0";
+        syncSubmitDisabled();
         return;
       }
+      syncSubmitDisabled();
       try {
         const recipe = readRecipe();
         const rendered = recipeCore.renderRecipe(items, recipe, { document: root.document });
@@ -310,13 +312,23 @@
         });
     }
 
+    /** Disables Start when an export is running or the workset has no frames. */
+    function syncSubmitDisabled() {
+      if (!elements.mediaExportSubmit) return;
+      const busy = submitting || recoveringActive;
+      const previewItems =
+        typeof dependencies.getPreviewItems === "function" ? dependencies.getPreviewItems() || [] : null;
+      const hasFrames = previewItems === null || previewItems.length > 0;
+      elements.mediaExportSubmit.disabled = busy || !hasFrames;
+    }
+
     /** Locks format choices during export while preserving local capability state. */
     function renderSubmittingState() {
       const busy = submitting || recoveringActive;
       elements.mediaExportFrames.disabled = busy;
       elements.mediaExportSheet.disabled = busy;
       applyLocalFormatAvailability(busy);
-      elements.mediaExportSubmit.disabled = busy;
+      syncSubmitDisabled();
       elements.mediaExportDialog.setAttribute("aria-busy", String(busy));
       elements.mediaExportCancel.textContent = busy
         ? english()
@@ -575,6 +587,17 @@
 
     /** Starts the selected export formats. */
     async function submit() {
+      if (typeof dependencies.getPreviewItems === "function") {
+        const previewItems = dependencies.getPreviewItems() || [];
+        if (!previewItems.length) {
+          setStatus(
+            english() ? "No frames to export. Load an animation first." : "没有可导出的帧。请先载入动画。",
+            "error",
+          );
+          syncSubmitDisabled();
+          return;
+        }
+      }
       const formats = {
         frames: elements.mediaExportFrames.checked,
         spritesheet: elements.mediaExportSheet.checked,

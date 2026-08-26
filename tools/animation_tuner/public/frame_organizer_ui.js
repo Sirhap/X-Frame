@@ -114,6 +114,7 @@
     function hasUnsavedWorksetChanges(state) {
       if (state?.videoExtracting) return true;
       const frames = Array.from(state?.frames || []);
+      if (!frames.length) return false;
       const signature = worksetChangeSignature(frames);
       if (state?.acceptedWorksetSignature && signature === state.acceptedWorksetSignature) return false;
       if (state?.mode === "import") return frames.length > 0;

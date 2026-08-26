@@ -337,8 +337,13 @@ function buildTitleFilter(options) {
 }
 
 /** Escapes a literal used inside a single-quoted FFmpeg filter value. */
-function escapeFilterValue(value) {
-  return String(value).replaceAll("\\", "\\\\").replaceAll(":", "\\:").replaceAll("'", "\\'");
+export function escapeFilterValue(value) {
+  return String(value)
+    .replaceAll("\\", "\\\\")
+    .replaceAll("'", "'\\''")
+    .replaceAll(":", "\\:")
+    .replaceAll(",", "\\,")
+    .replaceAll("%", "\\%");
 }
 
 /** Captures binary stdout while surfacing stderr on failure. */

@@ -573,6 +573,39 @@ animations = [{
     return verdict("xsxb_replace_frame", "ready", "swaps pixels and refreshes stored frame size");
   },
 
+  async xsxb_compress_frames(fixture) {
+    const directory = path.join(fixture.root, "walk-seq");
+    fs.mkdirSync(directory, { recursive: true });
+    const rgba = new Uint8ClampedArray(24 * 16 * 4);
+    for (let offset = 0; offset < rgba.length; offset += 4) {
+      rgba.set([offset % 250, 40, 200, 255], offset);
+    }
+    const bulky = encodePngRgba(rgba, 24, 16, { level: 0 });
+    fs.writeFileSync(path.join(directory, "01.png"), bulky);
+    fs.writeFileSync(path.join(directory, "02.png"), bulky);
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "walk",
+      fps: 12,
+    });
+    const preview = await fixture.service.call("xsxb_compress_frames", {
+      animation_id: "walk",
+      dry_run: true,
+    });
+    const written = await fixture.service.call("xsxb_compress_frames", { animation_id: "walk" });
+    if (
+      preview.frameCount !== 2 ||
+      written.frameCount !== 2 ||
+      preview.dryRun !== true ||
+      written.dryRun !== false ||
+      written.bytesAfter > written.bytesBefore
+    ) {
+      return verdict("xsxb_compress_frames", "fail", JSON.stringify({ preview, written }));
+    }
+    return verdict("xsxb_compress_frames", "ready", "dry_run then lossless rewrite");
+  },
+
   async xsxb_delete_animation(fixture) {
     await importSequence(fixture, "walk");
     const preview = await fixture.service.call("xsxb_delete_animation", {

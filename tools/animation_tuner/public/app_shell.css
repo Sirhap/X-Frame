@@ -761,7 +761,7 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
 .modeHubFeatured span,
 .modeHubSectionHeading span,
 .quickToolCard > span,
-.projectHubCard > span {
+.projectHubCardLink > span {
   color: var(--accent-text);
   font: 750 10px/1.4 var(--data-font);
   letter-spacing: 0.14em;
@@ -881,6 +881,14 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
   content: counter(quick-tool, decimal-leading-zero) " / ";
 }
 
+.projectHubRecentActions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
 .projectHubCard,
 .quickToolCard {
   min-width: 0;
@@ -897,6 +905,37 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
   transition:
     border-color var(--motion-fast) var(--ease-standard),
     transform var(--motion-fast) var(--ease-standard);
+}
+
+.projectHubCardLink {
+  min-width: 0;
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  color: inherit;
+  text-decoration: none;
+}
+
+.projectHubCardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+}
+
+.projectHubCardActions[hidden] {
+  display: none;
+}
+
+.projectHubCardActions button {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 12px;
 }
 
 .projectHubCard:hover,
@@ -919,7 +958,7 @@ body:not([data-app-surface="workspace"]) .toolRailCollapse {
 }
 
 .quickToolCard strong,
-.projectHubCard strong {
+.projectHubCardLink strong {
   margin-top: auto;
   padding-top: 22px;
   color: var(--accent-text);
@@ -1119,6 +1158,54 @@ body[data-workspace-tool="audio"] #browserModeBanner {
   background: color-mix(in srgb, var(--accent-2) 12%, var(--control-bg));
   color: var(--accent-text);
   font-weight: 800;
+}
+
+.projectToolCopy {
+  margin: 0 10px 10px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 34%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent-2) 7%, var(--panel-2));
+}
+
+.projectToolCopy header {
+  display: grid;
+  gap: 2px;
+}
+
+.projectToolCopy header span {
+  color: var(--accent-text);
+  font: 800 9px/1.2 var(--data-font);
+  letter-spacing: 0.12em;
+}
+
+.projectToolCopy header strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.projectToolCopy > p {
+  margin: 5px 0 9px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.projectToolCopyActions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.projectToolCopyActions button {
+  min-height: 38px;
+  margin: 0;
+  padding: 6px 4px;
+  border-color: color-mix(in srgb, var(--accent-2) 28%, var(--line));
+  background: var(--control-bg);
+  color: var(--ink);
+  font-size: 10px;
+  line-height: 1.25;
 }
 
 .contextBreadcrumb {
@@ -1336,7 +1423,7 @@ body[data-workspace-tool="audio"] #browserModeBanner {
 .filmstrip {
   gap: 8px;
   padding: 8px 10px 12px;
-  overflow-y: hidden;
+  overflow-y: auto;
 }
 
 .filmstripPanel[data-layout="grid"] .filmstrip {
@@ -1367,7 +1454,7 @@ body[data-workspace-tool="audio"] #browserModeBanner {
 }
 
 .workspace:has(.filmstripPanel[data-layout="grid"]) {
-  grid-template-rows: auto minmax(0, 1fr) clamp(260px, 38vh, 440px) auto;
+  grid-template-rows: auto minmax(0, 1fr) minmax(160px, min(34vh, 360px)) auto;
 }
 
 .thumb,
@@ -1817,6 +1904,31 @@ body.organizerOpen .organizerFooterActions {
 
   .toolbarActions {
     flex-wrap: wrap;
+  }
+}
+
+/* Phone: keep the canvas/filmstrip hittable. The 1120px overlay sidebar
+   would cover 帧操作 on a 390px viewport. */
+@media (max-width: 759px) {
+  .app .sidebar {
+    position: relative;
+    z-index: auto;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    order: 2;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    box-shadow: none;
+  }
+
+  .app .workspace {
+    order: 1;
+  }
+
+  body.sidebarCollapsed .app .sidebar {
+    display: none;
   }
 }
 

@@ -66,6 +66,19 @@ function requireFps(value, fallback = 12) {
 }
 
 /**
+ * Parses a TCP port for the Tuner, including values taken from process.env.
+ * @param {unknown} value Raw port.
+ * @returns {number} Integer port in 1–65535.
+ */
+function requireTunerPort(value) {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Tuner port must be an integer from 1 to 65535. Received: ${value}`);
+  }
+  return port;
+}
+
+/**
  * Converts a local PNG file into the organizer import item shape.
  * @param {string} filePath Absolute PNG path.
  * @returns {{name:string,data:string}} Import item.
@@ -256,6 +269,7 @@ module.exports = {
   pngFileToItem,
   requireExistingFile,
   requireFps,
+  requireTunerPort,
   requireFrameIndex,
   resolveImportSource,
   sliceExtractedFrames,

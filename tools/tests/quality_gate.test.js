@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 const packageScripts = require("../../package.json").scripts;
@@ -113,4 +115,9 @@ test("quality gate rejects an unknown profile before running scripts", () => {
     () => runQualityGate("missing", { profiles: QUALITY_GATE_PROFILES, runScript() {} }),
     /unknown quality gate profile.*missing/iu,
   );
+});
+
+test("Windows npm.cmd spawn enables shell to avoid EINVAL", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../quality_gate.js"), "utf8");
+  assert.match(source, /shell:\s*process\.platform === "win32"/);
 });

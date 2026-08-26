@@ -350,6 +350,7 @@ test("Ctrl or Cmd Y redoes an editor action outside text inputs", () => {
 test("Space tap arms pan then toggles play on keyup when unused", () => {
   let spacePan = false;
   let spaceConsumed = false;
+  let spaceCanPlay = false;
   const { controller, state } = createFixture({
     dependencies: {
       documentRef: { querySelector: () => ({ hidden: true }) },
@@ -360,6 +361,10 @@ test("Space tap arms pan then toggles play on keyup when unused", () => {
       getStageSpacePanConsumed: () => spaceConsumed,
       setStageSpacePanConsumed: (value) => {
         spaceConsumed = Boolean(value);
+      },
+      getStageSpacePanCanPlay: () => spaceCanPlay,
+      setStageSpacePanCanPlay: (value) => {
+        spaceCanPlay = Boolean(value);
       },
     },
   });
@@ -389,8 +394,9 @@ test("Space tap arms pan then toggles play on keyup when unused", () => {
   assert.equal(state.playCalls, 1);
 });
 
-test("Space on the workbench or body after a control click does not start playback", () => {
+test("Space on the workbench prevents page-down and arms pan without playing", () => {
   let spacePan = false;
+  let spaceCanPlay = true;
   const { controller, state } = createFixture({
     dependencies: {
       documentRef: { querySelector: () => ({ hidden: true }) },
@@ -400,6 +406,130 @@ test("Space on the workbench or body after a control click does not start playba
       getStageSpacePan: () => spacePan,
       getStageSpacePanConsumed: () => false,
       setStageSpacePanConsumed: () => {},
+      getStageSpacePanCanPlay: () => spaceCanPlay,
+      setStageSpacePanCanPlay: (value) => {
+        spaceCanPlay = Boolean(value);
+      },
+    },
+  });
+  const mainTarget = {
+    id: "mainWorkbench",
+    tagName: "MAIN",
+    closest(selector) {
+      return selector === "#mainWorkbench" ? this : null;
+    },
+  };
+  let prevented = false;
+  controller.handleEditorKeydown({
+    key: " ",
+    code: "Space",
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    repeat: false,
+    target: mainTarget,
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(prevented, true);
+  assert.equal(spacePan, true);
+  assert.equal(spaceCanPlay, false);
+  controller.handleKeyup({ code: "Space" });
+  assert.equal(state.playCalls, 0);
+});
+
+test("Space on the workbench arms pan without toggling playback", () => {
+  let spacePan = false;
+  let spaceCanPlay = true;
+  const { controller, state } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      setStageSpacePan: (value) => {
+        spacePan = Boolean(value);
+      },
+      getStageSpacePan: () => spacePan,
+      getStageSpacePanConsumed: () => false,
+      setStageSpacePanConsumed: () => {},
+      getStageSpacePanCanPlay: () => spaceCanPlay,
+      setStageSpacePanCanPlay: (value) => {
+        spaceCanPlay = Boolean(value);
+      },
+    },
+  });
+  const mainTarget = {
+    id: "mainWorkbench",
+    tagName: "MAIN",
+    closest(selector) {
+      return selector === "#mainWorkbench" ? this : null;
+    },
+  };
+
+  controller.handleEditorKeydown({
+    key: " ",
+    code: "Space",
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    repeat: false,
+    target: mainTarget,
+    preventDefault() {},
+  });
+  assert.equal(spacePan, true);
+  assert.equal(spaceCanPlay, false);
+  controller.handleKeyup({ code: "Space" });
+  assert.equal(spacePan, false);
+  assert.equal(state.playCalls, 0);
+});
+
+test("Alt+arrows nudge the character instead of changing frames", () => {
+  const nudged = [];
+  let selectedFrame = 2;
+  const { controller } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      getCurrentGroup: () => ({ frames: [{}, {}, {}, {}] }),
+      getSelectedFrame: () => selectedFrame,
+      selectFilmstripFrame: (index) => {
+        selectedFrame = index;
+      },
+      stepOffsetByArrowKey: (key, multiplier) => {
+        nudged.push([key, multiplier]);
+        return true;
+      },
+    },
+  });
+
+  controller.handleEditorKeydown({
+    key: "ArrowRight",
+    altKey: true,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: true,
+    target: { tagName: "BODY" },
+    preventDefault() {},
+  });
+
+  assert.deepEqual(nudged, [["ArrowRight", 10]]);
+  assert.equal(selectedFrame, 2);
+});
+
+test("Space on the workbench or body after a control click does not start playback", () => {
+  let spacePan = false;
+  let spaceCanPlay = false;
+  const { controller, state } = createFixture({
+    dependencies: {
+      documentRef: { querySelector: () => ({ hidden: true }) },
+      setStageSpacePan: (value) => {
+        spacePan = Boolean(value);
+      },
+      getStageSpacePan: () => spacePan,
+      getStageSpacePanConsumed: () => false,
+      setStageSpacePanConsumed: () => {},
+      getStageSpacePanCanPlay: () => spaceCanPlay,
+      setStageSpacePanCanPlay: (value) => {
+        spaceCanPlay = Boolean(value);
+      },
     },
   });
   const mainTarget = {

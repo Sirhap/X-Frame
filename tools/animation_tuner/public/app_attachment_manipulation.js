@@ -247,7 +247,7 @@
       const mode = attachmentWheelMode();
       if (!mode) return false;
       const attachment = hitTestDirectManipulationAttachment(event);
-      if (!attachment) return true;
+      if (!attachment) return false;
       activateFrameAttachmentForEditing(attachment);
       const transform = normalizeAttachmentTransform(attachment.transform);
       if (mode === "rotate") {

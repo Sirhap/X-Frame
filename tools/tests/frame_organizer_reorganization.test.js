@@ -6,13 +6,44 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { createProjectStore } = require("../project_store");
-const { remapAttackTrails, remapReferenceFrame, reorganizeAnimation } = require("../frame_organizer");
+const {
+  remapAttackTrails,
+  remapIndexedDictionary,
+  remapReferenceFrame,
+  reorganizeAnimation,
+} = require("../frame_organizer");
 
 /** 1×1 transparent PNG used as organizer replacement payload. */
 const PNG_DATA_URL = `data:image/png;base64,${Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082",
   "hex",
 ).toString("base64")}`;
+
+test("remapIndexedDictionary rebuilds prefix keys from the plan instead of leaving tail overrides", () => {
+  const remapped = remapIndexedDictionary(
+    {
+      "hero/run:0": { offset: { x: 1 } },
+      "hero/run:1": { offset: { x: 2 } },
+      "hero/run:2": { offset: { x: 3 } },
+      "hero/run:__group": { fps: 12 },
+      "hero/idle:0": { offset: { x: 9 } },
+    },
+    "hero/run:",
+    [{ sourceIndex: 0 }, { sourceIndex: null }, { sourceIndex: 1 }],
+  );
+
+  assert.deepEqual(Object.keys(remapped).sort(), [
+    "hero/idle:0",
+    "hero/run:0",
+    "hero/run:2",
+    "hero/run:__group",
+  ]);
+  assert.equal(remapped["hero/run:0"].offset.x, 1);
+  assert.equal(remapped["hero/run:2"].offset.x, 2);
+  assert.equal(remapped["hero/run:1"], undefined);
+  assert.equal(remapped["hero/run:__group"].fps, 12);
+  assert.equal(remapped["hero/idle:0"].offset.x, 9);
+});
 
 test("TUN-021 remapping a deleted reference frame clears the persisted descriptor", () => {
   const descriptor = {

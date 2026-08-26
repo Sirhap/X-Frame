@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { estimateFrameBoxes, upsertEstimatedFrameBoxes } = require("./box_estimator");
 const { ensureInitialCharacterScale } = require("./import_scale");
+const { stripAnimationOwnedData } = require("./animation_mutations");
 
 /**
  * Deep-clones JSON-compatible project data.
@@ -377,7 +378,11 @@ function importAnimation(options) {
     String(options.profileLabel || profileId),
     String(options.profileKind || "actor"),
   );
-  if (profile.animations.some((entry) => String(entry.id || entry.name) === animationId)) {
+  const existingIndex = profile.animations.findIndex(
+    (entry) => String(entry.id || entry.name) === animationId,
+  );
+  const replacing = Boolean(options.replace) && existingIndex >= 0;
+  if (existingIndex >= 0 && !replacing) {
     throw Object.assign(new Error(`Animation already exists: ${profileId}/${animationId}`), {
       status: 409,
       code: "animation_exists",
@@ -389,12 +394,46 @@ function importAnimation(options) {
   if (!targetDir.startsWith(`${workspaceDir}${path.sep}`)) {
     throw new Error("Animation assets must stay inside the active project workspace.");
   }
-  if (fs.existsSync(targetDir)) {
+  if (fs.existsSync(targetDir) && !replacing) {
     throw new Error(`Animation asset folder already exists: ${profileId}/${animationId}`);
+  }
+
+  const audioBindings = projectStore.readJson(paths.frameAudio, []);
+  const imageAttachments = projectStore.readJson(paths.frameImageAttachments, []);
+  const attachmentAssets = projectStore.readJson(paths.attachmentAssets, []);
+  const attackTrails = projectStore.readJson(paths.attackTrails, { schemaVersion: 8, bindings: {} });
+  originals.frameAudio = clone(audioBindings);
+  originals.frameImageAttachments = clone(imageAttachments);
+  originals.attachmentAssets = clone(attachmentAssets);
+  originals.attackTrails = clone(attackTrails);
+  let nextAudio = audioBindings;
+  let nextAttachments = imageAttachments;
+  let nextAssets = attachmentAssets;
+  let nextTrails = attackTrails;
+  if (replacing) {
+    const stripped = stripAnimationOwnedData({
+      tuning,
+      audioBindings,
+      imageAttachments,
+      attachmentAssets,
+      attackTrails,
+      profile,
+      animation: profile.animations[existingIndex],
+    });
+    Object.assign(tuning, stripped.tuning);
+    tuning.values = stripped.tuning.values;
+    tuning.frame_visual_overrides = stripped.tuning.frame_visual_overrides;
+    tuning.frame_playback_overrides = stripped.tuning.frame_playback_overrides;
+    tuning.frame_box_overrides = stripped.tuning.frame_box_overrides;
+    nextAudio = stripped.frameAudioBindings;
+    nextAttachments = stripped.frameImageAttachments;
+    nextAssets = stripped.attachmentAssets;
+    nextTrails = stripped.attackTrails;
   }
 
   const operationId = crypto.randomBytes(8).toString("hex");
   const stagingDir = `${targetDir}.import-${operationId}`;
+  const backupDir = `${targetDir}.backup-${operationId}`;
   fs.rmSync(stagingDir, { recursive: true, force: true });
   fs.mkdirSync(stagingDir, { recursive: true });
   let frames = [];
@@ -441,7 +480,8 @@ function importAnimation(options) {
       source: reslash(path.relative(root, targetDir)),
       frames,
     };
-    profile.animations.push(animation);
+    if (replacing) profile.animations[existingIndex] = animation;
+    else profile.animations.push(animation);
     ensureInitialCharacterScale(
       tuning,
       profileId,
@@ -458,18 +498,43 @@ function importAnimation(options) {
     throw error;
   }
 
+  let backupCreated = false;
   let directoryInstalled = false;
   try {
+    if (replacing && fs.existsSync(targetDir)) {
+      fs.renameSync(targetDir, backupDir);
+      backupCreated = true;
+    }
     fs.renameSync(stagingDir, targetDir);
     directoryInstalled = true;
     projectStore.writeJson(paths.manifest, manifest);
     projectStore.writeJson(paths.tuning, tuning);
+    if (replacing) {
+      projectStore.writeJson(paths.frameAudio, nextAudio);
+      projectStore.writeJson(paths.frameImageAttachments, nextAttachments);
+      projectStore.writeJson(paths.attachmentAssets, nextAssets);
+      projectStore.writeJson(paths.attackTrails, nextTrails);
+    }
   } catch (error) {
     if (directoryInstalled) fs.rmSync(targetDir, { recursive: true, force: true });
+    if (backupCreated && fs.existsSync(backupDir)) fs.renameSync(backupDir, targetDir);
     fs.rmSync(stagingDir, { recursive: true, force: true });
     projectStore.writeJson(paths.manifest, originals.manifest);
     projectStore.writeJson(paths.tuning, originals.tuning);
+    if (replacing) {
+      projectStore.writeJson(paths.frameAudio, originals.frameAudio);
+      projectStore.writeJson(paths.frameImageAttachments, originals.frameImageAttachments);
+      projectStore.writeJson(paths.attachmentAssets, originals.attachmentAssets);
+      projectStore.writeJson(paths.attackTrails, originals.attackTrails);
+    }
     throw error;
+  }
+  if (backupCreated) {
+    try {
+      fs.rmSync(backupDir, { recursive: true, force: true });
+    } catch (error) {
+      console.warn(`Could not remove import backup ${backupDir}: ${error.message}`);
+    }
   }
 
   return {

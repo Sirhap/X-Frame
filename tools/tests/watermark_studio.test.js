@@ -26,6 +26,11 @@ const smartControlsPromise = fs.promises
   .readFile(path.join(__dirname, "../animation_tuner/public/watermark_smart_controls.js"), "utf8")
   .then((source) => import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`));
 
+test("drawtext filter values escape quotes, commas, and percents", async () => {
+  const { escapeFilterValue } = await smartExportPromise;
+  assert.equal(escapeFilterValue("O'Brien, 100%"), "O'\\''Brien\\, 100\\%");
+});
+
 test("smart watermark reference time stays inside the final decodable frame", async () => {
   const { safeReferenceTime } = await smartControlsPromise;
   assert.equal(safeReferenceTime({ duration: 2, fps: 24 }), 1.95);

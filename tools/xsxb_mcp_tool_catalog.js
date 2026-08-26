@@ -28,6 +28,7 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_estimate_visual",
   "xsxb_reorganize_frames",
   "xsxb_replace_frame",
+  "xsxb_compress_frames",
   "xsxb_add_attack_trail",
   "xsxb_add_attachment",
   "xsxb_add_sfx",
@@ -471,6 +472,26 @@ function toolDefinitions() {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
     {
+      name: "xsxb_compress_frames",
+      description:
+        "Lossless-reencode workspace PNG frames with max zlib. Pixels stay identical. Writes only when the file shrinks. dry_run reports savings without writing.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          dry_run: {
+            type: "boolean",
+            default: false,
+            description: "Preview byte savings without writing files.",
+          },
+          start_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
+          end_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
       name: "xsxb_add_attack_trail",
       description:
         "Add or replace one attack-trail segment. Sticks are blade edges (top=tip, bottom=grip) on one swing: start frame when the blade starts moving, end frame at the hit, a mid stick only if the arc bends. layer is behind while the blade is behind the body and front when it is in front. reverseDirection flips the curve handle if the ribbon folds through the body. Path length follows the faster blade edge, so a rotating slash still makes a trailing smear. Auto sticks start at the first frame and end at the last. before_stop_chase defaults to 0.12 so a slash-plus-settle still keeps the slash (拖影); 0 fills the whole swing; 1 hugs the current blade. Receipts include frameSpan, centerTravel, edgeTravel. xsxb_export_gif and xsxb_export_sheet bake the smear onto the preview. Omitting sticks writes a default two-stick trail.",
@@ -623,7 +644,8 @@ function toolDefinitions() {
     },
     {
       name: "xsxb_sync_godot",
-      description: "Synchronize the current project to its bound Godot root without changing animation data.",
+      description:
+        "Synchronize the current project to its bound Godot root without changing animation data. Drops stale .godot/imported .ctex files when synced PNG bytes no longer match the cached source_md5.",
       inputSchema: {
         type: "object",
         properties: { project_id: projectProperty, force: { type: "boolean", default: false } },
@@ -681,7 +703,7 @@ function toolDefinitions() {
     {
       name: "xsxb_cutout",
       description:
-        "Run the tuner smart-cutout product path on every animation frame. Slider names and ranges match the cutout workbench; omit them to keep the shared smart-cutout profile. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom. apply_visual rematches from group/frame visual_size instead of that shared scale. Character visual_size stays playback-only and is not baked.",
+        "Run the tuner smart-cutout product path on every animation frame. Slider names and ranges match the cutout workbench; omit them to keep the shared smart-cutout profile. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom, ignoring disconnected islands and connected bright slash/glow below the boots. apply_visual rematches from group/frame visual_size instead of that shared scale. Character visual_size stays playback-only and is not baked.",
       inputSchema: {
         type: "object",
         properties: {
@@ -755,7 +777,7 @@ function toolDefinitions() {
         },
         additionalProperties: false,
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     {
       name: "xsxb_export_sheet",
@@ -800,7 +822,7 @@ function toolDefinitions() {
         },
         additionalProperties: false,
       },
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     {
       name: "xsxb_measure_image",

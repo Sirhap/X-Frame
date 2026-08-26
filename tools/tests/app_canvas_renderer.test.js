@@ -33,3 +33,10 @@ test("canvas renderer computes frame rectangles through injected transforms", ()
     height: 20,
   });
 });
+
+test("current-origin label sits below the crosshair instead of over the sprite", () => {
+  const { coordinateMarkerLabelOffset } = require("../animation_tuner/public/app_canvas_renderer");
+  const offset = coordinateMarkerLabelOffset(1);
+  assert.ok(offset.y > 0, "label must be drawn below the marker");
+  assert.equal(offset.baseline, "top");
+});

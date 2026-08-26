@@ -81,11 +81,11 @@ async function exportBrowserAnimation(metadata, items, options = {}) {
 }
 
 /**
- * Creates a transient animation group so browser users can continue into the tuning workbench.
- * The frame data remains in memory and is intentionally not presented as a Godot project write.
+ * Creates an animation group in the active browser project so imported frames
+ * can move directly into the tuning workbench and remain available after reload.
  * @param {object} metadata Animation metadata collected by the organizer.
  * @param {Array<object>} items Processed PNG frame records.
- * @returns {Promise<object>} Created browser-session animation group.
+ * @returns {Promise<object>} Created browser-project animation group.
  */
 async function createBrowserSessionAnimation(metadata, items, options = {}) {
   if (!browserOnlyMode) {
@@ -317,6 +317,7 @@ let {
   stageViewMode,
   stageSpacePan,
   stageSpacePanConsumed,
+  stageSpacePanCanPlay,
   drag,
   undoStack,
   redoStack,
@@ -370,11 +371,77 @@ function openTemporaryCutout(workset) {
     onLiveApply: (outputs) => temporaryWorksetStore?.applyOutputs(outputs, enabledFrameIds),
   });
   completion
-    .then((outputs) => {
+    .then(async (outputs) => {
       if (outputs?.length) temporaryWorksetStore?.applyOutputs(outputs, enabledFrameIds);
+      const shouldReturnToOrganizer =
+        outputs?.length &&
+        currentNavigationContext() === "standalone" &&
+        currentWorkbenchRoute() === "cutout";
+      if (shouldReturnToOrganizer) {
+        syncWorkbenchRoute("organizer", { context: "standalone" });
+        await applyWorkbenchRoute({ skipDirtyPrompt: true });
+      }
     })
     .catch((error) => status(t("loadFailed", { message: error.message })));
   return true;
+}
+
+/** Copies one project frame image into an independently mutable Canvas. */
+function copyProjectFrameImage(image, frame) {
+  const source = globalThis.XSXBAppUtils?.extractFrameCrop?.(image, frame?.crop, document) || image;
+  const width = Math.max(0, Number(source?.naturalWidth || source?.width) || 0);
+  const height = Math.max(0, Number(source?.naturalHeight || source?.height) || 0);
+  if (!width || !height) throw new Error("项目动画包含尚未完成解码的帧。");
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { alpha: true });
+  if (!context) throw new Error("无法创建工具副本画布。");
+  context.drawImage(source, 0, 0, width, height);
+  return canvas;
+}
+
+/** Creates a detached animation copy and opens the selected standalone tool. */
+async function copyCurrentAnimationToTool(tool) {
+  const destination = ["organizer", "cutout", "export"].includes(tool) ? tool : "organizer";
+  try {
+    const existingWorkset = temporaryWorksetStore?.getSnapshot();
+    if (existingWorkset?.frames?.length) {
+      const accepted = await requestAppConfirmation(
+        t("replaceToolWorksetConfirm", { count: existingWorkset.frames.length }),
+        {
+          title: t("replaceToolWorksetTitle"),
+          confirmLabel: t("replaceToolWorksetAccept"),
+          tone: "warning",
+        },
+      );
+      if (!accepted) return;
+    }
+    const source = globalThis.XSXBModeHubs?.resolveCurrentAnimationSource?.({
+      currentGroup,
+      images,
+      groupLabel,
+    });
+    const workset = globalThis.XSXBModeHubs?.createIndependentToolWorkset?.(source, {
+      copyNamespace: `project-copy:${globalThis.crypto?.randomUUID?.() || Date.now()}`,
+      copyImage: copyProjectFrameImage,
+    });
+    temporaryWorksetStore?.setWorkset(workset);
+    status(t("projectCopyReady", { count: workset.frames.length }));
+    syncWorkbenchRoute(destination, { push: true, context: "standalone" });
+    await applyWorkbenchRoute({ skipDirtyPrompt: true });
+  } catch (error) {
+    status(t("projectCopyFailed", { message: error.message }));
+  }
+}
+
+/** Synchronizes detached-copy availability with the decoded current animation. */
+function syncProjectCopyActions() {
+  const available = Boolean(currentGroup?.frames?.length && images.length === currentGroup.frames.length);
+  for (const button of document.querySelectorAll("[data-copy-animation-to-tool]")) {
+    button.disabled = !available;
+    button.title = available ? "" : t("cutoutCurrentFrameUnavailable");
+  }
 }
 let cutoutNavigationContext = "project";
 let organizerNavigationContext = "project";
@@ -404,9 +471,21 @@ const appConfirmation = appConfirmModule.createController({
 async function requestScatterSliceLeave(destinationRoute) {
   if (
     destinationRoute &&
-    ["organizer", "import", "cutout", "scatter", "export", "godot", "codex-pet", "overview", "animation", "boxes", "trails", "audio", "attachments"].includes(
-      destinationRoute,
-    )
+    [
+      "organizer",
+      "import",
+      "cutout",
+      "scatter",
+      "export",
+      "godot",
+      "codex-pet",
+      "overview",
+      "animation",
+      "boxes",
+      "trails",
+      "audio",
+      "attachments",
+    ].includes(destinationRoute)
   ) {
     return true;
   }
@@ -1130,7 +1209,9 @@ const projectMutations = globalThis.XSXBProjectMutations.createController({
     selectedProjectId = value;
   },
   confirm: requestAppConfirmation,
-  fetchImpl: globalThis.fetch,
+  fetchImpl: browserOnlyMode
+    ? (url, options) => browserRuntime.fetchProjectMutation(url, options)
+    : globalThis.fetch,
   translate: t,
   projectLabel,
   resetProjectSession,
@@ -1142,7 +1223,9 @@ const projectMutations = globalThis.XSXBProjectMutations.createController({
 const {
   activateProject,
   clearActiveProject,
+  clearProject,
   deleteActiveProject,
+  deleteProject,
   readMutationResponse,
   setProjectMutationBusy,
 } = projectMutations;
@@ -1403,6 +1486,7 @@ const eventState = lifecycleState;
   ["stageViewMode", () => stageViewMode, (value) => (stageViewMode = value)],
   ["stageSpacePan", () => stageSpacePan, (value) => (stageSpacePan = value)],
   ["stageSpacePanConsumed", () => stageSpacePanConsumed, (value) => (stageSpacePanConsumed = value)],
+  ["stageSpacePanCanPlay", () => stageSpacePanCanPlay, (value) => (stageSpacePanCanPlay = value)],
   ["uiTheme", () => uiTheme, (value) => (uiTheme = value)],
   ["view", () => view, (value) => (view = value)],
 ].forEach(([key, getter, setter]) => bindLifecycleState(eventState, key, getter, setter));
@@ -1905,6 +1989,7 @@ async function loadConfig() {
   const addCodexPet = document.querySelector("#addCodexPet");
   if (addCodexPet) addCodexPet.hidden = config?.projectKind !== "codex_pets";
   syncCodexPetLifecycleActions();
+  syncProjectCopyActions();
   workspaceLeave.captureSavedSnapshot();
   return result;
 }
@@ -1914,6 +1999,7 @@ async function selectGroup(group, options = {}) {
   navigationContext?.render();
   attackTrailEditor?.contextChanged();
   syncCodexPetLifecycleActions();
+  syncProjectCopyActions();
   return result;
 }
 
@@ -3137,7 +3223,79 @@ const stageViewController = stageViewModule.createController({
   draw,
   getDevicePixelRatio: () => devicePixelRatio,
 });
-const { centerStageContent, fitView, setStageZoom, zoomViewAt, resizeCanvas } = stageViewController;
+const { centerStageContent, fitView, setStageZoom, panViewBy, zoomViewAt, resizeCanvas } =
+  stageViewController;
+
+/**
+ * Coalesces rapid Z/R wheel edits on the main sprite into one undo step.
+ * @param {string} label Undo label for the current wheel gesture.
+ * @returns {void}
+ */
+function pushStageWheelUndo(label) {
+  if (!attachmentWheelUndoTimer || attachmentWheelUndoLabel !== label) {
+    pushUndo(label);
+    attachmentWheelUndoLabel = label;
+  }
+  if (typeof globalThis.clearTimeout === "function") {
+    globalThis.clearTimeout(attachmentWheelUndoTimer);
+  }
+  attachmentWheelUndoTimer =
+    typeof globalThis.setTimeout === "function"
+      ? globalThis.setTimeout(() => {
+          attachmentWheelUndoTimer = null;
+          attachmentWheelUndoLabel = "";
+        }, 400)
+      : null;
+}
+
+/**
+ * Applies Z/R + wheel to the active character/group/frame transform.
+ * @param {WheelEvent} event Stage wheel event.
+ * @returns {boolean} Whether the wheel event was consumed.
+ */
+function applySelectedFrameWheel(event) {
+  const mode = heldAttachmentTransformKeys.has("r")
+    ? "rotate"
+    : heldAttachmentTransformKeys.has("z")
+      ? "scale"
+      : "";
+  if (!mode) return false;
+  if (!currentGroup) return true;
+  const start = transformFromAdjustmentInputs();
+  const clampScale = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 1;
+    return Math.min(20, Math.max(0.001, numeric));
+  };
+  const transform = {
+    ...start,
+    offset: { x: Number(start.offset?.x || 0), y: Number(start.offset?.y || 0) },
+  };
+  if (mode === "rotate") {
+    pushStageWheelUndo("rotate frame transform");
+    transform.rotation = Number(start.rotation || 0) + (event.deltaY < 0 ? 2 : -2);
+  } else {
+    pushStageWheelUndo("scale frame transform");
+    const factor = event.deltaY < 0 ? 1.04 : 1 / 1.04;
+    transform.scale = clampScale(Number(start.scale || 1) * factor);
+    transform.scaleX = clampScale(Number(start.scaleX || start.scale || 1) * factor);
+    transform.scaleY = clampScale(Number(start.scaleY || start.scale || 1) * factor);
+  }
+  if (adjustmentMode === "character") {
+    updateCharacterFromInputs(transform);
+  } else if (adjustmentMode === "group") {
+    updateBaseFromInputs(transform);
+  } else {
+    if (!canEditFrameTransform()) return true;
+    for (const frameIndex of selectedFrameIndexes()) setFrameTransform(frameIndex, transform);
+    markDirty();
+    syncFrameInputs();
+    renderFilmstrip();
+    draw();
+  }
+  syncAdjustmentInputs();
+  return true;
+}
 
 function trackAttachmentTransformKey(event, pressed) {
   const key = String(event.key || "").toLowerCase();
@@ -3194,6 +3352,11 @@ const keyboardController = keyboardModule.createController({
   setStageSpacePanConsumed: (value) => {
     stageSpacePanConsumed = Boolean(value);
   },
+  getStageSpacePanCanPlay: () => stageSpacePanCanPlay,
+  setStageSpacePanCanPlay: (value) => {
+    stageSpacePanCanPlay = Boolean(value);
+  },
+  stepOffsetByArrowKey,
   playPauseElement: els.playPause,
   clearHeldAttachmentTransformKeys: () => heldAttachmentTransformKeys.clear(),
   getCurrentWorkbenchRoute: currentWorkbenchRoute,
@@ -3329,17 +3492,12 @@ function updateAdjustmentFromInputs(editedInput) {
  * @param {PointerEvent} [event] Pointer event used for sprite hit-testing.
  * @returns {object|null} Transform snapshot for a direct drag, or null.
  */
-function hitTestDirectManipulationFrame(event) {
-  if (
-    document.body.dataset.workspaceTool !== "animation" ||
-    !currentGroup ||
-    selectedFrameIndexes().length !== 1
-  ) {
-    return null;
-  }
-  // Empty-canvas drags must pan the view; only a hit on the sprite starts a
-  // frame transform so Transform-tab editing no longer steals navigation.
-  if (event && !isPointInsideFrame(event)) return null;
+function hitTestDirectManipulationFrame(_event) {
+  const tool = document.body.dataset.workspaceTool;
+  if ((tool !== "animation" && tool !== "overview") || !currentGroup) return null;
+  // Transform/overview own left-drag for character/group/frame offsets.
+  // Requiring a sprite hit made every miss pan the canvas, so the character
+  // could not be moved. Pan uses Space, right/middle drag, or two-finger.
   return transformFromAdjustmentInputs();
 }
 
@@ -3351,7 +3509,7 @@ function hitTestDirectManipulationFrame(event) {
  * @returns {void}
  */
 function moveDirectManipulationFrameByClientDelta(startTransform, clientDeltaX, clientDeltaY) {
-  if (!startTransform || !currentGroup || selectedFrameIndexes().length !== 1) return;
+  if (!startTransform || !currentGroup) return;
   const scale = Math.max(0.0001, coordinateScreenScale());
   const transform = {
     ...startTransform,
@@ -3562,6 +3720,7 @@ const appEvents = appEventsModule.createController({
     applyGroupTimeFromInput,
     applyLanguage,
     applySelectedAttachmentWheel,
+    applySelectedFrameWheel,
     applyUiTheme,
     adjustmentNumberInputs,
     attachmentFrameIndex,
@@ -3603,6 +3762,7 @@ const appEvents = appEventsModule.createController({
     loadChainImages,
     markDirty,
     moveDirectManipulationFrameByClientDelta,
+    panViewBy,
     normalizeAdjustmentMode,
     normalizeAttachmentTransform,
     normalizeColor,
@@ -3812,6 +3972,7 @@ frameOrganizer =
         groupLabel,
       }) || null,
     commitImportToCurrent: () => Boolean(currentGroup?.animationId && currentGroup.profileId),
+    autoCommitImportOnLeave: () => String(globalThis.location?.pathname || "").startsWith("/workspace/"),
     applyPlan: browserOnlyMode ? applyBrowserFrameOrganizerPlan : applyFrameOrganizerPlan,
     createAnimation: browserOnlyMode ? exportBrowserAnimation : createAnimationFromOrganizer,
     createSessionAnimation: browserOnlyMode ? createBrowserSessionAnimation : undefined,
@@ -3861,6 +4022,11 @@ frameOrganizer =
       });
     },
   }) || null;
+for (const button of document.querySelectorAll("[data-copy-animation-to-tool]")) {
+  button.addEventListener("click", () => {
+    void copyCurrentAnimationToTool(button.dataset.copyAnimationToTool);
+  });
+}
 const characterStarterGuide = window.CharacterStarterGuide?.createController({
   onImport: () =>
     frameOrganizer?.openImport().catch((error) => status(t("loadFailed", { message: error.message }))),
@@ -4083,6 +4249,8 @@ modeHubs = modeHubsModule.createController({
   windowRef: globalThis,
   projectLabel,
   translate: t,
+  clearProject: (project) => clearProject(project?.id),
+  deleteProject: (project) => deleteProject(project?.id),
   async createProject(label) {
     if (browserOnlyMode) {
       const created = await browserRuntime.createSessionProject(label);
@@ -4366,6 +4534,11 @@ document.querySelector("#deliveryOpenExport")?.addEventListener("click", async (
 
 /** Replaces any stale export controller with a deterministic empty state. */
 function renderDeliveryExportEmpty(mount, message) {
+  const dialog = document.querySelector("#mediaExportDialog");
+  if (dialog && mount?.contains(dialog)) {
+    document.querySelector("#mediaExportClose")?.click();
+    document.body.append(dialog);
+  }
   const empty = document.createElement("div");
   empty.className = "deliveryExportLoading";
   const step = document.createElement("span");
@@ -4380,16 +4553,20 @@ function renderDeliveryExportEmpty(mount, message) {
 async function mountDeliveryExportWorkbench() {
   const mount = document.querySelector("#deliveryExportMount");
   if (!mount || currentWorkbenchRoute() !== "export") return;
-  const dialog = document.querySelector("#mediaExportDialog");
-  const exportKey = `${currentGroup?.uiId || ""}:${currentGroup?.frames?.length || 0}`;
-  if (dialog && mount.contains(dialog) && !dialog.hidden && mount.dataset.exportKey === exportKey) return;
-  mount.dataset.exportKey = exportKey;
   const source = modeHubsModule.resolveDeliveryExportSource({
     navigationContext: currentNavigationContext(),
     temporaryWorkset: temporaryWorksetStore?.getSnapshot(),
     currentGroup,
     translate: t,
   });
+  const dialog = document.querySelector("#mediaExportDialog");
+  const exportKey = `${source.kind}:${
+    source.kind === "temporary"
+      ? temporaryWorksetStore?.getSnapshot()?.revision || 0
+      : currentGroup?.uiId || ""
+  }:${source.kind === "current" ? currentGroup?.frames?.length || 0 : 0}`;
+  if (dialog && mount.contains(dialog) && !dialog.hidden && mount.dataset.exportKey === exportKey) return;
+  mount.dataset.exportKey = exportKey;
   if (source.kind === "temporary") {
     frameOrganizer?.mountLoadedExport(mount, source.workset);
     return;

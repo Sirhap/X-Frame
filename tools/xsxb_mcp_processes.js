@@ -51,10 +51,14 @@ async function encodeGifWithFfmpeg(job) {
   const escapePath = (filePath) => filePath.replace(/'/g, "'\\''");
   const lines = ["ffconcat version 1.0"];
   job.framePaths.forEach((framePath, index) => {
+    const duration = Number(job.durations?.[index]);
+    if (!Number.isFinite(duration)) {
+      throw new Error(`GIF duration is missing for frame ${index + 1}.`);
+    }
     lines.push(`file '${escapePath(framePath)}'`);
     // A 1/100s image timebase matches GIF delay resolution; the default 1/25 rounds delays to 40ms.
     lines.push("option framerate 100");
-    lines.push(`duration ${Math.max(0.001, job.durations[index]).toFixed(6)}`);
+    lines.push(`duration ${Math.max(0.001, duration).toFixed(6)}`);
   });
   // The concat demuxer ignores the trailing duration unless the last frame repeats.
   lines.push(`file '${escapePath(job.framePaths[job.framePaths.length - 1])}'`);
@@ -162,6 +166,9 @@ function launchTunerProcess(options) {
     },
     detached: true,
     stdio: "ignore",
+  });
+  child.on("error", () => {
+    // Detached spawn failures must not become unhandled errors on the MCP host.
   });
   child.unref();
   return { pid: child.pid };

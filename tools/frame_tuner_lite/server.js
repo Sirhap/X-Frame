@@ -178,7 +178,11 @@ function send(res, status, body, contentType = "application/json") {
   res.end(data);
 }
 
-function readBody(req, limit = 256 * 1024 * 1024) {
+// Routes that carry base64 media (frames, attachments, trail textures) need the
+// historical large budget; small JSON routes stay at the 2 MB default.
+const MEDIA_BODY_LIMIT = 256 * 1024 * 1024;
+
+function readBody(req, limit = 2 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
@@ -606,24 +610,27 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (req.method === "POST" && url.pathname === "/api/attack-trail-texture") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = JSON.parse(await readBody(req, MEDIA_BODY_LIMIT));
       const project = store.resolveProject(payload.projectId);
       if (!project) return send(res, 404, { error: "Lite project not found." });
       return send(res, 200, { ok: true, texture: saveAttackTrailTexture(ROOT, store, project, payload) });
     }
     if (req.method === "POST" && url.pathname === "/api/frame-attachment-image") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = JSON.parse(await readBody(req, MEDIA_BODY_LIMIT));
       const project = store.resolveProject(payload.projectId);
+      if (!project) return send(res, 404, { error: "Lite project not found." });
       return send(res, 200, { ok: true, image: saveAttachmentImage(project, payload) });
     }
     if (req.method === "POST" && url.pathname === "/api/replace-frame") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = JSON.parse(await readBody(req, MEDIA_BODY_LIMIT));
       const project = store.resolveProject(payload.projectId);
+      if (!project) return send(res, 404, { error: "Lite project not found." });
       return send(res, 200, { ok: true, frame: replaceFrame(project, payload) });
     }
     if (req.method === "POST" && url.pathname === "/api/replace-animation") {
-      const payload = JSON.parse(await readBody(req));
+      const payload = JSON.parse(await readBody(req, MEDIA_BODY_LIMIT));
       const project = store.resolveProject(payload.projectId);
+      if (!project) return send(res, 404, { error: "Lite project not found." });
       const frames = Array.isArray(payload.frames) ? payload.frames : [];
       const files = Array.isArray(payload.files) ? payload.files : [];
       if (!frames.length || frames.length !== files.length)

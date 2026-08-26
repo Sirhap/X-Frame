@@ -244,20 +244,20 @@
 
 .organizerFrame.selected {
   transform: translate(-2px, -2px);
-  border-color: var(--accent);
+  border-color: var(--ok);
   box-shadow:
     6px 6px 0 var(--line),
-    0 0 0 3px var(--accent-2);
+    0 0 0 4px var(--ok);
 }
 
-.organizerFrame.analysis-jump {
+.organizerFrame.analysis-jump:not(.selected) {
   border-color: #ff9f1c;
   box-shadow:
     6px 6px 0 var(--line),
     0 0 0 4px #ff9f1c;
 }
 
-.organizerFrame.analysis-duplicate {
+.organizerFrame.analysis-duplicate:not(.selected) {
   border-color: #b388ff;
   box-shadow:
     6px 6px 0 var(--line),
@@ -267,7 +267,7 @@
 .organizerFrameAnalysisBadge {
   position: absolute;
   top: 9px;
-  right: 9px;
+  right: 52px;
   z-index: 2;
   padding: 4px 6px;
   border: 2px solid var(--line);
@@ -282,8 +282,77 @@
   background: #b388ff;
 }
 
+.organizerFrameSelectionBadge {
+  position: absolute;
+  right: 10px;
+  bottom: 42px;
+  z-index: 2;
+  padding: 4px 7px;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--ok);
+  color: var(--panel);
+  font: 950 10px/1 var(--data-font);
+  pointer-events: none;
+}
+
+.organizerFrameSelectionBadge[hidden] {
+  display: none;
+}
+
 .organizerAnalysisFeedback {
   display: none;
+}
+
+.organizerStateLegend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  color: var(--muted);
+  font: 850 9px/1 var(--data-font);
+}
+
+.organizerStateLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  font: inherit;
+}
+
+.organizerStateLegend i {
+  width: 11px;
+  height: 11px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--line);
+  border-radius: 3px;
+  background: var(--control-bg);
+}
+
+.organizerStateLegend .workset::after {
+  content: "\2713";
+  color: var(--control-ink);
+  font-size: 9px;
+  font-weight: 950;
+}
+
+.organizerStateLegend .selection {
+  background: var(--ok);
+}
+
+.organizerStateLegend .jump {
+  background: #ff9f1c;
+}
+
+.organizerStateLegend .duplicate {
+  background: #b388ff;
+}
+
+.organizerStateLegend b {
+  color: inherit;
+  font: inherit;
 }
 
 .organizerFrameSelect {

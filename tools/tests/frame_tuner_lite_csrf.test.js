@@ -92,3 +92,93 @@ test("Lite GET /asset serves public media and hides other repo images", async ()
     });
   }
 });
+
+test("Lite mutation routes 404 when the project is missing", async () => {
+  const port = await new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve(server.address().port));
+  });
+  const post = (pathname) =>
+    new Promise((resolve, reject) => {
+      const request = http.request(
+        {
+          host: "127.0.0.1",
+          port,
+          path: pathname,
+          method: "POST",
+          headers: { "content-type": "application/json" },
+        },
+        (response) => {
+          const chunks = [];
+          response.on("data", (chunk) => chunks.push(chunk));
+          response.on("end", () =>
+            resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString("utf8") }),
+          );
+        },
+      );
+      request.on("error", reject);
+      request.end(JSON.stringify({ projectId: "missing-lite-project" }));
+    });
+  try {
+    for (const pathname of ["/api/frame-attachment-image", "/api/replace-frame", "/api/replace-animation"]) {
+      const result = await post(pathname);
+      assert.equal(result.status, 404, pathname);
+      assert.match(result.body, /Lite project not found/);
+    }
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
+test("Lite media routes accept bodies over the 2 MB JSON default", async () => {
+  const port = await new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve(server.address().port));
+  });
+  // Base64 padding larger than the small-JSON limit; a real frame payload has
+  // the same shape and must reach route logic instead of dying in readBody.
+  const oversizedData = `data:image/png;base64,${"A".repeat(3 * 1024 * 1024)}`;
+  const post = (pathname, payload) =>
+    new Promise((resolve, reject) => {
+      const request = http.request(
+        {
+          host: "127.0.0.1",
+          port,
+          path: pathname,
+          method: "POST",
+          headers: { "content-type": "application/json" },
+        },
+        (response) => {
+          const chunks = [];
+          response.on("data", (chunk) => chunks.push(chunk));
+          response.on("end", () =>
+            resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString("utf8") }),
+          );
+        },
+      );
+      request.on("error", reject);
+      request.end(JSON.stringify(payload));
+    });
+  try {
+    for (const pathname of [
+      "/api/attack-trail-texture",
+      "/api/frame-attachment-image",
+      "/api/replace-frame",
+    ]) {
+      const result = await post(pathname, { projectId: "missing-lite-project", data: oversizedData });
+      assert.equal(result.status, 404, pathname);
+      assert.match(result.body, /Lite project not found/, pathname);
+    }
+    const animationResult = await post("/api/replace-animation", {
+      projectId: "missing-lite-project",
+      frames: [{ path: "a.png" }],
+      files: [{ data: oversizedData }],
+    });
+    assert.equal(animationResult.status, 404);
+    assert.match(animationResult.body, /Lite project not found/);
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});

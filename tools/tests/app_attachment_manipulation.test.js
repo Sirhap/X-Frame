@@ -95,3 +95,16 @@ test("attachment wheel edits preserve rotation, undo coalescing, and scale clamp
   assert.equal(attachment.transform.scaleY, 20);
   assert.equal(controller.clampAttachmentScale(Number.NaN), 1);
 });
+
+test("attachment wheel without a hit leaves the event for the main sprite", () => {
+  const controller = createController({
+    getHeldAttachmentTransformKeys: () => new Set(["z"]),
+    directManipulationAttachment: () => null,
+    getCurrentGroup: () => ({ frames: [{}] }),
+    getImages: () => [{}],
+    getSelectedFrame: () => 0,
+    getView: () => ({ zoom: 1 }),
+    stagePoint: () => ({ x: 0, y: 0 }),
+  });
+  assert.equal(controller.applySelectedAttachmentWheel({ deltaY: -1 }), false);
+});

@@ -3,7 +3,7 @@
   min-height: 0;
   height: 100dvh;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) clamp(190px, 26vh, 264px);
+  grid-template-rows: auto minmax(0, 1fr) minmax(140px, min(26vh, 264px));
   gap: 14px;
   padding: 18px;
   overflow: hidden;
@@ -340,9 +340,21 @@ kbd {
   border-radius: 10px;
   box-shadow: var(--hard-shadow);
   image-rendering: auto;
+  cursor: default;
+}
+
+#stage.isOverSprite {
+  cursor: move;
+}
+
+#stage.isPanning {
   cursor: grab;
 }
 
-#stage.dragging {
+#stage.dragging.isPanning {
   cursor: grabbing;
+}
+
+#stage.dragging.isOverSprite {
+  cursor: move;
 }

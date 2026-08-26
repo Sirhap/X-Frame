@@ -661,7 +661,7 @@
       estimateBackgroundColor: backgroundEstimator.estimateBackgroundColor,
       backgroundController,
     });
-    const { clear, deleteSelectedItems, open, openWorkset, close, requestClose, hasWorksetChanges } =
+    const { clear, deleteSelectedItems, open, openWorkset, close, requestClose, hasUnsavedChanges } =
       sessionController;
 
     /**
@@ -672,7 +672,10 @@
     async function autoApplyWorkset(workset) {
       const completion = openWorkset({ ...workset, present: false });
       try {
-        const { outputs, failures, cancelled } = await processAll({ applyProgress: true });
+        const { outputs, failures, cancelled } = await processAll({
+          applyProgress: true,
+          lightweight: true,
+        });
         if (cancelled || failures.length || outputs.length !== state.items.length) {
           close(null, { syncRoute: false });
           if (failures.length) throw new Error(failures[0].message);
@@ -775,8 +778,7 @@
       close,
       requestClose,
       isOpen: () => !elements.cutoutModal.hidden,
-      hasUnsavedChanges: () =>
-        state.busy || (state.sourceKind === "workset" ? hasWorksetChanges() : state.items.length > 0),
+      hasUnsavedChanges,
       setLanguage(nextLanguage) {
         state.language = nextLanguage === "en" ? "en" : "zh";
         renderLanguage();

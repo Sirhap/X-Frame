@@ -50,6 +50,7 @@ function createFixture() {
   const elements = {
     cutoutAreaColor: { value: "#0a0b0c" },
     cutoutSettingsEmpty: { hidden: true },
+    cutoutSettingsContext: { hidden: false },
     cutoutAutomaticSettings: { hidden: true },
     cutoutLocalSettings: { hidden: true },
     cutoutSettings: { classList: { toggle() {} } },
@@ -200,6 +201,7 @@ test("batch settings replaces inactive controls with an image-loading guide", ()
   controller.setSettingsMode("automatic");
 
   assert.equal(elements.cutoutSettingsEmpty.hidden, false);
+  assert.equal(elements.cutoutSettingsContext.hidden, true);
   assert.equal(elements.cutoutAutomaticSettings.hidden, true);
   assert.equal(elements.cutoutLocalSettings.hidden, true);
   assert.equal(elements.cutoutActiveToolTitle.textContent, "settingsEmptyTitle:");

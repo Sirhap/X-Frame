@@ -5,9 +5,9 @@ coverage/
 dist/
 .dist-build-*/
 .dist-backup-*/
-cloudflare/site/dist/
 .dist-restore-*/
 .dist-restore-backup-*/
+cloudflare/site/dist/
 .protected-releases/
 playwright-report/
 test-results/
@@ -23,6 +23,7 @@ pnpm-debug.log*
 *.log
 __pycache__/
 *.py[cod]
+.eslintcache
 
 .DS_Store
 Thumbs.db
@@ -32,6 +33,12 @@ desktop.ini
 .cursor/mcp.json
 .tmp/
 screenshots/
+
+# Local Grok session noise; tracked workflows stay.
+.grok/sessions/
+.grok/logs/
+.grok/*.lock
+.grok/auth.json
 
 # Local tuner registry and per-project data.
 data/projects.json
@@ -47,6 +54,8 @@ workspace/projects/*
 workspace/lite/
 workspace/mcp_probe_*/
 workspace/kbd_trail/
+workspace/production/
+workspace/*.js
 !workspace/.gitkeep
 !workspace/assets/.gitkeep
 !workspace/projects/.gitkeep
@@ -61,12 +70,11 @@ output/
 .superpowers/
 reprocessed-frames/
 
+# Agent planning dumps and local QA evidence. Keep product docs.
+docs/superpowers/
+docs/qa/
+
 # Local sample dumps, sale snapshots, and one-off session reports.
 artifacts/
 release/
 reports/
-
-# Reproducible production output. Publish the directory as one immutable unit.
-dist/
-.dist-build-*/
-.dist-backup-*/

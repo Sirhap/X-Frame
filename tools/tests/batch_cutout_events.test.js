@@ -67,9 +67,29 @@ function createFixture() {
       renderCalls += 1;
     },
     renderStatus() {},
+    requestClose: async () => true,
+    setStatus() {},
   });
   return { controller, registrations, elementsByName, state, renderCalls: () => renderCalls };
 }
+
+test("cutout back stops the shared home click from also closing the organizer", () => {
+  const { controller, registrations, elementsByName } = createFixture();
+  controller.bind();
+  elementsByName.cutoutModal.hidden = false;
+  const listener = registrations.find(
+    (entry) => entry.name === "cutoutHome" && entry.type === "click",
+  )?.listener;
+  assert.equal(typeof listener, "function");
+  const event = {
+    stopped: false,
+    stopImmediatePropagation() {
+      this.stopped = true;
+    },
+  };
+  listener(event);
+  assert.equal(event.stopped, true);
+});
 
 test("batch cutout event controller registers the full interaction surface", () => {
   const { controller, registrations } = createFixture();

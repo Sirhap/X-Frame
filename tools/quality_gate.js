@@ -110,6 +110,7 @@ function runNpmScript(scriptName, options = {}) {
     cwd: options.cwd || PROJECT_ROOT,
     env: options.env || process.env,
     stdio: "inherit",
+    shell: process.platform === "win32",
   });
   if (result.error) {
     throw new Error(`Unable to start npm script "${scriptName}": ${result.error.message}`, {

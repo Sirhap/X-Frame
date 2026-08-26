@@ -266,10 +266,13 @@ test("batch compatibility executor routes through the protected runtime", async 
     cancel() {},
   });
   const source = Uint8ClampedArray.from([1, 2, 3, 255]);
-  const result = await executor.process(source, 1, 1, { tolerance: 10 }, [{ mode: "clear" }]);
+  const result = await executor.process(source, 1, 1, { tolerance: 10 }, [{ mode: "clear" }], {
+    analysisMode: "pixels-only",
+  });
   assert.equal(calls.length, 1);
   assert.match(calls[0].cancellationId, /^cutout-\d+$/);
   assert.deepEqual(calls[0].parameters.repairs, [{ mode: "clear" }]);
+  assert.equal(calls[0].parameters.analysisMode, "pixels-only");
   assert.equal(result.data, source);
 });
 

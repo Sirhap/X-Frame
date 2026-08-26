@@ -32,6 +32,47 @@ test("organizer text exposes the original bilingual keys", () => {
   assert.doesNotMatch(TEXT.en.cutoutScopeWorkset, /[\u4e00-\u9fff]/u);
 });
 
+test("partial-load copy does not promise a second load-and-apply batch", () => {
+  assert.doesNotMatch(TEXT.zh.loadedPartial, /再载入/);
+  assert.doesNotMatch(TEXT.en.loadedPartial, /load again/i);
+  assert.match(TEXT.zh.loadedPartial, /回写|全部/);
+  assert.match(TEXT.en.loadedPartial, /all|entire|full/i);
+});
+
+test("organizer empty preview does not use a dash placeholder", () => {
+  assert.doesNotMatch(TEXT.zh.previewFrameEmpty, /-\s*\/\s*0/);
+  assert.doesNotMatch(TEXT.en.previewFrameEmpty, /-\s*\/\s*0/);
+  assert.match(TEXT.zh.previewFrameEmpty, /暂无/);
+});
+
+test("organizer frame states explain workset, selection, jump, and duplicate independently", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const html = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const css = fs.readFileSync(
+    path.join(__dirname, "../animation_tuner/public/organizer_workspace.css"),
+    "utf8",
+  );
+
+  assert.match(TEXT.zh.worksetCheckHint, /工作集/);
+  assert.match(TEXT.zh.worksetCheckHint, /不表示当前选择/);
+  assert.match(TEXT.zh.batchScopeHint, /绿色描边/);
+  assert.doesNotMatch(TEXT.zh.batchScopeHint, /橙色边框/);
+  assert.equal(TEXT.zh.selectedLegend, "绿色：当前选择");
+  assert.equal(TEXT.zh.jumpLegend, "黄色：跳变");
+  assert.equal(TEXT.zh.duplicateLegend, "紫色：重复");
+  assert.match(html, /class="organizerStateLegend"/);
+  assert.match(html, /data-organizer-i18n="worksetLegend"/);
+  assert.match(html, /data-organizer-i18n="selectedLegend"/);
+  assert.match(html, /data-organizer-i18n="jumpLegend"/);
+  assert.match(html, /data-organizer-i18n="duplicateLegend"/);
+  assert.match(html, /data-organizer-i18n="batchScopeHint"/);
+  assert.doesNotMatch(html, /橙色边框表示当前选择/);
+  assert.match(css, /\.organizerFrame\.analysis-jump:not\(\.selected\)/);
+  assert.match(css, /\.organizerFrame\.analysis-duplicate:not\(\.selected\)/);
+  assert.match(css, /\.organizerFrameSelectionBadge\s*\{/);
+});
+
 test("ORG-033 loop dialog title uses 段 / Segments, matching the find-loop button", () => {
   assert.equal(TEXT.zh.findLoop, "寻找循环段");
   assert.equal(TEXT.zh.loopDialogTitle, "寻找循环段");

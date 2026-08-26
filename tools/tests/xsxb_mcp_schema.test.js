@@ -126,6 +126,8 @@ test("attack-trail stick schema names blade edges, layer, and reverseDirection",
   const sheet = toolDefinitions().find((entry) => entry.name === "xsxb_export_sheet");
   assert.match(gif.description, /trail/i);
   assert.match(sheet.description, /trail/i);
+  assert.equal(gif.annotations.readOnlyHint, false, "GIF export writes a file");
+  assert.equal(sheet.annotations.readOnlyHint, false, "sheet export writes a file");
   assert.equal(stick.type, "object");
   assert.ok(stick.properties.frame);
   assert.ok(stick.properties.top);

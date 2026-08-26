@@ -194,7 +194,9 @@ function buildImportCommand(contract, options = {}) {
   const file = path.join(options.tunerRoot || ROOT, "tools", scriptName);
   const args = [file, "--project-root", contract.projectRoot, "--profile", contract.profile];
   if (options.project) args.push("--project", options.project);
-  if (options.replace || clips.some((clip) => clip.replace)) args.push("--replace");
+  const clipReplace = clips.map((clip) => Boolean(clip.replace));
+  const allClipsReplace = clipReplace.length > 0 && clipReplace.every(Boolean);
+  if (options.replace || allClipsReplace) args.push("--replace");
   if (clips.length === 1) {
     const [clip] = clips;
     args.push(
@@ -436,6 +438,21 @@ async function runWorkflow(command, options = {}) {
         errors: unsupported.map(
           (clip) => `${clip.id}: browser-required source cannot be imported by the CLI.`,
         ),
+        warnings: inspection.warnings,
+        plan: contract,
+        artifacts: [],
+      };
+    }
+    const clipReplace = contract.clips.map((clip) => Boolean(clip.replace));
+    const anyClipReplace = clipReplace.some(Boolean);
+    const allClipsReplace = clipReplace.length > 0 && clipReplace.every(Boolean);
+    if (anyClipReplace && !allClipsReplace && !options.replace) {
+      return {
+        ok: false,
+        stage,
+        errors: [
+          "mixed replace: some clips set replace=true and others do not. Split the batch or pass --replace for every clip.",
+        ],
         warnings: inspection.warnings,
         plan: contract,
         artifacts: [],

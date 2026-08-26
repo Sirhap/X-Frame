@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const vm = require("node:vm");
 
 const batchCore = require("../animation_tuner/public/batch_cutout_core.js");
 const referenceInput = require("../animation_tuner/public/batch_cutout_reference_input.js");
@@ -31,6 +32,70 @@ test("cutout worker loads reference input before the dependent batch core", () =
   assert.notEqual(batchCoreIndex, -1);
   assert.ok(backgroundEstimatorIndex < referenceInputIndex);
   assert.ok(referenceInputIndex < batchCoreIndex);
+});
+
+test("cutout worker pixels-only mode omits editor-only tracking and quality analysis", async () => {
+  const workerPath = path.join(__dirname, "../animation_tuner/public/batch_cutout_worker.js");
+  const workerSource = fs.readFileSync(workerPath, "utf8");
+  const calls = { tracking: 0, quality: 0 };
+  let response = null;
+  const self = {
+    BatchCutoutCore: {
+      applyProductCutout(source) {
+        return {
+          data: new Uint8ClampedArray(source),
+          automaticData: new Uint8ClampedArray(source),
+          removedPixels: 0,
+          partialPixels: 0,
+        };
+      },
+    },
+    CutoutTrackingCore: {
+      createShapeCandidates() {
+        calls.tracking += 1;
+        return [];
+      },
+      createShapeDescriptor() {
+        calls.tracking += 1;
+        return null;
+      },
+    },
+    CutoutQualityCore: {
+      createCutoutQualityMetrics() {
+        calls.quality += 1;
+        return {};
+      },
+    },
+    postMessage(message) {
+      response = message;
+    },
+  };
+  vm.runInNewContext(workerSource, {
+    self,
+    importScripts() {},
+    Uint8Array,
+    Uint8ClampedArray,
+  });
+  const source = Uint8ClampedArray.from([255, 255, 255, 255]);
+
+  await self.onmessage({
+    data: {
+      id: 1,
+      operation: "product-cutout",
+      sourceBuffer: source.buffer,
+      width: 1,
+      height: 1,
+      options: {},
+      repairs: [],
+      protocolVersion: 1,
+      analysisMode: "pixels-only",
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.shapeCandidates, null);
+  assert.equal(response.qualityMetrics, null);
+  assert.deepEqual(calls, { tracking: 0, quality: 0 });
 });
 
 test("reference input helpers preserve chroma-key and background estimation behavior", () => {

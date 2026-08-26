@@ -5,7 +5,13 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { GODOT_SYNC_ROOT, localFrameRelPath, syncFrameAudio, syncManifest } = require("../godot_sync");
+const {
+  GODOT_SYNC_ROOT,
+  invalidateGodotImport,
+  localFrameRelPath,
+  syncFrameAudio,
+  syncManifest,
+} = require("../godot_sync");
 const { createProjectStore } = require("../project_store");
 
 test("localFrameRelPath keeps Godot copies inside xsxb_frame_tuner/", () => {
@@ -123,6 +129,37 @@ test("frame audio sync removes Godot copies that are no longer referenced", () =
     assert.equal(secondFiles.length, 1);
     assert.notEqual(secondFiles[0], firstFiles[0]);
     assert.equal(fs.existsSync(path.join(audioDir, firstFiles[0])), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("invalidateGodotImport drops a stale imported ctex after the PNG changes", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-sync-import-"));
+  try {
+    const crypto = require("node:crypto");
+    const pngPath = path.join(root, "xsxb_frame_tuner/assets/frame.png");
+    fs.mkdirSync(path.dirname(pngPath), { recursive: true });
+    fs.writeFileSync(pngPath, "new-png-bytes");
+    const destRel = ".godot/imported/frame.png-abc.ctex";
+    const dest = path.join(root, destRel);
+    const md5Path = dest.replace(/\.ctex$/, ".md5");
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, "old-ctex");
+    fs.writeFileSync(md5Path, 'source_md5="deadbeef"\ndest_md5="00"\n');
+    fs.writeFileSync(
+      `${pngPath}.import`,
+      `[remap]\npath="res://${destRel}"\n\n[deps]\ndest_files=["res://${destRel}"]\n`,
+    );
+    assert.equal(invalidateGodotImport(root, pngPath), 2);
+    assert.equal(fs.existsSync(dest), false);
+    assert.equal(fs.existsSync(md5Path), false);
+
+    fs.writeFileSync(dest, "fresh-ctex");
+    const current = crypto.createHash("md5").update("new-png-bytes").digest("hex");
+    fs.writeFileSync(md5Path, `source_md5="${current}"\ndest_md5="11"\n`);
+    assert.equal(invalidateGodotImport(root, pngPath), 0);
+    assert.equal(fs.existsSync(dest), true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

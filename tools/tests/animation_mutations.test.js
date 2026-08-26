@@ -256,6 +256,130 @@ test("stripAnimationOwnedData removes leftover frame overrides and bindings", ()
   assert.deepEqual(Object.keys(stripped.attackTrails.bindings), ["hero/idle"]);
 });
 
+test("deleteAnimation keeps frame files when metadata write fails", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-animation-delete-write-"));
+  try {
+    const store = createProjectStore(root);
+    const registry = store.addProject({ id: "mutations", label: "Mutations" });
+    const project = store.resolveProject(registry, "mutations");
+    const paths = store.projectPaths(project);
+    const animationDirectory = path.join(paths.workspaceDir, "assets", "hero", "run");
+    fs.mkdirSync(animationDirectory, { recursive: true });
+    const framePath = path.join(animationDirectory, "frame_0001.png");
+    fs.writeFileSync(framePath, "one");
+    const source = path.relative(root, animationDirectory).replaceAll(path.sep, "/");
+    store.writeJson(paths.manifest, {
+      schemaVersion: 1,
+      profiles: [
+        {
+          id: "hero",
+          animations: [{ id: "run", name: "run", source, frames: [{ path: `${source}/frame_0001.png` }] }],
+        },
+      ],
+    });
+    store.writeJson(paths.tuning, { schemaVersion: 1, values: {}, frame_visual_overrides: {} });
+    const originalWrite = store.writeJson.bind(store);
+    store.writeJson = () => {
+      throw new Error("disk full");
+    };
+    assert.throws(
+      () =>
+        deleteAnimation({
+          root,
+          projectStore: store,
+          project,
+          profileId: "hero",
+          animationId: "run",
+        }),
+      /disk full/,
+    );
+    store.writeJson = originalWrite;
+    assert.equal(fs.existsSync(framePath), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("importAnimation replace overwrites an existing animation without a prior delete", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-import-replace-"));
+  try {
+    const store = createProjectStore(root);
+    const registry = store.addProject({ id: "imports", label: "Imports" });
+    const project = store.resolveProject(registry, "imports");
+    importAnimation({
+      root,
+      projectStore: store,
+      project,
+      profileId: "hero",
+      animationId: "run",
+      fps: 12,
+      items: [
+        { data: tinyPng(), name: "a.png" },
+        { data: tinyPng(), name: "b.png" },
+      ],
+    });
+    const replaced = importAnimation({
+      root,
+      projectStore: store,
+      project,
+      profileId: "hero",
+      animationId: "run",
+      fps: 8,
+      replace: true,
+      items: [{ data: tinyPng(), name: "c.png" }],
+    });
+    assert.equal(replaced.frameCount, 1);
+    const manifest = store.readJson(store.projectPaths(project).manifest);
+    assert.equal(manifest.profiles[0].animations[0].frames.length, 1);
+    assert.equal(manifest.profiles[0].animations.length, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("importAnimation replace keeps new frames if backup cleanup fails", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-import-replace-backup-"));
+  const originalRm = fs.rmSync;
+  fs.rmSync = (target, options) => {
+    if (String(target).includes(".backup-")) throw new Error("EBUSY: backup locked");
+    return originalRm(target, options);
+  };
+  try {
+    const store = createProjectStore(root);
+    const registry = store.addProject({ id: "imports", label: "Imports" });
+    const project = store.resolveProject(registry, "imports");
+    importAnimation({
+      root,
+      projectStore: store,
+      project,
+      profileId: "hero",
+      animationId: "run",
+      fps: 12,
+      items: [
+        { data: tinyPng(), name: "a.png" },
+        { data: tinyPng(), name: "b.png" },
+      ],
+    });
+    const replaced = importAnimation({
+      root,
+      projectStore: store,
+      project,
+      profileId: "hero",
+      animationId: "run",
+      fps: 8,
+      replace: true,
+      items: [{ data: tinyPng(), name: "c.png" }],
+    });
+    assert.equal(replaced.frameCount, 1);
+    const manifest = store.readJson(store.projectPaths(project).manifest);
+    assert.equal(manifest.profiles[0].animations[0].frames.length, 1);
+    assert.equal(fs.existsSync(replaced.targetDir), true);
+  } finally {
+    fs.rmSync = originalRm;
+    originalRm(root, { recursive: true, force: true });
+  }
+});
+
 test("CLI frame import replace clears leftover bindings and rejects invalid fps", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-import-frames-"));
   const onePixelPng = Buffer.from(

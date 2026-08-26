@@ -162,6 +162,7 @@
       stageViewMode: "fit",
       stageSpacePan: false,
       stageSpacePanConsumed: false,
+      stageSpacePanCanPlay: false,
       drag: null,
       undoStack: [],
       redoStack: [],

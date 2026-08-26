@@ -64,6 +64,7 @@ self.onmessage = async (event) => {
     analysisParameters,
     analysisOriginalBuffer,
     previewBuffer,
+    analysisMode,
   } = event.data || {};
   try {
     await ensureProtectedCore();
@@ -148,23 +149,28 @@ self.onmessage = async (event) => {
       options || {},
       Array.isArray(repairs) ? repairs : [],
     );
-    const shapeCandidates = self.CutoutTrackingCore.createShapeCandidates(
-      result.automaticData,
-      normalizedWidth,
-      normalizedHeight,
-    );
-    const shapeDescriptor =
-      shapeCandidates[0] ||
-      self.CutoutTrackingCore.createShapeDescriptor(result.automaticData, normalizedWidth, normalizedHeight);
-    const qualityMetrics = self.CutoutQualityCore.createCutoutQualityMetrics(
-      result.data,
-      normalizedWidth,
-      normalizedHeight,
-      {
-        backgroundColors: options?.backgroundColors,
-        backgroundTolerance: Math.max(0, Number(options?.tolerance || 0) + Number(options?.feather || 0)),
-      },
-    );
+    const pixelsOnly = analysisMode === "pixels-only";
+    const shapeCandidates = pixelsOnly
+      ? null
+      : self.CutoutTrackingCore.createShapeCandidates(
+          result.automaticData,
+          normalizedWidth,
+          normalizedHeight,
+        );
+    const shapeDescriptor = pixelsOnly
+      ? null
+      : shapeCandidates[0] ||
+        self.CutoutTrackingCore.createShapeDescriptor(
+          result.automaticData,
+          normalizedWidth,
+          normalizedHeight,
+        );
+    const qualityMetrics = pixelsOnly
+      ? null
+      : self.CutoutQualityCore.createCutoutQualityMetrics(result.data, normalizedWidth, normalizedHeight, {
+          backgroundColors: options?.backgroundColors,
+          backgroundTolerance: Math.max(0, Number(options?.tolerance || 0) + Number(options?.feather || 0)),
+        });
     self.postMessage(
       {
         id,

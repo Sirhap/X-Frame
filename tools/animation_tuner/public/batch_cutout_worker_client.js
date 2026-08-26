@@ -239,6 +239,37 @@
     }
 
     /**
+     * Replaces one Worker instance after the protected engine reports that its
+     * execution state is unusable. Every request owned by that instance is
+     * reposted from its immutable snapshot; only the request that observed the
+     * engine failure consumes its single execution retry.
+     * @param {object} failedWorker Worker instance that returned the failure.
+     * @param {number} failedId Request that observed the engine failure.
+     * @param {object} failedTask Tracked request state.
+     * @returns {void}
+     */
+    function recoverExecutionWorker(failedWorker, failedId, failedTask) {
+      if (failedTask.executionRetryCount >= 1) {
+        const error = new Error("ENGINE_EXECUTION_FAILED");
+        error.code = "ENGINE_EXECUTION_FAILED";
+        settle(failedId, "reject", error);
+        return;
+      }
+      failedTask.executionRetryCount += 1;
+      if (worker === failedWorker) worker = null;
+      terminateWorker(failedWorker);
+      const affectedTasks = Array.from(tasks.entries()).filter(([, task]) => task.worker === failedWorker);
+      affectedTasks.forEach(([, task]) => {
+        task.worker = null;
+      });
+      scheduleMicrotask(() => {
+        affectedTasks.forEach(([id, task]) => {
+          if (tasks.get(id) === task && task.worker === null) postTask(id, task);
+        });
+      });
+    }
+
+    /**
      * Lazily creates and configures the reusable Worker.
      * @returns {object} Worker instance.
      */
@@ -252,7 +283,13 @@
         const task = tasks.get(id);
         if (!task || task.worker !== configuredWorker) return;
         if (!message.ok) {
-          settle(id, "reject", new Error(message.error || "Cutout Worker failed."));
+          if (message.error === "ENGINE_EXECUTION_FAILED") {
+            recoverExecutionWorker(configuredWorker, id, task);
+            return;
+          }
+          const error = new Error(message.error || "Cutout Worker failed.");
+          if (message.error) error.code = message.error;
+          settle(id, "reject", error);
           return;
         }
         try {
@@ -307,6 +344,7 @@
             repairs: task.request.repairs,
             cancellationId: task.request.cancellationId,
             protocolVersion: task.request.protocolVersion,
+            analysisMode: task.request.analysisMode,
             selectionMaskBuffer: transferableSelectionMask?.buffer,
             selectionParameters: task.request.selectionParameters,
             analysisParameters: task.request.analysisParameters,
@@ -359,7 +397,7 @@
      * @param {number} height Image height.
      * @param {object} [processingOptions] Product options.
      * @param {object[]} [repairs] Serialized repairs.
-     * @param {{cancellationId?:string,protocolVersion?:number}} [requestContext] Runtime protocol metadata.
+     * @param {{cancellationId?:string,protocolVersion?:number,analysisMode?:"full"|"pixels-only"}} [requestContext] Runtime protocol metadata.
      * @returns {Promise<object>} Cutout result.
      */
     function process(source, width, height, processingOptions = {}, repairs = [], requestContext = {}) {
@@ -377,6 +415,7 @@
           repairs: metadata.repairs,
           cancellationId: String(requestContext.cancellationId || ""),
           protocolVersion: Number(requestContext.protocolVersion || 1),
+          analysisMode: requestContext.analysisMode === "pixels-only" ? "pixels-only" : "full",
         };
       } catch (error) {
         return Promise.reject(normalizeError(error, "Invalid cutout request."));
@@ -399,6 +438,7 @@
           reject,
           request,
           transportRetryCount: 0,
+          executionRetryCount: 0,
           worker: null,
         };
         tasks.set(id, task);

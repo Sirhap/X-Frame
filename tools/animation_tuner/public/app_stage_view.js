@@ -34,6 +34,7 @@
    *   centerStageContent:(zoom:number,mode?:"fit"|"actual"|"custom")=>void,
    *   fitView:()=>void,
    *   setStageZoom:(nextZoom:number)=>void,
+   *   panViewBy:(clientDeltaX:number, clientDeltaY:number)=>void,
    *   zoomViewAt:(event:WheelEvent)=>void,
    *   resizeCanvas:()=>void,
    * }} Stage viewport operations.
@@ -149,6 +150,24 @@
     }
 
     /**
+     * Pans the viewport by a CSS-pixel pointer/wheel delta.
+     * @param {number} clientDeltaX Horizontal CSS-pixel delta.
+     * @param {number} clientDeltaY Vertical CSS-pixel delta.
+     * @returns {void}
+     */
+    function panViewBy(clientDeltaX, clientDeltaY) {
+      const view = getView();
+      const pixelRatio = getDevicePixelRatio();
+      setView({
+        zoom: view.zoom,
+        x: view.x + Number(clientDeltaX || 0) * pixelRatio,
+        y: view.y + Number(clientDeltaY || 0) * pixelRatio,
+      });
+      setStageViewMode("custom");
+      syncStageZoomControls();
+    }
+
+    /**
      * Zooms around the pointer position from a wheel event.
      * @param {WheelEvent} event Stage wheel event.
      * @returns {void}
@@ -202,6 +221,7 @@
       centerStageContent,
       fitView,
       setStageZoom,
+      panViewBy,
       zoomViewAt,
       resizeCanvas,
     };

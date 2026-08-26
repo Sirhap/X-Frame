@@ -46,6 +46,39 @@ test("narrow flow header reserves less than a quarter of a 720px screen with the
   assert.ok(flowHeight <= 112, `flow header ${flowHeight}px should stay compact`);
 });
 
+test("adjustment scope cards wrap instead of ellipsizing the title", () => {
+  const css = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/controls_inputs.css"), "utf8");
+  const title = css.match(/\.adjustModeCopy strong\s*\{[\s\S]*?\}/u);
+  assert.ok(title, "adjustment title rule");
+  assert.match(title[0], /white-space:\s*normal/);
+  assert.doesNotMatch(title[0], /text-overflow:\s*ellipsis/);
+});
+
+test("workspace filmstrip stays at least 140px so laptop heights still show thumbs", () => {
+  const css = fs.readFileSync(
+    path.join(__dirname, "../animation_tuner/public/controls_workspace.css"),
+    "utf8",
+  );
+  const workspace = css.match(/\.workspace\s*\{[\s\S]*?\}/u);
+  assert.ok(workspace, "workspace grid");
+  assert.match(workspace[0], /minmax\(140px,\s*min\(26vh,\s*264px\)\)/);
+});
+
+test("browser-only mode hides the sidebar save, not the context-bar save", () => {
+  const css = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/controls_panels.css"), "utf8");
+  assert.match(css, /\.browserOnlyMode \.sidebar #save/);
+  assert.match(css, /\.browserOnlyMode \.sidebar #saveState/);
+  assert.doesNotMatch(css, /\.browserOnlyMode #save,/);
+});
+
+test("phone workspace stacks the sidebar under the canvas so filmstrip actions stay hittable", () => {
+  const css = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/app_shell.css"), "utf8");
+  assert.match(
+    css,
+    /@media \(max-width: 1120px\) \{[\s\S]*?\.sidebar \{[\s\S]*?position:\s*fixed[\s\S]*@media \(max-width: 759px\) \{[\s\S]*?\.app \.sidebar \{[\s\S]*?position:\s*relative/u,
+  );
+});
+
 test("phone cutout overlays zoom controls on the preview instead of reserving an empty row", () => {
   const css = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/responsive.css"), "utf8");
   const phoneRules = css.match(/@media \(max-width: 700px\) \{[\s\S]*$/u);

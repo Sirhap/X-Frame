@@ -133,6 +133,31 @@ test("import uses the single-frame importer and honors explicit replace", async 
   }
 });
 
+test("import rejects mixed per-clip replace instead of applying a global --replace", async () => {
+  const workspace = createWorkspace();
+  const calls = [];
+  try {
+    writeContract(workspace, [
+      { ...pngClip("idle", "frames/idle"), replace: true },
+      pngClip("run", "frames/run"),
+    ]);
+    const result = await runWorkflow("import", {
+      contractPath: workspace.contractPath,
+      tunerRoot: TUNER_ROOT,
+      runProcess(file, args) {
+        calls.push({ file, args });
+        return { status: 0, stdout: JSON.stringify({ animationCount: 2 }), stderr: "" };
+      },
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join("\n"), /mixed replace/i);
+    assert.equal(calls.length, 0);
+  } finally {
+    fs.rmSync(workspace.root, { recursive: true, force: true });
+  }
+});
+
 test("import uses the batch importer for multiple CLI clips", async () => {
   const workspace = createWorkspace();
   const calls = [];

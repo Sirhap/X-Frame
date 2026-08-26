@@ -183,7 +183,7 @@
         if (job !== state.thumbnailJob || elements.cutoutModal.hidden || !candidates.length) return;
         const item = candidates.shift();
         try {
-          await processItem(item);
+          await processItem(item, { lightweight: true });
         } catch (error) {
           if (error?.name === "AbortError") return;
           // Per-frame status is rendered below; one bad image must not stop the batch.

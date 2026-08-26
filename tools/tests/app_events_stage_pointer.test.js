@@ -18,6 +18,12 @@ function createStage() {
       has(name) {
         return classNames.has(name);
       },
+      toggle(name, force) {
+        if (force === false) classNames.delete(name);
+        else if (force === true) classNames.add(name);
+        else if (classNames.has(name)) classNames.delete(name);
+        else classNames.add(name);
+      },
     },
     addEventListener(type, listener, options) {
       const entries = listeners.get(type) || [];
@@ -54,6 +60,7 @@ test("stage pointer controller preserves listener order and wheel options", () =
 
   assert.deepEqual(stage.listenerTypes(), [
     "auxclick",
+    "contextmenu",
     "pointerdown",
     "pointermove",
     "pointerup",
@@ -65,7 +72,7 @@ test("stage pointer controller preserves listener order and wheel options", () =
   assert.deepEqual(stage.listenerOptions("wheel"), { passive: false });
 });
 
-test("narrow layout lets un-modified wheel scroll the page instead of zooming the stage", () => {
+test("wheel over the stage is captured even on a narrow layout", () => {
   const stage = createStage();
   const events = [];
   const controller = createController({
@@ -82,17 +89,6 @@ test("narrow layout lets un-modified wheel scroll the page instead of zooming th
   let prevented = false;
   stage.dispatch("wheel", {
     deltaY: 40,
-    preventDefault() {
-      prevented = true;
-    },
-  });
-  assert.equal(prevented, false);
-  assert.deepEqual(events, []);
-
-  prevented = false;
-  stage.dispatch("wheel", {
-    deltaY: 40,
-    ctrlKey: true,
     preventDefault() {
       prevented = true;
     },
@@ -309,6 +305,101 @@ test("east-handle drag cannot shrink a box below 1x1 or emit non-finite values",
   assert.ok(Number.isFinite(next.size.x));
   assert.ok(Number.isFinite(next.size.y));
   assert.equal(next.size.y, 30);
+});
+
+test("right mouse pans on the sprite while left drag still moves the character", () => {
+  const stage = createStage();
+  const state = { view: { x: 3, y: 6, zoom: 1 } };
+  let frameHits = 0;
+  const controller = createController({
+    stage,
+    state,
+    handlers: {
+      stagePoint: () => ({ x: 0, y: 0 }),
+      updateCoordHud: () => {},
+      hitTestBoxes: () => null,
+      hitTestDirectManipulationAttachment: () => null,
+      hitTestDirectManipulationFrame: () => {
+        frameHits += 1;
+        return { offset: { x: 0, y: 0 }, scale: 1 };
+      },
+      pushUndo: () => {},
+    },
+  });
+  controller.bind();
+
+  stage.dispatch("pointerdown", { pointerId: 2, clientX: 8, clientY: 9, button: 2, preventDefault() {} });
+  assert.equal(state.drag.mode, "pan");
+  assert.equal(frameHits, 0);
+
+  state.drag = null;
+  stage.dispatch("pointerdown", { pointerId: 3, clientX: 11, clientY: 12, button: 0, preventDefault() {} });
+  assert.equal(state.drag.mode, "frame-transform");
+  assert.equal(frameHits, 1);
+});
+
+test("trackpad wheel pans the stage while a mouse wheel still zooms", () => {
+  const stage = createStage();
+  const events = [];
+  const controller = createController({
+    stage,
+    state: { view: { x: 0, y: 0, zoom: 1 } },
+    getViewportWidth: () => 1440,
+    handlers: {
+      stagePoint: () => ({ x: 0, y: 0 }),
+      applySelectedAttachmentWheel: () => false,
+      applySelectedFrameWheel: () => false,
+      panViewBy: (x, y) => events.push(["pan", x, y]),
+      zoomViewAt: () => events.push("zoom"),
+      draw: () => {},
+    },
+  });
+  controller.bind();
+
+  stage.dispatch("wheel", { deltaX: 12, deltaY: 4, deltaMode: 0, preventDefault() {} });
+  stage.dispatch("wheel", { deltaX: 0, deltaY: 40, deltaMode: 0, preventDefault() {} });
+  stage.dispatch("wheel", {
+    deltaX: 0,
+    deltaY: 8,
+    deltaMode: 0,
+    wheelDeltaY: -24,
+    preventDefault() {},
+  });
+  stage.dispatch("wheel", { deltaX: 0, deltaY: 40, shiftKey: true, preventDefault() {} });
+  stage.dispatch("wheel", { deltaX: 0, deltaY: 40, ctrlKey: true, preventDefault() {} });
+
+  assert.equal(events.length, 5);
+  assert.deepEqual(events[0], ["pan", -12, -4]);
+  assert.equal(events[1], "zoom");
+  assert.equal(events[2][0], "pan");
+  assert.equal(events[2][1], 0);
+  assert.equal(events[2][2], -8);
+  assert.equal(events[3][0], "pan");
+  assert.equal(events[3][1], 0);
+  assert.equal(events[3][2], -40);
+  assert.equal(events[4], "zoom");
+});
+
+test("Z/R wheel scales the main frame when no attachment is hit", () => {
+  const stage = createStage();
+  const events = [];
+  const controller = createController({
+    stage,
+    state: { view: { x: 0, y: 0, zoom: 1 } },
+    getViewportWidth: () => 1440,
+    handlers: {
+      stagePoint: () => ({ x: 0, y: 0 }),
+      applySelectedAttachmentWheel: () => false,
+      applySelectedFrameWheel: () => {
+        events.push("frame-wheel");
+        return true;
+      },
+      zoomViewAt: () => events.push("zoom"),
+    },
+  });
+  controller.bind();
+  stage.dispatch("wheel", { deltaY: -1, preventDefault() {} });
+  assert.deepEqual(events, ["frame-wheel"]);
 });
 
 test("stage pointer controller drags the main frame after attachment hit testing", () => {

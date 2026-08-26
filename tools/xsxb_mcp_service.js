@@ -22,6 +22,7 @@ const { createProjectStore, EMPTY_TUNING, reslash, slug } = require("./project_s
 const { validateImport } = require("./validate_import");
 const {
   collectWorkbenchExtras,
+  compressPngFile,
   cutoutFrameFiles,
   decodePngRgba,
   encodePngRgba,
@@ -60,6 +61,7 @@ const {
   pngFileToItem,
   requireExistingFile,
   requireFps,
+  requireTunerPort,
   requireFrameIndex,
   resolveImportSource,
   sliceExtractedFrames,
@@ -347,9 +349,6 @@ function createXsxbMcpService(options = {}) {
         args,
       );
       if (!extracted.paths.length) throw new Error("Video extraction produced no PNG frames.");
-      if (replaced) {
-        deleteAnimation({ root, projectStore, project, profileId, animationId: baseAnimationId });
-      }
       const items = extracted.paths.map((framePath) => ({
         name: path.basename(framePath),
         data: `data:image/png;base64,${fs.readFileSync(framePath).toString("base64")}`,
@@ -364,6 +363,7 @@ function createXsxbMcpService(options = {}) {
         animationName: animationId,
         animationType: "actor",
         fps: requireFps(args.fps),
+        replace: replaced,
         items,
       });
       context.projectId = project.id;
@@ -429,9 +429,6 @@ function createXsxbMcpService(options = {}) {
       sourceLabel === "png_sequence" ? "png_sequence" : "imported",
       booleanFlag(args.replace),
     );
-    if (replaced) {
-      deleteAnimation({ root, projectStore, project, profileId, animationId });
-    }
     const imported = importAnimation({
       root,
       projectStore,
@@ -442,6 +439,7 @@ function createXsxbMcpService(options = {}) {
       animationName: String(args.animation_name || animationId),
       animationType: "actor",
       fps: requireFps(args.fps),
+      replace: replaced,
       items,
     });
     context.projectId = project.id;
@@ -712,8 +710,6 @@ function createXsxbMcpService(options = {}) {
       );
     if (!target) throw new Error(`Animation not found: ${profile.id}/${animation.id || animation.name}`);
     const fps = requireFps(args.fps === undefined ? target.fps : args.fps, Number(target.fps || 12));
-    target.fps = fps;
-    projectStore.writeJson(paths.manifest, manifest);
     const batch = Array.isArray(args.frames) && args.frames.length > 0;
     const singleRequested =
       args.frame !== undefined ||
@@ -762,9 +758,14 @@ function createXsxbMcpService(options = {}) {
           disabled,
         };
       });
+      target.fps = fps;
+      projectStore.writeJson(paths.manifest, manifest);
       projectStore.writeJson(paths.tuning, tuning);
       if (batch) playbackUpdates = applied;
       else playback = applied[0];
+    } else {
+      target.fps = fps;
+      projectStore.writeJson(paths.manifest, manifest);
     }
     const result = {
       projectId: project.id,
@@ -1524,7 +1525,7 @@ function createXsxbMcpService(options = {}) {
     } else {
       project = registryProject(args.project_id || args.project, false);
     }
-    const port = Math.max(1, Number(args.port || process.env.PORT || DEFAULT_TUNER_PORT));
+    const port = requireTunerPort(args.port ?? process.env.PORT ?? DEFAULT_TUNER_PORT);
     const host = DEFAULT_TUNER_HOST;
     const url = new URL(`http://${host}:${port}/workspace`);
     url.searchParams.set("project", project.id);
@@ -1543,6 +1544,13 @@ function createXsxbMcpService(options = {}) {
         ? Boolean(await probeTunerImpl(workspaceUrl))
         : await waitForTuner(probeTunerImpl, workspaceUrl);
       if (!reused && !options.launchTunerImpl) {
+        if (pid) {
+          try {
+            process.kill(pid, "SIGTERM");
+          } catch (_error) {
+            // The child may have exited before the probe budget ran out.
+          }
+        }
         throw new Error(`Tuner did not start at http://${host}:${port}.`);
       }
     }
@@ -1969,6 +1977,57 @@ function createXsxbMcpService(options = {}) {
     };
   }
 
+  function compressFrames(args = {}) {
+    const selection = animationFor(args);
+    const { project, profile, animation } = selection;
+    const frames = animation.frames || [];
+    if (!frames.length) throw new Error("Cannot compress an animation without frames.");
+    const lastIndex = frames.length - 1;
+    const startFrame = args.start_frame === undefined ? 0 : requireFrameIndex(args.start_frame, lastIndex);
+    const endFrame = args.end_frame === undefined ? lastIndex : requireFrameIndex(args.end_frame, lastIndex);
+    if (endFrame < startFrame) throw new Error("end_frame must be greater than or equal to start_frame.");
+    const dryRun = booleanFlag(args.dry_run);
+    const workspaceDir = projectStore.projectWorkspaceDir(project);
+    const receipts = [];
+    for (let index = startFrame; index <= endFrame; index += 1) {
+      const rawPath = String(frames[index].path || "");
+      const absolute = resolveAnimationFramePath(project, rawPath);
+      if (!absolute) {
+        throw new Error(`Compress refused frame path outside the project workspace: ${rawPath || index}`);
+      }
+      if (!isInsideDirectory(absolute, workspaceDir)) {
+        throw new Error(`Compress refused frame path outside the project workspace: ${rawPath}`);
+      }
+      if (!fs.existsSync(absolute)) {
+        throw new Error(`Compress refused missing on-disk frame ${index}: ${rawPath || absolute}`);
+      }
+      const result = compressPngFile(absolute, { dryRun });
+      receipts.push({
+        index,
+        path: reslash(path.relative(root, result.path)),
+        bytesBefore: result.bytesBefore,
+        bytesAfter: result.bytesAfter,
+        wrote: result.wrote,
+      });
+    }
+    if (!receipts.length) throw new Error("Compress found no on-disk frames to process.");
+    const bytesBefore = receipts.reduce((sum, row) => sum + row.bytesBefore, 0);
+    const bytesAfter = receipts.reduce((sum, row) => sum + row.bytesAfter, 0);
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId: String(animation.id || animation.name),
+      dryRun,
+      frameCount: receipts.length,
+      rewritten: receipts.filter((row) => row.wrote).length,
+      skipped: receipts.filter((row) => !row.wrote).length,
+      bytesBefore,
+      bytesAfter,
+      savedBytes: Math.max(0, bytesBefore - bytesAfter),
+      frames: receipts,
+    };
+  }
+
   async function exportGif(args = {}) {
     const { project, profile, animation } = animationFor(args);
     const frames = animation.frames || [];
@@ -2040,21 +2099,21 @@ function createXsxbMcpService(options = {}) {
       if (override.disabled === true && !includeDisabled) continue;
       exportedIndexes.push(index);
     }
-    if (appliedVisual) {
-      visualTemp = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-gif-visual-"));
-      const decoded = framePaths.map((filePath) => decodePngRgba(filePath));
-      const placed = placeFramesOnCanvas(decoded, decoded[0].width, decoded[0].height, {
-        frameScales: selectedScales,
-      });
-      encodePaths = placed.map((frame, index) => {
-        const filePath = path.join(visualTemp, `frame_${String(index + 1).padStart(4, "0")}.png`);
-        fs.writeFileSync(filePath, encodePngRgba(frame.data, frame.width, frame.height));
-        return filePath;
-      });
-    }
     let bakedTrails = false;
     let trailIds = [];
     try {
+      if (appliedVisual) {
+        visualTemp = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-gif-visual-"));
+        const decoded = framePaths.map((filePath) => decodePngRgba(filePath));
+        const placed = placeFramesOnCanvas(decoded, decoded[0].width, decoded[0].height, {
+          frameScales: selectedScales,
+        });
+        encodePaths = placed.map((frame, index) => {
+          const filePath = path.join(visualTemp, `frame_${String(index + 1).padStart(4, "0")}.png`);
+          fs.writeFileSync(filePath, encodePngRgba(frame.data, frame.width, frame.height));
+          return filePath;
+        });
+      }
       const baked = await bakeTrailsOnto(
         { project, profile, animation },
         encodePaths,
@@ -2244,6 +2303,7 @@ function createXsxbMcpService(options = {}) {
     xsxb_set_visual_transform: setVisualTransform,
     xsxb_estimate_visual: estimateVisual,
     xsxb_replace_frame: replaceFrame,
+    xsxb_compress_frames: compressFrames,
     xsxb_export_gif: exportGif,
     xsxb_export_sheet: exportSheet,
     xsxb_measure_image: measureImage,

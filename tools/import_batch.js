@@ -45,15 +45,15 @@ function parseBatchArgs(argv) {
 }
 
 function pngCount(sourceDir) {
-  return fs.readdirSync(sourceDir)
-    .filter((name) => path.extname(name).toLowerCase() === ".png")
-    .length;
+  return fs.readdirSync(sourceDir).filter((name) => path.extname(name).toLowerCase() === ".png").length;
 }
 
 function preflightBatch(batch) {
   const { globals, entries } = batch;
   if (!globals["project-root"] || !globals.profile || !entries.length) {
-    throw new Error("Batch import requires --project-root, --profile, and at least one --animation/--source pair.");
+    throw new Error(
+      "Batch import requires --project-root, --profile, and at least one --animation/--source pair.",
+    );
   }
   const projectRoot = path.resolve(String(globals["project-root"]));
   if (!fs.existsSync(path.join(projectRoot, "project.godot"))) {
@@ -98,22 +98,35 @@ function importBatch(batch) {
   for (const entry of checked.entries) {
     const args = [
       IMPORT_SCRIPT,
-      "--project-root", checked.globals["project-root"],
-      "--profile", checked.globals.profile,
-      "--animation", entry.animation,
-      "--source", entry.source,
-      "--fps", String(entry.fps),
-      "--type", entry.type,
-      "--anchor", entry.anchor,
+      "--project-root",
+      checked.globals["project-root"],
+      "--profile",
+      checked.globals.profile,
+      "--animation",
+      entry.animation,
+      "--source",
+      entry.source,
+      "--fps",
+      String(entry.fps),
+      "--type",
+      entry.type,
+      "--anchor",
+      entry.anchor,
     ];
     if (checked.globals.project) args.push("--project", checked.globals.project);
     if (checked.globals.label) args.push("--label", checked.globals.label);
     if (checked.globals.replace) args.push("--replace");
 
-    const result = spawnSync(process.execPath, args, { encoding: "utf8", windowsHide: true });
+    const result = spawnSync(process.execPath, args, {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 120_000,
+    });
     if (result.status !== 0) {
       const detail = String(result.stderr || result.stdout || "Unknown import error").trim();
-      throw new Error(`Batch stopped at ${entry.animation} after ${completed.length} completed animation(s): ${detail}`);
+      throw new Error(
+        `Batch stopped at ${entry.animation} after ${completed.length} completed animation(s): ${detail}`,
+      );
     }
     completed.push({
       animation: entry.animation,

@@ -19,6 +19,7 @@ const {
   toolDefinitions,
 } = require("../xsxb_mcp_service");
 const { decodePngRgba, encodePngRgba, subjectAnchor } = require("../xsxb_mcp_cutout");
+const openTunerStub = require("../xsxb_open_tuner");
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XkM0WQAAAABJRU5ErkJggg==",
@@ -586,6 +587,27 @@ test("string dry_run and failed video replace do not destroy data", async () => 
     );
     const afterFailure = await current.service.call("xsxb_get_animation", { animation_id: "keep" });
     assert.equal(afterFailure.frameCount, 3);
+
+    const corrupt = createXsxbMcpService({
+      root: current.root,
+      extractVideoFramesImpl: async (_videoPath, outputDirectory) => {
+        const framePath = path.join(outputDirectory, "frame_000001.png");
+        fs.writeFileSync(framePath, "not-a-png");
+        return [framePath];
+      },
+    });
+    await assert.rejects(
+      () =>
+        corrupt.call("xsxb_import_video", {
+          file_path: current.video,
+          animation_id: "keep",
+          replace: true,
+          fps: 12,
+        }),
+      /PNG|not PNG|image data/i,
+    );
+    const afterCorrupt = await current.service.call("xsxb_get_animation", { animation_id: "keep" });
+    assert.equal(afterCorrupt.frameCount, 3);
   } finally {
     current.cleanup();
   }
@@ -877,6 +899,52 @@ test("import_animation slices PNG sequences with start_frame and end_frame", asy
     assert.equal(imported.startFrame, 2);
     assert.equal(imported.endFrame, 4);
     assert.equal(imported.sourceFrameCount, 10);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("the leftover open_tuner module does not claim the Tuner started", async () => {
+  const result = await openTunerStub({});
+  assert.notEqual(result.status, "tuner_started");
+  assert.match(String(result.status || result.error || ""), /not[_ ]implemented/i);
+});
+
+test("open_tuner rejects a non-numeric PORT environment value", async () => {
+  const current = fixture();
+  const previous = process.env.PORT;
+  process.env.PORT = "not-a-port";
+  try {
+    await assert.rejects(
+      () => current.service.call("xsxb_open_tuner", { start: false }),
+      /Tuner port must be an integer/,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.PORT;
+    else process.env.PORT = previous;
+    current.cleanup();
+  }
+});
+
+test("update_timing does not persist fps when a frame request is invalid", async () => {
+  const current = fixture();
+  try {
+    await current.service.call("xsxb_import_video", {
+      file_path: current.video,
+      animation_id: "walk",
+      fps: 12,
+    });
+    await assert.rejects(
+      () =>
+        current.service.call("xsxb_update_timing", {
+          animation_id: "walk",
+          fps: 24,
+          frames: [{ frame: 99, duration: 2 }],
+        }),
+      /Frame must be an integer/,
+    );
+    const after = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    assert.equal(after.animation.fps, 12);
   } finally {
     current.cleanup();
   }

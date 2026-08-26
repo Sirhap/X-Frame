@@ -55,8 +55,8 @@ function createFixture() {
       calls.renders += 1;
     },
     updateQueueCard: (item) => calls.updates.push(item.id),
-    processItem: async (item) => {
-      calls.processed.push(item.id);
+    processItem: async (item, options) => {
+      calls.processed.push({ id: item.id, options: { ...(options || {}) } });
       item.status = "processed";
     },
     windowRef: globalThis,
@@ -84,7 +84,10 @@ test("thumbnail scheduling isolates processed frames and updates their cards", a
   controller.scheduleBatchThumbnails();
   await new Promise((resolve) => setTimeout(resolve, 50));
 
-  assert.deepEqual(calls.processed, ["second", "third"]);
+  assert.deepEqual(calls.processed, [
+    { id: "second", options: { lightweight: true } },
+    { id: "third", options: { lightweight: true } },
+  ]);
   assert.deepEqual(calls.updates, ["second", "third"]);
   assert.equal(state.thumbnailJob, 1);
 });

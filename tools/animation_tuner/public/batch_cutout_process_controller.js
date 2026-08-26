@@ -52,6 +52,18 @@
       premiumFeatures = root?.XSXBPremiumFeatures,
       ensurePremiumActivated = async () => true,
     } = dependencies;
+    /**
+     * Accepts the current queue as the leave-confirm baseline.
+     * Resolved at call time so the browser script order can load the session
+     * controller after this module.
+     * @returns {void}
+     */
+    function acceptLoadedSession() {
+      const sessionApi =
+        root?.BatchCutoutSessionController ||
+        (typeof module === "object" && module.exports ? require("./batch_cutout_session_controller") : null);
+      if (typeof sessionApi?.acceptSession === "function") sessionApi.acceptSession(state);
+    }
     if (!state || !elements || typeof processingOptions !== "function") {
       throw new TypeError("BatchCutoutProcessController dependencies are required.");
     }
@@ -61,6 +73,29 @@
     const urlApi = urlRef;
     const ImageDataClass = imageDataConstructor;
     const DOMExceptionClass = domExceptionConstructor;
+
+    /**
+     * Maps stable engine codes to actionable localized messages while retaining
+     * the machine-readable code for callers and diagnostics.
+     * @param {unknown} reason Processing failure.
+     * @returns {Error & {code?:string}} Public processing error.
+     */
+    function publicProcessingError(reason) {
+      const code = reason?.code || reason?.message || "";
+      const message =
+        code === "ENGINE_MEMORY_EXHAUSTED"
+          ? text("engineMemoryExhausted")
+          : code === "ENGINE_EXECUTION_FAILED"
+            ? text("engineExecutionFailed")
+            : reason instanceof Error
+              ? reason.message
+              : String(reason);
+      if (reason instanceof Error && message === reason.message) return reason;
+      const error = new Error(message);
+      if (code) error.code = code;
+      error.cause = reason;
+      return error;
+    }
 
     /** @returns {string[]} Premium features represented by the current output pixels. */
     function outputPremiumFeatures() {
@@ -80,14 +115,16 @@
     /**
      * Processes one image and stores its result canvas.
      * @param {object} item Queue item.
-     * @param {{preview?:boolean}} [options] Whether staged batch recolor should be rendered.
+     * @param {{preview?:boolean,lightweight?:boolean}} [options] Preview and analysis policy.
      * @returns {Promise<object>}
      */
     async function processItem(item, options = {}) {
       const includeBatchPreview = options.preview !== false && Boolean(state.batchPreviewRepair);
-      const resultVariant = includeBatchPreview
+      const baseResultVariant = includeBatchPreview
         ? `batch-preview:${Number(state.batchPreviewRevision || 0)}`
         : "committed";
+      const lightweight = options.lightweight === true;
+      const resultVariant = lightweight ? `${baseResultVariant}:pixels-only` : baseResultVariant;
       if (
         item.status === "processed" &&
         item.thumbnailRevision === state.thumbnailRevision &&
@@ -108,7 +145,9 @@
         const options = processingOptions(item);
         const automaticKey = repairReplayCore.automaticCacheKey(options);
         const repairs = includeBatchPreview ? previewRepairsForItem(item) : item.repairs || [];
-        const result = await cutoutExecutor.process(data, width, height, options, repairs);
+        const result = await cutoutExecutor.process(data, width, height, options, repairs, {
+          analysisMode: lightweight ? "pixels-only" : "full",
+        });
         if (processingRevision !== Number(item.processingRevision || 0)) {
           throw new DOMExceptionClass("Stale cutout result was discarded.", "AbortError");
         }
@@ -120,13 +159,13 @@
           result.data instanceof Uint8ClampedArray ? result.data : new Uint8ClampedArray(result.data);
         item.automaticImageData = new ImageDataClass(automaticPixels, width, height);
         item.automaticCacheKey = automaticKey;
-        if (!Array.isArray(result.shapeCandidates) || !result.qualityMetrics) {
+        if (!lightweight && (!Array.isArray(result.shapeCandidates) || !result.qualityMetrics)) {
           throw new Error("ENGINE_INVALID_RESULT");
         }
-        item.shapeCandidates = result.shapeCandidates;
+        item.shapeCandidates = Array.isArray(result.shapeCandidates) ? result.shapeCandidates : [];
         item.shapeDescriptor = result.shapeDescriptor;
         item.resultImageData = new ImageDataClass(resultPixels, width, height);
-        item.qualityMetrics = result.qualityMetrics;
+        item.qualityMetrics = result.qualityMetrics || null;
         item.diagnosticCanvases = {};
         const canvas = documentApi.createElement("canvas");
         canvas.width = width;
@@ -142,13 +181,14 @@
         item.resultVariant = resultVariant;
         item.thumbnailRevision = state.thumbnailRevision;
         item.status = "processed";
-        refreshQualityAnalysis();
+        if (!lightweight) refreshQualityAnalysis();
         return item;
       })();
       item.processingPromise = processingPromise;
       try {
         return await processingPromise;
       } catch (error) {
+        const processingError = publicProcessingError(error);
         const ownsItemState =
           item.processingPromise === processingPromise &&
           processingRevision === Number(item.processingRevision || 0);
@@ -158,11 +198,11 @@
         }
         if (ownsItemState) {
           item.status = "failed";
-          item.error = error instanceof Error ? error.message : String(error);
+          item.error = processingError.message;
           item.qualityMetrics = null;
           item.quality = null;
         }
-        throw error;
+        throw processingError;
       } finally {
         if (item.processingPromise === processingPromise) item.processingPromise = null;
       }
@@ -283,21 +323,26 @@
       if (elements.cutoutModal) elements.cutoutModal.dataset.batchPreview = "false";
       elements.cutoutRepairBatch?.classList.remove("previewPending");
       elements.cutoutRepairBatch?.setAttribute("aria-pressed", "false");
-      try {
-        let retainedPixels = 0;
-        state.items = animation.images.map((image, index) => {
-          const budget = assertImagePixelBudget(image, retainedPixels);
-          retainedPixels = budget.totalPixels;
-          return createItem(
-            image,
-            animation.frames[index].name || `frame_${String(index + 1).padStart(4, "0")}.png`,
-            animation.frames[index],
-          );
-        });
-      } catch (error) {
-        setStatus(text("failed", { message: error.message }), "error");
+      const budget = imagePixelBudget.takeUntilBudget(animation.images);
+      if (!budget.kept.length) {
+        try {
+          assertImagePixelBudget(animation.images[0], 0);
+        } catch (error) {
+          setStatus(text("failed", { message: error.message }), "error");
+          return;
+        }
+        setStatus(text("groupUnavailable"), "error");
         return;
       }
+      const items = budget.kept.map(({ source, index }) =>
+        createItem(
+          source,
+          animation.frames[index].name || `frame_${String(index + 1).padStart(4, "0")}.png`,
+          animation.frames[index],
+        ),
+      );
+      const skipped = budget.skipped;
+      state.items = items;
       state.sourceKind = "group";
       state.sessionMode = "batch";
       state.items.forEach((item) => {
@@ -317,12 +362,23 @@
       renderQueue();
       renderPreview();
       scheduleBatchThumbnails();
-      setStatus(text("groupLoaded", { name: animation.name, count: state.items.length }), "success");
+      setStatus(
+        skipped
+          ? text("groupLoadedPartial", {
+              name: animation.name,
+              count: state.items.length,
+              total: animation.images.length,
+              skipped,
+            })
+          : text("groupLoaded", { name: animation.name, count: state.items.length }),
+        skipped ? "idle" : "success",
+      );
+      acceptLoadedSession();
     }
 
     /**
      * Processes every queued image while yielding between frames.
-     * @param {{applyProgress?:boolean}} [options] Optional apply-to-all progress presentation.
+     * @param {{applyProgress?:boolean,lightweight?:boolean}} [options] Progress and analysis policy.
      * @returns {Promise<{outputs:object[],failures:Array<{index:number,name:string,message:string}>,excluded:number,cancelled:boolean}>}
      */
     async function processAll(options = {}) {
@@ -356,7 +412,7 @@
             const artifactRevision = `${state.thumbnailRevision}:${Number(item.processingRevision || 0)}`;
             let outputData = resultArtifacts.get(item.id, artifactRevision);
             if (!outputData) {
-              await processItem(item, { preview: false });
+              await processItem(item, { preview: false, lightweight: options.lightweight === true });
               outputData = resultArtifacts.get(item.id, artifactRevision);
             }
             if (!outputData && item.resultCanvas && options.applyProgress) {
@@ -586,6 +642,7 @@
             state.items.forEach((item, index) => {
               item.publishedCanvas = publishedOutputs[index].canvas;
             });
+            acceptLoadedSession();
             setStatus(text("worksetApplied", { count: publishedOutputs.length }), "success");
             return;
           }
@@ -609,6 +666,7 @@
             state.items.forEach((item, index) => {
               item.publishedCanvas = outputs[index].canvas;
             });
+            acceptLoadedSession();
           } else close(outputs);
         } catch (error) {
           setStatus(text("failed", { message: error.message }), "error");
@@ -653,6 +711,7 @@
           return;
         }
         await host.applyToCurrentAnimation?.(outputs, { premiumFeatures: featureIds });
+        acceptLoadedSession();
         setStatus(text("applied", { count: outputs.length }), "success");
       } catch (error) {
         setStatus(text("failed", { message: error.message }), "error");
