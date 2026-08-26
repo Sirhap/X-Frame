@@ -128,12 +128,40 @@ test("attack-trail stick schema names blade edges, layer, and reverseDirection",
   assert.match(sheet.description, /trail/i);
   assert.equal(gif.annotations.readOnlyHint, false, "GIF export writes a file");
   assert.equal(sheet.annotations.readOnlyHint, false, "sheet export writes a file");
+  const shift = toolDefinitions().find((entry) => entry.name === "xsxb_shift_frames");
+  assert.match(shift.description, /positive dy/i);
+  assert.match(shift.description, /export_sheet|inspectFeet/i);
+  assert.match(shift.description, /from|group/i);
+  assert.match(shift.description, /y=-1/);
+  assert.match(shift.description, /do not plant[^.]{0,80}0,0/);
+  assert.match(shift.description, /never trust feetY/);
+  assert.match(shift.description, /stale/);
+  assert.match(shift.inputSchema.properties.frames.items.properties.to.description, /y=-1/);
+  assert.equal(shift.inputSchema.required.includes("frames"), true);
+  assert.ok(shift.inputSchema.properties.frames.items.properties.from);
+  assert.ok(shift.inputSchema.properties.frames.items.properties.to);
+  assert.ok(sheet.inputSchema.properties.grid_density);
+  assert.ok(sheet.inputSchema.properties.grid_divs);
+  assert.ok(sheet.inputSchema.properties.grid_scope);
+  assert.deepEqual(sheet.inputSchema.properties.grid_density.enum, ["sparse", "normal", "dense"]);
+  assert.deepEqual(sheet.inputSchema.properties.grid_scope.enum, ["canvas", "subject"]);
+  const attach = toolDefinitions().find((entry) => entry.name === "xsxb_add_attachment");
+  assert.ok(attach.inputSchema.properties.hand);
+  assert.ok(attach.inputSchema.properties.t);
   assert.equal(stick.type, "object");
   assert.ok(stick.properties.frame);
   assert.ok(stick.properties.top);
   assert.ok(stick.properties.bottom);
   assert.deepEqual(stick.properties.layer.enum, ["behind", "front"]);
   assert.equal(stick.properties.reverseDirection.type, "boolean");
+});
+
+test("unknown grid overlay argument names the closest declared name", () => {
+  const sheet = toolDefinitions().find((entry) => entry.name === "xsxb_export_sheet");
+  assert.throws(
+    () => validateToolArguments("xsxb_export_sheet", sheet.inputSchema, { grid_div: "8x8" }),
+    /grid_divs/,
+  );
 });
 
 test("every declared tool schema is one this validator understands", () => {

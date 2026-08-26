@@ -573,6 +573,31 @@ animations = [{
     return verdict("xsxb_replace_frame", "ready", "swaps pixels and refreshes stored frame size");
   },
 
+  async xsxb_shift_frames(fixture) {
+    const directory = path.join(fixture.root, "shift-seq");
+    fs.mkdirSync(directory, { recursive: true });
+    const width = 8;
+    const height = 8;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    rgba.set([210, 36, 42, 255], ((height - 2) * width + 3) * 4);
+    fs.writeFileSync(path.join(directory, "01.png"), encodePngRgba(rgba, width, height));
+    fs.writeFileSync(path.join(directory, "02.png"), encodePngRgba(rgba, width, height));
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "walk",
+    });
+    const shifted = await fixture.service.call("xsxb_shift_frames", {
+      animation_id: "walk",
+      frames: [{ frame: 0, dx: 0, dy: 1 }],
+      sync: false,
+    });
+    if (shifted.shifted[0]?.dy !== 1 || shifted.shifted[0]?.width !== 8) {
+      return verdict("xsxb_shift_frames", "fail", JSON.stringify(shifted));
+    }
+    return verdict("xsxb_shift_frames", "ready", "translates one workspace PNG by integer pixels");
+  },
+
   async xsxb_compress_frames(fixture) {
     const directory = path.join(fixture.root, "walk-seq");
     fs.mkdirSync(directory, { recursive: true });
@@ -832,6 +857,8 @@ animations = [{
       exported.frameCount !== 2 ||
       exported.columns !== 2 ||
       exported.grid.enabled !== true ||
+      exported.grid.overlayOnly !== true ||
+      exported.grid.originLabel?.text !== "0,0" ||
       exported.grid.anchorMode !== "canvas_bottom_center" ||
       !exported.outputPath.endsWith("_sheet.png") ||
       !fs.existsSync(exported.outputPath)

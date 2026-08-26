@@ -97,6 +97,30 @@ test("MCP transport initializes, lists tools, and returns structured tool result
   assert.equal(called.result.isError, false);
 });
 
+test("INSTRUCTIONS and shift_frames name last-pixel planting and a stale catalog", () => {
+  const shift = toolDefinitions().find((entry) => entry.name === "xsxb_shift_frames");
+  assert.ok(shift, "xsxb_shift_frames is a catalog tool");
+  for (const [label, text] of [
+    ["INSTRUCTIONS", INSTRUCTIONS],
+    ["xsxb_shift_frames", shift.description],
+  ]) {
+    assert.match(text, /y=-1/, `${label} must name last-pixel group y=-1`);
+    assert.match(
+      text,
+      /do not plant[^.]{0,80}0,0|not plant[^.]{0,80}0,0/,
+      `${label} must forbid planting to 0,0`,
+    );
+    assert.match(text, /stale/, `${label} must call a missing shift_frames a stale catalog`);
+    assert.match(text, /reload/i, `${label} must say reload the xsxb MCP server`);
+    assert.match(text, /never trust feetY/, `${label} must say never trust feetY`);
+  }
+  assert.match(INSTRUCTIONS, /cells\[row\]\[col\]/, "INSTRUCTIONS must point at the 2d grid.cells lookup");
+  assert.match(INSTRUCTIONS, /do not OCR/i, "INSTRUCTIONS must say not to OCR overlay digits");
+  const sheet = toolDefinitions().find((entry) => entry.name === "xsxb_export_sheet");
+  assert.match(sheet.description, /cells\[row\]\[col\]/);
+  assert.match(sheet.description, /do not OCR/i);
+});
+
 test("a failing tool answers with an MCP error result instead of a transport error", async () => {
   const service = {
     tools: toolDefinitions(),
@@ -346,6 +370,7 @@ test("MCP catalog includes the production editing tools", () => {
     "xsxb_find_motion",
     "xsxb_estimate_visual",
     "xsxb_export_sheet",
+    "xsxb_shift_frames",
     "xsxb_measure_image",
     "xsxb_update_frame_boxes",
     "xsxb_update_timing",

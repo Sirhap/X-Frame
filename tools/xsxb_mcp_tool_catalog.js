@@ -28,6 +28,7 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_estimate_visual",
   "xsxb_reorganize_frames",
   "xsxb_replace_frame",
+  "xsxb_shift_frames",
   "xsxb_compress_frames",
   "xsxb_add_attack_trail",
   "xsxb_add_attachment",
@@ -54,6 +55,38 @@ function toolDefinitions() {
     project_id: projectProperty,
     profile_id: { type: "string", description: "Animation profile id." },
     animation_id: { type: "string", description: "Animation id." },
+  };
+  const gridOverlayProperties = {
+    grid_density: {
+      type: "string",
+      enum: ["sparse", "normal", "dense"],
+      description:
+        "Preset overlay divisions of the chosen scope: sparse=4x4, normal=8x8, dense=16x16. This densifies the lines. Large cells paint row/col indices matching grid.cells; group x,y live in that JSON. AI fills this from the task and image size. grid_divs or grid_x/grid_y win when set.",
+    },
+    grid_divs: {
+      type: "string",
+      description:
+        'Explicit overlay cells, e.g. "8x8". Same group coordinates as the tuner. Wins over grid_density.',
+    },
+    grid_x: {
+      type: "integer",
+      minimum: 2,
+      maximum: 64,
+      description: "Explicit X divisions. Pair with grid_y. Wins over grid_density.",
+    },
+    grid_y: {
+      type: "integer",
+      minimum: 2,
+      maximum: 64,
+      description: "Explicit Y divisions. Pair with grid_x. Wins over grid_density.",
+    },
+    grid_scope: {
+      type: "string",
+      enum: ["canvas", "subject"],
+      default: "canvas",
+      description:
+        "canvas covers the source frame. subject covers the opaque character box. Grid lines follow this density. Overlay paints row/col indices matching grid.cells; group coordinates are in the receipt JSON.",
+    },
   };
   return [
     {
@@ -141,7 +174,7 @@ function toolDefinitions() {
     {
       name: "xsxb_get_animation",
       description:
-        "Return animation metadata and frames. Pass frames=summary for a compact sample without animation.frames. Pass include to also read back current boxes, timing, sfx, attachments, or trails.",
+        "Return animation metadata and frames. Pass frames=summary for a compact sample without animation.frames. Pass include to also read back current boxes, timing, sfx, attachments, or trails. Receipts use group coordinates (foot 0,0, body negative y), the same space as the overlay ticks.",
       inputSchema: {
         type: "object",
         properties: {
@@ -295,7 +328,7 @@ function toolDefinitions() {
     {
       name: "xsxb_update_frame_boxes",
       description:
-        "Update hurtbox, collisionbox, and hitbox for one animation frame, or many frames at once via frames. Does not sync Godot.",
+        "Update hurtbox, collisionbox, and hitbox for one animation frame, or many frames at once via frames. Boxes are group coordinates (foot 0,0). Pass offset+size, min/max corners, or x,y,width,height. Does not sync Godot.",
       inputSchema: {
         type: "object",
         properties: {
@@ -368,7 +401,7 @@ function toolDefinitions() {
     {
       name: "xsxb_set_visual_transform",
       description:
-        "Set visual size, offset, and rotation at the character (profile), animation group, or single-frame level. Pass clear=true to remove overrides at that level. Does not sync Godot.",
+        "Set visual size, offset, and rotation at the character (profile), animation group, or single-frame level. offset_x/offset_y are group coordinates, the same numbers as the overlay ticks. Pass clear=true to remove overrides at that level. Does not sync Godot.",
       inputSchema: {
         type: "object",
         properties: {
@@ -472,6 +505,53 @@ function toolDefinitions() {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
     {
+      name: "xsxb_shift_frames",
+      description:
+        "Translate selected workspace frame PNGs without resampling. dx/dy and from/to are group coordinates, the same numbers as the overlay ticks (1 unit = 1 source pixel). from+to moves that group point onto the destination. Positive dy plants the subject down toward the foot origin. Yellow 0,0 is outside the bitmap — last pixel row is group y=-1; do not plant soles to 0,0 or they clip 1px. Plant the sole to y=-1. metrics.feetY includes connected slash/glow; never trust feetY — look at boots on the overlay. This tool is already in the catalog (MCP_TOOL_NAMES / tools/list); if a client reports it not found, the session catalog is stale — reload the xsxb MCP server. Do not skip planting or convert overlay numbers to canvas pixels. grid_divs / grid_density already work on xsxb_export_sheet / xsxb_cutout. Use after reading xsxb_export_sheet or xsxb_cutout inspectFeet; do not guess boot colors. Source canvas size stays the same.",
+      inputSchema: {
+        type: "object",
+        required: ["frames"],
+        properties: {
+          ...animationProperties,
+          frames: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["frame"],
+              additionalProperties: false,
+              properties: {
+                frame: { type: "integer", minimum: 0 },
+                dx: {
+                  type: "integer",
+                  default: 0,
+                  description: "Group units right. Same as overlay x ticks. Negative is left.",
+                },
+                dy: {
+                  type: "integer",
+                  default: 0,
+                  description:
+                    "Group units down toward the foot origin. Same as overlay y ticks. Negative lifts the subject.",
+                },
+                from: {
+                  type: "object",
+                  description: 'Group point to move, {x,y} or "x,y", read from the overlay ticks.',
+                },
+                to: {
+                  type: "object",
+                  description:
+                    "Group point that from should land on. MCP computes dx/dy. Plant soles to y=-1, not 0,0: yellow 0,0 is outside the bitmap (canvasAnchor y=height).",
+                },
+              },
+            },
+            description: "Each entry needs frame plus dx/dy or from/to group points.",
+          },
+          sync: { type: "boolean", default: false },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    {
       name: "xsxb_compress_frames",
       description:
         "Lossless-reencode workspace PNG frames with max zlib. Pixels stay identical. Writes only when the file shrinks. dry_run reports savings without writing.",
@@ -531,8 +611,14 @@ function toolDefinitions() {
               type: "object",
               properties: {
                 frame: { type: "integer", minimum: 0 },
-                top: { type: "object", description: "Blade tip in group coordinates." },
-                bottom: { type: "object", description: "Blade grip in group coordinates." },
+                top: {
+                  type: "object",
+                  description: 'Blade tip in group coordinates. {x,y} or "x,y", same as overlay ticks.',
+                },
+                bottom: {
+                  type: "object",
+                  description: 'Blade grip in group coordinates. {x,y} or "x,y", same as overlay ticks.',
+                },
                 layer: {
                   type: "string",
                   enum: ["behind", "front"],
@@ -558,7 +644,7 @@ function toolDefinitions() {
     {
       name: "xsxb_add_attachment",
       description:
-        "Bind a local PNG as a frame image attachment. file_path is required for a real asset. Pass frames to bind the same asset on many frames in one write.",
+        "Bind a local PNG as a frame image attachment. file_path is required for a real asset. Pass frames to bind the same asset on many frames in one write. offset_x/offset_y are group coordinates. Prefer hand (group point from the overlay) plus t; MCP measures the PNG and writes offset = hand - localFromCenter.",
       inputSchema: {
         type: "object",
         properties: {
@@ -577,6 +663,17 @@ function toolDefinitions() {
           layer_order: { type: "integer", default: 1 },
           offset_x: { type: "number", default: 0 },
           offset_y: { type: "number" },
+          hand: {
+            description:
+              'Stage grip in group coordinates, {x,y} or "x,y", read from the overlay. With t, MCP sets offset = hand - localFromCenter.',
+          },
+          t: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            description:
+              "Grip fraction along the attachment PNG pommel→tip. Used with hand. 0.5 is the middle.",
+          },
           scale: { type: "number", default: 1 },
           rotation: { type: "number", default: 0 },
           sync: { type: "boolean", default: true },
@@ -703,7 +800,7 @@ function toolDefinitions() {
     {
       name: "xsxb_cutout",
       description:
-        "Run the tuner smart-cutout product path on every animation frame. Slider names and ranges match the cutout workbench; omit them to keep the shared smart-cutout profile. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom, ignoring disconnected islands and connected bright slash/glow below the boots. apply_visual rematches from group/frame visual_size instead of that shared scale. Character visual_size stays playback-only and is not baked.",
+        "Run the tuner smart-cutout product path on every animation frame. Slider names and ranges match the cutout workbench; omit them to keep the shared smart-cutout profile. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom, ignoring disconnected islands and connected bright slash/glow below the boots. apply_visual rematches from group/frame visual_size instead of that shared scale. Character visual_size stays playback-only and is not baked. inspectFeet overlay uses the same grid_divs / grid_density as export_sheet. Plant by looking at boots on that overlay; never trust metrics.feetY (it includes connected slash/glow). Yellow 0,0 is outside the bitmap — plant the sole to y=-1, not 0,0.",
       inputSchema: {
         type: "object",
         properties: {
@@ -730,6 +827,7 @@ function toolDefinitions() {
             description: "Optional #RRGGBB colors to keep, same as the tuner protect-color list.",
           },
           ...workbenchSliderSchemaProperties(),
+          ...gridOverlayProperties,
           force: {
             type: "boolean",
             default: false,
@@ -782,7 +880,7 @@ function toolDefinitions() {
     {
       name: "xsxb_export_sheet",
       description:
-        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size, leftover dirt, and authored attack-trail meshes stay comparable. Every cell is labeled with its absolute 0-based index and the tuner group-coordinate grid (foot origin 0,0; body is negative y). mark_frame highlights one cell for a second cull pass. output_path must stay inside the XSXB root.",
+        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size, leftover dirt, and authored attack-trail meshes stay comparable. The sheet paints an overlay grid (lines follow grid_density/grid_divs) plus row/col indices matching receipt grid.cells[row][col] (row 0 = top, col 0 = left; x,y is that square's top-left group corner). Group coordinates are code-generated in that JSON and grid.legend — do not OCR overlay digits. Yellow 0,0 and last-pixel -1 are landmarks. Last pixel row is group y=-1 — plant soles there, not to 0,0. Receipt lastPixel names that row. metrics.feetY includes connected slash/glow; never trust feetY. Pass grid_density, grid_divs like 8x8, or grid_x/grid_y, and grid_scope canvas|subject — AI fills these; omit to keep the auto step. Source animation PNGs are unchanged. Receipt JSON repeats origin, step, divs, ticks, labels, lastPixel, xLines, yLines, cells, and legend. mark_frame highlights one cell for a second cull pass. output_path must stay inside the XSXB root.",
       inputSchema: {
         type: "object",
         properties: {
@@ -817,8 +915,10 @@ function toolDefinitions() {
           grid: {
             type: "boolean",
             default: true,
-            description: "Paint the tuner group-coordinate axes and ticks. Origin is the canvas foot.",
+            description:
+              "Paint the tuner group-coordinate overlay (axes, tick numbers, 0,0). Overlay only; source frames stay unchanged.",
           },
+          ...gridOverlayProperties,
         },
         additionalProperties: false,
       },
@@ -827,7 +927,7 @@ function toolDefinitions() {
     {
       name: "xsxb_measure_image",
       description:
-        'Measure a PNG\'s long axis. The pommel is the end closer to the widest cross-section (guard or forte); the far end is the tip. Pass t for a handle fraction (0=pommel, 0.5=middle, 0.666 or "2/3", 1=tip). Returns image-pixel landmarks. localFromCenter is the grip relative to the image center; attachment offset = hand - localFromCenter. Does not bind or write frames.',
+        'Measure a PNG\'s long axis. The pommel is the end closer to the widest cross-section (guard or forte); the far end is the tip. Pass t for a handle fraction (0=pommel, 0.5=middle, 0.666 or "2/3", 1=tip). Returns image-pixel landmarks. To place the grip on stage, pass the same t plus hand group coordinates to xsxb_add_attachment; do not subtract localFromCenter yourself. Does not bind or write frames.',
       inputSchema: {
         type: "object",
         required: ["file_path"],

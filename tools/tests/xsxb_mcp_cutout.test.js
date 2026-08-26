@@ -15,6 +15,7 @@ const {
   decodePngRgba,
   encodePngRgba,
   placeFramesOnCanvas,
+  shiftFrameRgba,
   subjectAnchor,
 } = require("../xsxb_mcp_cutout");
 
@@ -105,18 +106,15 @@ test("subject anchor uses the standing body, not slash pixels below", () => {
   assert.equal(idle.height, hit.height);
 });
 
-test("subject anchor ignores a cream slash that is still connected to the body", () => {
-  const width = 16;
-  const height = 16;
+test("shiftFrameRgba moves opaque pixels down without resampling", () => {
+  const width = 8;
+  const height = 8;
   const rgba = new Uint8ClampedArray(width * height * 4);
-  for (let y = 6; y <= 11; y += 1) {
-    setPixel(rgba, width, 7, y, BODY);
-    setPixel(rgba, width, 8, y, BODY);
-  }
-  for (let y = 11; y <= 15; y += 1) setPixel(rgba, width, 9, y, SLASH);
-  for (let x = 8; x <= 14; x += 1) setPixel(rgba, width, x, 15, SLASH);
-  const anchor = subjectAnchor(rgba, width, height);
-  assert.equal(anchor.feetY, 11);
+  setPixel(rgba, width, 3, 2, BODY);
+  const shifted = shiftFrameRgba(rgba, width, height, 0, 3);
+  assert.deepEqual([...rgba.subarray((2 * 8 + 3) * 4, (2 * 8 + 3) * 4 + 4)], BODY);
+  assert.deepEqual([...shifted.subarray((2 * 8 + 3) * 4, (2 * 8 + 3) * 4 + 4)], [0, 0, 0, 0]);
+  assert.deepEqual([...shifted.subarray((5 * 8 + 3) * 4, (5 * 8 + 3) * 4 + 4)], BODY);
 });
 
 test("shared canvas placement keeps hit-frame feet on the same ground line", () => {

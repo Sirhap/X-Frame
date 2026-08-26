@@ -79,6 +79,87 @@ function requireTunerPort(value) {
 }
 
 /**
+ * Parses a tuner-group point. Accepts {x,y}, "x,y", or [x,y].
+ * @param {unknown} value Raw point.
+ * @param {string} [label="point"] Error label.
+ * @returns {{x:number,y:number}|null} Group point, or null when omitted.
+ */
+function parseGroupPoint(value, label = "point") {
+  if (value === undefined || value === null || value === "") return null;
+  let x;
+  let y;
+  if (typeof value === "string") {
+    const match = value.trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/u);
+    if (!match) throw new Error(`${label} must be a group point like "40,-80".`);
+    x = Number(match[1]);
+    y = Number(match[2]);
+  } else if (Array.isArray(value)) {
+    if (value.length < 2) throw new Error(`${label} array must be [x, y].`);
+    x = Number(value[0]);
+    y = Number(value[1]);
+  } else if (typeof value === "object") {
+    const space = value.space;
+    if (space !== undefined && space !== null && space !== "" && space !== "group") {
+      throw new Error(`${label} space must be "group". Received "${space}".`);
+    }
+    const group = value.group && typeof value.group === "object" ? value.group : value;
+    x = Number(group.x);
+    y = Number(group.y);
+  } else {
+    throw new Error(`${label} must be {x,y}, "x,y", or [x,y] in group coordinates.`);
+  }
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new Error(`${label} x and y must be finite group coordinates.`);
+  }
+  return { x, y };
+}
+
+/**
+ * Parses a required group point.
+ * @param {unknown} value Raw point.
+ * @param {string} [label="point"] Error label.
+ * @returns {{x:number,y:number}} Group point.
+ */
+function requireGroupPoint(value, label = "point") {
+  const point = parseGroupPoint(value, label);
+  if (!point) throw new Error(`${label} is required.`);
+  return point;
+}
+
+/**
+ * Converts min/max corners or x,y,width,height into a center offset and size.
+ * @param {object} patch Raw box patch.
+ * @returns {{offset:{x:number,y:number},size:{x:number,y:number}}|null} Center box, or null.
+ */
+function boxFromGroupCorners(patch) {
+  if (!patch || typeof patch !== "object") return null;
+  if (patch.min !== undefined || patch.max !== undefined) {
+    const min = parseGroupPoint(patch.min, "box min") || { x: 0, y: 0 };
+    const max = parseGroupPoint(patch.max, "box max") || { x: 0, y: 0 };
+    const left = Math.min(min.x, max.x);
+    const right = Math.max(min.x, max.x);
+    const top = Math.min(min.y, max.y);
+    const bottom = Math.max(min.y, max.y);
+    return {
+      offset: { x: (left + right) / 2, y: (top + bottom) / 2 },
+      size: { x: Math.max(1, right - left), y: Math.max(1, bottom - top) },
+    };
+  }
+  const x = patch.x === undefined ? null : Number(patch.x);
+  const y = patch.y === undefined ? null : Number(patch.y);
+  const width =
+    patch.width === undefined ? (patch.w === undefined ? null : Number(patch.w)) : Number(patch.width);
+  const height =
+    patch.height === undefined ? (patch.h === undefined ? null : Number(patch.h)) : Number(patch.height);
+  if (x === null || y === null || width === null || height === null) return null;
+  if (![x, y, width, height].every((value) => Number.isFinite(value))) return null;
+  return {
+    offset: { x: x + width / 2, y: y + height / 2 },
+    size: { x: Math.max(1, width), y: Math.max(1, height) },
+  };
+}
+
+/**
  * Converts a local PNG file into the organizer import item shape.
  * @param {string} filePath Absolute PNG path.
  * @returns {{name:string,data:string}} Import item.
@@ -136,18 +217,24 @@ function resolveImportSource(args = {}) {
  */
 function mergeBox(existing, patch, options = {}) {
   const current = existing && typeof existing === "object" ? existing : {};
+  const corners = boxFromGroupCorners(patch);
+  const source = corners
+    ? { enabled: patch?.enabled, offset: corners.offset, size: corners.size }
+    : patch && typeof patch === "object"
+      ? patch
+      : {};
   const next = {
-    enabled: patch.enabled === undefined ? current.enabled !== false : Boolean(patch.enabled),
+    enabled: source.enabled === undefined ? current.enabled !== false : Boolean(source.enabled),
     offset: {
-      x: Number(patch.offset?.x ?? current.offset?.x ?? 0),
-      y: Number(patch.offset?.y ?? current.offset?.y ?? 0),
+      x: Number(source.offset?.x ?? current.offset?.x ?? 0),
+      y: Number(source.offset?.y ?? current.offset?.y ?? 0),
     },
     size: {
-      x: Number(patch.size?.x ?? current.size?.x ?? 0),
-      y: Number(patch.size?.y ?? current.size?.y ?? 0),
+      x: Number(source.size?.x ?? current.size?.x ?? 0),
+      y: Number(source.size?.y ?? current.size?.y ?? 0),
     },
   };
-  if (options.ground && patch.offset?.y === undefined && next.size.y > 0) {
+  if (options.ground && source.offset?.y === undefined && !corners && next.size.y > 0) {
     next.offset.y = -next.size.y * 0.5;
   }
   return next;
@@ -266,9 +353,11 @@ module.exports = {
   isInsideDirectory,
   listPngSequence,
   mergeBox,
+  parseGroupPoint,
   pngFileToItem,
   requireExistingFile,
   requireFps,
+  requireGroupPoint,
   requireTunerPort,
   requireFrameIndex,
   resolveImportSource,

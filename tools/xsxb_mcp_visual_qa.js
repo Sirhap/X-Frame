@@ -34,10 +34,26 @@ const GROUP_GRID = Object.freeze({
   axis: Object.freeze([255, 196, 74, 255]),
   line: Object.freeze([145, 215, 255, 72]),
   originInk: Object.freeze([255, 224, 150, 255]),
+  label: Object.freeze([203, 238, 255, 255]),
+  plate: Object.freeze([8, 8, 12, 255]),
+  labelPad: 2,
 });
+
+const LABEL_GLYPHS = Object.freeze({
+  "-": Object.freeze(["000", "000", "111", "000", "000"]),
+  ",": Object.freeze(["011", "111", "111", "011", "110"]),
+  ".": Object.freeze(["000", "000", "000", "000", "010"]),
+});
+
+const OVERLAY_LABEL_GUTTER = 2;
 
 const HANDLE_FRACTIONS = Object.freeze([0, 0.5, 2 / 3, 1]);
 const GROUP_GRID_MIN_CELL = 24;
+const GRID_DENSITY_DIVS = Object.freeze({
+  sparse: 4,
+  normal: 8,
+  dense: 16,
+});
 
 /**
  * Parses a grip fraction. Accepts 0.666… or "2/3".
@@ -178,6 +194,676 @@ function groupGridStep(cell, sourceWidth) {
     if (step >= raw) return step;
   }
   return base * 10;
+}
+
+/**
+ * Digit scale used for index badges.
+ * @param {number} cell Cell edge.
+ * @returns {number} Pixel scale.
+ */
+function glyphScale(cell) {
+  return Math.max(1, Math.floor(cell / 40));
+}
+
+/**
+ * Overlay tick-number scale. Origin 0,0 uses one step larger.
+ * @param {number} cell Cell edge.
+ * @returns {number} Pixel scale.
+ */
+function overlayLabelScale(cell) {
+  if (cell < 64) return 1;
+  return Math.max(2, Math.min(3, Math.floor(cell / 160) + 1));
+}
+
+/**
+ * Origin 0,0 is larger than axis ticks so it stays readable in the middle.
+ * @param {number} tickScale Axis-tick scale.
+ * @returns {number} Origin scale.
+ */
+function overlayOriginScale(tickScale) {
+  const tick = Math.max(1, Number(tickScale) || 1);
+  if (tick <= 1) return 1;
+  return Math.min(4, tick + 1);
+}
+
+/**
+ * Glyph box including the dark plate pad.
+ * @param {string} text Glyphs.
+ * @param {number} scale Pixel scale.
+ * @returns {{width:number,height:number}} Plate size.
+ */
+function overlayPlateSize(text, scale) {
+  const size = glyphTextSize(text, scale);
+  const pad = GROUP_GRID.labelPad;
+  return { width: size.width + 2 * pad, height: size.height + 2 * pad };
+}
+
+/**
+ * Pixel size of a bitmap label.
+ * @param {string} text Glyphs.
+ * @param {number} scale Pixel scale.
+ * @returns {{width:number,height:number}} Size.
+ */
+function glyphTextSize(text, scale) {
+  const characters = String(text);
+  const glyphWidth = 3 * scale;
+  const gap = scale;
+  return {
+    width: characters.length * glyphWidth + Math.max(0, characters.length - 1) * gap,
+    height: 5 * scale,
+  };
+}
+
+/**
+ * Looks up a 3×5 glyph.
+ * @param {string} character One character.
+ * @returns {readonly string[]|null} Glyph rows.
+ */
+function glyphFor(character) {
+  if (character === "-" || character === "," || character === ".") return LABEL_GLYPHS[character];
+  if (character >= "0" && character <= "9") return DIGIT_GLYPHS[Number(character)];
+  return null;
+}
+
+/**
+ * Parses an NxN overlay request.
+ * @param {unknown} value Raw grid_divs.
+ * @returns {{x:number,y:number}|null} Divisions.
+ */
+function parseGridDivs(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value === "number") {
+    const count = Number(value);
+    if (!Number.isInteger(count) || count < 2 || count > 64) {
+      throw new Error(`grid_divs axes must be integers from 2 to 64. Received: ${value}`);
+    }
+    return { x: count, y: count };
+  }
+  const text = String(value).trim().toLowerCase();
+  const match = text.match(/^(\d+)\s*[x×*]\s*(\d+)$/u);
+  if (!match) throw new Error(`grid_divs must look like "8x8". Received: ${value}`);
+  const x = Number(match[1]);
+  const y = Number(match[2]);
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 2 || y < 2 || x > 64 || y > 64) {
+    throw new Error(`grid_divs axes must be integers from 2 to 64. Received: ${value}`);
+  }
+  return { x, y };
+}
+
+/**
+ * Normalizes overlay density, divisions, and scope from MCP or renderer options.
+ * @param {object} [options] Raw options.
+ * @returns {{density:string|null,divs:{x:number,y:number}|null,scope:string,explicit:boolean,subject:object|null}}
+ */
+function resolveGridSpec(options = {}) {
+  const raw = options && typeof options === "object" ? options : {};
+  const scope =
+    String(raw.scope || raw.gridScope || raw.grid_scope || "canvas").toLowerCase() === "subject"
+      ? "subject"
+      : "canvas";
+  const densityRaw = raw.density || raw.gridDensity || raw.grid_density;
+  let density = null;
+  if (densityRaw !== undefined && densityRaw !== null && densityRaw !== "") {
+    density = String(densityRaw).toLowerCase();
+    if (!GRID_DENSITY_DIVS[density]) {
+      throw new Error(`grid_density must be one of: sparse, normal, dense. Received: ${densityRaw}`);
+    }
+  }
+  let divs = parseGridDivs(raw.divs || raw.gridDivs || raw.grid_divs);
+  const gridXRaw = raw.gridX ?? raw.grid_x;
+  const gridYRaw = raw.gridY ?? raw.grid_y;
+  const gridX = gridXRaw === undefined || gridXRaw === null || gridXRaw === "" ? null : Number(gridXRaw);
+  const gridY = gridYRaw === undefined || gridYRaw === null || gridYRaw === "" ? null : Number(gridYRaw);
+  if (Number.isInteger(gridX) || Number.isInteger(gridY)) {
+    const x = Number.isInteger(gridX) ? gridX : gridY;
+    const y = Number.isInteger(gridY) ? gridY : gridX;
+    if (x < 2 || y < 2 || x > 64 || y > 64) {
+      throw new Error("grid_x and grid_y must be integers from 2 to 64.");
+    }
+    divs = { x, y };
+  }
+  if (!divs && density) divs = { x: GRID_DENSITY_DIVS[density], y: GRID_DENSITY_DIVS[density] };
+  const subject = raw.subject && typeof raw.subject === "object" ? raw.subject : null;
+  return { density, divs, scope, explicit: Boolean(divs), subject };
+}
+
+/**
+ * Group-coordinate span covered by the overlay.
+ * @param {number} sourceWidth Canvas width.
+ * @param {number} sourceHeight Canvas height.
+ * @param {string} anchorMode Animation anchor.
+ * @param {string} scope canvas or subject.
+ * @param {object|null} subject Opaque body box.
+ * @returns {{minX:number,maxX:number,minY:number,maxY:number}}
+ */
+function gridSpan(sourceWidth, sourceHeight, anchorMode, scope, subject) {
+  const origin = canvasAnchor(sourceWidth, sourceHeight, anchorMode);
+  if (scope === "subject" && subject && Number.isFinite(Number(subject.minX))) {
+    return {
+      minX: Number(subject.minX) - origin.x,
+      maxX: Number(subject.maxX) - origin.x,
+      minY: Number(subject.minY) - origin.y,
+      maxY: Number(subject.feetY ?? subject.maxY) - origin.y,
+    };
+  }
+  return {
+    minX: -origin.x,
+    maxX: sourceWidth - origin.x,
+    minY: -origin.y,
+    maxY: sourceHeight - origin.y,
+  };
+}
+
+/**
+ * Rounds a tick label without turning -0 into a minus.
+ * @param {number} group Group coordinate.
+ * @returns {number} Rounded value.
+ */
+function roundTick(group) {
+  const rounded = Math.round(Number(group) * 1000) / 1000;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+/**
+ * True when a tick sits inside the requested span.
+ * @param {string} axis x or y.
+ * @param {number} group Group coordinate.
+ * @param {{minX:number,maxX:number,minY:number,maxY:number}} span Span.
+ * @returns {boolean} Inside.
+ */
+function tickInSpan(axis, group, span) {
+  const slop = 1e-6;
+  if (axis === "x") return group >= span.minX - slop && group <= span.maxX + slop;
+  return group >= span.minY - slop && group <= span.maxY + slop;
+}
+
+/**
+ * True when two axis-aligned boxes overlap, optionally with a gutter.
+ * @param {{x:number,y:number,width:number,height:number}} left First box.
+ * @param {{x:number,y:number,width:number,height:number}} right Second box.
+ * @param {number} [gap=0] Extra clearance.
+ * @returns {boolean} Overlap.
+ */
+function boxesOverlap(left, right, gap = 0) {
+  const pad = Number(gap) || 0;
+  return (
+    left.x < right.x + right.width + pad &&
+    left.x + left.width + pad > right.x &&
+    left.y < right.y + right.height + pad &&
+    left.y + left.height + pad > right.y
+  );
+}
+
+/**
+ * Clamps a plate box into the cell without changing its size.
+ * @param {{x:number,y:number,width:number,height:number}} box Box.
+ * @param {number} cell Cell edge.
+ * @returns {{x:number,y:number,width:number,height:number}} Clamped box.
+ */
+function clampOverlayBox(box, cell) {
+  return {
+    x: Math.max(0, Math.min(box.x, Math.max(0, cell - box.width))),
+    y: Math.max(0, Math.min(box.y, Math.max(0, cell - box.height))),
+    width: box.width,
+    height: box.height,
+  };
+}
+
+/**
+ * True when a glyph box stays inside the cell.
+ * @param {{x:number,y:number,width:number,height:number}} box Box.
+ * @param {number} cell Cell edge.
+ * @returns {boolean} Inside.
+ */
+function boxInsideCell(box, cell) {
+  return box.x >= 0 && box.y >= 0 && box.x + box.width <= cell && box.y + box.height <= cell;
+}
+
+/**
+ * Maps a group grid line onto a cell pixel. Origin 0 uses the painted axis.
+ * @param {object[]} ticks Axis ticks.
+ * @param {{x:number,y:number}} originCell Axis pixel.
+ * @param {string} axis x or y.
+ * @param {number} group Group coordinate.
+ * @returns {number|null} Cell pixel, or null when the line is missing.
+ */
+function linePixel(ticks, originCell, axis, group) {
+  const rounded = roundTick(group);
+  if (Math.abs(rounded) < 1e-9) return axis === "x" ? originCell.x : originCell.y;
+  const tick = ticks.find((entry) => entry.axis === axis && roundTick(entry.group) === rounded);
+  if (!tick) return null;
+  return axis === "x" ? tick.cell.x : tick.cell.y;
+}
+
+/**
+ * Builds the AI lookup table: one square per grid cell.
+ * cells[row][col] is the top-left group corner. Row 0 is the top of the overlay
+ * (most negative y). Col 0 is the left. Origin x=0 and y=0 are inserted so the
+ * foot row exists even though ticks skip 0.
+ * @param {object[]} ticks Axis ticks.
+ * @returns {{xLines:number[],yLines:number[],cells:object[][]}} Map.
+ */
+function buildOverlayCells(ticks) {
+  /**
+   * Unique sorted group lines plus the origin.
+   * @param {string} axis x or y.
+   * @returns {number[]} Lines.
+   */
+  function linesFor(axis) {
+    const lines = [
+      ...new Set(ticks.filter((tick) => tick.axis === axis).map((tick) => roundTick(tick.group))),
+    ].filter((group) => group !== 0);
+    lines.push(0);
+    lines.sort((left, right) => left - right);
+    return lines;
+  }
+  const xLines = linesFor("x");
+  const yLines = linesFor("y");
+  const cells = [];
+  for (let row = 0; row < yLines.length - 1; row += 1) {
+    const y0 = yLines[row];
+    const y1 = yLines[row + 1];
+    const line = [];
+    for (let col = 0; col < xLines.length - 1; col += 1) {
+      const x0 = xLines[col];
+      const x1 = xLines[col + 1];
+      line.push({
+        row,
+        col,
+        x: x0,
+        y: y0,
+        x0,
+        x1,
+        y0,
+        y1,
+      });
+    }
+    cells.push(line);
+  }
+  return { xLines, yLines, cells };
+}
+
+/**
+ * Last-pixel plant label: white -1 left of the origin, above the foot axis.
+ * @param {{x:number,y:number}} originCell Axis pixel.
+ * @param {{x:number,y:number}} lastCell Last on-canvas pixel in the cell.
+ * @param {{cell:{x:number,y:number},width:number,height:number}} originLabel 0,0 plate.
+ * @param {number} cell Cell edge.
+ * @param {number} scale Glyph scale.
+ * @returns {{axis:string,group:number,text:string,cell:{x:number,y:number},width:number,height:number,scale:number}|null}
+ */
+function placeLastPixelLabel(originCell, lastCell, originLabel, cell, scale) {
+  const text = "-1";
+  const size = overlayPlateSize(text, scale);
+  let x = originCell.x - size.width - OVERLAY_LABEL_GUTTER;
+  let y = lastCell.y - size.height - 1;
+  if (y < 0) y = Math.max(0, originCell.y - size.height - 1);
+  if (x < 0) x = originLabel.cell.x + originLabel.width + OVERLAY_LABEL_GUTTER;
+  const box = clampOverlayBox({ x, y, width: size.width, height: size.height }, cell);
+  if (!boxInsideCell(box, cell)) return null;
+  const originBox = {
+    x: originLabel.cell.x,
+    y: originLabel.cell.y,
+    width: originLabel.width,
+    height: originLabel.height,
+  };
+  if (boxesOverlap(box, originBox, OVERLAY_LABEL_GUTTER)) return null;
+  return {
+    axis: "y",
+    group: -1,
+    text,
+    cell: { x: box.x, y: box.y },
+    width: box.width,
+    height: box.height,
+    scale,
+  };
+}
+
+/**
+ * Places last-pixel -1 plus row/col indices that match grid.cells[row][col].
+ * Group coordinates stay in the JSON lookup, not as OCR digits on the overlay.
+ * @param {object[]} ticks Grid-line ticks.
+ * @param {{x:number,y:number}} originCell Axis pixel.
+ * @param {{text:string,cell:{x:number,y:number},width:number,height:number}} originLabel Origin glyph.
+ * @param {{x:number,y:number}} lastCell Last on-canvas pixel.
+ * @param {number} cell Cell edge.
+ * @param {number} scale Glyph scale.
+ * @param {{cells:object[][],xLines:number[],yLines:number[]}} overlayCells Code-generated map.
+ * @returns {object[]} Painted labels.
+ */
+function placeOverlayLabels(ticks, originCell, originLabel, lastCell, cell, scale, overlayCells) {
+  const occupied = [
+    {
+      x: originLabel.cell.x,
+      y: originLabel.cell.y,
+      width: originLabel.width,
+      height: originLabel.height,
+    },
+  ];
+  const labels = [];
+  /**
+   * Accepts one plate when it stays in-cell and clear of occupied boxes.
+   * @param {string} axis row, col, or y.
+   * @param {number} group Index or group value.
+   * @param {string} text Glyphs.
+   * @param {{x:number,y:number,width:number,height:number}} box Plate.
+   * @returns {void}
+   */
+  function pushLabel(axis, group, text, box) {
+    if (!boxInsideCell(box, cell)) return;
+    if (occupied.some((other) => boxesOverlap(box, other, OVERLAY_LABEL_GUTTER))) return;
+    occupied.push(box);
+    labels.push({
+      axis,
+      group,
+      text,
+      cell: { x: box.x, y: box.y },
+      width: box.width,
+      height: box.height,
+      scale,
+    });
+  }
+  const lastPixel = placeLastPixelLabel(originCell, lastCell, originLabel, cell, scale);
+  if (lastPixel) {
+    occupied.push({
+      x: lastPixel.cell.x,
+      y: lastPixel.cell.y,
+      width: lastPixel.width,
+      height: lastPixel.height,
+    });
+    labels.push(lastPixel);
+  }
+  const cells = overlayCells && Array.isArray(overlayCells.cells) ? overlayCells.cells : [];
+  if (cell < 160 || !cells.length) return labels;
+  const yLines = overlayCells.yLines || [];
+  const xLines = overlayCells.xLines || [];
+  for (let row = 0; row < cells.length; row += 1) {
+    const y0 = linePixel(ticks, originCell, "y", yLines[row]);
+    const y1 = linePixel(ticks, originCell, "y", yLines[row + 1]);
+    if (y0 == null || y1 == null) continue;
+    const text = String(row);
+    const size = overlayPlateSize(text, scale);
+    const box = clampOverlayBox(
+      {
+        x: cell - size.width - 2,
+        y: Math.round((y0 + y1) / 2 - size.height / 2),
+        width: size.width,
+        height: size.height,
+      },
+      cell,
+    );
+    if (box.x <= originCell.x && originCell.x < box.x + box.width) continue;
+    pushLabel("row", row, text, box);
+  }
+  const colCount = cells[0].length;
+  for (let col = 0; col < colCount; col += 1) {
+    const x0 = linePixel(ticks, originCell, "x", xLines[col]);
+    const x1 = linePixel(ticks, originCell, "x", xLines[col + 1]);
+    if (x0 == null || x1 == null) continue;
+    const text = String(col);
+    const size = overlayPlateSize(text, scale);
+    let placed = false;
+    for (let stagger = 0; stagger < 8 && !placed; stagger += 1) {
+      const before = labels.length;
+      const box = clampOverlayBox(
+        {
+          x: Math.round((x0 + x1) / 2 - size.width / 2),
+          y: cell - size.height - 2 - stagger * (size.height + 2),
+          width: size.width,
+          height: size.height,
+        },
+        cell,
+      );
+      pushLabel("col", col, text, box);
+      placed = labels.length > before;
+    }
+  }
+  return labels;
+}
+
+/**
+ * 0,0 plate at the axis crossing, above the bottom X-number band.
+ * @param {{x:number,y:number}} originCell Axis pixel.
+ * @param {number} cell Cell edge.
+ * @param {number} originScale Origin glyph scale.
+ * @param {number} tickScale Axis-tick scale.
+ * @returns {{text:string,cell:{x:number,y:number},width:number,height:number,scale:number}} Label.
+ */
+function placeOriginLabel(originCell, cell, originScale, tickScale, staggerRows = 2) {
+  const originText = "0,0";
+  const originSize = overlayPlateSize(originText, originScale);
+  const tickH = overlayPlateSize("0", tickScale).height;
+  const rows = Math.max(1, Number(staggerRows) || 1);
+  const band = rows * (tickH + 2) + 2;
+  let originLabelX = originCell.x + 3;
+  let originLabelY = cell - band - originSize.height;
+  if (originLabelY < 0) originLabelY = Math.max(0, originCell.y - originSize.height - 1);
+  if (originLabelX + originSize.width >= cell) originLabelX = originCell.x - originSize.width - 1;
+  originLabelX = Math.max(0, Math.min(originLabelX, Math.max(0, cell - originSize.width)));
+  originLabelY = Math.max(0, Math.min(originLabelY, Math.max(0, cell - originSize.height)));
+  if (
+    originLabelX <= originCell.x &&
+    originCell.x < originLabelX + originSize.width &&
+    originLabelY <= originCell.y &&
+    originCell.y < originLabelY + originSize.height
+  ) {
+    originLabelY = Math.max(0, originCell.y - originSize.height - 1);
+  }
+  return {
+    text: originText,
+    cell: { x: originLabelX, y: originLabelY },
+    width: originSize.width,
+    height: originSize.height,
+    scale: originScale,
+  };
+}
+
+/**
+ * Tuner-group overlay metadata for one sheet cell. Overlay only; source frames stay unchanged.
+ * @param {number} cell Cell edge.
+ * @param {number} sourceWidth Source width.
+ * @param {number} sourceHeight Source height.
+ * @param {string} [anchorMode] Animation anchor.
+ * @param {object} [options] Density, divisions, scope, subject box.
+ * @returns {object} Grid descriptor.
+ */
+function describeGroupGrid(
+  cell,
+  sourceWidth,
+  sourceHeight,
+  anchorMode = "canvas_bottom_center",
+  options = {},
+) {
+  const spec = resolveGridSpec(options);
+  if (cell < GROUP_GRID_MIN_CELL) {
+    return {
+      enabled: false,
+      overlayOnly: true,
+      reason: `cell ${cell} is below ${GROUP_GRID_MIN_CELL}`,
+      density: spec.density,
+      divs: spec.divs,
+      scope: spec.scope,
+    };
+  }
+  const originCanvas = canvasAnchor(sourceWidth, sourceHeight, anchorMode);
+  const originCell = paintedOriginCell(sourceWidth, sourceHeight, cell, anchorMode);
+  const span = gridSpan(sourceWidth, sourceHeight, anchorMode, spec.scope, spec.subject);
+  const ticks = [];
+  let step = groupGridStep(cell, sourceWidth);
+  let stepX = step;
+  let stepY = step;
+  /**
+   * Pushes one axis tick when it lands inside the painted cell.
+   * @param {string} axis x or y.
+   * @param {number} group Group coordinate.
+   * @returns {void}
+   */
+  function pushTick(axis, group) {
+    if (Math.abs(group) < 1e-9) return;
+    if (!tickInSpan(axis, group, span)) return;
+    if (axis === "x") {
+      const xCanvas = groupToCanvas(group, 0, sourceWidth, sourceHeight, anchorMode);
+      const xCell = canvasToCell(xCanvas.x, xCanvas.y, sourceWidth, sourceHeight, cell);
+      const x = Math.round(xCell.x);
+      if (x >= 0 && x < cell)
+        ticks.push({ axis: "x", group: roundTick(group), cell: { x, y: originCell.y } });
+      return;
+    }
+    const yCanvas = groupToCanvas(0, group, sourceWidth, sourceHeight, anchorMode);
+    const yCell = canvasToCell(yCanvas.x, yCanvas.y, sourceWidth, sourceHeight, cell);
+    const y = Math.round(yCell.y);
+    if (y >= 0 && y < cell) ticks.push({ axis: "y", group: roundTick(group), cell: { x: originCell.x, y } });
+  }
+  if (spec.explicit && spec.divs) {
+    stepX = (span.maxX - span.minX) / spec.divs.x;
+    stepY = (span.maxY - span.minY) / spec.divs.y;
+    step = stepX;
+    for (let index = 0; index <= spec.divs.x; index += 1) pushTick("x", span.minX + index * stepX);
+    for (let index = 0; index <= spec.divs.y; index += 1) pushTick("y", span.minY + index * stepY);
+  } else {
+    const reach = Math.max(sourceWidth, sourceHeight);
+    for (let group = -reach; group <= reach; group += step) {
+      pushTick("x", group);
+      pushTick("y", group);
+    }
+  }
+  const lastCell = {
+    x: originCell.x,
+    y: Math.max(
+      0,
+      Math.min(
+        cell - 1,
+        Math.round(canvasToCell(originCanvas.x, sourceHeight - 1, sourceWidth, sourceHeight, cell).y),
+      ),
+    ),
+  };
+  const overlayCells = buildOverlayCells(ticks);
+  let labelScale = overlayLabelScale(cell);
+  let originLabel;
+  let labels;
+  /**
+   * Col-index stagger so 0..N plates fit on the bottom edge.
+   * @returns {number} Rows.
+   */
+  function indexStagger() {
+    const cells = overlayCells.cells || [];
+    if (!cells.length) return 1;
+    const colCount = cells[0].length;
+    const sample = overlayPlateSize(String(Math.max(0, colCount - 1)), labelScale);
+    let step = cell;
+    for (let col = 0; col < colCount; col += 1) {
+      const x0 = linePixel(ticks, originCell, "x", overlayCells.xLines[col]);
+      const x1 = linePixel(ticks, originCell, "x", overlayCells.xLines[col + 1]);
+      if (x0 == null || x1 == null) continue;
+      const gap = Math.abs(x1 - x0);
+      if (gap > 0) step = Math.min(step, gap);
+    }
+    return Math.max(1, Math.ceil((sample.width + OVERLAY_LABEL_GUTTER) / Math.max(1, step)));
+  }
+  /**
+   * Places 0,0, last-pixel -1, and row/col indices at the current scale.
+   * @returns {void}
+   */
+  function placeAll() {
+    const originScale = overlayOriginScale(labelScale);
+    originLabel = placeOriginLabel(
+      originCell,
+      cell,
+      originScale,
+      labelScale,
+      cell >= 160 ? indexStagger() : 1,
+    );
+    labels = placeOverlayLabels(ticks, originCell, originLabel, lastCell, cell, labelScale, overlayCells);
+  }
+  /**
+   * True when any two painted plates collide including gutter.
+   * @returns {boolean} Collision.
+   */
+  function labelsCollide() {
+    const boxes = [
+      {
+        x: originLabel.cell.x,
+        y: originLabel.cell.y,
+        width: originLabel.width,
+        height: originLabel.height,
+      },
+      ...labels.map((label) => ({
+        x: label.cell.x,
+        y: label.cell.y,
+        width: label.width,
+        height: label.height,
+      })),
+    ];
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) {
+        if (boxesOverlap(boxes[i], boxes[j], OVERLAY_LABEL_GUTTER)) return true;
+      }
+    }
+    return false;
+  }
+  /**
+   * Fraction of row and col indices that received a painted number.
+   * @returns {number} 0–1.
+   */
+  function indexCoverage() {
+    const cells = overlayCells.cells || [];
+    if (cell < 160 || !cells.length) return 1;
+    const rowCount = cells.length;
+    const colCount = cells[0].length;
+    const rowSet = new Set(labels.filter((label) => label.axis === "row").map((label) => label.text));
+    const colSet = new Set(labels.filter((label) => label.axis === "col").map((label) => label.text));
+    let rowsHit = 0;
+    for (let row = 0; row < rowCount; row += 1) {
+      if (rowSet.has(String(row))) rowsHit += 1;
+    }
+    let colsHit = 0;
+    for (let col = 0; col < colCount; col += 1) {
+      if (colSet.has(String(col))) colsHit += 1;
+    }
+    return Math.min(rowsHit / rowCount, colsHit / colCount);
+  }
+  placeAll();
+  const minScale = cell >= 160 ? 2 : 1;
+  while (labelScale > minScale) {
+    const hasMinus1 = labels.some((label) => label.text === "-1");
+    if (!labelsCollide() && hasMinus1 && indexCoverage() >= 1) break;
+    labelScale -= 1;
+    placeAll();
+  }
+  const legend = overlayCells.cells.map((row) =>
+    row.map((square) => `${square.row},${square.col}=${square.x},${square.y}`).join(" "),
+  );
+  return {
+    enabled: true,
+    overlayOnly: true,
+    anchorMode,
+    ySign: "down",
+    density: spec.density,
+    divs: spec.divs,
+    scope: spec.scope,
+    step,
+    stepX,
+    stepY,
+    labelScale,
+    origin: {
+      group: { x: 0, y: 0 },
+      canvas: { x: originCanvas.x, y: originCanvas.y },
+      cell: originCell,
+    },
+    lastPixel: {
+      group: { x: 0, y: -1 },
+      canvas: { y: sourceHeight - 1 },
+    },
+    originCell,
+    originLabel,
+    ticks,
+    labels,
+    xLines: overlayCells.xLines,
+    yLines: overlayCells.yLines,
+    cells: overlayCells.cells,
+    legend,
+    note: "Overlay on the contact sheet only. Source animation PNGs are unchanged. Group (0,0) is the canvas foot origin, same as the tuner stage, but yellow 0,0 is outside the bitmap (canvas y=height). Last pixel row is group y=-1; do not plant soles to 0,0. +x right, +y down; the body is negative y. Grid lines follow density. Overlay paints row/col indices that match grid.cells[row][col] (row 0 = top, col 0 = left). Group x,y are code-generated in cells and legend — do not OCR overlay digits for write-back. Look at boots to pick a square, then use that cell's x,y. metrics.feetY includes connected slash/glow; never trust feetY.",
+  };
 }
 
 /**
@@ -344,6 +1030,59 @@ function fillRect(rgba, width, left, top, right, bottom, color, clip) {
 }
 
 /**
+ * Paints one 3×5 glyph.
+ * @param {Uint8ClampedArray} rgba Destination.
+ * @param {number} width Sheet width.
+ * @param {readonly string[]} glyph Rows of 0/1.
+ * @param {number} x Left.
+ * @param {number} y Top.
+ * @param {number} scale Pixel scale.
+ * @param {readonly number[]} color RGBA.
+ * @param {{x:number,y:number,size:number}} clip Cell clip.
+ * @returns {void}
+ */
+function drawGlyph(rgba, width, glyph, x, y, scale, color, clip) {
+  for (let row = 0; row < glyph.length; row += 1) {
+    for (let column = 0; column < glyph[row].length; column += 1) {
+      if (glyph[row][column] !== "1") continue;
+      fillRect(
+        rgba,
+        width,
+        x + column * scale,
+        y + row * scale,
+        x + (column + 1) * scale,
+        y + (row + 1) * scale,
+        color,
+        clip,
+      );
+    }
+  }
+}
+
+/**
+ * Paints a bitmap string.
+ * @param {Uint8ClampedArray} rgba Destination.
+ * @param {number} width Sheet width.
+ * @param {string} text Glyphs.
+ * @param {number} x Left.
+ * @param {number} y Top.
+ * @param {number} scale Pixel scale.
+ * @param {readonly number[]} color RGBA.
+ * @param {{x:number,y:number,size:number}} clip Cell clip.
+ * @returns {void}
+ */
+function drawGlyphText(rgba, width, text, x, y, scale, color, clip) {
+  let cursorX = x;
+  const glyphWidth = 3 * scale;
+  const gap = scale;
+  for (const character of String(text)) {
+    const glyph = glyphFor(character);
+    if (glyph) drawGlyph(rgba, width, glyph, cursorX, y, scale, color, clip);
+    cursorX += glyphWidth + gap;
+  }
+}
+
+/**
  * Paints a 0-based index badge into the top-left of one cell.
  * @param {Uint8ClampedArray} rgba Destination.
  * @param {number} width Sheet width.
@@ -354,38 +1093,25 @@ function fillRect(rgba, width, left, top, right, bottom, color, clip) {
  * @returns {void}
  */
 function drawIndexBadge(rgba, width, originX, originY, cell, value) {
-  const scale = Math.max(1, Math.floor(cell / 40));
+  const scale = glyphScale(cell);
   const digits = String(Math.max(0, Math.floor(Number(value) || 0)));
-  const glyphWidth = 3 * scale;
-  const glyphHeight = 5 * scale;
-  const gap = scale;
-  const plateWidth = INDEX_BADGE.pad * 2 + digits.length * glyphWidth + Math.max(0, digits.length - 1) * gap;
-  const plateHeight = INDEX_BADGE.pad * 2 + glyphHeight;
+  const size = glyphTextSize(digits, scale);
+  const plateWidth = INDEX_BADGE.pad * 2 + size.width;
+  const plateHeight = INDEX_BADGE.pad * 2 + size.height;
   const plateX = originX + INDEX_BADGE.inset;
   const plateY = originY + INDEX_BADGE.inset;
   const clip = { x: originX, y: originY, size: cell };
   fillRect(rgba, width, plateX, plateY, plateX + plateWidth, plateY + plateHeight, INDEX_BADGE.plate, clip);
-  let cursorX = plateX + INDEX_BADGE.pad;
-  const glyphY = plateY + INDEX_BADGE.pad;
-  for (const character of digits) {
-    const glyph = DIGIT_GLYPHS[Number(character)] || DIGIT_GLYPHS[0];
-    for (let row = 0; row < glyph.length; row += 1) {
-      for (let column = 0; column < glyph[row].length; column += 1) {
-        if (glyph[row][column] !== "1") continue;
-        fillRect(
-          rgba,
-          width,
-          cursorX + column * scale,
-          glyphY + row * scale,
-          cursorX + (column + 1) * scale,
-          glyphY + (row + 1) * scale,
-          INDEX_BADGE.ink,
-          clip,
-        );
-      }
-    }
-    cursorX += glyphWidth + gap;
-  }
+  drawGlyphText(
+    rgba,
+    width,
+    digits,
+    plateX + INDEX_BADGE.pad,
+    plateY + INDEX_BADGE.pad,
+    scale,
+    INDEX_BADGE.ink,
+    clip,
+  );
 }
 
 /**
@@ -539,38 +1265,68 @@ function measureLongAxis(rgba, width, height, options = {}) {
  * @param {string} anchorMode Animation anchor.
  * @returns {void}
  */
-function drawGroupGrid(rgba, width, originX, originY, cell, sourceWidth, sourceHeight, anchorMode) {
-  if (cell < GROUP_GRID_MIN_CELL) return;
+function drawGroupGrid(
+  rgba,
+  width,
+  originX,
+  originY,
+  cell,
+  sourceWidth,
+  sourceHeight,
+  anchorMode,
+  gridOptions,
+) {
+  const described = describeGroupGrid(cell, sourceWidth, sourceHeight, anchorMode, gridOptions);
+  if (!described.enabled) return;
   const clip = { x: originX, y: originY, size: cell };
-  const step = groupGridStep(cell, sourceWidth);
-  const groupOrigin = canvasToCell(
-    canvasAnchor(sourceWidth, sourceHeight, anchorMode).x,
-    canvasAnchor(sourceWidth, sourceHeight, anchorMode).y,
-    sourceWidth,
-    sourceHeight,
-    cell,
-  );
-  const axisX = originX + Math.max(0, Math.min(cell - 1, Math.round(groupOrigin.x)));
-  const axisY = originY + Math.max(0, Math.min(cell - 1, Math.round(groupOrigin.y)));
-  const reachX = Math.max(sourceWidth, sourceHeight);
-  for (let group = -reachX; group <= reachX; group += step) {
-    if (group === 0) continue;
-    const canvas = groupToCanvas(group, 0, sourceWidth, sourceHeight, anchorMode);
-    const cellPoint = canvasToCell(canvas.x, canvas.y, sourceWidth, sourceHeight, cell);
-    const x = originX + Math.round(cellPoint.x);
-    if (x < originX || x >= originX + cell) continue;
-    fillRect(rgba, width, x, originY, x + 1, originY + cell, GROUP_GRID.line, clip);
+  const axisX = originX + described.origin.cell.x;
+  const axisY = originY + described.origin.cell.y;
+  const scale = described.labelScale || overlayLabelScale(cell);
+  const pad = GROUP_GRID.labelPad;
+  /**
+   * Paints one overlay number with a dark plate behind the glyph.
+   * @param {{text:string,cell:{x:number,y:number},width:number,height:number}} label Label.
+   * @param {readonly number[]} color Glyph color.
+   * @returns {void}
+   */
+  function drawPlatedLabel(label, color) {
+    const glyphScaleUsed = Number(label.scale) || scale;
+    fillRect(
+      rgba,
+      width,
+      originX + label.cell.x,
+      originY + label.cell.y,
+      originX + label.cell.x + label.width,
+      originY + label.cell.y + label.height,
+      GROUP_GRID.plate,
+      clip,
+    );
+    drawGlyphText(
+      rgba,
+      width,
+      label.text,
+      originX + label.cell.x + pad,
+      originY + label.cell.y + pad,
+      glyphScaleUsed,
+      color,
+      clip,
+    );
   }
-  for (let group = -reachX; group <= reachX; group += step) {
-    if (group === 0) continue;
-    const canvas = groupToCanvas(0, group, sourceWidth, sourceHeight, anchorMode);
-    const cellPoint = canvasToCell(canvas.x, canvas.y, sourceWidth, sourceHeight, cell);
-    const y = originY + Math.round(cellPoint.y);
-    if (y < originY || y >= originY + cell) continue;
-    fillRect(rgba, width, originX, y, originX + cell, y + 1, GROUP_GRID.line, clip);
+  for (const tick of described.ticks) {
+    if (tick.axis === "x") {
+      const x = originX + tick.cell.x;
+      fillRect(rgba, width, x, originY, x + 1, originY + cell, GROUP_GRID.line, clip);
+    } else {
+      const y = originY + tick.cell.y;
+      fillRect(rgba, width, originX, y, originX + cell, y + 1, GROUP_GRID.line, clip);
+    }
   }
   fillRect(rgba, width, axisX, originY, axisX + 1, originY + cell, GROUP_GRID.axis, clip);
   fillRect(rgba, width, originX, axisY, originX + cell, axisY + 1, GROUP_GRID.axis, clip);
+  for (const label of described.labels || []) {
+    drawPlatedLabel(label, GROUP_GRID.label);
+  }
+  if (described.originLabel) drawPlatedLabel(described.originLabel, GROUP_GRID.originInk);
   writePixel(
     rgba,
     width,
@@ -650,7 +1406,18 @@ function renderContactSheet(frames, options = {}) {
       }
     }
     if (grid && frame?.width && frame?.height) {
-      drawGroupGrid(rgba, width, originX, originY, cell, frame.width, frame.height, anchorMode);
+      const gridOptions = {
+        density: options.gridDensity || options.density,
+        divs: options.gridDivs || options.divs,
+        gridX: options.gridX,
+        gridY: options.gridY,
+        scope: options.gridScope || options.scope,
+        subject:
+          String(options.gridScope || options.scope || "canvas") === "subject"
+            ? subjectAnchor(frame.data, frame.width, frame.height)
+            : null,
+      };
+      drawGroupGrid(rgba, width, originX, originY, cell, frame.width, frame.height, anchorMode, gridOptions);
     }
     if (labels) drawIndexBadge(rgba, width, originX, originY, cell, absoluteIndex);
     if (Number.isInteger(markFrame) && markFrame === absoluteIndex) {
@@ -705,6 +1472,7 @@ function summarizeMetrics(frames) {
 
 module.exports = {
   DIGIT_GLYPHS,
+  GRID_DENSITY_DIVS,
   GROUP_GRID,
   GROUP_GRID_MIN_CELL,
   HANDLE_FRACTIONS,
@@ -713,6 +1481,7 @@ module.exports = {
   canvasAnchor,
   canvasToCell,
   canvasToGroup,
+  describeGroupGrid,
   estimateVisualScales,
   findMotionWindow,
   groupGridStep,
@@ -725,5 +1494,6 @@ module.exports = {
   paintedOriginCell,
   parseGripT,
   renderContactSheet,
+  resolveGridSpec,
   summarizeMetrics,
 };

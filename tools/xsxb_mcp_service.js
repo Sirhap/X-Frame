@@ -27,6 +27,8 @@ const {
   decodePngRgba,
   encodePngRgba,
   placeFramesOnCanvas,
+  shiftFrameRgba,
+  subjectAnchor,
 } = require("./xsxb_mcp_cutout");
 const {
   findDuplicatesInPngFiles,
@@ -34,18 +36,17 @@ const {
   resolveExternalLoopFrames,
 } = require("./xsxb_mcp_loop");
 const {
-  GROUP_GRID_MIN_CELL,
+  describeGroupGrid,
   estimateVisualScales,
   findMotionWindow,
-  groupGridStep,
   measureFrame,
   measureFrameFiles,
   measureLongAxis,
   median,
-  paintedOriginCell,
   parseGripT,
   renderContactSheet,
   summarizeMetrics,
+  canvasAnchor,
 } = require("./xsxb_mcp_visual_qa");
 const { validateToolArguments } = require("./xsxb_mcp_schema");
 const { compositeAttackTrails } = require("./xsxb_mcp_trail_preview");
@@ -59,6 +60,7 @@ const {
   listPngSequence,
   mergeBox,
   pngFileToItem,
+  parseGroupPoint,
   requireExistingFile,
   requireFps,
   requireTunerPort,
@@ -131,6 +133,21 @@ function playbackDurations(tuning, profileId, animationId, frameCount, fps) {
     durations.push(Math.max(0.001, Number(override.duration || 1)) / fps);
   }
   return durations;
+}
+
+/**
+ * Picks overlay grid arguments shared by export_sheet and cutout inspectFeet.
+ * @param {object} args Tool arguments.
+ * @returns {object} Renderer options.
+ */
+function overlayGridOptions(args = {}) {
+  return {
+    grid_density: args.grid_density,
+    grid_divs: args.grid_divs,
+    grid_x: args.grid_x,
+    grid_y: args.grid_y,
+    grid_scope: args.grid_scope,
+  };
 }
 
 /**
@@ -641,8 +658,15 @@ function createXsxbMcpService(options = {}) {
       updatedFrames: updates.length,
       sync: synchronize(project, booleanFlag(args.sync)),
     };
-    if (!batch) return { ...base, frame: updates[0].frame, key: updates[0].key, boxes: updates[0].boxes };
-    return { ...base, updates };
+    if (!batch)
+      return {
+        ...base,
+        frame: updates[0].frame,
+        key: updates[0].key,
+        boxes: updates[0].boxes,
+        space: "group",
+      };
+    return { ...base, updates, space: "group" };
   }
 
   function estimateBoxes(args = {}) {
@@ -884,6 +908,7 @@ function createXsxbMcpService(options = {}) {
       profileId: profile.id,
       animationId,
       level,
+      space: "group",
       ...applied,
       sync: synchronize(project, booleanFlag(args.sync)),
     };
@@ -1029,6 +1054,17 @@ function createXsxbMcpService(options = {}) {
       throw new Error(`Unknown include section(s): ${unknown.join(", ")}. Allowed: ${allowed.join(", ")}.`);
     }
     if (include.length) Object.assign(result, animationExtras(selection, include));
+    const first = (result.animation.frames || [])[0];
+    const originCanvas = first
+      ? canvasAnchor(
+          Number(first.width || 0),
+          Number(first.height || 0),
+          String(selection.animation.anchorMode || "canvas_bottom_center"),
+        )
+      : null;
+    result.space = "group";
+    result.ySign = "down";
+    result.origin = { group: { x: 0, y: 0 }, canvas: originCanvas };
     const framesMode = String(args.frames || "full").toLowerCase();
     if (framesMode !== "summary") return { ...result, summary: false };
     const samples = (result.animation.frames || []).slice(0, 3).map((frame) => ({
@@ -1471,6 +1507,32 @@ function createXsxbMcpService(options = {}) {
       tuning.frame_visual_overrides = overrides;
       projectStore.writeJson(paths.tuning, tuning);
     }
+    let inspectFeet = null;
+    if (receipt.rematched || explicitCanvas) {
+      try {
+        const sheet = await exportSheet({
+          project_id: project.id,
+          profile_id: profile.id,
+          animation_id: String(animation.id || animation.name),
+          cell: 160,
+          columns: Math.min(frames.length, 8),
+          grid: true,
+          ...overlayGridOptions(args),
+        });
+        inspectFeet = {
+          sheetPath: sheet.outputPath,
+          grid: sheet.grid,
+          note: "Contact sheet overlay only — source frames are unchanged. Yellow 0,0 is outside the bitmap (canvasAnchor y=height); last pixel row is group y=-1. Do not plant soles to 0,0 or they clip 1px — plant the sole to y=-1. Overlay paints row/col indices matching grid.cells; group x,y are in that JSON — do not OCR overlay digits. Use grid.cells[row][col] (row 0 = top, col 0 = left). If boots float above the last pixel, call xsxb_shift_frames with positive dy. Do not guess boots from pixel color. metrics.feetY includes connected slash/glow; plant by looking at boots on the overlay, never trust feetY. xsxb_shift_frames is already in the catalog; if a client reports it not found, the session catalog is stale — reload the xsxb MCP server.",
+        };
+      } catch (error) {
+        inspectFeet = {
+          sheetPath: null,
+          overlayOnly: true,
+          error: String(error && error.message ? error.message : error),
+          note: "Overlay sheet could not be rendered. Source frames were not changed by this step. Call xsxb_export_sheet once the workspace PNGs decode.",
+        };
+      }
+    }
     return {
       projectId: project.id,
       profileId: profile.id,
@@ -1487,6 +1549,7 @@ function createXsxbMcpService(options = {}) {
       frameCount: frames.length,
       processedFrameCount,
       skippedFrameCount: Number(receipt.skippedFrameCount || 0),
+      inspectFeet,
       metrics: booleanFlag(args.metrics, true)
         ? summarizeMetrics(
             jobs.map((job) => {
@@ -1632,7 +1695,18 @@ function createXsxbMcpService(options = {}) {
         bottom: { x: -width * 0.15, y: height * 0.1 },
       },
     ];
-    const sticks = Array.isArray(args.sticks) && args.sticks.length ? args.sticks : defaultSticks;
+    const sticks = (Array.isArray(args.sticks) && args.sticks.length ? args.sticks : defaultSticks).map(
+      (stick, index) => {
+        if (!stick || typeof stick !== "object") return stick;
+        const top = parseGroupPoint(stick.top, `sticks[${index}].top`);
+        const bottom = parseGroupPoint(stick.bottom, `sticks[${index}].bottom`);
+        return {
+          ...stick,
+          ...(top ? { top } : {}),
+          ...(bottom ? { bottom } : {}),
+        };
+      },
+    );
     const segmentId = slug(
       args.id ||
         (args.texture_path ? path.basename(args.texture_path, path.extname(args.texture_path)) : "trail"),
@@ -1713,13 +1787,23 @@ function createXsxbMcpService(options = {}) {
       const key = `${profile.id}/${animation.id || animation.name}:${frame}`;
       const source = frames[frame] || frames[0];
       const scale = Number(request.scale ?? defaultScale);
-      const offsetX = Number(request.offset_x ?? args.offset_x ?? 0);
-      const offsetY =
+      const hand = parseGroupPoint(request.hand ?? args.hand, "hand");
+      const gripT = request.t !== undefined ? request.t : args.t;
+      let offsetX = Number(request.offset_x ?? args.offset_x ?? 0);
+      let offsetY =
         request.offset_y === undefined
           ? args.offset_y === undefined
             ? -Number(source.height || 100) * 0.2
             : Number(args.offset_y)
           : Number(request.offset_y);
+      if (hand) {
+        const image = decodePngRgba(absolute);
+        const measured = measureLongAxis(image.data, image.width, image.height, {
+          t: gripT === undefined ? 0.5 : gripT,
+        });
+        offsetX = hand.x - measured.localFromCenter.x;
+        offsetY = hand.y - measured.localFromCenter.y;
+      }
       const rotation = Number(request.rotation ?? args.rotation ?? 0);
       const attachment = {
         id,
@@ -1752,8 +1836,14 @@ function createXsxbMcpService(options = {}) {
       bindingCount: next.length,
       sync: synchronize(project, booleanFlag(args.sync, true)),
     };
-    if (!batch) return { ...base, binding: added[0] };
-    return { ...base, updatedFrames: added.length, bindings: added, binding: added[added.length - 1] };
+    if (!batch) return { ...base, binding: added[0], space: "group" };
+    return {
+      ...base,
+      updatedFrames: added.length,
+      bindings: added,
+      binding: added[added.length - 1],
+      space: "group",
+    };
   }
 
   async function addSfx(args = {}) {
@@ -1977,6 +2067,55 @@ function createXsxbMcpService(options = {}) {
     };
   }
 
+  function shiftFrames(args = {}) {
+    const selection = animationFor(args);
+    const { project, profile, animation } = selection;
+    const frames = animation.frames || [];
+    if (!frames.length) throw new Error("Cannot shift frames on an animation without frames.");
+    const rawShifts = Array.isArray(args.frames) ? args.frames : [];
+    if (!rawShifts.length) throw new Error("frames is required; each entry needs frame plus dx and/or dy.");
+    const workspaceDir = projectStore.projectWorkspaceDir(project);
+    const shifted = [];
+    for (const entry of rawShifts) {
+      if (!entry || typeof entry !== "object") continue;
+      if (entry.frame === undefined) throw new Error("Each shift entry needs frame.");
+      const index = requireFrameIndex(entry.frame, frames.length - 1);
+      const from = parseGroupPoint(entry.from, "from");
+      const to = parseGroupPoint(entry.to, "to");
+      let dx = Math.trunc(Number(entry.dx) || 0);
+      let dy = Math.trunc(Number(entry.dy) || 0);
+      if (from || to) {
+        if (!from || !to) throw new Error("Each shift entry with from/to needs both group points.");
+        dx = Math.trunc(to.x - from.x);
+        dy = Math.trunc(to.y - from.y);
+      }
+      if (dx === 0 && dy === 0) {
+        shifted.push({ frame: index, dx: 0, dy: 0, skipped: true });
+        continue;
+      }
+      const target = resolveAnimationFramePath(project, frames[index].path);
+      if (!target || !isInsideDirectory(target, workspaceDir)) {
+        throw new Error(`Shift refused frame ${index} outside the project workspace.`);
+      }
+      if (!fs.existsSync(target)) throw new Error(`Shift refused missing on-disk frame ${index}.`);
+      const image = decodePngRgba(target);
+      const next = shiftFrameRgba(image.data, image.width, image.height, dx, dy);
+      const tempPath = `${target}.tmp-${process.pid}`;
+      fs.writeFileSync(tempPath, encodePngRgba(next, image.width, image.height));
+      fs.renameSync(tempPath, target);
+      shifted.push({ frame: index, dx, dy, width: image.width, height: image.height });
+    }
+    if (!shifted.length) throw new Error("frames is required; each entry needs frame plus dx and/or dy.");
+    return {
+      projectId: project.id,
+      profileId: profile.id,
+      animationId: String(animation.id || animation.name),
+      shifted,
+      space: "group",
+      sync: synchronize(project, booleanFlag(args.sync)),
+    };
+  }
+
   function compressFrames(args = {}) {
     const selection = animationFor(args);
     const { project, profile, animation } = selection;
@@ -2187,7 +2326,13 @@ function createXsxbMcpService(options = {}) {
     );
     let selected;
     try {
-      selected = baked.framePaths.map((filePath) => decodePngRgba(filePath));
+      selected = baked.framePaths.map((filePath) => {
+        try {
+          return decodePngRgba(filePath);
+        } catch (error) {
+          throw new Error(`Failed to decode sheet frame ${filePath}: ${error.message}`);
+        }
+      });
     } finally {
       if (baked.tempDir) fs.rmSync(baked.tempDir, { recursive: true, force: true });
     }
@@ -2205,6 +2350,8 @@ function createXsxbMcpService(options = {}) {
     }
     const grid = booleanFlag(args.grid, true);
     const anchorMode = String(animation.anchorMode || "canvas_bottom_center");
+    const gridOptions = overlayGridOptions(args);
+    const firstFrame = selected[0];
     const sheet = renderContactSheet(selected, {
       cell,
       pad,
@@ -2213,6 +2360,11 @@ function createXsxbMcpService(options = {}) {
       markFrame,
       grid,
       anchorMode,
+      gridDensity: gridOptions.grid_density,
+      gridDivs: gridOptions.grid_divs,
+      gridX: gridOptions.grid_x,
+      gridY: gridOptions.grid_y,
+      gridScope: gridOptions.grid_scope,
     });
     const exportRoot = projectStore.projectWorkspaceDir(project);
     const animationId = String(animation.id || animation.name);
@@ -2250,22 +2402,21 @@ function createXsxbMcpService(options = {}) {
       bytes: fs.statSync(outputPath).size,
       bakedTrails: baked.bakedTrails === true,
       trailIds: baked.trailIds || [],
-      grid:
-        grid && cell >= GROUP_GRID_MIN_CELL
-          ? {
-              enabled: true,
-              anchorMode,
-              ySign: "down",
-              note: "Group (0,0) is the canvas foot origin. Body is negative y. Axes match the tuner stage.",
-              step: selected[0] ? groupGridStep(cell, selected[0].width) : undefined,
-              originCell: selected[0]
-                ? paintedOriginCell(selected[0].width, selected[0].height, cell, anchorMode)
-                : undefined,
-            }
-          : {
-              enabled: false,
-              reason: grid ? `cell ${cell} is below ${GROUP_GRID_MIN_CELL}` : "grid disabled",
+      grid: grid
+        ? describeGroupGrid(
+            cell,
+            firstFrame ? firstFrame.width : 0,
+            firstFrame ? firstFrame.height : 0,
+            anchorMode,
+            {
+              ...gridOptions,
+              subject:
+                String(args.grid_scope || "canvas") === "subject" && firstFrame
+                  ? subjectAnchor(firstFrame.data, firstFrame.width, firstFrame.height)
+                  : null,
             },
+          )
+        : { enabled: false, overlayOnly: true, reason: "grid disabled" },
     };
   }
 
@@ -2303,6 +2454,7 @@ function createXsxbMcpService(options = {}) {
     xsxb_set_visual_transform: setVisualTransform,
     xsxb_estimate_visual: estimateVisual,
     xsxb_replace_frame: replaceFrame,
+    xsxb_shift_frames: shiftFrames,
     xsxb_compress_frames: compressFrames,
     xsxb_export_gif: exportGif,
     xsxb_export_sheet: exportSheet,

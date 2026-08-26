@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { createProjectStore } = require("../project_store");
-const { decodePngRgba, encodePngRgba } = require("../xsxb_mcp_cutout");
+const { decodePngRgba, encodePngRgba, subjectAnchor } = require("../xsxb_mcp_cutout");
 const { createXsxbMcpService } = require("../xsxb_mcp_service");
 const {
   DIGIT_GLYPHS,
@@ -14,6 +14,7 @@ const {
   INDEX_BADGE,
   MARK_BORDER,
   canvasToGroup,
+  describeGroupGrid,
   estimateVisualScales,
   findMotionWindow,
   groupToCanvas,
@@ -160,6 +161,342 @@ test("renderContactSheet paints the group origin on the shared axis color", () =
   const originY = 4 + 31;
   assert.deepEqual(pixelAt(sheet, originX, originY), GROUP_GRID.originInk);
   assert.deepEqual(pixelAt(sheet, originX, 4 + 16), GROUP_GRID.axis, "vertical axis through the body");
+});
+
+test("describeGroupGrid matches tuner foot origin and lists negative-y body ticks", () => {
+  const described = describeGroupGrid(32, 16, 16, "canvas_bottom_center");
+  assert.equal(described.enabled, true);
+  assert.equal(described.overlayOnly, true);
+  assert.equal(described.ySign, "down");
+  assert.deepEqual(described.origin.group, { x: 0, y: 0 });
+  assert.deepEqual(described.origin.canvas, { x: 8, y: 16 });
+  assert.equal(described.originLabel.text, "0,0");
+  assert.ok(described.ticks.some((tick) => tick.axis === "y" && tick.group < 0));
+});
+
+test("describeGroupGrid lastPixel is the in-bitmap sole row, not yellow 0,0", () => {
+  const height = 384;
+  const width = 160;
+  const described = describeGroupGrid(160, width, height, "canvas_bottom_center");
+  assert.deepEqual(described.lastPixel.group, { x: 0, y: -1 });
+  assert.equal(described.lastPixel.canvas.y, height - 1);
+  assert.equal(canvasToGroup(width / 2, height - 1, width, height).y, -1);
+  assert.equal(groupToCanvas(0, 0, width, height).y, height);
+  assert.match(described.note, /y=-1/);
+  assert.match(described.note, /never trust feetY/);
+});
+
+test("describeGroupGrid 4x4 is sparser than 16x16 on the same 16 canvas", () => {
+  const sparse = describeGroupGrid(32, 16, 16, "canvas_bottom_center", { divs: "4x4" });
+  const dense = describeGroupGrid(32, 16, 16, "canvas_bottom_center", { divs: "16x16" });
+  assert.equal(sparse.enabled, true);
+  assert.equal(sparse.overlayOnly, true);
+  assert.equal(sparse.scope, "canvas");
+  assert.deepEqual(sparse.divs, { x: 4, y: 4 });
+  assert.equal(sparse.stepX, 4);
+  assert.equal(sparse.stepY, 4);
+  assert.deepEqual(dense.divs, { x: 16, y: 16 });
+  assert.equal(dense.stepX, 1);
+  assert.ok(dense.ticks.length > sparse.ticks.length);
+  const sheet = renderContactSheet([bodyFrame(16, 4, 8)], {
+    cell: 32,
+    pad: 4,
+    columns: 1,
+    grid: true,
+    labels: false,
+    markFrame: -1,
+    gridDivs: "4x4",
+  });
+  const xTick = sparse.ticks.find((tick) => tick.axis === "x" && tick.group === 4);
+  assert.ok(xTick);
+  assert.deepEqual(pixelAt(sheet, 4 + xTick.cell.x, 4 + 16), GROUP_GRID.line);
+});
+
+test("describeGroupGrid density sparse matches 4x4 and dense matches 16x16", () => {
+  const sparse = describeGroupGrid(32, 16, 16, "canvas_bottom_center", { density: "sparse" });
+  const dense = describeGroupGrid(32, 16, 16, "canvas_bottom_center", { density: "dense" });
+  assert.equal(sparse.density, "sparse");
+  assert.deepEqual(sparse.divs, { x: 4, y: 4 });
+  assert.equal(dense.density, "dense");
+  assert.deepEqual(dense.divs, { x: 16, y: 16 });
+  assert.ok(dense.ticks.length > sparse.ticks.length);
+});
+
+test("describeGroupGrid subject scope keeps ticks on the opaque body box", () => {
+  const frame = bodyFrame(16, 4, 8);
+  const body = subjectAnchor(frame.data, frame.width, frame.height);
+  assert.ok(body);
+  const described = describeGroupGrid(32, 16, 16, "canvas_bottom_center", {
+    density: "dense",
+    scope: "subject",
+    subject: body,
+  });
+  assert.equal(described.scope, "subject");
+  assert.ok(described.ticks.length > 0);
+  for (const tick of described.ticks) {
+    const canvas =
+      tick.axis === "x"
+        ? groupToCanvas(tick.group, 0, 16, 16, "canvas_bottom_center")
+        : groupToCanvas(0, tick.group, 16, 16, "canvas_bottom_center");
+    if (tick.axis === "x") {
+      assert.ok(canvas.x >= body.minX - 0.51 && canvas.x <= body.maxX + 0.51, `x tick ${tick.group}`);
+    } else {
+      assert.ok(canvas.y >= body.minY - 0.51 && canvas.y <= body.feetY + 0.51, `y tick ${tick.group}`);
+    }
+  }
+});
+
+/**
+ * True when two axis-aligned boxes overlap, optionally with a gutter.
+ * @param {{x:number,y:number,width:number,height:number}} left First box.
+ * @param {{x:number,y:number,width:number,height:number}} right Second box.
+ * @param {number} [gap=0] Extra clearance.
+ * @returns {boolean} Overlap.
+ */
+function boxesOverlap(left, right, gap = 0) {
+  const pad = Number(gap) || 0;
+  return (
+    left.x < right.x + right.width + pad &&
+    left.x + left.width + pad > right.x &&
+    left.y < right.y + right.height + pad &&
+    left.y + left.height + pad > right.y
+  );
+}
+
+/**
+ * Collects originLabel plus axis labels as boxes.
+ * @param {object} described Grid descriptor.
+ * @returns {{text:string,x:number,y:number,width:number,height:number}[]} Boxes.
+ */
+function paintedLabelBoxes(described) {
+  return [
+    {
+      text: described.originLabel.text,
+      x: described.originLabel.cell.x,
+      y: described.originLabel.cell.y,
+      width: described.originLabel.width,
+      height: described.originLabel.height,
+    },
+    ...described.labels.map((label) => ({
+      text: label.text,
+      x: label.cell.x,
+      y: label.cell.y,
+      width: label.width,
+      height: label.height,
+    })),
+  ];
+}
+
+test("overlay paints row/col indices; group coords live in code-generated cells", () => {
+  const described = describeGroupGrid(160, 384, 384, "canvas_bottom_center", { density: "dense" });
+  assert.equal(described.enabled, true);
+  assert.ok(described.ticks.length > 16, "grid lines stay dense");
+  assert.equal(described.originLabel.text, "0,0");
+  assert.ok(
+    described.labels.some((label) => label.text === "-1"),
+    "last-pixel plant row -1 must be painted",
+  );
+  const large = describeGroupGrid(360, 384, 384, "canvas_bottom_center", { density: "dense" });
+  assert.equal(large.originLabel.text, "0,0");
+  assert.ok(
+    large.labels.some((label) => label.text === "-1"),
+    "360-cell still paints -1",
+  );
+  assert.ok(Array.isArray(large.cells) && large.cells.length > 1, "AI lookup is a 2d cells array");
+  assert.ok(Array.isArray(large.cells[0]) && large.cells[0].length > 1, "cells[row][col]");
+  const rows = large.cells.length;
+  const cols = large.cells[0].length;
+  for (let row = 0; row < rows; row += 1) {
+    assert.ok(
+      large.labels.some((label) => label.axis === "row" && label.text === String(row)),
+      `overlay must paint row index ${row} matching cells[${row}]`,
+    );
+  }
+  for (let col = 0; col < cols; col += 1) {
+    assert.ok(
+      large.labels.some((label) => label.axis === "col" && label.text === String(col)),
+      `overlay must paint col index ${col} matching cells[*][${col}]`,
+    );
+  }
+  assert.equal(
+    large.labels.some((label) => label.text === "-384" || label.text === "-48"),
+    false,
+    "group coordinates belong in cells JSON, not overlay OCR digits",
+  );
+  assert.equal(large.cells[0][0].row, 0);
+  assert.equal(large.cells[0][0].col, 0);
+  assert.ok(
+    large.cells[0][0].y < large.cells[large.cells.length - 1][0].y,
+    "row 0 is the top (more negative y)",
+  );
+  assert.ok(large.cells[0][0].x < large.cells[0][large.cells[0].length - 1].x, "col 0 is the left");
+  const originCol = large.cells[0].findIndex((square) => square.x0 <= 0 && square.x1 >= 0);
+  const originRow = large.cells.findIndex((row) => row[0].y0 <= -1 && row[0].y1 >= 0);
+  assert.ok(originCol >= 0, "a column covers x=0");
+  assert.ok(originRow >= 0, "a row covers last-pixel y=-1 to origin y=0");
+  const square = large.cells[originRow][originCol];
+  assert.equal(square.x0 <= 0 && square.x1 >= 0, true);
+  const hasNeg48 = large.cells.some((row) =>
+    row.some((cell) => cell.y0 <= -48 && cell.y1 >= -48 && cell.x0 <= 0 && cell.x1 >= 0),
+  );
+  assert.equal(hasNeg48, true, "the array must contain the square covering (0,-48)");
+  assert.ok(
+    Array.isArray(large.legend) && large.legend.length === rows,
+    "legend is one code-generated line per row",
+  );
+  assert.match(String(large.legend[originRow]), new RegExp(`${originRow},${originCol}=`));
+  assert.match(String(large.note), /cells\[row\]\[col\]/);
+  assert.match(String(large.note), /do not OCR|OCR/i);
+  const painted = paintedLabelBoxes(described);
+  for (const box of painted) {
+    assert.ok(box.x >= 0 && box.y >= 0, "label stays in the cell");
+    assert.ok(box.x + box.width <= 160 && box.y + box.height <= 160, "label stays in the cell");
+  }
+  for (let i = 0; i < painted.length; i += 1) {
+    for (let j = i + 1; j < painted.length; j += 1) {
+      assert.equal(
+        boxesOverlap(painted[i], painted[j], 2),
+        false,
+        `label ${painted[i].text} overlaps ${painted[j].text} without gutter`,
+      );
+    }
+  }
+});
+
+test("dense 384 overlay ink for one endpoint does not cover another", () => {
+  const described = describeGroupGrid(160, 384, 384, "canvas_bottom_center", { density: "dense" });
+  const sheet = renderContactSheet([bodyFrame(384, 80, 160)], {
+    cell: 160,
+    pad: 4,
+    columns: 1,
+    grid: true,
+    labels: false,
+    markFrame: -1,
+    gridDensity: "dense",
+  });
+  const pad = 4;
+  const labelInk = [];
+  for (const label of described.labels) {
+    const hits = [];
+    for (let y = 0; y < label.height; y += 1) {
+      for (let x = 0; x < label.width; x += 1) {
+        const color = pixelAt(sheet, pad + label.cell.x + x, pad + label.cell.y + y);
+        if (
+          color[0] === GROUP_GRID.label[0] &&
+          color[1] === GROUP_GRID.label[1] &&
+          color[2] === GROUP_GRID.label[2]
+        ) {
+          hits.push(`${x},${y}`);
+        }
+      }
+    }
+    assert.ok(hits.length > 0, `painted number ${label.text} must be visible`);
+    labelInk.push({
+      text: label.text,
+      hits: new Set(hits.map((hit) => `${label.cell.x}:${label.cell.y}:${hit}`)),
+    });
+  }
+  for (let i = 0; i < labelInk.length; i += 1) {
+    for (let j = i + 1; j < labelInk.length; j += 1) {
+      for (const hit of labelInk[i].hits) {
+        assert.equal(
+          labelInk[j].hits.has(hit),
+          false,
+          `${labelInk[i].text} shares ink with ${labelInk[j].text}`,
+        );
+      }
+    }
+  }
+});
+
+test("renderContactSheet writes 0,0 on the overlay without covering the origin pixel", () => {
+  const described = describeGroupGrid(32, 16, 16, "canvas_bottom_center");
+  const sheet = renderContactSheet([bodyFrame(16, 4, 8)], {
+    cell: 32,
+    pad: 4,
+    columns: 1,
+    grid: true,
+    labels: false,
+    markFrame: -1,
+  });
+  const originX = 4 + described.origin.cell.x;
+  const originY = 4 + described.origin.cell.y;
+  assert.deepEqual(pixelAt(sheet, originX, originY), GROUP_GRID.originInk);
+  const plateX = 4 + described.originLabel.cell.x;
+  const plateY = 4 + described.originLabel.cell.y;
+  const platePx = pixelAt(sheet, plateX, plateY);
+  assert.ok(
+    platePx[0] < 40 && platePx[1] < 40 && platePx[2] < 40,
+    `dark plate behind 0,0, got ${platePx.join(",")}`,
+  );
+  const inkPad = Number(GROUP_GRID.labelPad) || 1;
+  const glyph = DIGIT_GLYPHS[0];
+  assert.deepEqual(
+    pixelAt(sheet, plateX + inkPad, plateY + inkPad),
+    GROUP_GRID.originInk,
+    "origin label starts with 0 after the plate pad",
+  );
+  assert.equal(glyph[0][0], "1");
+  assert.notEqual(plateY + inkPad, originY);
+});
+
+test("dense 384 overlay ink paints -1 and a chunky 0,0 comma", () => {
+  const cell = 360;
+  const pad = 4;
+  const described = describeGroupGrid(cell, 384, 384, "canvas_bottom_center", { density: "dense" });
+  const minusOne = described.labels.find((label) => label.text === "-1");
+  assert.ok(minusOne, "receipt labels must include painted -1");
+  const sheet = renderContactSheet([bodyFrame(384, 80, 160)], {
+    cell,
+    pad,
+    columns: 1,
+    grid: true,
+    labels: false,
+    markFrame: -1,
+    gridDensity: "dense",
+  });
+  let minusInk = 0;
+  for (let y = 0; y < minusOne.height; y += 1) {
+    for (let x = 0; x < minusOne.width; x += 1) {
+      const color = pixelAt(sheet, pad + minusOne.cell.x + x, pad + minusOne.cell.y + y);
+      if (
+        color[0] === GROUP_GRID.label[0] &&
+        color[1] === GROUP_GRID.label[1] &&
+        color[2] === GROUP_GRID.label[2]
+      ) {
+        minusInk += 1;
+      }
+    }
+  }
+  assert.ok(minusInk > 0, "painted -1 must be visible");
+  const scale = described.originLabel.scale || described.labelScale;
+  const inkPad = Number(GROUP_GRID.labelPad) || 1;
+  const glyphX = pad + described.originLabel.cell.x + inkPad;
+  const glyphY = pad + described.originLabel.cell.y + inkPad;
+  const commaX = glyphX + 4 * scale;
+  const commaW = 3 * scale;
+  const commaH = 5 * scale;
+  let commaInk = 0;
+  let commaInkAboveLastRow = 0;
+  for (let y = 0; y < commaH; y += 1) {
+    for (let x = 0; x < commaW; x += 1) {
+      const color = pixelAt(sheet, commaX + x, glyphY + y);
+      if (
+        color[0] === GROUP_GRID.originInk[0] &&
+        color[1] === GROUP_GRID.originInk[1] &&
+        color[2] === GROUP_GRID.originInk[2]
+      ) {
+        commaInk += 1;
+        if (y < 4 * scale) commaInkAboveLastRow += 1;
+      }
+    }
+  }
+  assert.ok(commaInk > 0, "0,0 comma must paint ink, not an empty gap that reads as 0.0");
+  assert.ok(commaInkAboveLastRow > 0, "comma must not be a one-row decimal-point speck");
+  assert.ok(
+    commaInk >= 4 * scale * scale,
+    `comma glyph too thin (${commaInk} px at scale ${scale}); zeros would read as 0.0`,
+  );
 });
 
 test("measureLongAxis reports pommel, tip, and handle fractions on a tapered blade", () => {
@@ -379,6 +716,9 @@ test("export_sheet writes a PNG inside the workspace and rejects escapes", async
       directory,
       animation_id: "walk",
     });
+    const animation = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    const sourceFrame = animation.animation.frames[0].absolutePath;
+    const sourceBytes = fs.readFileSync(sourceFrame);
     const exported = await current.service.call("xsxb_export_sheet", {
       animation_id: "walk",
       cell: 16,
@@ -390,6 +730,8 @@ test("export_sheet writes a PNG inside the workspace and rejects escapes", async
     assert.deepEqual(exported.indexes, [0, 1]);
     assert.equal(exported.markFrame, 0);
     assert.equal(exported.grid.enabled, false, "cell 16 is below the paint threshold");
+    assert.equal(exported.grid.overlayOnly, true);
+    assert.deepEqual(fs.readFileSync(sourceFrame), sourceBytes, "export_sheet must not mutate source frames");
     assert.ok(fs.existsSync(exported.outputPath));
     const marked = await current.service.call("xsxb_export_sheet", {
       animation_id: "walk",
@@ -399,8 +741,37 @@ test("export_sheet writes a PNG inside the workspace and rejects escapes", async
       mark_frame: 1,
     });
     assert.equal(marked.grid.enabled, true);
+    assert.equal(marked.grid.overlayOnly, true);
+    assert.equal(marked.grid.originLabel.text, "0,0");
+    assert.deepEqual(marked.grid.origin.group, { x: 0, y: 0 });
     assert.equal(marked.grid.anchorMode, "canvas_bottom_center");
     assert.equal(marked.grid.ySign, "down");
+    const denseSheet = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      cell: 32,
+      pad: 4,
+      columns: 1,
+      grid_divs: "16x16",
+      output_path: "exports/walk_dense_sheet.png",
+    });
+    assert.deepEqual(denseSheet.grid.divs, { x: 16, y: 16 });
+    assert.equal(denseSheet.grid.stepX, 1);
+    assert.deepEqual(
+      fs.readFileSync(sourceFrame),
+      sourceBytes,
+      "grid_divs overlay still leaves source frames",
+    );
+    const subjectSheet = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      cell: 32,
+      pad: 4,
+      columns: 1,
+      grid_density: "dense",
+      grid_scope: "subject",
+      output_path: "exports/walk_subject_sheet.png",
+    });
+    assert.equal(subjectSheet.grid.scope, "subject");
+    assert.equal(subjectSheet.grid.density, "dense");
     assert.ok(marked.grid.originCell.y < marked.cell);
     assert.ok(marked.grid.originCell.y >= 0);
     assert.equal(marked.markFrame, 1);

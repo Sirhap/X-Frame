@@ -8,7 +8,9 @@ const test = require("node:test");
 const { createProjectStore } = require("../project_store");
 const { createXsxbMcpService } = require("../xsxb_mcp_service");
 const { decodePngRgba, encodePngRgba } = require("../xsxb_mcp_cutout");
+const { parseGroupPoint } = require("../xsxb_mcp_arguments");
 const { encodeGifWithFfmpeg } = require("../xsxb_mcp_processes");
+const { measureLongAxis } = require("../xsxb_mcp_visual_qa");
 
 const TRAIL_PRESET = path.join(
   __dirname,
@@ -191,6 +193,7 @@ test("set_visual_transform writes character, group, and frame levels with clear 
       level: "character",
       visual_size: 0.25,
     });
+    assert.equal(character.space, "group");
     assert.equal(character.values["profiles.mcp_imports.character.visual_size"], 0.25);
 
     await current.service.call("xsxb_set_visual_transform", {
@@ -222,6 +225,9 @@ test("set_visual_transform writes character, group, and frame levels with clear 
     assert.deepEqual(readBack.visual.group.offset, { x: 10, y: -3 });
     assert.equal(readBack.visual.group.rotation, 0.5);
     assert.equal(readBack.visual.frameOverrides["1"].visual_size, 1.5);
+    assert.equal(readBack.space, "group");
+    assert.deepEqual(readBack.origin.group, { x: 0, y: 0 });
+    assert.equal(readBack.ySign, "down");
 
     const cleared = await current.service.call("xsxb_set_visual_transform", {
       level: "group",
@@ -606,6 +612,113 @@ test("export_gif paints a trailing smear behind a rotating blade", async () => {
     // The collapsed tail is allowed to touch the origin as a point. Anything
     // wider means the ribbon never let go of where the swing started.
     assert.ok(startArcOnLast <= 4, `last frame must not hold on to the swing origin, got ${startArcOnLast}`);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("parseGroupPoint reads objects, strings, and arrays, and rejects other spaces", () => {
+  assert.deepEqual(parseGroupPoint({ x: 40, y: -80 }), { x: 40, y: -80 });
+  assert.deepEqual(parseGroupPoint("40,-80"), { x: 40, y: -80 });
+  assert.deepEqual(parseGroupPoint([4, -8]), { x: 4, y: -8 });
+  assert.throws(() => parseGroupPoint({ x: 1, y: 2, space: "cell" }), /space must be "group"/);
+  assert.throws(() => parseGroupPoint({ x: 1, y: 2, space: "image_pixels" }), /space must be "group"/);
+});
+
+test("shift_frames from/to group points plant pixels toward the foot origin", async () => {
+  const current = fixture();
+  try {
+    const width = 16;
+    const height = 16;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    rgba.set([210, 36, 42, 255], (8 * width + 8) * 4);
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), encodePngRgba(rgba, width, height));
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), encodePngRgba(rgba, width, height));
+    await importWalk(current);
+    const animation = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    const firstPath = animation.animation.frames[0].absolutePath;
+    const shifted = await current.service.call("xsxb_shift_frames", {
+      animation_id: "walk",
+      frames: [{ frame: 0, from: "0,-8", to: { x: 0, y: -4 } }],
+    });
+    assert.equal(shifted.shifted[0].dx, 0);
+    assert.equal(shifted.shifted[0].dy, 4);
+    assert.equal(shifted.space, "group");
+    const next = decodePngRgba(firstPath);
+    assert.equal(next.data[(8 * width + 8) * 4 + 3], 0, "source pixel vacated");
+    assert.equal(next.data[(12 * width + 8) * 4 + 3], 255, "marker moved down 4px");
+    assert.equal(next.data[(12 * width + 8) * 4], 210);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("update_frame_boxes min/max group corners become center offset and size", async () => {
+  const current = fixture();
+  try {
+    await importWalk(current);
+    const updated = await current.service.call("xsxb_update_frame_boxes", {
+      animation_id: "walk",
+      frame: 0,
+      hurtbox: { min: { x: -4, y: -10 }, max: { x: 4, y: -2 } },
+    });
+    assert.deepEqual(updated.boxes.hurtbox.offset, { x: 0, y: -6 });
+    assert.deepEqual(updated.boxes.hurtbox.size, { x: 8, y: 8 });
+    assert.equal(updated.space, "group");
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("add_attachment hand plus t writes hand minus localFromCenter", async () => {
+  const current = fixture();
+  try {
+    await importWalk(current);
+    const width = 16;
+    const height = 32;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 2; y <= 28; y += 1) {
+      const taper = y < 10 ? 0 : y < 20 ? 1 : 2;
+      for (let x = 7 - taper; x <= 8 + taper; x += 1) {
+        rgba.set([180, 180, 190, 255], (y * width + x) * 4);
+      }
+    }
+    const bladePath = path.join(current.root, "blade.png");
+    fs.writeFileSync(bladePath, encodePngRgba(rgba, width, height));
+    const measured = measureLongAxis(rgba, width, height, { t: 0.5 });
+    const hand = { x: 12, y: -18 };
+    const added = await current.service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      file_path: bladePath,
+      frame: 0,
+      hand,
+      t: 0.5,
+      sync: false,
+    });
+    assert.equal(added.space, "group");
+    assert.equal(added.binding.transform.offset.x, hand.x - measured.localFromCenter.x);
+    assert.equal(added.binding.transform.offset.y, hand.y - measured.localFromCenter.y);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("add_attack_trail parses string group points on sticks", async () => {
+  const current = fixture();
+  try {
+    await importWalk(current);
+    const added = await current.service.call("xsxb_add_attack_trail", {
+      animation_id: "walk",
+      id: "string_points",
+      sticks: [
+        { frame: 0, top: " -10,-20 ", bottom: [-10, -4], layer: "front" },
+        { frame: 1, top: { x: 10, y: -20 }, bottom: { x: 10, y: -4 }, layer: "front" },
+      ],
+      sync: false,
+    });
+    assert.equal(added.segment.coordinateSpace, "group");
+    assert.deepEqual(added.segment.sticks[0].top, { x: -10, y: -20 });
+    assert.deepEqual(added.segment.sticks[0].bottom, { x: -10, y: -4 });
   } finally {
     current.cleanup();
   }

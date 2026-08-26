@@ -498,44 +498,9 @@ function pickBodyComponent(components, width) {
 }
 
 /**
- * Bright slash / spark / glow. Connected FX hangs below boots and must not set feetY.
- * @param {number} r Red 0-255.
- * @param {number} g Green 0-255.
- * @param {number} b Blue 0-255.
- * @returns {boolean} True when the pixel is effect, not body.
- */
-function isSlashGlow(r, g, b) {
-  const luma = (r + g + b) / 3;
-  if (luma >= 155) return true;
-  return r >= 185 && g >= 145 && b <= 125;
-}
-
-/**
- * Lowest body row inside the subject, ignoring cream slash and gold sparks.
- * @param {Uint8ClampedArray|Uint8Array} rgba RGBA pixels.
- * @param {number} width Image width.
- * @param {object} body Chosen opaque component.
- * @param {number} threshold Visible alpha threshold.
- * @returns {number} feetY.
- */
-function bodyFeetY(rgba, width, body, threshold) {
-  const minRun = Math.max(2, Math.floor(body.width * 0.08));
-  for (let y = body.maxY; y >= body.minY; y -= 1) {
-    let count = 0;
-    for (let x = body.minX; x <= body.maxX; x += 1) {
-      const offset = (y * width + x) * 4;
-      if (rgba[offset + 3] <= threshold) continue;
-      if (isSlashGlow(rgba[offset], rgba[offset + 1], rgba[offset + 2])) continue;
-      count += 1;
-    }
-    if (count >= minRun) return y;
-  }
-  return body.maxY;
-}
-
-/**
  * Finds the standing subject. Disconnected slash / glow below the feet is ignored.
- * Connected bright slash on the same island is also ignored when placing feet.
+ * Connected FX on the same island still counts toward maxY; inspect the feet sheet
+ * and plant with xsxb_shift_frames instead of guessing boot colors.
  * @param {Uint8ClampedArray|Uint8Array} rgba RGBA pixels.
  * @param {number} width Image width.
  * @param {number} height Image height.
@@ -549,7 +514,7 @@ function subjectAnchor(rgba, width, height, threshold = ALPHA_VISIBLE) {
     minX: body.minX,
     minY: body.minY,
     maxX: body.maxX,
-    feetY: bodyFeetY(rgba, width, body, threshold),
+    feetY: body.maxY,
     width: body.width,
     height: body.height,
     centerX: body.centerX,
@@ -591,6 +556,34 @@ function placeFramesOnCanvas(frames, canvasWidth, canvasHeight, options = {}) {
     }
     return { data: dest, width: canvasWidth, height: canvasHeight };
   });
+}
+
+/**
+ * Integer-translates one RGBA frame. Positive dy moves pixels down (toward canvas feet).
+ * Pixels that leave the canvas are clipped; vacated area is transparent.
+ * @param {Uint8ClampedArray|Uint8Array} rgba Source pixels.
+ * @param {number} width Image width.
+ * @param {number} height Image height.
+ * @param {number} dx Horizontal shift in pixels.
+ * @param {number} dy Vertical shift in pixels.
+ * @returns {Uint8ClampedArray} Shifted copy.
+ */
+function shiftFrameRgba(rgba, width, height, dx, dy) {
+  const dest = new Uint8ClampedArray(width * height * 4);
+  const shiftX = Math.trunc(Number(dx) || 0);
+  const shiftY = Math.trunc(Number(dy) || 0);
+  if (shiftX === 0 && shiftY === 0) return new Uint8ClampedArray(rgba);
+  for (let y = 0; y < height; y += 1) {
+    const sourceY = y - shiftY;
+    if (sourceY < 0 || sourceY >= height) continue;
+    for (let x = 0; x < width; x += 1) {
+      const sourceX = x - shiftX;
+      if (sourceX < 0 || sourceX >= width) continue;
+      const sourceOffset = (sourceY * width + sourceX) * 4;
+      dest.set(rgba.subarray(sourceOffset, sourceOffset + 4), (y * width + x) * 4);
+    }
+  }
+  return dest;
 }
 
 /**
@@ -722,6 +715,7 @@ module.exports = {
   parseHexColor,
   parseProtectedColors,
   placeFramesOnCanvas,
+  shiftFrameRgba,
   subjectAnchor,
   workbenchSliderSchemaProperties,
 };

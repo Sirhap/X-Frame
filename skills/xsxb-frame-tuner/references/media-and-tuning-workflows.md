@@ -65,6 +65,32 @@ For a local video that should become one looping animation, stay on XSXB MCP:
 
 Do not treat a finder receipt as applied. `xsxb_find_duplicates` and `xsxb_find_loop` only return orders.
 
+## MCP overlay grid and group coordinates
+
+Contact sheets from `xsxb_export_sheet` (and cutout `inspectFeet`) overlay a group-coordinate grid. Source animation PNGs are unchanged. Foot `0,0`, `+x` right, `+y` down, body in negative y. Yellow `0,0` is outside the bitmap (`canvasAnchor` uses `y: height`); last pixel row is group `y=-1`. Receipt `lastPixel` is `{ group: {x:0,y:-1}, canvas: {y: height-1} }`. **Grid lines** follow density. Overlay paints row/col indices matching `grid.cells[row][col]`. Group `x,y` are code-generated in that JSON and `grid.legend` — **do not OCR** overlay digits. For write-back use `grid.cells[row][col]` (row 0 = top of the overlay cell, col 0 = left; `x`,`y` is that square's top-left group corner). Receipt also lists `xLines`, `yLines`, and every grid `tick`.
+
+Fill overlay parameters from the task and image size; MCP does not guess:
+
+- `grid_density`: `sparse` (4×4), `normal` (8×8), `dense` (16×16) — this densifies lines, not the digit soup
+- or `grid_divs` like `8x8`, or `grid_x` / `grid_y`
+- `grid_scope`: `canvas` for the whole frame, `subject` for the opaque character box
+
+Write-back uses `grid.cells[row][col]` (or the same group numbers). Do not convert them to canvas pixels. Do not OCR the overlay digits.
+
+Planting:
+
+- `xsxb_shift_frames` is already in the catalog. If a client reports it not found, reload the `xsxb` MCP server (stale session catalog). Do not skip planting.
+- Do not plant soles to `0,0`; that clips 1px. Plant the sole to `y=-1`.
+- `metrics.feetY` includes connected slash/glow. Look at boots on the overlay; never trust `feetY`.
+
+- `xsxb_shift_frames` `from`/`to` or `dx`/`dy`
+- box `min`/`max` or `offset`/`size`
+- attachment `hand` plus `t` (MCP measures the PNG)
+- trail stick `top`/`bottom`
+- visual `offset_x`/`offset_y`
+
+After a write, export another sheet and check the ticks. `xsxb_get_animation` receipts are also group space.
+
 ## Video Extraction and Frame Organization
 
 Use the Frame Workset panel for local images, local video extraction, reordering, reduction, flipping, tagging, diagnostics, and animation replacement.
