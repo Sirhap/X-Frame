@@ -50,6 +50,7 @@ const {
   canvasAnchor,
 } = require("./xsxb_mcp_visual_qa");
 const { overlayGridImage, placeImageOnTarget, measureAlphaBottom } = require("./xsxb_mcp_place");
+const { compileSmearBrief } = require("./xsxb_mcp_smear_brief");
 const { validateToolArguments } = require("./xsxb_mcp_schema");
 const { compositeAttackTrails } = require("./xsxb_mcp_trail_preview");
 const { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions } = require("./xsxb_mcp_tool_catalog");
@@ -2559,6 +2560,7 @@ function createXsxbMcpService(options = {}) {
     xsxb_place_image: placeImage,
     xsxb_validate_project: validateProject,
     xsxb_add_attack_trail: addAttackTrail,
+    xsxb_plan_smear: compileSmearBrief,
     xsxb_add_attachment: addAttachment,
     xsxb_add_sfx: addSfx,
     xsxb_remove_binding: removeBinding,

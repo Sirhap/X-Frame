@@ -125,6 +125,134 @@ test("INSTRUCTIONS and shift_frames name last-pixel planting and a stale catalog
   assert.match(sheet.description, /do not OCR/i);
 });
 
+test("INSTRUCTIONS and trail/place/cutout name the crescent pixel-layer playbook", () => {
+  const trail = toolDefinitions().find((entry) => entry.name === "xsxb_add_attack_trail");
+  const place = toolDefinitions().find((entry) => entry.name === "xsxb_place_image");
+  const cutout = toolDefinitions().find((entry) => entry.name === "xsxb_cutout");
+  const gif = toolDefinitions().find((entry) => entry.name === "xsxb_export_gif");
+  const sheet = toolDefinitions().find((entry) => entry.name === "xsxb_export_sheet");
+  assert.ok(trail && place && cutout && gif && sheet);
+  for (const [label, text] of [
+    ["INSTRUCTIONS", INSTRUCTIONS],
+    ["xsxb_add_attack_trail", trail.description],
+  ]) {
+    assert.match(text, /月牙/, `${label} must name 月牙`);
+    assert.match(text, /像素层/, `${label} must name 像素层`);
+    assert.match(text, /7字/, `${label} must name the 7字 failure`);
+    assert.match(text, /smooth arc/, `${label} must say when the mesh is allowed`);
+    assert.match(
+      text,
+      /do not default to (that mesh|Hermite)/i,
+      `${label} must forbid Hermite mesh as the default on a polyline path`,
+    );
+    assert.match(text, /do not hardcode red/i, `${label} must keep smear color generic, not plunger-red`);
+    assert.match(text, /smear color|sample.{0,80}color/i, `${label} must sample smear color`);
+    assert.match(text, /上挑/, `${label} must still name 上挑 as something you can read from frames`);
+    assert.match(
+      text,
+      /trace the striking-mass|trace.{0,60}striking-mass/i,
+      `${label} must read the smear arc from this clip's weapon motion`,
+    );
+    assert.doesNotMatch(
+      text,
+      /high→forward→down|chop bows high/i,
+      `${label} must not ship a canned chop/挑 arc recipe`,
+    );
+    assert.match(
+      text,
+      /start and end cells|lock per-frame start/i,
+      `${label} must lock smear start/end cells before painting`,
+    );
+    assert.match(
+      text,
+      /do not pin the head on the striking/i,
+      `${label} must not pin the smear head on the weapon`,
+    );
+    assert.match(
+      text,
+      /xsxb_plan_smear/,
+      `${label} must compile a clip-specific smear brief before painting`,
+    );
+    assert.match(text, /skeleton/, `${label} must treat the generic playbook as a skeleton`);
+    assert.match(text, /receipt\.brief|clip-specific prompt/i, `${label} must execute the compiled brief`);
+    assert.match(text, /layer behind/i, `${label} must keep the weapon readable via layer behind`);
+    assert.match(text, /hairline|not overlapping the weapon/i, `${label} must keep smear off the weapon`);
+    assert.doesNotMatch(text, /one gap off/, `${label} must not tell the agent to skip a full grid cell`);
+    assert.doesNotMatch(text, /head at the current striking mass/, `${label} must not pin onto the cup`);
+    assert.match(text, /crescent-trail-v4/, `${label} must cite the validated smear reference`);
+    assert.match(
+      text,
+      /grid=false|grid: false/i,
+      `${label} must inspect human sheets without the origin overlay`,
+    );
+  }
+  assert.match(place.description, /月牙/, "xsxb_place_image must cross-ref the 月牙 playbook");
+  assert.match(place.description, /xsxb_add_attack_trail/, "xsxb_place_image must point away from the mesh");
+  assert.doesNotMatch(
+    place.description,
+    /head at the current striking mass/,
+    "xsxb_place_image must not pin the smear onto the cup",
+  );
+  assert.match(cutout.description, /月牙/, "xsxb_cutout must cross-ref the 月牙 playbook");
+  assert.match(cutout.description, /protected_colors/, "xsxb_cutout must protect smear colors");
+  assert.match(
+    cutout.description,
+    /do not hardcode red|smear color|striking mass/i,
+    "xsxb_cutout must not treat red as the only VFX color",
+  );
+  assert.doesNotMatch(cutout.description, /protect the red/, "xsxb_cutout must not hardcode protect-the-red");
+  assert.match(gif.description, /export_sheet|sheet/, "xsxb_export_gif must send crescent QA to a sheet");
+  assert.match(sheet.description, /月牙|7字/, "xsxb_export_sheet must be the crescent vs 7字 eye check");
+  const skillRoot = path.join(__dirname, "../../skills/xsxb-frame-tuner");
+  const skill = fs.readFileSync(path.join(skillRoot, "SKILL.md"), "utf8");
+  const workflows = fs.readFileSync(path.join(skillRoot, "references/media-and-tuning-workflows.md"), "utf8");
+  for (const [label, text] of [
+    ["SKILL.md", skill],
+    ["media-and-tuning-workflows.md", workflows],
+  ]) {
+    assert.match(text, /月牙/, `${label} must name 月牙`);
+    assert.match(text, /像素层/, `${label} must name 像素层`);
+    assert.match(text, /7字/, `${label} must name the 7字 failure`);
+    assert.match(text, /xsxb_add_attack_trail/, `${label} must name when not to use the mesh`);
+    assert.match(
+      text,
+      /do not hardcode red|sample.*color|smear color/i,
+      `${label} must keep smear color generic`,
+    );
+    assert.match(text, /上挑/, `${label} must still name 上挑 as something you can read from frames`);
+    assert.match(
+      text,
+      /trace the striking-mass|trace.{0,60}striking-mass/i,
+      `${label} must read the smear arc from this clip's weapon motion`,
+    );
+    assert.doesNotMatch(text, /Generate a red hollow/, `${label} must not prescribe a red VFX`);
+    assert.doesNotMatch(
+      text,
+      /high→forward→down|chop bows high/i,
+      `${label} must not ship a canned chop/挑 arc recipe`,
+    );
+    assert.match(
+      text,
+      /start and end cells|lock per-frame start/i,
+      `${label} must lock smear start/end cells before painting`,
+    );
+    assert.match(
+      text,
+      /do not pin the head on the striking/i,
+      `${label} must not pin the smear head on the weapon`,
+    );
+    assert.match(
+      text,
+      /xsxb_plan_smear/,
+      `${label} must compile a clip-specific smear brief before painting`,
+    );
+    assert.match(text, /skeleton/, `${label} must treat the generic playbook as a skeleton`);
+    assert.doesNotMatch(text, /one gap off/, `${label} must not tell the agent to skip a full grid cell`);
+    assert.doesNotMatch(text, /head at the current striking mass/, `${label} must not pin onto the cup`);
+    assert.match(text, /crescent-trail-v4/, `${label} must cite the validated smear reference`);
+  }
+});
+
 test("a failing tool answers with an MCP error result instead of a transport error", async () => {
   const service = {
     tools: toolDefinitions(),
@@ -378,6 +506,7 @@ test("MCP catalog includes the production editing tools", () => {
     "xsxb_measure_image",
     "xsxb_overlay_grid",
     "xsxb_place_image",
+    "xsxb_plan_smear",
     "xsxb_update_frame_boxes",
     "xsxb_update_timing",
     "xsxb_sync_godot",

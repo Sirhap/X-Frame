@@ -613,6 +613,21 @@ test("INSTRUCTIONS tell the agent to report cell ids and crop_from to refine", (
   assert.match(INSTRUCTIONS, /under_target/);
 });
 
+test("INSTRUCTIONS and place_image require physical held-object pose", () => {
+  const place = toolDefinitions().find((entry) => entry.name === "xsxb_place_image");
+  assert.ok(place, "xsxb_place_image is a catalog tool");
+  for (const [label, text] of [
+    ["INSTRUCTIONS", INSTRUCTIONS],
+    ["xsxb_place_image", place.description],
+  ]) {
+    assert.match(text, /source-upright|generated upright/i, `${label} must reject leaving rotation 0`);
+    assert.match(text, /forearm/, `${label} must align the shaft with the forearm`);
+    assert.match(text, /does not redraw/i, `${label} must say place_image does not redraw a hand`);
+    assert.match(text, /body span/, `${label} must scale from the body span`);
+    assert.match(text, /clips/, `${label} must say what to do when the head clips`);
+  }
+});
+
 test("exported overlayGridImage paints speakable ids without a 0–1000 axis", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-place-grid-"));
   try {

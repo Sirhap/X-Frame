@@ -25,7 +25,7 @@ For every actor import, animation import, replacement, or gameplay wiring task, 
 - [references/runtime-contract.md](references/runtime-contract.md) for gameplay wiring, playback, SFX, image attachments, scene scale, facing, and box transforms.
 - [references/validation.md](references/validation.md) for completion gates and commands.
 
-For batch cutout, video extraction, frame organization, visual tuning, playback editing, SFX, attachments, or other existing tuner operations, read [references/media-and-tuning-workflows.md](references/media-and-tuning-workflows.md).
+For batch cutout, video extraction, frame organization, visual tuning, playback editing, SFX, attachments, attack trails, or other existing tuner operations, read [references/media-and-tuning-workflows.md](references/media-and-tuning-workflows.md).
 
 When modifying the tuner web UI, save payload, or direct-manipulation behavior, also read [references/ui-contract.md](references/ui-contract.md).
 
@@ -135,9 +135,29 @@ Still-image overlay and place (agent is the eye; MCP does not call a VLM):
 
 1. `xsxb_overlay_grid` on the PNG. Look at `overlay_path` and report only speakable cell ids (`A1`–`H8`). Do not OCR pixel x,y.
 2. To refine, call `xsxb_overlay_grid` again with `crop_from: { parent_view, cells, padding_cells }`. Receipt `view` stays in original-image pixels; crop origin equals remapped A1.
-3. `xsxb_place_image` with `target_anchor` / `object_anchor` (cell `derive` or `alpha_support`) and `scale` `relative` or `physical` from the selected span. `layer` `under_target` puts the object under opaque pixels inside the target cell union (a grip in a palm); `behind` restores every opaque target pixel; omit for `front`. `rotation` is clockwise degrees around the object anchor (screen y-down). Example: stand a figure in a doorway by naming the door cells and a physical width — those are cell ids, not domain field names.
+3. `xsxb_place_image` with `target_anchor` / `object_anchor` (cell `derive` or `alpha_support`) and `scale` `relative` or `physical` from the selected span. `layer` `under_target` puts the object under opaque pixels inside the target cell union (a grip in a palm); `behind` restores every opaque target pixel; omit for `front`. `rotation` is clockwise degrees around the object anchor (screen y-down). Held objects follow pose physics, not source-upright: rotation 0 is the PNG as generated (often the heavy head down). Rotate around the grip so the mass/striking end faces the figure's facing or attack side and the shaft follows the forearm, not world-vertical. Scale from the body span — two full canvases are not 1:1 meters. The tool does not redraw a hand; if the head clips the canvas, pad that edge or grip closer to the head. Example: stand a figure in a doorway by naming the door cells and a physical width — those are cell ids, not domain field names.
 4. `xsxb_measure_image` `anchor=alpha_bottom` returns the same opaque-foot geometry.
 5. `xsxb_cutout` `file_path` runs the same smart-cutout on one workspace PNG.
+
+Attack-trail sickle (像素层, not Hermite mesh):
+
+Look at **this** animation's frames (sheet / `xsxb_overlay_grid`) and **trace the striking-mass** (weapon head) cell to cell. The smear arc is that observed motion — do not pick a canned chop or 上挑 recipe. A clip like 牛来's plunger that travels overhead then down reads as a downward sickle; a clip whose head scoops upward reads as 上挑. Same playbook.
+
+The generic playbook is only the **skeleton**. Before painting, call `xsxb_plan_smear` with the motion you actually read, `path_kind` `polyline` or `smooth_arc`, sampled color, and per-frame start/end/head cells. `receipt.brief` is the clip-specific prompt — execute that brief. Do not jump from the skeleton to GenerateImage.
+
+Use `xsxb_add_attack_trail` only when that traced path is already a smooth arc that matches the smear you want. Mesh `color` is the striking mass or a user-named hex — do not hardcode red. If what you traced is a polyline that should still read as a sickle (牛来 chop across then down, e.g. D1→G3 then H8, is one case; an 上挑 clip can fail the same way) — do **not** bind Hermite sticks. That mesh always reads as a 7字折杆, a diagonal slice, or a column plus hook. `tangentStrength`, `reverseDirection`, or extra mid sticks only swap 不够弯 and 7字.
+
+Paint the 拖影 as a 像素层 月牙/镰刀 along the traced path:
+
+0. **Lock per-frame start and end cells first** (via `xsxb_plan_smear`). Start = where this smear begins (the far cell already swept). End = on the leading/outer side of the current striking face — do not pin the head on the striking-mass cell (that paints the ribbon onto the cup/shaft). Keep the band tight: `layer` `behind` so opaque weapon pixels punch through (hairline readable cup). Reject a full-grid-cell void. The smear occupies the front half of the weapon (striking-mass side), not the grip, not overlapping the weapon sprite, and not farther ahead than this frame's cup has reached.
+1. Take smear color from the striking mass or the named hex — do not hardcode red. Generate a hollow sickle ribbon on pure white (pixel art; no character, no text) that follows those locked cells. Not a solid fan or triangle slice. If a GIF/sheet already passed eye QA, pass `accepted_path` and reuse it — do not GenerateImage a weaker sickle.
+2. `xsxb_cutout` the white; `protected_colors` for those smear colors.
+3. `xsxb_overlay_grid` then `xsxb_place_image` with cell anchors onto committed-strike frames. `layer` `behind` on the weapon path; do not cover the face or the weapon. Scale/anchor in cells — do not convert canvas pixels. Do not pin mid-swing at the far end with a large scale (crops).
+4. Timing follows the strike you read: wind-up none or faint; committed swing longest/solid; follow-through a remnant; idle none.
+5. Replace-import, `xsxb_export_gif`, and `xsxb_export_sheet`. GIF forward-play can hide a 7字 — inspect the sheet and the frames. Human inspect sheets pass `grid=false`.
+6. Accept a continuous bow between the chord (locked start→locked end) and the smear band. Reject straight bars, triangular slices, 7字, overlap onto the weapon, and a cell-sized gap that floats the smear. Follow the weapon head, not the palm; keep visible width; obvious on the strike only.
+
+Validated reference (example only, not a canned recipe for other attacks): 牛来 downward plunger chop, polyline D1→G3 then H8, 像素层 月牙, `layer` behind — `exports/niulai-plunger-mcp/niulai-chop-crescent-trail-v4.gif`, `exports/niulai-plunger-mcp/niulai-chop-crescent-trail-v4-sheet.png`.
 
 ## Agent-Facing Commands
 

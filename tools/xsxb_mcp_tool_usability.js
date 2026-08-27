@@ -699,6 +699,27 @@ animations = [{
     );
   },
 
+  async xsxb_plan_smear(fixture) {
+    const planned = await fixture.service.call("xsxb_plan_smear", {
+      animation_id: "walk",
+      motion: "head scoops upward from H8 through G5 to D1",
+      path_kind: "polyline",
+      color: "#DC2E2E",
+      frames: [
+        { index: 3, start: "H8", end: "H7", head: "H8", weight: "faint" },
+        { index: 4, start: "H8", end: "G4", head: "G5", weight: "solid" },
+      ],
+    });
+    if (
+      !String(planned.brief || "").includes("scoops upward") ||
+      planned.useMesh !== false ||
+      planned.frames.length !== 2
+    ) {
+      return verdict("xsxb_plan_smear", "fail", JSON.stringify(planned));
+    }
+    return verdict("xsxb_plan_smear", "ready", "compiles a clip-specific smear brief");
+  },
+
   async xsxb_add_attack_trail(fixture) {
     await importSequence(fixture, "walk");
     const trail = await fixture.service.call("xsxb_add_attack_trail", {

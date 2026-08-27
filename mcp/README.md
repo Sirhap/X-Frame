@@ -70,9 +70,9 @@ npm run mcp:start
 - 黄色 `0,0` 在位图外：`canvasAnchor` 的 `y` 是 `height`，最后一行像素是组坐标 `y=-1`。`to: "0,0"` 会裁掉 1px 鞋底，鞋底种到 `y=-1`
 - `metrics.feetY` 是靴底，连着的亮刀光/辉光不算进去。种地前仍用 overlay 核对
 - 量刀图长轴用 `xsxb_measure_image`：厚端是柄，薄端是尖；`t=0.5` 中间、`t=2/3` 或 `"2/3"` 是柄往尖的三分之二。落到舞台时把同一 `t` 和手上的组坐标交给 `xsxb_add_attachment`，不要自己减 `localFromCenter`
-- 静止图可说格子：`xsxb_overlay_grid` 在 PNG 上画 A1 式格子（agent 用眼看，只回报格子 id，不要 OCR 像素坐标）。`crop_from` 用上一张的 `view` 加格子做整数裁切再加密。`xsxb_place_image` 用格子 derive 或 `alpha_support` 贴图，比例按选中跨度的 relative/physical，不要按整图宽度除米；`layer` 用 `front` / `under_target` / `behind`（`under_target` 让目标锚点格子并集里的不透明像素盖住物体），`rotation` 是绕物体锚点的顺时针角度。`xsxb_cutout file_path` 可抠一张工作区内的散图。门前站人只是这个流程的例子，工具字段里没有门/人
+- 静止图可说格子：`xsxb_overlay_grid` 在 PNG 上画 A1 式格子（agent 用眼看，只回报格子 id，不要 OCR 像素坐标）。`crop_from` 用上一张的 `view` 加格子做整数裁切再加密。`xsxb_place_image` 用格子 derive 或 `alpha_support` 贴图，比例按选中跨度的 relative/physical，不要按整图宽度除米；`layer` 用 `front` / `under_target` / `behind`（`under_target` 让目标锚点格子并集里的不透明像素盖住物体），`rotation` 是绕物体锚点的顺时针角度。手持物按姿态物理来，不要留 source-upright：`rotation` 0 是原图朝向（重头常常朝下）；绕握点转到质量/打击端朝人物朝向或攻击侧，杆顺着前臂，比例按身高校而不是两张画布 1:1。工具不会重画手；头出画就给目标加边或把握点靠近头。`xsxb_cutout file_path` 可抠一张工作区内的散图。门前站人只是这个流程的例子，工具字段里没有门/人
 - `xsxb_find_duplicates` 回执若带 `autoAdjustedThreshold`，不要直接 `reorganize` 那个 `order`，除非传了 `auto_adjust`
-- 挂件/音效用 `file_path`；拖尾可传 `sticks` 与 `texture_path`
+- 挂件/音效用 `file_path`；拖尾：先看这一套动画的帧，顺着打击头格子把路径描出来，弧度跟这套武器动作走，不要套下劈/上挑配方。通用条文只是骨架。画之前先 `xsxb_plan_smear`（读到的动作、`path_kind`、采样色、每帧起止/打击头格子），执行回执 `brief` 这份定制提示词。起点是已经扫过的远端，终点在打击面外侧，不要把拖影头钉在打击头格子上（会盖住碗/杆）。用 `layer` behind 让武器像素压在前面（头发丝缝），不要整格空开把月牙推飘。描出来已是光滑弧才用 `xsxb_add_attack_trail` Hermite。颜色用打击头或用户指定的 hex，不要写死红色。描出来是折线、肉眼仍要镰刀时不要走 mesh。改沿锁死的格子画像素层月牙，`xsxb_cutout` 抠白并保护这些拖影色，再用 `xsxb_place_image` 贴到发力帧，GIF + sheet（人眼看 `grid=false`）验收弓起、且不和武器重叠。已过眼的参考（只作例子，不是别的招式配方）：`exports/niulai-plunger-mcp/niulai-chop-crescent-trail-v4.gif`
 - `xsxb_open_tuner` 会在本机 Tuner 没起来时拉起服务
 - 默认项目用 `xsxb_set_active_project`
 - 先改框和时长，再显式同步
@@ -85,6 +85,6 @@ npm run mcp:start
 
 ## 当前工具
 
-`xsxb_list_projects` · `xsxb_get_project` · `xsxb_set_active_project` · `xsxb_bind_godot` · `xsxb_import_animation` · `xsxb_import_video` · `xsxb_get_animation` · `xsxb_find_loop` · `xsxb_find_duplicates` · `xsxb_find_motion` · `xsxb_cutout` · `xsxb_estimate_visual` · `xsxb_set_visual_transform` · `xsxb_estimate_boxes` · `xsxb_update_frame_boxes` · `xsxb_update_timing` · `xsxb_replace_frame` · `xsxb_shift_frames` · `xsxb_reorganize_frames` · `xsxb_add_attack_trail` · `xsxb_add_attachment` · `xsxb_add_sfx` · `xsxb_remove_binding` · `xsxb_delete_animation` · `xsxb_sync_godot` · `xsxb_validate_project` · `xsxb_export_gif` · `xsxb_export_sheet` · `xsxb_measure_image` · `xsxb_overlay_grid` · `xsxb_place_image` · `xsxb_open_tuner`
+`xsxb_list_projects` · `xsxb_get_project` · `xsxb_set_active_project` · `xsxb_bind_godot` · `xsxb_import_animation` · `xsxb_import_video` · `xsxb_get_animation` · `xsxb_find_loop` · `xsxb_find_duplicates` · `xsxb_find_motion` · `xsxb_cutout` · `xsxb_estimate_visual` · `xsxb_set_visual_transform` · `xsxb_estimate_boxes` · `xsxb_update_frame_boxes` · `xsxb_update_timing` · `xsxb_replace_frame` · `xsxb_shift_frames` · `xsxb_reorganize_frames` · `xsxb_add_attack_trail` · `xsxb_plan_smear` · `xsxb_add_attachment` · `xsxb_add_sfx` · `xsxb_remove_binding` · `xsxb_delete_animation` · `xsxb_sync_godot` · `xsxb_validate_project` · `xsxb_export_gif` · `xsxb_export_sheet` · `xsxb_measure_image` · `xsxb_overlay_grid` · `xsxb_place_image` · `xsxb_open_tuner`
 
 工具只接受项目、角色、动画、帧等业务标识，不接受任意 Shell 或不受限文件路径。
