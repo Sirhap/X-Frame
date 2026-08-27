@@ -3,7 +3,7 @@
     "xsxb": {
       "type": "stdio",
       "command": "node",
-      "args": ["${workspaceFolder}/tools/xsxb_mcp_server.js"]
+      "args": ["/absolute/path/to/XSXB-Frame-Tuner/tools/xsxb_mcp_server.js"]
     }
   }
 }

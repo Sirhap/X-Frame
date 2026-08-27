@@ -898,6 +898,67 @@ animations = [{
       `t=${measured.t} tipY=${measured.tip.y} pommelY=${measured.pommel.y}`,
     );
   },
+
+  async xsxb_overlay_grid(fixture) {
+    const width = 32;
+    const height = 32;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let offset = 0; offset < rgba.length; offset += 4) rgba.set([236, 232, 220, 255], offset);
+    for (let y = 8; y < 24; y += 1) {
+      for (let x = 8; x < 24; x += 1) rgba.set([40, 80, 200, 255], (y * width + x) * 4);
+    }
+    const filePath = path.join(fixture.root, "overlay.png");
+    fs.writeFileSync(filePath, encodePngRgba(rgba, width, height));
+    const receipt = await fixture.service.call("xsxb_overlay_grid", { file_path: filePath });
+    const overlay = decodePngRgba(receipt.overlay_path);
+    let labeled = false;
+    for (let offset = 0; offset < overlay.data.length; offset += 4) {
+      if (
+        overlay.data[offset] === 255 &&
+        overlay.data[offset + 1] === 214 &&
+        overlay.data[offset + 2] === 10 &&
+        overlay.data[offset + 3] === 255
+      ) {
+        labeled = true;
+        break;
+      }
+    }
+    if (
+      receipt.view.width !== 32 ||
+      receipt.cells.A1.x1 !== 0 ||
+      receipt.cells.A1.y1 !== 0 ||
+      !fs.existsSync(receipt.overlay_path) ||
+      !labeled
+    ) {
+      return verdict("xsxb_overlay_grid", "fail", JSON.stringify(receipt));
+    }
+    return verdict("xsxb_overlay_grid", "ready", `overlay ${path.basename(receipt.overlay_path)}`);
+  },
+
+  async xsxb_place_image(fixture) {
+    const target = new Uint8ClampedArray(32 * 32 * 4);
+    const object = new Uint8ClampedArray(16 * 16 * 4);
+    for (let offset = 0; offset < target.length; offset += 4) target.set([236, 232, 220, 255], offset);
+    for (let y = 4; y < 12; y += 1) {
+      for (let x = 4; x < 12; x += 1) object.set([20, 180, 60, 255], (y * 16 + x) * 4);
+    }
+    const targetPath = path.join(fixture.root, "place-target.png");
+    const objectPath = path.join(fixture.root, "place-object.png");
+    fs.writeFileSync(targetPath, encodePngRgba(target, 32, 32));
+    fs.writeFileSync(objectPath, encodePngRgba(object, 16, 16));
+    const view = { x: 0, y: 0, width: 32, height: 32, rows: 8, cols: 8 };
+    const placed = await fixture.service.call("xsxb_place_image", {
+      target_path: targetPath,
+      object_path: objectPath,
+      target_anchor: { view, cells: ["D4"], derive: "center" },
+      object_anchor: { mode: "alpha_center" },
+      scale: { mode: "none" },
+    });
+    if (!fs.existsSync(placed.output_path) || placed.rotation !== 0) {
+      return verdict("xsxb_place_image", "fail", JSON.stringify(placed));
+    }
+    return verdict("xsxb_place_image", "ready", `placed ${path.basename(placed.output_path)}`);
+  },
 };
 
 const OPEN_TUNER_OPTIONS = {

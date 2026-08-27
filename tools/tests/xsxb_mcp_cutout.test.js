@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { NUMERIC_PARAMETER_LIMITS } = require("../animation_tuner/public/batch_cutout_session_core");
-const { toolDefinitions } = require("../xsxb_mcp_service");
+const { createXsxbMcpService, toolDefinitions } = require("../xsxb_mcp_service");
 const { measureFrame } = require("../xsxb_mcp_visual_qa");
 const {
   alreadyCutOut,
@@ -539,5 +539,29 @@ test("compressPngFile shrinks a stored PNG without changing pixels", () => {
     assert.equal(again.wrote, false, "already tight PNG must not rewrite");
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("xsxb_cutout file_path cuts a standalone workspace PNG", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-file-"));
+  const service = createXsxbMcpService({ root });
+  const escapePath = path.join(os.tmpdir(), "xsxb-cutout-escape.png");
+  try {
+    const frame = flatBackgroundFrame([255, 255, 255]);
+    const filePath = path.join(root, "still.png");
+    fs.writeFileSync(filePath, encodePngRgba(frame.data, frame.width, frame.height));
+    const before = fs.readFileSync(filePath);
+    fs.writeFileSync(escapePath, before);
+    const receipt = await service.call("xsxb_cutout", { file_path: filePath });
+    assert.equal(receipt.pipeline, "smart_product");
+    assert.equal(path.basename(receipt.output_path), "still_cut.png");
+    assert.deepEqual(fs.readFileSync(filePath), before, "standalone cutout must not rewrite the source");
+    const out = decodePngRgba(receipt.output_path);
+    assert.ok(clearedPixels(out.data) > 50, "white studio plate must become transparent");
+    assert.equal(out.data[(6 * 16 + 6) * 4 + 3], 255, "the opaque body must remain");
+    await assert.rejects(() => service.call("xsxb_cutout", { file_path: escapePath }), /inside/i);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    if (fs.existsSync(escapePath)) fs.rmSync(escapePath, { force: true });
   }
 });

@@ -24,6 +24,7 @@ const {
   collectWorkbenchExtras,
   compressPngFile,
   cutoutFrameFiles,
+  cutoutPngFile,
   decodePngRgba,
   encodePngRgba,
   placeFramesOnCanvas,
@@ -48,6 +49,7 @@ const {
   summarizeMetrics,
   canvasAnchor,
 } = require("./xsxb_mcp_visual_qa");
+const { overlayGridImage, placeImageOnTarget, measureAlphaBottom } = require("./xsxb_mcp_place");
 const { validateToolArguments } = require("./xsxb_mcp_schema");
 const { compositeAttackTrails } = require("./xsxb_mcp_trail_preview");
 const { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions } = require("./xsxb_mcp_tool_catalog");
@@ -1384,7 +1386,75 @@ function createXsxbMcpService(options = {}) {
     };
   }
 
+  /**
+   * Writes a standalone smart-cutout next to a workspace PNG.
+   * @param {object} args Tool arguments.
+   * @returns {Promise<object>} Cutout receipt.
+   */
+  async function cutoutStandalonePng(args = {}) {
+    const inputPath = requireExistingFile(args.file_path, "Cutout image");
+    if (!PNG_NAME.test(inputPath)) throw new Error("file_path must be a PNG.");
+    if (!isInsideDirectory(inputPath, root)) {
+      throw new Error(
+        `file_path must stay inside the XSXB workspace root (${root}). Received: ${args.file_path}`,
+      );
+    }
+    let outputPath;
+    if (args.output_path) {
+      const requested = String(args.output_path);
+      outputPath = path.resolve(root, requested);
+      if (!PNG_NAME.test(outputPath)) throw new Error("output_path must end with .png.");
+      if (!isInsideDirectory(outputPath, root)) {
+        throw new Error(
+          `output_path must stay inside the XSXB workspace root (${root}). Received: ${requested}`,
+        );
+      }
+    } else {
+      const parsed = path.parse(inputPath);
+      outputPath = path.join(parsed.dir, `${parsed.name}_cut.png`);
+    }
+    const explicitCanvas = Number.isInteger(Number(args.output_width || args.canvas))
+      ? Math.max(8, Number(args.output_width || args.canvas))
+      : Number.isInteger(Number(args.output_height))
+        ? Math.max(8, Number(args.output_height))
+        : 0;
+    const outputWidth = explicitCanvas
+      ? Math.max(8, Number(args.output_width || args.canvas || explicitCanvas))
+      : undefined;
+    const outputHeight = explicitCanvas
+      ? Math.max(8, Number(args.output_height || args.canvas || explicitCanvas))
+      : undefined;
+    const keyColor = args.key_color || args.color || undefined;
+    const cutoutImpl = cutoutPngFileImpl || cutoutPngFile;
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    const receipt = await Promise.resolve(
+      cutoutImpl(inputPath, outputPath, {
+        ...collectWorkbenchExtras(args),
+        keyColor,
+        outputWidth,
+        outputHeight,
+        force: booleanFlag(args.force),
+      }),
+    );
+    if (!fs.existsSync(outputPath)) {
+      throw new Error(`Cutout produced no file: ${outputPath}`);
+    }
+    return {
+      pipeline: receipt.pipeline || "smart_product",
+      rematched: Boolean(receipt.rematched),
+      backgroundColor: receipt.backgroundColor,
+      keyColor: keyColor || (receipt.keyed ? receipt.backgroundColor : null),
+      output_path: outputPath,
+      file_path: inputPath,
+      outputWidth: receipt.outputWidth || outputWidth || 0,
+      outputHeight: receipt.outputHeight || outputHeight || 0,
+      processedFrameCount: receipt.processedFrameCount || 1,
+      skippedFrameCount: Number(receipt.skippedFrameCount || 0),
+    };
+  }
+
   async function cutoutAnimation(args = {}) {
+    if (args.file_path) return cutoutStandalonePng(args);
     const selection = animationFor(args);
     const { project, profile, animation } = selection;
     const explicitCanvas = Number.isInteger(Number(args.output_width || args.canvas))
@@ -1522,7 +1592,7 @@ function createXsxbMcpService(options = {}) {
         inspectFeet = {
           sheetPath: sheet.outputPath,
           grid: sheet.grid,
-          note: "Contact sheet overlay only — source frames are unchanged. Yellow 0,0 is outside the bitmap (canvasAnchor y=height); last pixel row is group y=-1. Do not plant soles to 0,0 or they clip 1px — plant the sole to y=-1. Overlay paints row/col indices matching grid.cells; group x,y are in that JSON — do not OCR overlay digits. Use grid.cells[row][col] (row 0 = top, col 0 = left). If boots float above the last pixel, call xsxb_shift_frames with positive dy. Do not guess boots from pixel color. metrics.feetY includes connected slash/glow; plant by looking at boots on the overlay, never trust feetY. xsxb_shift_frames is already in the catalog; if a client reports it not found, the session catalog is stale — reload the xsxb MCP server.",
+          note: "Contact sheet overlay only — source frames are unchanged. Yellow 0,0 is outside the bitmap (canvasAnchor y=height); last pixel row is group y=-1. Do not plant soles to 0,0 or they clip 1px — plant the sole to y=-1. Overlay paints row/col indices matching grid.cells; group x,y are in that JSON — do not OCR overlay digits. Use grid.cells[row][col] (row 0 = top, col 0 = left). If boots float above the last pixel, call xsxb_shift_frames with positive dy. Do not guess boots from pixel color. metrics.feetY is the boot sole and ignores connected bright slash/glow below it; confirm on the overlay before planting. xsxb_shift_frames is already in the catalog; if a client reports it not found, the session catalog is stale — reload the xsxb MCP server.",
         };
       } catch (error) {
         inspectFeet = {
@@ -2429,6 +2499,14 @@ function createXsxbMcpService(options = {}) {
     const absolute = requireExistingFile(args.file_path, "Sprite image");
     if (!/\.png$/i.test(absolute)) throw new Error("file_path must be a PNG.");
     const image = decodePngRgba(absolute);
+    const anchor = String(args.anchor || "axis");
+    if (anchor === "alpha_bottom") {
+      return {
+        filePath: absolute,
+        ...measureAlphaBottom(image.data, image.width, image.height),
+      };
+    }
+    if (anchor !== "axis") throw new Error(`anchor must be axis or alpha_bottom. Received: ${anchor}`);
     const t = parseGripT(args.t);
     const measured = measureLongAxis(image.data, image.width, image.height, { t });
     return {
@@ -2437,6 +2515,24 @@ function createXsxbMcpService(options = {}) {
       note: "t=0 is the thicker pommel, t=1 is the thinner tip. localFromCenter is the grip relative to the image center. Attachment offset = hand - localFromCenter.",
       ...measured,
     };
+  }
+
+  /**
+   * Paints a speakable overlay. Source PNG is unchanged.
+   * @param {object} args Tool arguments.
+   * @returns {object} Overlay receipt.
+   */
+  function overlayGrid(args = {}) {
+    return overlayGridImage(args, { root });
+  }
+
+  /**
+   * Composites one PNG onto another using generic anchors.
+   * @param {object} args Tool arguments.
+   * @returns {object} Placement receipt.
+   */
+  function placeImage(args = {}) {
+    return placeImageOnTarget(args, { root });
   }
 
   const handlers = {
@@ -2459,6 +2555,8 @@ function createXsxbMcpService(options = {}) {
     xsxb_export_gif: exportGif,
     xsxb_export_sheet: exportSheet,
     xsxb_measure_image: measureImage,
+    xsxb_overlay_grid: overlayGrid,
+    xsxb_place_image: placeImage,
     xsxb_validate_project: validateProject,
     xsxb_add_attack_trail: addAttackTrail,
     xsxb_add_attachment: addAttachment,

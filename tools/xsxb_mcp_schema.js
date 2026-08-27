@@ -159,6 +159,14 @@ function validateToolArguments(toolName, schema, args) {
     if (property.maximum !== undefined && asNumber(value) > property.maximum) {
       reject(`argument "${name}" must be at most ${property.maximum}. Received ${value}.`);
     }
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      (property.properties || property.additionalProperties === false)
+    ) {
+      validateToolArguments(`${toolName}.${name}`, property, value);
+    }
   }
   return args;
 }

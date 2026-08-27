@@ -29,7 +29,9 @@ Cursor 配置可以放在：
 - 用户级 `~/.cursor/mcp.json`
 - 打开了本仓库时的项目级 `.cursor/mcp.json`
 
-示例默认假定 **工作区根目录就是 `XSXB-Frame-Tuner/`**：
+Cursor **不会**展开 `${workspaceFolder}`。`args` 必须是指向 `tools/xsxb_mcp_server.js` 的**绝对路径**，否则会去加载字面量 `${workspaceFolder}/...` 并循环报 MODULE_NOT_FOUND。
+
+把下面的 `/absolute/path/to/XSXB-Frame-Tuner` 换成你本机仓库根目录：
 
 ```json
 {
@@ -37,19 +39,15 @@ Cursor 配置可以放在：
     "xsxb": {
       "type": "stdio",
       "command": "node",
-      "args": ["${workspaceFolder}/tools/xsxb_mcp_server.js"]
+      "args": ["/absolute/path/to/XSXB-Frame-Tuner/tools/xsxb_mcp_server.js"]
     }
   }
 }
 ```
 
-如果工作区是外层 `3D-images-tools/`，把路径改成：
+如果 Cursor 打开的是外层 `3D-images-tools/`，绝对路径仍指向本仓库内的 `XSXB-Frame-Tuner/tools/xsxb_mcp_server.js`。
 
-```text
-${workspaceFolder}/XSXB-Frame-Tuner/tools/xsxb_mcp_server.js
-```
-
-不要写本机绝对路径。命令行自检：
+命令行自检：
 
 ```bash
 npm run mcp:start
@@ -70,8 +68,9 @@ npm run mcp:start
 - 写回只报网格上的组坐标：`xsxb_shift_frames` 的 `from`/`to` 或 `dx`/`dy`、框的 `min`/`max`、挂件的 `hand`+`t`、拖尾棍子、视觉偏移。不要自己换成画布像素。改完再 `export_sheet` 核对
 - `xsxb_shift_frames` 已在目录（`MCP_TOOL_NAMES` / `tools/list`）。客户端报 not found 是会话目录过期，重载 `xsxb` MCP，不要跳过种植，也不要把 overlay 数字换成画布像素。`grid_divs` / `grid_density` 在 `xsxb_export_sheet` / `xsxb_cutout` 上已经可用
 - 黄色 `0,0` 在位图外：`canvasAnchor` 的 `y` 是 `height`，最后一行像素是组坐标 `y=-1`。`to: "0,0"` 会裁掉 1px 鞋底，鞋底种到 `y=-1`
-- `metrics.feetY` 会把连着的刀光/辉光算进去。看 overlay 上的靴子种植，不要信 `feetY`
+- `metrics.feetY` 是靴底，连着的亮刀光/辉光不算进去。种地前仍用 overlay 核对
 - 量刀图长轴用 `xsxb_measure_image`：厚端是柄，薄端是尖；`t=0.5` 中间、`t=2/3` 或 `"2/3"` 是柄往尖的三分之二。落到舞台时把同一 `t` 和手上的组坐标交给 `xsxb_add_attachment`，不要自己减 `localFromCenter`
+- 静止图可说格子：`xsxb_overlay_grid` 在 PNG 上画 A1 式格子（agent 用眼看，只回报格子 id，不要 OCR 像素坐标）。`crop_from` 用上一张的 `view` 加格子做整数裁切再加密。`xsxb_place_image` 用格子 derive 或 `alpha_support` 贴图，比例按选中跨度的 relative/physical，不要按整图宽度除米；`layer` 用 `front` / `under_target` / `behind`（`under_target` 让目标锚点格子并集里的不透明像素盖住物体），`rotation` 是绕物体锚点的顺时针角度。`xsxb_cutout file_path` 可抠一张工作区内的散图。门前站人只是这个流程的例子，工具字段里没有门/人
 - `xsxb_find_duplicates` 回执若带 `autoAdjustedThreshold`，不要直接 `reorganize` 那个 `order`，除非传了 `auto_adjust`
 - 挂件/音效用 `file_path`；拖尾可传 `sticks` 与 `texture_path`
 - `xsxb_open_tuner` 会在本机 Tuner 没起来时拉起服务
@@ -86,6 +85,6 @@ npm run mcp:start
 
 ## 当前工具
 
-`xsxb_list_projects` · `xsxb_get_project` · `xsxb_set_active_project` · `xsxb_bind_godot` · `xsxb_import_animation` · `xsxb_import_video` · `xsxb_get_animation` · `xsxb_find_loop` · `xsxb_find_duplicates` · `xsxb_find_motion` · `xsxb_cutout` · `xsxb_estimate_visual` · `xsxb_set_visual_transform` · `xsxb_estimate_boxes` · `xsxb_update_frame_boxes` · `xsxb_update_timing` · `xsxb_replace_frame` · `xsxb_shift_frames` · `xsxb_reorganize_frames` · `xsxb_add_attack_trail` · `xsxb_add_attachment` · `xsxb_add_sfx` · `xsxb_remove_binding` · `xsxb_delete_animation` · `xsxb_sync_godot` · `xsxb_validate_project` · `xsxb_export_gif` · `xsxb_export_sheet` · `xsxb_measure_image` · `xsxb_open_tuner`
+`xsxb_list_projects` · `xsxb_get_project` · `xsxb_set_active_project` · `xsxb_bind_godot` · `xsxb_import_animation` · `xsxb_import_video` · `xsxb_get_animation` · `xsxb_find_loop` · `xsxb_find_duplicates` · `xsxb_find_motion` · `xsxb_cutout` · `xsxb_estimate_visual` · `xsxb_set_visual_transform` · `xsxb_estimate_boxes` · `xsxb_update_frame_boxes` · `xsxb_update_timing` · `xsxb_replace_frame` · `xsxb_shift_frames` · `xsxb_reorganize_frames` · `xsxb_add_attack_trail` · `xsxb_add_attachment` · `xsxb_add_sfx` · `xsxb_remove_binding` · `xsxb_delete_animation` · `xsxb_sync_godot` · `xsxb_validate_project` · `xsxb_export_gif` · `xsxb_export_sheet` · `xsxb_measure_image` · `xsxb_overlay_grid` · `xsxb_place_image` · `xsxb_open_tuner`
 
 工具只接受项目、角色、动画、帧等业务标识，不接受任意 Shell 或不受限文件路径。

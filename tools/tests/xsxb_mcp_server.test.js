@@ -112,7 +112,11 @@ test("INSTRUCTIONS and shift_frames name last-pixel planting and a stale catalog
     );
     assert.match(text, /stale/, `${label} must call a missing shift_frames a stale catalog`);
     assert.match(text, /reload/i, `${label} must say reload the xsxb MCP server`);
-    assert.match(text, /never trust feetY/, `${label} must say never trust feetY`);
+    assert.match(
+      text,
+      /ignores connected bright slash/,
+      `${label} must say feetY ignores connected slash/glow`,
+    );
   }
   assert.match(INSTRUCTIONS, /cells\[row\]\[col\]/, "INSTRUCTIONS must point at the 2d grid.cells lookup");
   assert.match(INSTRUCTIONS, /do not OCR/i, "INSTRUCTIONS must say not to OCR overlay digits");
@@ -372,6 +376,8 @@ test("MCP catalog includes the production editing tools", () => {
     "xsxb_export_sheet",
     "xsxb_shift_frames",
     "xsxb_measure_image",
+    "xsxb_overlay_grid",
+    "xsxb_place_image",
     "xsxb_update_frame_boxes",
     "xsxb_update_timing",
     "xsxb_sync_godot",

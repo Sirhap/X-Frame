@@ -43,6 +43,8 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_export_gif",
   "xsxb_export_sheet",
   "xsxb_measure_image",
+  "xsxb_overlay_grid",
+  "xsxb_place_image",
   "xsxb_open_tuner",
 ]);
 
@@ -507,7 +509,7 @@ function toolDefinitions() {
     {
       name: "xsxb_shift_frames",
       description:
-        "Translate selected workspace frame PNGs without resampling. dx/dy and from/to are group coordinates, the same numbers as the overlay ticks (1 unit = 1 source pixel). from+to moves that group point onto the destination. Positive dy plants the subject down toward the foot origin. Yellow 0,0 is outside the bitmap — last pixel row is group y=-1; do not plant soles to 0,0 or they clip 1px. Plant the sole to y=-1. metrics.feetY includes connected slash/glow; never trust feetY — look at boots on the overlay. This tool is already in the catalog (MCP_TOOL_NAMES / tools/list); if a client reports it not found, the session catalog is stale — reload the xsxb MCP server. Do not skip planting or convert overlay numbers to canvas pixels. grid_divs / grid_density already work on xsxb_export_sheet / xsxb_cutout. Use after reading xsxb_export_sheet or xsxb_cutout inspectFeet; do not guess boot colors. Source canvas size stays the same.",
+        "Translate selected workspace frame PNGs without resampling. dx/dy and from/to are group coordinates, the same numbers as the overlay ticks (1 unit = 1 source pixel). from+to moves that group point onto the destination. Positive dy plants the subject down toward the foot origin. Yellow 0,0 is outside the bitmap — last pixel row is group y=-1; do not plant soles to 0,0 or they clip 1px. Plant the sole to y=-1. metrics.feetY is the boot sole and ignores connected bright slash/glow below it; still confirm on the overlay before planting. This tool is already in the catalog (MCP_TOOL_NAMES / tools/list); if a client reports it not found, the session catalog is stale — reload the xsxb MCP server. Do not skip planting or convert overlay numbers to canvas pixels. grid_divs / grid_density already work on xsxb_export_sheet / xsxb_cutout. Use after reading xsxb_export_sheet or xsxb_cutout inspectFeet; do not guess boot colors. Source canvas size stays the same.",
       inputSchema: {
         type: "object",
         required: ["frames"],
@@ -800,11 +802,21 @@ function toolDefinitions() {
     {
       name: "xsxb_cutout",
       description:
-        "Run the tuner smart-cutout product path on every animation frame. Slider names and ranges match the cutout workbench; omit them to keep the shared smart-cutout profile. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom, ignoring disconnected islands and connected bright slash/glow below the boots. apply_visual rematches from group/frame visual_size instead of that shared scale. Character visual_size stays playback-only and is not baked. inspectFeet overlay uses the same grid_divs / grid_density as export_sheet. Plant by looking at boots on that overlay; never trust metrics.feetY (it includes connected slash/glow). Yellow 0,0 is outside the bitmap — plant the sole to y=-1, not 0,0.",
+        "Run the tuner smart-cutout product path on every animation frame, or on one standalone workspace PNG via file_path. Slider names and ranges match the cutout workbench; omit them to keep the shared smart-cutout profile. Omitting the canvas keeps the source layout; an explicit canvas shares one scale and pins body feet to the bottom, ignoring disconnected islands and connected bright slash/glow below the boots. apply_visual rematches from group/frame visual_size instead of that shared scale. Character visual_size stays playback-only and is not baked. inspectFeet overlay uses the same grid_divs / grid_density as export_sheet. metrics.feetY is the boot sole and ignores connected bright slash/glow below the boots; confirm on the overlay before planting. Yellow 0,0 is outside the bitmap — plant the sole to y=-1, not 0,0.",
       inputSchema: {
         type: "object",
         properties: {
           ...animationProperties,
+          file_path: {
+            type: "string",
+            description:
+              "Standalone workspace PNG. When set, skips animation frames and writes a sibling _cut.png (or output_path) inside the XSXB root. Source bytes stay unchanged unless output_path is the same file.",
+          },
+          output_path: {
+            type: "string",
+            description:
+              "PNG destination inside the XSXB root for standalone file_path. Defaults to a sibling _cut.png.",
+          },
           key_color: {
             type: "string",
             description: "Optional #RRGGBB key. Omit to auto-detect the same background as the tuner.",
@@ -880,7 +892,7 @@ function toolDefinitions() {
     {
       name: "xsxb_export_sheet",
       description:
-        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size, leftover dirt, and authored attack-trail meshes stay comparable. The sheet paints an overlay grid (lines follow grid_density/grid_divs) plus row/col indices matching receipt grid.cells[row][col] (row 0 = top, col 0 = left; x,y is that square's top-left group corner). Group coordinates are code-generated in that JSON and grid.legend — do not OCR overlay digits. Yellow 0,0 and last-pixel -1 are landmarks. Last pixel row is group y=-1 — plant soles there, not to 0,0. Receipt lastPixel names that row. metrics.feetY includes connected slash/glow; never trust feetY. Pass grid_density, grid_divs like 8x8, or grid_x/grid_y, and grid_scope canvas|subject — AI fills these; omit to keep the auto step. Source animation PNGs are unchanged. Receipt JSON repeats origin, step, divs, ticks, labels, lastPixel, xLines, yLines, cells, and legend. mark_frame highlights one cell for a second cull pass. output_path must stay inside the XSXB root.",
+        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size, leftover dirt, and authored attack-trail meshes stay comparable. The sheet paints an overlay grid (lines follow grid_density/grid_divs) plus row/col indices matching receipt grid.cells[row][col] (row 0 = top, col 0 = left; x,y is that square's top-left group corner). Group coordinates are code-generated in that JSON and grid.legend — do not OCR overlay digits. Yellow 0,0 and last-pixel -1 are landmarks. Last pixel row is group y=-1 — plant soles there, not to 0,0. Receipt lastPixel names that row. metrics.feetY is the boot sole and ignores connected bright slash/glow below it. Pass grid_density, grid_divs like 8x8, or grid_x/grid_y, and grid_scope canvas|subject — AI fills these; omit to keep the auto step. Source animation PNGs are unchanged. Receipt JSON repeats origin, step, divs, ticks, labels, lastPixel, xLines, yLines, cells, and legend. mark_frame highlights one cell for a second cull pass. output_path must stay inside the XSXB root.",
       inputSchema: {
         type: "object",
         properties: {
@@ -940,10 +952,132 @@ function toolDefinitions() {
             default: 0.5,
             description: "Grip fraction along pommel→tip. 0.5 is the middle; send 0.666… or the string 2/3.",
           },
+          anchor: {
+            type: "string",
+            enum: ["axis", "alpha_bottom"],
+            default: "axis",
+            description:
+              "axis (default) measures pommel→tip. alpha_bottom returns the opaque-foot point using the same geometry as place_image alpha_support.",
+          },
         },
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_overlay_grid",
+      description:
+        "Paint a speakable A1-style overlay on a PNG. The agent is the eye: look at overlay_path and report only cell ids, never OCR pixel x,y. view is always original-image pixels. Pass crop_from {parent_view, cells, padding_cells} to integer-crop (floor origin, ceil far edge) a finer overlay; crop origin equals the remapped A1 origin. Invalid ids throw GRID_INVALID_CELL or GRID_CELL_OUT_OF_RANGE. Source PNG is unchanged. output_path must stay inside the XSXB root.",
+      inputSchema: {
+        type: "object",
+        required: ["file_path"],
+        properties: {
+          file_path: { type: "string", description: "Absolute PNG to overlay. Not modified." },
+          rows: {
+            type: "integer",
+            minimum: 2,
+            maximum: 26,
+            default: 8,
+            description: "Grid rows. Default 8. Wins over grid_divs when set.",
+          },
+          cols: {
+            type: "integer",
+            minimum: 2,
+            maximum: 26,
+            default: 8,
+            description: "Grid columns A–Z. Default 8. Wins over grid_divs when set.",
+          },
+          grid_divs: {
+            type: "string",
+            description: 'Explicit grid size such as "8x8". Used when rows/cols are omitted.',
+          },
+          crop_from: {
+            type: "object",
+            description:
+              "Integer-crop a parent overlay. parent_view is a prior receipt.view; cells are speakable ids; padding_cells expands the union in parent-cell units.",
+            properties: {
+              parent_view: {
+                type: "object",
+                description: "Original-image view {x,y,width,height,rows,cols} from a prior overlay_grid.",
+              },
+              cells: {
+                type: "array",
+                items: { type: "string" },
+                description: 'Speakable ids to union, e.g. ["C3","D4"].',
+              },
+              padding_cells: {
+                type: "number",
+                minimum: 0,
+                default: 0,
+                description: "Padding in parent-cell units on every side.",
+              },
+            },
+            additionalProperties: false,
+          },
+          output_path: {
+            type: "string",
+            description:
+              "PNG destination inside the XSXB root. Defaults to a sibling _grid.png when the input is inside the root, otherwise <root>/exports/.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_place_image",
+      description:
+        "Composite one PNG onto another using generic cell/alpha anchors. target_anchor is {view,cells,derive} or {x_from,y_from} each with view/cells/derive. object_anchor is alpha_center|alpha_bottom_center|alpha_support or cells+derive. scale is none, relative (target view+cells, span width|height, ratio), or physical (span, target_m, object_m, object_span bbox_width|bbox_height) from the selected span — never image width per meter. Aspect mismatch scales one edge and warns; it does not stretch. layer front (default) paints the object on top; behind restores every opaque target pixel; under_target restores opaque target pixels only inside the target_anchor cell union so a grip can sit in a palm while the blade stays in front outside that box. rotation is clockwise degrees around the object anchor (screen y-down). output_path must stay inside the XSXB root.",
+      inputSchema: {
+        type: "object",
+        required: ["target_path", "object_path", "target_anchor", "object_anchor"],
+        properties: {
+          target_path: { type: "string", description: "Absolute target PNG. Not modified." },
+          object_path: { type: "string", description: "Absolute PNG to composite." },
+          target_anchor: {
+            type: "object",
+            description:
+              "{view, cells, derive} or {x_from, y_from} with the same fields on each arm. derive: center|bottom_center|top_center|left_center|right_center|median_center.",
+          },
+          object_anchor: {
+            type: "object",
+            description:
+              "mode alpha_center|alpha_bottom_center|alpha_support, or cells+derive on the object image. alpha_support uses the opaque bbox bottom band; footY is maxY+1.",
+          },
+          scale: {
+            description:
+              'Omit or {mode:"none"} for 1. relative: target view+cells, span width|height, ratio. physical: span, target_m, object_m, object_span bbox_width|bbox_height. Uniform scale from that span.',
+            properties: {
+              mode: { type: "string", enum: ["none", "relative", "physical"] },
+              target: { type: "object", description: "{view, cells} naming the span." },
+              span: { type: "string", enum: ["width", "height"] },
+              ratio: { type: "number", exclusiveMinimum: 0 },
+              target_m: { type: "number", exclusiveMinimum: 0 },
+              object_m: { type: "number", exclusiveMinimum: 0 },
+              object_span: { type: "string", enum: ["bbox_width", "bbox_height"] },
+            },
+            additionalProperties: false,
+          },
+          rotation: {
+            type: "number",
+            default: 0,
+            description: "Clockwise degrees around the object anchor. Screen y-down. 0 is upright.",
+          },
+          layer: {
+            type: "string",
+            enum: ["front", "behind", "under_target"],
+            default: "front",
+            description:
+              "front paints the object on top. behind restores every opaque target pixel. under_target restores opaque target pixels only inside the target_anchor cell union.",
+          },
+          output_path: {
+            type: "string",
+            description: "PNG destination inside the XSXB root. Defaults to a sibling _placed.png.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     {
       name: "xsxb_open_tuner",

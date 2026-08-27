@@ -7,6 +7,8 @@ Use this reference for existing tuner operations beyond deterministic animation 
 - Local execution and project selection
 - Batch cutout
 - MCP video-to-loop playbook
+- MCP overlay grid and group coordinates
+- MCP still overlay and place
 - Video extraction and frame organization
 - Transform and playback tuning
 - Boxes, SFX, and image attachments
@@ -81,7 +83,7 @@ Planting:
 
 - `xsxb_shift_frames` is already in the catalog. If a client reports it not found, reload the `xsxb` MCP server (stale session catalog). Do not skip planting.
 - Do not plant soles to `0,0`; that clips 1px. Plant the sole to `y=-1`.
-- `metrics.feetY` includes connected slash/glow. Look at boots on the overlay; never trust `feetY`.
+- `metrics.feetY` is the boot sole and ignores connected bright slash/glow below it. Confirm on the overlay before planting.
 
 - `xsxb_shift_frames` `from`/`to` or `dx`/`dy`
 - box `min`/`max` or `offset`/`size`
@@ -90,6 +92,18 @@ Planting:
 - visual `offset_x`/`offset_y`
 
 After a write, export another sheet and check the ticks. `xsxb_get_animation` receipts are also group space.
+
+## MCP still overlay and place
+
+`xsxb_overlay_grid` and `xsxb_place_image` work on still PNGs. MCP does not call a VLM; the agent is the eye.
+
+1. Overlay the source PNG with `xsxb_overlay_grid` (default 8×8). Report only speakable cell ids such as `A1`. Do not OCR pixel x,y. Source PNG is unchanged.
+2. Refine with `crop_from: { parent_view, cells, padding_cells }`. The crop is integer (floor origin, ceil far edge) and `view` stays in original-image pixels so remapped `A1` starts at the crop origin.
+3. Place with `xsxb_place_image`: `target_anchor` `{view, cells, derive}` (or `x_from` / `y_from`), `object_anchor` `alpha_support` / `alpha_center` / cell derive, and `scale` `relative` or `physical` from the selected span. Do not scale from full image width per meter. Aspect mismatch warns and does not stretch.
+4. `layer`: `front` (default) paints the object on top; `under_target` restores opaque pixels inside the `target_anchor` cell union so a grip can sit in a palm while pixels outside that box stay in front; `behind` restores every opaque target pixel. `rotation` is clockwise degrees around the object anchor (screen y-down).
+5. Example only: standing a person in a doorway is cell `bottom_center` plus physical width — there are no door/person fields on the tools.
+6. `xsxb_measure_image` `anchor=alpha_bottom` returns the same opaque-foot geometry.
+7. `xsxb_cutout` `file_path` runs the same smart-cutout on one workspace PNG (sibling `_cut.png` by default). Animation-frame cutout is unchanged.
 
 ## Video Extraction and Frame Organization
 

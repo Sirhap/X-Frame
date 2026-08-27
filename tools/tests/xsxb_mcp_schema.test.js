@@ -134,7 +134,7 @@ test("attack-trail stick schema names blade edges, layer, and reverseDirection",
   assert.match(shift.description, /from|group/i);
   assert.match(shift.description, /y=-1/);
   assert.match(shift.description, /do not plant[^.]{0,80}0,0/);
-  assert.match(shift.description, /never trust feetY/);
+  assert.match(shift.description, /ignores connected bright slash/);
   assert.match(shift.description, /stale/);
   assert.match(shift.inputSchema.properties.frames.items.properties.to.description, /y=-1/);
   assert.equal(shift.inputSchema.required.includes("frames"), true);
@@ -161,6 +161,22 @@ test("unknown grid overlay argument names the closest declared name", () => {
   assert.throws(
     () => validateToolArguments("xsxb_export_sheet", sheet.inputSchema, { grid_div: "8x8" }),
     /grid_divs/,
+  );
+});
+
+test("nested additionalProperties rejects unknown crop_from keys", () => {
+  const tool = toolDefinitions().find((entry) => entry.name === "xsxb_overlay_grid");
+  assert.throws(
+    () =>
+      validateToolArguments("xsxb_overlay_grid", tool.inputSchema, {
+        file_path: "/tmp/a.png",
+        crop_from: {
+          parent_view: { x: 0, y: 0, width: 32, height: 32, rows: 8, cols: 8 },
+          cells: ["A1"],
+          padding: 1,
+        },
+      }),
+    /padding_cells/,
   );
 });
 
