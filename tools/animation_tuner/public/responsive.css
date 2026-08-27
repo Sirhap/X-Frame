@@ -683,11 +683,11 @@
   }
 }
 
-/* Low-height desktop viewports are common after browser zoom. Preserve the
-   canvas and make the filmstrip the scrollable secondary surface. */
+/* Low-height desktop viewports are common after browser zoom. Keep the
+   canvas, then let the timeline and save bar sit in document flow. */
 @media (min-width: 1121px) and (max-height: 760px) {
   .workspace {
-    grid-template-rows: auto minmax(0, 1fr) clamp(150px, 24vh, 190px);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
     gap: 8px;
     padding: 10px;
   }

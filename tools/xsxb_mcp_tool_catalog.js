@@ -874,12 +874,12 @@ function toolDefinitions() {
           file_path: {
             type: "string",
             description:
-              "Standalone workspace PNG. When set, skips animation frames and writes a sibling _cut.png (or output_path) inside the XSXB root. Source bytes stay unchanged unless output_path is the same file.",
+              "Standalone workspace PNG. When set, skips animation frames and writes <workspace>/.xsxb/<name>_cut.png (or output_path) inside the XSXB root. Source bytes stay unchanged unless output_path is the same file.",
           },
           output_path: {
             type: "string",
             description:
-              "PNG destination inside the XSXB root for standalone file_path. Defaults to a sibling _cut.png.",
+              "PNG destination inside the XSXB root for standalone file_path. Defaults to the current project's .xsxb/<name>_cut.png.",
           },
           key_color: {
             type: "string",
@@ -938,7 +938,7 @@ function toolDefinitions() {
           output_path: {
             type: "string",
             description:
-              "Absolute .gif destination. Defaults to <workspace>/exports/<profile>_<animation>.gif.",
+              "Absolute .gif destination. Relative paths hang off the current project's .xsxb/ folder. Defaults to <workspace>/.xsxb/<profile>_<animation>.gif. Do not write into the MCP repo exports/ dump.",
           },
           fps: { type: "number", minimum: 1, maximum: 120, description: "Defaults to the animation FPS." },
           start_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
@@ -964,7 +964,7 @@ function toolDefinitions() {
           output_path: {
             type: "string",
             description:
-              "Absolute .png destination. Defaults to <workspace>/exports/<profile>_<animation>_sheet.png.",
+              "Absolute .png destination. Relative paths hang off the current project's .xsxb/ folder. Defaults to <workspace>/.xsxb/<profile>_<animation>_sheet.png. Do not write into the MCP repo exports/ dump.",
           },
           start_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
           end_frame: { type: "integer", minimum: 0, description: "Inclusive 0-based frame index." },
@@ -1081,7 +1081,7 @@ function toolDefinitions() {
           output_path: {
             type: "string",
             description:
-              "PNG destination inside the XSXB root. Defaults to a sibling _grid.png when the input is inside the root, otherwise <root>/exports/.",
+              "PNG destination inside the XSXB root. Defaults to the current project's .xsxb/<name>_grid.png. Relative paths hang off .xsxb/. Do not write into the MCP repo exports/ dump.",
           },
         },
         additionalProperties: false,
@@ -1136,7 +1136,8 @@ function toolDefinitions() {
           },
           output_path: {
             type: "string",
-            description: "PNG destination inside the XSXB root. Defaults to a sibling _placed.png.",
+            description:
+              "PNG destination inside the XSXB root. Defaults to the current project's .xsxb/<name>_placed.png. Relative paths hang off .xsxb/.",
           },
         },
         additionalProperties: false,

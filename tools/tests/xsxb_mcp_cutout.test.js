@@ -106,6 +106,53 @@ test("subject anchor uses the standing body, not slash pixels below", () => {
   assert.equal(idle.height, hit.height);
 });
 
+/**
+ * Standing body with FX attached to the boot row so they share one island.
+ * @param {{glow?:number[]|false,tail?:boolean}} [options] Bright slash or a dark cape.
+ * @returns {{data:Uint8ClampedArray,width:number,height:number,bootY:number}} Frame.
+ */
+function connectedFxFrame(options = {}) {
+  const width = 48;
+  const height = 48;
+  const bootY = 28;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 8; y <= bootY; y += 1) {
+    for (let x = 22; x <= 25; x += 1) setPixel(rgba, width, x, y, BODY);
+  }
+  if (options.tail) {
+    for (let y = bootY + 1; y <= bootY + 6; y += 1) {
+      for (let x = 23; x <= 25; x += 1) setPixel(rgba, width, x, y, BODY);
+    }
+  } else if (options.glow !== false) {
+    const glow = Array.isArray(options.glow) ? options.glow : SLASH;
+    for (let y = bootY + 1; y <= 40; y += 1) setPixel(rgba, width, 25, y, glow);
+    for (let y = 41; y <= 42; y += 1) {
+      for (let x = 18; x <= 40; x += 1) setPixel(rgba, width, x, y, glow);
+    }
+  }
+  return { data: rgba, width, height, bootY };
+}
+
+test("subject anchor ignores connected bright slash below the boots", () => {
+  const body = connectedFxFrame({ glow: false });
+  const whiteSlash = connectedFxFrame();
+  const yellowSlash = connectedFxFrame({ glow: [255, 220, 60, 255] });
+  const bodyOnly = subjectAnchor(body.data, body.width, body.height);
+  const white = subjectAnchor(whiteSlash.data, whiteSlash.width, whiteSlash.height);
+  const yellow = subjectAnchor(yellowSlash.data, yellowSlash.width, yellowSlash.height);
+  assert.equal(bodyOnly.feetY, body.bootY);
+  assert.equal(white.feetY, body.bootY, "connected near-white slash must not become the sole");
+  assert.equal(yellow.feetY, body.bootY, "connected yellow glow must not become the sole");
+  assert.equal(white.height, bodyOnly.height);
+  assert.equal(measureFrame(whiteSlash.data, 48, 48).feetY, body.bootY);
+});
+
+test("subject anchor keeps a dark cape hanging below the boots", () => {
+  const cape = connectedFxFrame({ tail: true });
+  const anchor = subjectAnchor(cape.data, cape.width, cape.height);
+  assert.equal(anchor.feetY, cape.bootY + 6);
+});
+
 test("shiftFrameRgba moves opaque pixels down without resampling", () => {
   const width = 8;
   const height = 8;
@@ -129,6 +176,26 @@ test("shared canvas placement keeps hit-frame feet on the same ground line", () 
   assert.equal(hitFeet.feetY, 15);
   assert.ok(placed[0].data[(15 * 16 + 8) * 4 + 3] > 16, "idle feet land on the canvas bottom");
   assert.ok(placed[1].data[(15 * 16 + 8) * 4 + 3] > 16, "hit feet land on the same canvas bottom");
+});
+
+test("shared canvas placement pins boots, not connected slash, to the ground", () => {
+  const placed = placeFramesOnCanvas([connectedFxFrame({ glow: false }), connectedFxFrame()], 48, 48);
+  const idleFeet = subjectAnchor(placed[0].data, 48, 48);
+  const hitFeet = subjectAnchor(placed[1].data, 48, 48);
+  assert.equal(idleFeet.feetY, 47);
+  assert.equal(hitFeet.feetY, 47);
+  assert.ok(placed[0].data[(47 * 48 + 24) * 4 + 3] > 16, "idle boots land on the canvas bottom");
+  assert.ok(placed[1].data[(47 * 48 + 24) * 4 + 3] > 16, "hit boots land on the same canvas bottom");
+  let slashOnBottom = 0;
+  for (let x = 0; x < 48; x += 1) {
+    const offset = (47 * 48 + x) * 4;
+    const luma =
+      0.2126 * placed[1].data[offset] +
+      0.7152 * placed[1].data[offset + 1] +
+      0.0722 * placed[1].data[offset + 2];
+    if (placed[1].data[offset + 3] > 16 && luma >= 200) slashOnBottom += 1;
+  }
+  assert.equal(slashOnBottom, 0, "connected slash must not be the planted ground row");
 });
 
 test("cutoutFrameFiles names the first missing path instead of dropping it", () => {
@@ -555,6 +622,8 @@ test("xsxb_cutout file_path cuts a standalone workspace PNG", async () => {
     const receipt = await service.call("xsxb_cutout", { file_path: filePath });
     assert.equal(receipt.pipeline, "smart_product");
     assert.equal(path.basename(receipt.output_path), "still_cut.png");
+    assert.match(receipt.output_path.split(path.sep).join("/"), /\/\.xsxb\//);
+    assert.equal(fs.existsSync(path.join(root, "still_cut.png")), false);
     assert.deepEqual(fs.readFileSync(filePath), before, "standalone cutout must not rewrite the source");
     const out = decodePngRgba(receipt.output_path);
     assert.ok(clearedPixels(out.data) > 50, "white studio plate must become transparent");

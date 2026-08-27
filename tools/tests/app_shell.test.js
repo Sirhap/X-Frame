@@ -506,6 +506,19 @@ test("empty attachment tray and trail quick-start stay compact enough to leave t
   assert.match(trails, /\.attackTrailQuickStart button\s*\{[^}]*width:\s*auto/);
 });
 
+test("desktop workspace save bar stays in document flow instead of sticking to the viewport", () => {
+  const css = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app_shell.css"), "utf8");
+  assert.doesNotMatch(
+    css,
+    /@media \(min-width: 1121px\) \{[\s\S]*?\.contextActionBar,[\s\S]*?position:\s*sticky/,
+    "contextActionBar must not join the desktop sticky-footer group",
+  );
+  const desktopBar = css.match(/@media \(min-width: 1121px\) \{[\s\S]*?\.contextActionBar\s*\{([\s\S]*?)\}/);
+  assert.ok(desktopBar, "desktop flow should spell out contextActionBar positioning");
+  assert.match(desktopBar[1], /position:\s*static/);
+  assert.doesNotMatch(desktopBar[1], /position:\s*(?:sticky|fixed)/);
+});
+
 test("narrow chrome wraps flow tabs instead of clipping their labels", () => {
   const shell = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app_shell.css"), "utf8");
   const cutout = fs.readFileSync(

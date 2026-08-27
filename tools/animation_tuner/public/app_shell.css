@@ -2020,13 +2020,19 @@ body.organizerOpen .organizerFooterActions {
     overflow-x: auto;
   }
 
-  .contextActionBar,
   .scatterActionBar,
   body.cutoutOpen :is(.cutoutFooter, .cutoutBatchWorkspaceActions),
   body.organizerOpen .organizerFooterActions {
     position: sticky;
     z-index: 30;
     bottom: 0;
+  }
+
+  /* Timeline save/export follows the filmstrip instead of pinning to the viewport. */
+  .contextActionBar {
+    position: static;
+    z-index: auto;
+    bottom: auto;
   }
 
   /* The organizer actions sit at the top of the preview column, never an overlay. */

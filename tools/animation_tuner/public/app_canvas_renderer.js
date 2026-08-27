@@ -9,6 +9,58 @@
     globalScope?.XSXBAppCanvasRendererLayers ||
     (typeof require === "function" ? require("./app_canvas_renderer_layers") : null);
 
+  const CANVAS_OVERLAY = Object.freeze({
+    gridFontPx: 8,
+    captionFontPx: 9,
+    hintFontPx: 10,
+    hintPadXPx: 7,
+    hintPadYPx: 5,
+    hintLinePx: 14,
+    hintMarginPx: 10,
+    hintMaxWidthPx: 168,
+    axisInsetPx: 6,
+    markerPx: 6,
+  });
+
+  /**
+   * Device-pixel overlay sizes derived from the compact preview chrome tokens.
+   * @param {number} dpr Device pixel ratio.
+   * @returns {object} Paint sizes in device pixels.
+   */
+  function overlayPaint(dpr) {
+    const scale = Number(dpr) || 1;
+    return {
+      gridFont: CANVAS_OVERLAY.gridFontPx * scale,
+      captionFont: CANVAS_OVERLAY.captionFontPx * scale,
+      hintFont: CANVAS_OVERLAY.hintFontPx * scale,
+      hintPadX: CANVAS_OVERLAY.hintPadXPx * scale,
+      hintPadY: CANVAS_OVERLAY.hintPadYPx * scale,
+      hintLine: CANVAS_OVERLAY.hintLinePx * scale,
+      hintMargin: CANVAS_OVERLAY.hintMarginPx * scale,
+      hintMaxWidth: CANVAS_OVERLAY.hintMaxWidthPx * scale,
+      axisInset: CANVAS_OVERLAY.axisInsetPx * scale,
+      marker: CANVAS_OVERLAY.markerPx * scale,
+    };
+  }
+
+  /**
+   * Splits a long canvas caption so it does not stretch across the sprite.
+   * @param {string} text Caption.
+   * @param {number} maxWidth Maximum line width in device pixels.
+   * @param {(value:string)=>number} measure Measured text width.
+   * @returns {string[]} Wrapped lines.
+   */
+  function wrapOverlayCaption(text, maxWidth, measure) {
+    const raw = String(text || "").trim();
+    if (!raw) return [];
+    if (measure(raw) <= maxWidth) return [raw];
+    const chunks = raw
+      .split(/[；;，,]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    return chunks.length ? chunks : [raw];
+  }
+
   /**
    * Creates the Canvas rendering controller used by the animation workbench.
    *
@@ -66,7 +118,7 @@
     if (!ctx || !els?.stage) throw new TypeError("Canvas renderer requires context and stage elements.");
     function drawGrid() {
       ctx.save();
-      ctx.strokeStyle = "rgba(255,255,255,.07)";
+      ctx.strokeStyle = "rgba(255,255,255,.04)";
       ctx.lineWidth = 1;
       const step = 64 * getDevicePixelRatio();
       for (let x = state().view.x % step; x < els.stage.width; x += step) {
@@ -102,44 +154,39 @@
       const maxX = Math.ceil((els.stage.width - origin.x) / scale / step) * step;
       const minY = Math.floor((0 - origin.y) / scale / step) * step;
       const maxY = Math.ceil((els.stage.height - origin.y) / scale / step) * step;
-      const labelY = Math.min(
-        Math.max(origin.y + 15 * getDevicePixelRatio(), 16 * getDevicePixelRatio()),
-        els.stage.height - 10 * getDevicePixelRatio(),
-      );
-      const labelX = Math.min(
-        Math.max(origin.x + 8 * getDevicePixelRatio(), 8 * getDevicePixelRatio()),
-        els.stage.width - 74 * getDevicePixelRatio(),
-      );
+      const paint = overlayPaint(getDevicePixelRatio());
+      const labelY = paint.axisInset;
+      const labelX = paint.axisInset;
       ctx.save();
       ctx.lineWidth = Math.max(1, getDevicePixelRatio());
-      ctx.font = `${11 * getDevicePixelRatio()}px Consolas, "Cascadia Mono", monospace`;
+      ctx.font = `${paint.gridFont}px Consolas, "Cascadia Mono", monospace`;
       ctx.textBaseline = "top";
       for (let x = minX; x <= maxX; x += step) {
         const screenX = origin.x + x * scale;
-        ctx.strokeStyle = nearlyEqual(x, 0) ? "rgba(255, 196, 74, .82)" : "rgba(145, 215, 255, .12)";
+        ctx.strokeStyle = nearlyEqual(x, 0) ? "rgba(255, 196, 74, .48)" : "rgba(145, 215, 255, .08)";
         ctx.beginPath();
         ctx.moveTo(screenX, 0);
         ctx.lineTo(screenX, els.stage.height);
         ctx.stroke();
         if (!nearlyEqual(x, 0) && screenX >= 0 && screenX <= els.stage.width) {
-          ctx.fillStyle = "rgba(203, 238, 255, .68)";
-          ctx.fillText(String(round(x)), screenX + 4 * getDevicePixelRatio(), labelY);
+          ctx.fillStyle = "rgba(203, 238, 255, .58)";
+          ctx.fillText(String(round(x)), screenX + 3 * getDevicePixelRatio(), labelY);
         }
       }
       for (let y = minY; y <= maxY; y += step) {
         const screenY = origin.y + y * scale;
-        ctx.strokeStyle = nearlyEqual(y, 0) ? "rgba(255, 196, 74, .82)" : "rgba(145, 215, 255, .10)";
+        ctx.strokeStyle = nearlyEqual(y, 0) ? "rgba(255, 196, 74, .48)" : "rgba(145, 215, 255, .07)";
         ctx.beginPath();
         ctx.moveTo(0, screenY);
         ctx.lineTo(els.stage.width, screenY);
         ctx.stroke();
         if (!nearlyEqual(y, 0) && screenY >= 0 && screenY <= els.stage.height) {
-          ctx.fillStyle = "rgba(203, 238, 255, .68)";
-          ctx.fillText(String(round(y)), labelX, screenY + 3 * getDevicePixelRatio());
+          ctx.fillStyle = "rgba(203, 238, 255, .58)";
+          ctx.fillText(String(round(y)), labelX, screenY + 2 * getDevicePixelRatio());
         }
       }
-      ctx.fillStyle = "rgba(255, 224, 150, .95)";
-      ctx.fillText("0,0", origin.x + 8 * getDevicePixelRatio(), origin.y + 8 * getDevicePixelRatio());
+      ctx.fillStyle = "rgba(255, 224, 150, .82)";
+      ctx.fillText("0,0", origin.x + 6 * getDevicePixelRatio(), origin.y + 6 * getDevicePixelRatio());
       ctx.restore();
     }
 
@@ -155,13 +202,10 @@
       ctx.lineTo(els.stage.width, y);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = "rgba(255,214,128,.92)";
-      ctx.font = `${12 * getDevicePixelRatio()}px system-ui, sans-serif`;
-      ctx.fillText(
-        floorReferenceLabel(state().currentGroup),
-        12 * getDevicePixelRatio(),
-        y - 8 * getDevicePixelRatio(),
-      );
+      const paint = overlayPaint(getDevicePixelRatio());
+      ctx.fillStyle = "rgba(255,214,128,.82)";
+      ctx.font = `${paint.captionFont}px system-ui, sans-serif`;
+      ctx.fillText(floorReferenceLabel(state().currentGroup), paint.axisInset, y - 6 * getDevicePixelRatio());
       ctx.restore();
     }
 
@@ -177,9 +221,10 @@
       ctx.lineTo(els.stage.width, y + 4 * getDevicePixelRatio());
       ctx.stroke();
       ctx.setLineDash([]);
+      const paint = overlayPaint(getDevicePixelRatio());
       ctx.fillStyle = color;
-      ctx.font = `${11 * getDevicePixelRatio()}px system-ui, sans-serif`;
-      ctx.fillText(label, 12 * getDevicePixelRatio(), y + 19 * getDevicePixelRatio());
+      ctx.font = `${paint.captionFont}px system-ui, sans-serif`;
+      ctx.fillText(label, paint.axisInset, y + 14 * getDevicePixelRatio());
       ctx.restore();
     }
 
@@ -391,12 +436,13 @@
     function drawCoordinateMarker(point, label, color) {
       if (!point) return;
       const dpr = getDevicePixelRatio();
-      const size = 10 * dpr;
+      const paint = overlayPaint(dpr);
+      const size = paint.marker;
       const labelOffset = coordinateMarkerLabelOffset(dpr);
       ctx.save();
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
-      ctx.lineWidth = Math.max(1.5 * dpr, 1.5);
+      ctx.lineWidth = Math.max(1 * dpr, 1);
       ctx.beginPath();
       ctx.moveTo(point.x - size, point.y);
       ctx.lineTo(point.x + size, point.y);
@@ -404,9 +450,9 @@
       ctx.lineTo(point.x, point.y + size);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(point.x, point.y, 3.2 * dpr, 0, Math.PI * 2);
+      ctx.arc(point.x, point.y, 2.2 * dpr, 0, Math.PI * 2);
       ctx.fill();
-      ctx.font = `${12 * dpr}px system-ui, sans-serif`;
+      ctx.font = `${paint.captionFont}px system-ui, sans-serif`;
       ctx.textBaseline = labelOffset.baseline;
       ctx.fillText(label, point.x + labelOffset.x, point.y + labelOffset.y);
       ctx.restore();
@@ -455,7 +501,7 @@
         x: currentOffset.x - ownerOffset.x,
         y: currentOffset.y - ownerOffset.y,
       };
-      ctx.font = `${12 * getDevicePixelRatio()}px Consolas, "Cascadia Mono", monospace`;
+      ctx.font = `${overlayPaint(getDevicePixelRatio()).captionFont}px Consolas, "Cascadia Mono", monospace`;
       ctx.fillText(
         `delta ${round(delta.x)}, ${round(delta.y)}`,
         (ownerPoint.x + currentPoint.x) * 0.5 + 8 * getDevicePixelRatio(),
@@ -584,7 +630,7 @@
       ctx.save();
       ctx.globalAlpha = box.enabled === false ? 0.36 : 1;
       ctx.fillStyle = style.label;
-      ctx.font = `${12 * getDevicePixelRatio()}px system-ui, sans-serif`;
+      ctx.font = `${overlayPaint(getDevicePixelRatio()).captionFont}px system-ui, sans-serif`;
       const label = box.enabled === false ? `${t(boxName)} preview` : t(boxName);
       ctx.fillText(label, rect.left + 6 * getDevicePixelRatio(), rect.top - 7 * getDevicePixelRatio());
       if (selected) {
@@ -639,22 +685,24 @@
     }
 
     function drawCanvasHints() {
-      const lines = canvasHintLines();
-      if (!lines.length) return;
-      const paddingX = 11 * getDevicePixelRatio();
-      const paddingY = 8 * getDevicePixelRatio();
-      const lineHeight = 19 * getDevicePixelRatio();
-      const margin = 22 * getDevicePixelRatio();
+      const source = canvasHintLines();
+      if (!source.length) return;
+      const paint = overlayPaint(getDevicePixelRatio());
       ctx.save();
-      ctx.font = `${13 * getDevicePixelRatio()}px system-ui, "Microsoft YaHei UI", sans-serif`;
-      const width = Math.max(...lines.map((line) => ctx.measureText(line.text).width)) + paddingX * 2;
-      const height = paddingY * 2 + lineHeight * lines.length;
-      const x = Math.max(margin, els.stage.width - width - margin);
-      const y = margin;
-      ctx.fillStyle = "rgba(8, 11, 13, .72)";
+      ctx.font = `${paint.hintFont}px system-ui, "Microsoft YaHei UI", sans-serif`;
+      const lines = source.flatMap((line) =>
+        wrapOverlayCaption(line.text, paint.hintMaxWidth, (value) => ctx.measureText(value).width).map(
+          (text) => ({ text, active: line.active }),
+        ),
+      );
+      const width = Math.max(...lines.map((line) => ctx.measureText(line.text).width)) + paint.hintPadX * 2;
+      const height = paint.hintPadY * 2 + paint.hintLine * lines.length;
+      const x = Math.max(paint.hintMargin, els.stage.width - width - paint.hintMargin);
+      const y = paint.hintMargin;
+      ctx.fillStyle = "rgba(8, 11, 13, .62)";
       ctx.strokeStyle = lines.some((line) => line.active)
-        ? "rgba(255, 196, 74, .72)"
-        : "rgba(145, 215, 255, .52)";
+        ? "rgba(255, 196, 74, .58)"
+        : "rgba(145, 215, 255, .38)";
       ctx.lineWidth = Math.max(1, getDevicePixelRatio());
       ctx.beginPath();
       ctx.rect(x, y, width, height);
@@ -662,8 +710,12 @@
       ctx.stroke();
       ctx.textBaseline = "middle";
       lines.forEach((line, index) => {
-        ctx.fillStyle = line.active ? "rgba(255, 224, 150, .95)" : "rgba(203, 238, 255, .92)";
-        ctx.fillText(line.text, x + paddingX, y + paddingY + lineHeight * index + lineHeight / 2);
+        ctx.fillStyle = line.active ? "rgba(255, 224, 150, .92)" : "rgba(203, 238, 255, .82)";
+        ctx.fillText(
+          line.text,
+          x + paint.hintPadX,
+          y + paint.hintPadY + paint.hintLine * index + paint.hintLine / 2,
+        );
       });
       ctx.restore();
     }
@@ -729,5 +781,5 @@
     return { x: 9 * scale, y: 16 * scale, baseline: "top" };
   }
 
-  return { createController, coordinateMarkerLabelOffset };
+  return { CANVAS_OVERLAY, createController, coordinateMarkerLabelOffset, wrapOverlayCaption };
 });

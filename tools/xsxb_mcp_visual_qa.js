@@ -862,7 +862,7 @@ function describeGroupGrid(
     yLines: overlayCells.yLines,
     cells: overlayCells.cells,
     legend,
-    note: "Overlay on the contact sheet only. Source animation PNGs are unchanged. Group (0,0) is the canvas foot origin, same as the tuner stage, but yellow 0,0 is outside the bitmap (canvas y=height). Last pixel row is group y=-1; do not plant soles to 0,0. +x right, +y down; the body is negative y. Grid lines follow density. Overlay paints row/col indices that match grid.cells[row][col] (row 0 = top, col 0 = left). Group x,y are code-generated in cells and legend — do not OCR overlay digits for write-back. Look at boots to pick a square, then use that cell's x,y. metrics.feetY includes connected slash/glow; never trust feetY.",
+    note: "Overlay on the contact sheet only. Source animation PNGs are unchanged. Group (0,0) is the canvas foot origin, same as the tuner stage, but yellow 0,0 is outside the bitmap (canvas y=height). Last pixel row is group y=-1; do not plant soles to 0,0. +x right, +y down; the body is negative y. Grid lines follow density. Overlay paints row/col indices that match grid.cells[row][col] (row 0 = top, col 0 = left). Group x,y are code-generated in cells and legend — do not OCR overlay digits for write-back. Look at boots to pick a square, then use that cell's x,y. metrics.feetY is the boot sole and ignores connected bright slash/glow below it.",
   };
 }
 

@@ -183,7 +183,7 @@ test("describeGroupGrid lastPixel is the in-bitmap sole row, not yellow 0,0", ()
   assert.equal(canvasToGroup(width / 2, height - 1, width, height).y, -1);
   assert.equal(groupToCanvas(0, 0, width, height).y, height);
   assert.match(described.note, /y=-1/);
-  assert.match(described.note, /never trust feetY/);
+  assert.match(described.note, /ignores connected bright slash/);
 });
 
 test("describeGroupGrid 4x4 is sparser than 16x16 on the same 16 canvas", () => {
@@ -438,6 +438,32 @@ test("renderContactSheet writes 0,0 on the overlay without covering the origin p
   );
   assert.equal(glyph[0][0], "1");
   assert.notEqual(plateY + inkPad, originY);
+});
+
+test("renderContactSheet grid false omits 0,0 and -1 overlay ink", () => {
+  const described = describeGroupGrid(32, 16, 16, "canvas_bottom_center");
+  const sheet = renderContactSheet([bodyFrame(16, 4, 8)], {
+    cell: 32,
+    pad: 4,
+    columns: 1,
+    grid: false,
+    labels: false,
+    markFrame: -1,
+  });
+  const originX = 4 + described.origin.cell.x;
+  const originY = 4 + described.origin.cell.y;
+  assert.notDeepEqual(
+    pixelAt(sheet, originX, originY),
+    GROUP_GRID.originInk,
+    "grid:false must not paint the yellow 0,0 landmark",
+  );
+  const plateX = 4 + described.originLabel.cell.x;
+  const plateY = 4 + described.originLabel.cell.y;
+  assert.notDeepEqual(
+    pixelAt(sheet, plateX, plateY),
+    [0, 0, 0, 255],
+    "grid:false must not paint the dark 0,0 plate",
+  );
 });
 
 test("dense 384 overlay ink paints -1 and a chunky 0,0 comma", () => {
@@ -733,6 +759,8 @@ test("export_sheet writes a PNG inside the workspace and rejects escapes", async
     assert.equal(exported.grid.overlayOnly, true);
     assert.deepEqual(fs.readFileSync(sourceFrame), sourceBytes, "export_sheet must not mutate source frames");
     assert.ok(fs.existsSync(exported.outputPath));
+    assert.match(exported.outputPath.split(path.sep).join("/"), /\/\.xsxb\//);
+    assert.equal(fs.existsSync(path.join(current.root, "exports")), false);
     const marked = await current.service.call("xsxb_export_sheet", {
       animation_id: "walk",
       cell: 32,

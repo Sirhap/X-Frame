@@ -19,6 +19,14 @@ const REFERENCE_MODES = Object.freeze(["general", "blend", "chroma"]);
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const ALPHA_VISIBLE = 16;
+/** Pixels darker than this count as body/boot rather than slash glow. */
+const BODY_DARK_LUMA = 160;
+/** A row below the torso is glow when it is at least this bright. */
+const GLOW_LUMA_MIN = 170;
+/** Glow must also outshine the torso median luma by this much. */
+const GLOW_LUMA_DELTA = 36;
+/** Glow rows have almost no dark body pixels. */
+const GLOW_DARK_RATIO = 0.25;
 /**
  * Share of border-ring pixels that must be transparent before a frame counts as
  * cut out. A frame that still carries its background leaves the ring almost
@@ -440,16 +448,32 @@ function opaqueComponents(rgba, width, height, threshold) {
     let maxY = -1;
     let count = 0;
     let sumX = 0;
+    const rowCount = new Int32Array(height);
+    const rowDark = new Int32Array(height);
+    const rowMinX = new Int32Array(height);
+    const rowMaxX = new Int32Array(height);
+    const rowLuma = new Float64Array(height);
+    const rowSumX = new Float64Array(height);
+    rowMinX.fill(width);
+    rowMaxX.fill(-1);
     while (stack.length) {
       const index = stack.pop();
       const x = index % width;
       const y = Math.floor(index / width);
+      const offset = index * 4;
+      const luma = 0.2126 * rgba[offset] + 0.7152 * rgba[offset + 1] + 0.0722 * rgba[offset + 2];
       count += 1;
       sumX += x;
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x);
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y);
+      rowCount[y] += 1;
+      rowLuma[y] += luma;
+      rowSumX[y] += x;
+      rowMinX[y] = Math.min(rowMinX[y], x);
+      rowMaxX[y] = Math.max(rowMaxX[y], x);
+      if (luma < BODY_DARK_LUMA) rowDark[y] += 1;
       const neighbors = [];
       if (x > 0) neighbors.push(index - 1);
       if (x + 1 < width) neighbors.push(index + 1);
@@ -470,6 +494,12 @@ function opaqueComponents(rgba, width, height, threshold) {
       width: maxX - minX + 1,
       height: maxY - minY + 1,
       centerX: sumX / count,
+      rowCount,
+      rowDark,
+      rowMinX,
+      rowMaxX,
+      rowLuma,
+      rowSumX,
     });
   }
   return components;
@@ -498,9 +528,85 @@ function pickBodyComponent(components, width) {
 }
 
 /**
- * Finds the standing subject. Disconnected slash / glow below the feet is ignored.
- * Connected FX on the same island still counts toward maxY; inspect the feet sheet
- * and plant with xsxb_shift_frames instead of guessing boot colors.
+ * Lowest body/boot row on one island, skipping connected bright slash/glow.
+ * @param {object} component Connected opaque region with per-row luma stats.
+ * @returns {number} Canvas y of the sole.
+ */
+function soleYFromRows(component) {
+  let peakDark = 0;
+  for (let y = component.minY; y <= component.maxY; y += 1) {
+    peakDark = Math.max(peakDark, component.rowDark[y]);
+  }
+  const core = [];
+  for (let y = component.minY; y <= component.maxY; y += 1) {
+    if (peakDark > 0 && component.rowDark[y] >= peakDark * 0.5) {
+      core.push(component.rowLuma[y] / component.rowCount[y]);
+    }
+  }
+  core.sort((left, right) => left - right);
+  const coreLuma = core.length ? core[Math.floor(core.length / 2)] : 0;
+  const glowFloor = Math.max(coreLuma + GLOW_LUMA_DELTA, GLOW_LUMA_MIN);
+  for (let y = component.maxY; y >= component.minY; y -= 1) {
+    const count = component.rowCount[y];
+    if (!count) continue;
+    const mean = component.rowLuma[y] / count;
+    const darkRatio = component.rowDark[y] / count;
+    if (mean >= glowFloor && darkRatio < GLOW_DARK_RATIO) continue;
+    return y;
+  }
+  return component.maxY;
+}
+
+/**
+ * Bounding box and centroid of the standing body, excluding glow below the sole.
+ * @param {object} component Connected opaque region.
+ * @returns {{minX:number,minY:number,maxX:number,feetY:number,width:number,height:number,centerX:number}}
+ */
+function bodyAnchorFromComponent(component) {
+  const feetY = soleYFromRows(component);
+  let minX = component.minX;
+  let maxX = component.maxX;
+  let sumX = 0;
+  let count = 0;
+  let started = false;
+  for (let y = component.minY; y <= feetY; y += 1) {
+    if (!component.rowCount[y]) continue;
+    if (!started) {
+      minX = component.rowMinX[y];
+      maxX = component.rowMaxX[y];
+      started = true;
+    } else {
+      minX = Math.min(minX, component.rowMinX[y]);
+      maxX = Math.max(maxX, component.rowMaxX[y]);
+    }
+    sumX += component.rowSumX[y];
+    count += component.rowCount[y];
+  }
+  if (!count) {
+    return {
+      minX: component.minX,
+      minY: component.minY,
+      maxX: component.maxX,
+      feetY: component.maxY,
+      width: component.width,
+      height: component.height,
+      centerX: component.centerX,
+    };
+  }
+  return {
+    minX,
+    minY: component.minY,
+    maxX,
+    feetY,
+    width: maxX - minX + 1,
+    height: feetY - component.minY + 1,
+    centerX: sumX / count,
+  };
+}
+
+/**
+ * Finds the standing subject. Disconnected islands and connected bright slash/glow
+ * below the boots are ignored. Dark cloth hanging below the boots still counts.
  * @param {Uint8ClampedArray|Uint8Array} rgba RGBA pixels.
  * @param {number} width Image width.
  * @param {number} height Image height.
@@ -510,15 +616,7 @@ function pickBodyComponent(components, width) {
 function subjectAnchor(rgba, width, height, threshold = ALPHA_VISIBLE) {
   const body = pickBodyComponent(opaqueComponents(rgba, width, height, threshold), width);
   if (!body) return null;
-  return {
-    minX: body.minX,
-    minY: body.minY,
-    maxX: body.maxX,
-    feetY: body.maxY,
-    width: body.width,
-    height: body.height,
-    centerX: body.centerX,
-  };
+  return bodyAnchorFromComponent(body);
 }
 
 /**

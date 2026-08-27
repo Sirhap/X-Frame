@@ -331,6 +331,57 @@ function isInsideDirectory(childPath, parentPath) {
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
 }
 
+/** Per-project folder for MCP inspection artifacts (GIF, sheet, overlay). */
+const MCP_ARTIFACT_DIR = ".xsxb";
+
+/**
+ * Resolves the current project's MCP artifact directory.
+ * @param {string|undefined} workspaceDir Tuner project workspace.
+ * @param {string} root XSXB service root.
+ * @returns {string} Absolute `.xsxb` directory.
+ */
+function mcpArtifactDir(workspaceDir, root) {
+  if (workspaceDir) return path.join(workspaceDir, MCP_ARTIFACT_DIR);
+  return path.join(root, "workspace", MCP_ARTIFACT_DIR);
+}
+
+/**
+ * Resolves an MCP output path into the project `.xsxb` folder.
+ * Relative paths hang off `.xsxb/` so `exports/foo.gif` cannot dump into the
+ * MCP repo. Absolute paths must stay inside the XSXB root and must not land in
+ * the repo-root `exports/` dump.
+ * @param {unknown} requested Agent `output_path`, or omitted.
+ * @param {{root:string,artifactDir:string,defaultName:string,extensionPattern:RegExp,extensionLabel:string}} options Path options.
+ * @returns {string} Absolute destination.
+ */
+function resolveMcpArtifactPath(requested, options) {
+  const root = path.resolve(options.root);
+  const artifactDir = path.resolve(options.artifactDir);
+  const defaultName = options.defaultName;
+  let outputPath;
+  if (requested) {
+    const raw = String(requested);
+    outputPath = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(artifactDir, raw);
+  } else {
+    outputPath = path.join(artifactDir, defaultName);
+  }
+  if (options.extensionPattern && !options.extensionPattern.test(outputPath)) {
+    throw new Error(`output_path must end with ${options.extensionLabel}.`);
+  }
+  if (!isInsideDirectory(outputPath, root)) {
+    throw new Error(
+      `output_path must stay inside the XSXB workspace root (${root}). Received: ${requested || defaultName}`,
+    );
+  }
+  const repoDump = path.join(root, "exports");
+  if (isInsideDirectory(outputPath, repoDump)) {
+    throw new Error(
+      `MCP artifacts belong in the current project's .xsxb/ folder, not the MCP exports/ dump. Received: ${requested}`,
+    );
+  }
+  return outputPath;
+}
+
 /**
  * MIME type for a supported SFX file.
  * @param {string} filePath Audio path.
@@ -345,12 +396,15 @@ function audioMimeType(filePath) {
 }
 module.exports = {
   MAX_AGENT_FILE_BYTES,
+  MCP_ARTIFACT_DIR,
   PNG_NAME,
   audioMimeType,
   booleanFlag,
   classifyValidationMessage,
   formatMegabytes,
   isInsideDirectory,
+  mcpArtifactDir,
+  resolveMcpArtifactPath,
   listPngSequence,
   mergeBox,
   parseGroupPoint,

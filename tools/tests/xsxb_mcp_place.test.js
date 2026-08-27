@@ -232,6 +232,30 @@ test("Z99 and empty cell ids throw without computing a box", () => {
   );
 });
 
+test("overlay_grid writes into .xsxb, not beside the source or the MCP exports dump", async () => {
+  const current = fixture();
+  try {
+    const image = fieldImage(64, 64);
+    const filePath = writePng(path.join(current.root, "scene.png"), image.data, 64, 64);
+    const receipt = await current.service.call("xsxb_overlay_grid", { file_path: filePath });
+    assert.equal(path.basename(receipt.overlay_path), "scene_grid.png");
+    assert.notEqual(receipt.overlay_path, path.join(current.root, "scene_grid.png"));
+    assert.match(receipt.overlay_path.split(path.sep).join("/"), /\/\.xsxb\//);
+    assert.equal(fs.existsSync(path.join(current.root, "scene_grid.png")), false);
+    assert.equal(fs.existsSync(path.join(current.root, "exports", "scene_grid.png")), false);
+
+    const dumped = await current.service.call("xsxb_overlay_grid", {
+      file_path: filePath,
+      output_path: "exports/qa-grid.png",
+    });
+    assert.equal(path.basename(dumped.overlay_path), "qa-grid.png");
+    assert.match(dumped.overlay_path.split(path.sep).join("/"), /\/\.xsxb\//);
+    assert.equal(fs.existsSync(path.join(current.root, "exports", "qa-grid.png")), false);
+  } finally {
+    current.cleanup();
+  }
+});
+
 test("overlay_grid receipt uses original-image cells and leaves the source PNG unchanged", async () => {
   const current = fixture();
   try {

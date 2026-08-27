@@ -65,6 +65,8 @@ audio/projects/*
 
 # Generated exports, screenshots, and local browser audit state.
 output/
+/exports/
+workspace/.xsxb/
 .playwright-cli/
 .codex-artifacts/
 .superpowers/

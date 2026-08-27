@@ -8,7 +8,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { ALPHA_VISIBLE, decodePngRgba, encodePngRgba } = require("./xsxb_mcp_cutout");
-const { isInsideDirectory, requireExistingFile } = require("./xsxb_mcp_arguments");
+const { mcpArtifactDir, requireExistingFile, resolveMcpArtifactPath } = require("./xsxb_mcp_arguments");
 
 const DEFAULT_GRID = 8;
 const GRID_MIN = 2;
@@ -831,21 +831,14 @@ function resolveGridSize(args = {}) {
  */
 function resolveOutputPath(args, options) {
   const root = options.root;
-  if (args.output_path) {
-    const requested = String(args.output_path);
-    const outputPath = path.resolve(root, requested);
-    if (!/\.png$/i.test(outputPath)) throw new Error("output_path must end with .png.");
-    if (!isInsideDirectory(outputPath, root)) {
-      throw new Error(
-        `output_path must stay inside the XSXB workspace root (${root}). Received: ${requested}`,
-      );
-    }
-    return outputPath;
-  }
   const parsed = path.parse(options.inputPath);
-  const name = `${parsed.name}${options.suffix}.png`;
-  if (isInsideDirectory(options.inputPath, root)) return path.join(parsed.dir, name);
-  return path.join(root, "exports", name);
+  return resolveMcpArtifactPath(args.output_path, {
+    root,
+    artifactDir: options.artifactDir || mcpArtifactDir("", root),
+    defaultName: `${parsed.name}${options.suffix}.png`,
+    extensionPattern: /\.png$/i,
+    extensionLabel: ".png",
+  });
 }
 
 /**

@@ -384,6 +384,31 @@ test("compress_frames names the first missing on-disk frame instead of succeedin
   }
 });
 
+test("MCP GIF defaults and relative exports land in the project .xsxb folder, not the MCP dump", async () => {
+  const current = fixture({
+    encodeGifImpl: async (job) => {
+      fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
+    },
+  });
+  try {
+    await importWalk(current);
+    const artifactDir = path.join(current.workspaceDir, ".xsxb");
+    const exported = await current.service.call("xsxb_export_gif", {});
+    assert.equal(path.dirname(exported.outputPath), artifactDir);
+    assert.equal(path.basename(exported.outputPath), "mcp_imports_walk.gif");
+    assert.equal(fs.existsSync(path.join(current.root, "exports", "mcp_imports_walk.gif")), false);
+    assert.equal(fs.existsSync(path.join(current.workspaceDir, "exports", "mcp_imports_walk.gif")), false);
+
+    const relative = await current.service.call("xsxb_export_gif", {
+      output_path: "exports/from-mcp.gif",
+    });
+    assert.equal(relative.outputPath, path.join(artifactDir, "exports", "from-mcp.gif"));
+    assert.equal(fs.existsSync(path.join(current.root, "exports", "from-mcp.gif")), false);
+  } finally {
+    current.cleanup();
+  }
+});
+
 test("export_gif honors timing, skips disabled frames, and validates the output path", async () => {
   const jobs = [];
   const current = fixture({
@@ -405,7 +430,7 @@ test("export_gif honors timing, skips disabled frames, and validates the output 
     assert.equal(exported.frameCount, 1, "disabled frame is skipped");
     assert.equal(exported.skippedDisabledFrames, 1);
     assert.equal(exported.totalDurationMs, 250);
-    assert.ok(exported.outputPath.includes(path.join("exports", "mcp_imports_walk.gif")));
+    assert.ok(exported.outputPath.includes(path.join(".xsxb", "mcp_imports_walk.gif")));
     assert.ok(fs.existsSync(exported.outputPath));
     assert.equal(jobs[0].durations.length, 1);
     assert.equal(jobs[0].durations[0].toFixed(2), "0.25");
@@ -418,10 +443,10 @@ test("export_gif honors timing, skips disabled frames, and validates the output 
     assert.equal(custom.outputPath, customPath);
     assert.ok(fs.existsSync(customPath), "parent directory is created");
 
-    // A relative output_path is anchored to the project workspace rather than
-    // to whatever directory the server happens to be running in.
+    // A relative output_path hangs off the project .xsxb folder rather than
+    // the MCP repo or whatever directory the server happens to be running in.
     const relative = await current.service.call("xsxb_export_gif", { output_path: "previews/walk.gif" });
-    assert.equal(relative.outputPath, path.join(current.workspaceDir, "previews", "walk.gif"));
+    assert.equal(relative.outputPath, path.join(current.workspaceDir, ".xsxb", "previews", "walk.gif"));
 
     await assert.rejects(
       current.service.call("xsxb_export_gif", { output_path: "/tmp/not-a-gif.png" }),

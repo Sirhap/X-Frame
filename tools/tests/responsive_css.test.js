@@ -54,6 +54,16 @@ test("adjustment scope cards wrap instead of ellipsizing the title", () => {
   assert.doesNotMatch(title[0], /text-overflow:\s*ellipsis/);
 });
 
+test("short desktop workspace does not clamp the timeline into a fixed bottom dock", () => {
+  const css = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/responsive.css"), "utf8");
+  const block = css.match(
+    /@media \(min-width: 1121px\) and \(max-height: 760px\) \{[\s\S]*?\.workspace \{[\s\S]*?\}/,
+  );
+  assert.ok(block, "short-desktop workspace rule");
+  assert.match(block[0], /grid-template-rows:\s*auto minmax\([^)]+\) auto auto/);
+  assert.doesNotMatch(block[0], /clamp\(150px/);
+});
+
 test("workspace filmstrip stays at least 140px so laptop heights still show thumbs", () => {
   const css = fs.readFileSync(
     path.join(__dirname, "../animation_tuner/public/controls_workspace.css"),

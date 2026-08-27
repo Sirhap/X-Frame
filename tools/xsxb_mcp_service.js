@@ -60,6 +60,8 @@ const {
   booleanFlag,
   classifyValidationMessage,
   isInsideDirectory,
+  mcpArtifactDir,
+  resolveMcpArtifactPath,
   listPngSequence,
   mergeBox,
   pngFileToItem,
@@ -168,6 +170,16 @@ function createXsxbMcpService(options = {}) {
   const probeTunerImpl = options.probeTunerImpl || probeTunerUrl;
   const launchTunerImpl = options.launchTunerImpl || launchTunerProcess;
   const context = { projectId: "", profileId: "", animationId: "" };
+
+  /**
+   * Resolves the active Tuner project's `.xsxb` folder for MCP artifacts.
+   * @param {object} [project] Project record when already loaded.
+   * @returns {string} Absolute artifact directory.
+   */
+  function currentArtifactDir(project) {
+    const target = project || projectStore.activeProject(context.projectId);
+    return mcpArtifactDir(target ? projectStore.projectWorkspaceDir(target) : "", root);
+  }
 
   /**
    * Composites authored attack-trail meshes onto export frames.
@@ -1400,20 +1412,14 @@ function createXsxbMcpService(options = {}) {
         `file_path must stay inside the XSXB workspace root (${root}). Received: ${args.file_path}`,
       );
     }
-    let outputPath;
-    if (args.output_path) {
-      const requested = String(args.output_path);
-      outputPath = path.resolve(root, requested);
-      if (!PNG_NAME.test(outputPath)) throw new Error("output_path must end with .png.");
-      if (!isInsideDirectory(outputPath, root)) {
-        throw new Error(
-          `output_path must stay inside the XSXB workspace root (${root}). Received: ${requested}`,
-        );
-      }
-    } else {
-      const parsed = path.parse(inputPath);
-      outputPath = path.join(parsed.dir, `${parsed.name}_cut.png`);
-    }
+    const parsed = path.parse(inputPath);
+    const outputPath = resolveMcpArtifactPath(args.output_path, {
+      root,
+      artifactDir: currentArtifactDir(),
+      defaultName: `${parsed.name}_cut.png`,
+      extensionPattern: PNG_NAME,
+      extensionLabel: ".png",
+    });
     const explicitCanvas = Number.isInteger(Number(args.output_width || args.canvas))
       ? Math.max(8, Number(args.output_width || args.canvas))
       : Number.isInteger(Number(args.output_height))
@@ -2279,23 +2285,13 @@ function createXsxbMcpService(options = {}) {
     if (!framePaths.length) {
       throw new Error("No exportable frames in the selected range (all frames are disabled).");
     }
-    const exportRoot = projectStore.projectWorkspaceDir(project);
-    let outputPath;
-    if (args.output_path) {
-      // A relative path is anchored to the project workspace, and an absolute one
-      // has to stay under the XSXB root. Frame paths are already sandboxed, and an
-      // export must not be the one tool that creates directories anywhere on disk.
-      const requested = String(args.output_path);
-      outputPath = path.resolve(exportRoot, requested);
-      if (!/\.gif$/i.test(outputPath)) throw new Error("output_path must end with .gif.");
-      if (!isInsideDirectory(outputPath, root)) {
-        throw new Error(
-          `output_path must stay inside the XSXB workspace root (${root}). Received: ${requested}`,
-        );
-      }
-    } else {
-      outputPath = path.join(exportRoot, "exports", `${profile.id}_${animationId}.gif`);
-    }
+    const outputPath = resolveMcpArtifactPath(args.output_path, {
+      root,
+      artifactDir: currentArtifactDir(project),
+      defaultName: `${profile.id}_${animationId}.gif`,
+      extensionPattern: /\.gif$/i,
+      extensionLabel: ".gif",
+    });
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     const appliedVisual = selectedScales.some((scale) => scale !== 1);
     let encodePaths = framePaths;
@@ -2437,21 +2433,14 @@ function createXsxbMcpService(options = {}) {
       gridY: gridOptions.grid_y,
       gridScope: gridOptions.grid_scope,
     });
-    const exportRoot = projectStore.projectWorkspaceDir(project);
     const animationId = String(animation.id || animation.name);
-    let outputPath;
-    if (args.output_path) {
-      const requested = String(args.output_path);
-      outputPath = path.resolve(exportRoot, requested);
-      if (!/\.png$/i.test(outputPath)) throw new Error("output_path must end with .png.");
-      if (!isInsideDirectory(outputPath, root)) {
-        throw new Error(
-          `output_path must stay inside the XSXB workspace root (${root}). Received: ${requested}`,
-        );
-      }
-    } else {
-      outputPath = path.join(exportRoot, "exports", `${profile.id}_${animationId}_sheet.png`);
-    }
+    const outputPath = resolveMcpArtifactPath(args.output_path, {
+      root,
+      artifactDir: currentArtifactDir(project),
+      defaultName: `${profile.id}_${animationId}_sheet.png`,
+      extensionPattern: /\.png$/i,
+      extensionLabel: ".png",
+    });
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     fs.writeFileSync(outputPath, encodePngRgba(sheet.data, sheet.width, sheet.height));
     return {
@@ -2524,7 +2513,7 @@ function createXsxbMcpService(options = {}) {
    * @returns {object} Overlay receipt.
    */
   function overlayGrid(args = {}) {
-    return overlayGridImage(args, { root });
+    return overlayGridImage(args, { root, artifactDir: currentArtifactDir() });
   }
 
   /**
@@ -2533,7 +2522,7 @@ function createXsxbMcpService(options = {}) {
    * @returns {object} Placement receipt.
    */
   function placeImage(args = {}) {
-    return placeImageOnTarget(args, { root });
+    return placeImageOnTarget(args, { root, artifactDir: currentArtifactDir() });
   }
 
   const handlers = {
