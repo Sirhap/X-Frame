@@ -528,16 +528,18 @@
       const currentGroup = getCurrentGroup();
       const ownsProjectSelection =
         url.pathname === WORKSPACE_PATH || url.pathname.startsWith(`${WORKSPACE_PATH}/`);
+      const profileId = String(currentGroup?.profileId || "").trim();
+      const animationId = String(currentGroup?.animationId || "").trim();
       const entries = {
         project: ownsProjectSelection ? getActiveProjectId() : "",
         group: ownsProjectSelection ? currentGroup?.uiId || "" : "",
         frame: ownsProjectSelection && currentGroup ? String(getSelectedFrame()) : "",
+        animation: ownsProjectSelection && profileId && animationId ? `${profileId}/${animationId}` : "",
       };
       for (const [key, value] of Object.entries(entries)) {
         if (value) url.searchParams.set(key, value);
         else url.searchParams.delete(key);
       }
-      url.searchParams.delete("animation");
       const method = options.push ? "pushState" : "replaceState";
       windowRef.history[method]({ xsxbSelection: true }, "", url);
     }

@@ -3895,8 +3895,6 @@ navigationGuardModule.createController({
 window.addEventListener("popstate", () => {
   const urlState = new URLSearchParams(window.location.search);
   const requestedProject = urlState.get("project") || "";
-  const requestedGroup = urlState.get("group") || "";
-  const requestedAnimation = urlState.get("animation") || "";
   const requestedFrame = Math.max(0, Number.parseInt(urlState.get("frame") || "0", 10) || 0);
   const restore = async () => {
     selectedProfileId = "all";
@@ -3918,15 +3916,7 @@ window.addEventListener("popstate", () => {
       await applyWorkbenchRoute();
       return;
     }
-    const [requestedProfileId, requestedAnimationId] = requestedAnimation.split("/");
-    const group = config?.groups?.find(
-      (entry) =>
-        entry.uiId === requestedGroup ||
-        (requestedProfileId &&
-          requestedAnimationId &&
-          entry.profileId === requestedProfileId &&
-          entry.animationId === requestedAnimationId),
-    );
+    const group = projectLifecycleModule.requestedGroup(config?.groups, urlState);
     if (group) await selectGroup(group, { frameIndex: requestedFrame, history: false });
     await applyWorkbenchRoute();
     lastKnownNavigationUrl = window.location.href;

@@ -213,8 +213,13 @@ function createPopstateEnv(options) {
       events.push("applyWorkbenchRoute");
     },
     config: { groups: [] },
-    selectGroup: async () => {
-      events.push("selectGroup");
+    selectGroup: async (group, options) => {
+      events.push({
+        selectGroup: group?.uiId || group,
+        profileId: group?.profileId,
+        animationId: group?.animationId,
+        options,
+      });
     },
     status() {},
     t: (key, vars = {}) => `${key}:${vars.message || ""}`,
@@ -370,4 +375,95 @@ test("dirty popstate cancel restores the full pre-hop href including group and f
   assert.equal(restored.searchParams.get("project"), "repro-leave-a");
   assert.equal(restored.searchParams.get("group"), "hero/idle");
   assert.equal(restored.searchParams.get("frame"), "3");
+});
+
+function afterInsertActorGroups() {
+  return [
+    {
+      uiId: "player:actor:cutout-animation:0",
+      profileId: "character",
+      animationId: "cutout-animation",
+      name: "cutout-animation",
+      type: "actor",
+      tuningTarget: "player",
+    },
+    {
+      uiId: "player:actor:idle:1",
+      profileId: "character",
+      animationId: "idle",
+      name: "idle",
+      type: "actor",
+      tuningTarget: "player",
+    },
+    {
+      uiId: "player:actor:00:2",
+      profileId: "character",
+      animationId: "00",
+      name: "00",
+      type: "actor",
+      tuningTarget: "player",
+    },
+    {
+      uiId: "player:actor:idle:3",
+      profileId: "hero",
+      animationId: "idle",
+      name: "idle",
+      type: "actor",
+      tuningTarget: "player",
+    },
+    {
+      uiId: "player:actor:idle:4",
+      profileId: "sidekick",
+      animationId: "idle",
+      name: "idle",
+      type: "actor",
+      tuningTarget: "player",
+    },
+  ];
+}
+
+test("popstate resolves groups through requestedGroup so animation= wins over exact uiId", async () => {
+  const { requestedGroup } = require("../animation_tuner/public/app_project_lifecycle");
+  const source = fs.readFileSync(APP_JS, "utf8");
+  const extract = extractBetween(
+    source,
+    'window.addEventListener("popstate", () => {\n  const urlState = new URLSearchParams(window.location.search);',
+    '\ndocument.addEventListener("visibilitychange"',
+  );
+  const groups = afterInsertActorGroups();
+  const liveHero = createPopstateEnv({
+    href: "http://127.0.0.1:5179/workspace/animation/transform?project=click-qa&group=player%3Aactor%3Aidle%3A3&animation=hero%2Fidle&frame=0",
+    activeProjectId: "click-qa",
+  });
+  liveHero.config = { groups };
+  liveHero.projectLifecycleModule = { requestedGroup };
+  liveHero.XSXBAppProjectLifecycle = { requestedGroup };
+  vm.createContext(liveHero);
+  vm.runInContext(extract, liveHero);
+  liveHero.window.dispatch("popstate", { state: { xsxbSelection: true } });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  const liveSelected = liveHero.events.find((event) => event && event.selectGroup);
+  assert.equal(liveSelected?.profileId, "hero");
+  assert.equal(liveSelected?.selectGroup, "player:actor:idle:3");
+
+  const staleSidekick = createPopstateEnv({
+    href: "http://127.0.0.1:5179/workspace/animation/transform?project=click-qa&group=player%3Aactor%3Aidle%3A3&frame=0",
+    activeProjectId: "click-qa",
+  });
+  staleSidekick.config = { groups };
+  staleSidekick.projectLifecycleModule = { requestedGroup };
+  staleSidekick.XSXBAppProjectLifecycle = { requestedGroup };
+  vm.createContext(staleSidekick);
+  vm.runInContext(extract, staleSidekick);
+  staleSidekick.window.dispatch("popstate", { state: { xsxbSelection: true } });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  const remapped = staleSidekick.events.find((event) => event && event.selectGroup);
+  assert.equal(
+    remapped?.profileId,
+    "sidekick",
+    "popstate must call requestedGroup; exact uiId idle:3 is now hero after insert",
+  );
+  assert.equal(remapped?.selectGroup, "player:actor:idle:4");
 });

@@ -184,6 +184,30 @@ test("workspace selection synchronization keeps project animation state", () => 
   assert.equal(windowRef.location.search, "?project=project-1&group=idle&frame=1");
 });
 
+test("syncUrlState keeps animation=profile/id with the live group uiId", () => {
+  const { controller, state, windowRef } = createControllerFixture(
+    "http://localhost/workspace?animation=sidekick%2Fidle",
+  );
+  state.currentGroup = {
+    uiId: "player:actor:idle:3",
+    profileId: "hero",
+    animationId: "idle",
+    name: "idle",
+  };
+
+  controller.syncUrlState();
+
+  const params = new URLSearchParams(windowRef.location.search);
+  assert.equal(params.get("project"), "project-1");
+  assert.equal(params.get("group"), "player:actor:idle:3");
+  assert.equal(params.get("frame"), "1");
+  assert.equal(
+    params.get("animation"),
+    "hero/idle",
+    "live bookmark must keep the current group's animation= even if the URL had a stale value",
+  );
+});
+
 test("returning to the workspace route restores the frame editor", () => {
   const { controller, windowRef } = createControllerFixture("http://localhost/tools/cutout");
 

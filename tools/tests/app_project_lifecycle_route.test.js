@@ -129,4 +129,11 @@ test("stale actor idle:3 after insert resolves to sidekick not the hero who now 
 
   const uniqueExact = new URLSearchParams("group=player%3Aactor%3A00%3A2");
   assert.equal(requestedGroup(afterInsert, uniqueExact)?.animationId, "00");
+
+  const liveHeroBookmark = new URLSearchParams(
+    "group=player%3Aactor%3Aidle%3A3&animation=hero%2Fidle",
+  );
+  const liveHero = requestedGroup(afterInsert, liveHeroBookmark);
+  assert.equal(liveHero?.profileId, "hero", "live hero bookmark with animation= must not remap to sidekick");
+  assert.equal(liveHero?.uiId, "player:actor:idle:3");
 });
