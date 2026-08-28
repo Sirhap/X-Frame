@@ -81,6 +81,7 @@ test("workbench marks watermark as local-only and reveals hubs before app boot",
   assert.match(html, /function revealXsxbSurface\(\)/u);
   assert.match(html, /src="\/app_surface\.js"/u);
   assert.match(html, /src="\/app_workspace_leave\.js"/u);
+  assert.match(html, /src="\/app_attack_trail_mapping\.js"[\s\S]*src="\/app\.js"/u);
   assert.match(html, /XSXBAppSurface\?\.applyAppSurface/u);
   assert.match(html, /src="\/organizer_progress_overlay\.js"/u);
   assert.match(html, /XSXBOrganizerProgressOverlay\?\.scheduleAttach/u);

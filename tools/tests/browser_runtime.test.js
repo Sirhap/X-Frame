@@ -895,3 +895,23 @@ test("SAV-004 persist snapshot keeps typed offset 1 instead of the stale loaded 
   assert.equal(snapshot.tuning[scaleKey], 1);
   assert.equal(snapshot.tuning.reference_frame.frame_index, 4);
 });
+
+test("browser persist snapshot keeps live VFX frame and playback overrides", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const appSource = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app.js"), "utf8");
+  const snapshotStart = appSource.indexOf("function browserProjectSnapshot(projectId)");
+  const snapshotEnd = appSource.indexOf("const handoffAdapter", snapshotStart);
+  const snapshotFn = appSource.slice(snapshotStart, snapshotEnd);
+  assert.match(snapshotFn, /vfxFrameOverrides/);
+  assert.match(snapshotFn, /vfxPlaybackOverrides/);
+
+  const config = { tuning: { attack_vfx_frame_overrides: {}, attack_vfx_playback_overrides: {} } };
+  const snapshot = browserRuntime.mergeLiveTuningIntoConfig(config, {
+    values: {},
+    vfxFrameOverrides: { "hero/fx:0": { visual_size: 2 } },
+    vfxPlaybackOverrides: { "hero/fx:0": { duration: 1.5 } },
+  });
+  assert.deepEqual(snapshot.tuning.attack_vfx_frame_overrides, { "hero/fx:0": { visual_size: 2 } });
+  assert.deepEqual(snapshot.tuning.attack_vfx_playback_overrides, { "hero/fx:0": { duration: 1.5 } });
+});

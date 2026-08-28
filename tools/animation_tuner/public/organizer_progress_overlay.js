@@ -60,6 +60,18 @@
   }
 
   /**
+   * First-paint n matches process: selected∩included when any included card is
+   * selected, otherwise all included cards.
+   * @param {ParentNode|null|undefined} documentApi Overlay document.
+   * @returns {number} Frame count the batch will process.
+   */
+  function processFrameCount(documentApi) {
+    const selectedIncluded = documentApi?.querySelectorAll?.(".organizerFrame.included.selected")?.length || 0;
+    if (selectedIncluded > 0) return selectedIncluded;
+    return documentApi?.querySelectorAll?.(".organizerFrame.included")?.length || 0;
+  }
+
+  /**
    * Reads frame progress out of the button label and organizer status line.
    * @param {string} source Combined button and status text.
    * @returns {{current:number,total:number}}
@@ -148,7 +160,7 @@
       button.addEventListener(
         "click",
         () => {
-          const total = documentApi.querySelectorAll(".organizerFrame").length;
+          const total = processFrameCount(documentApi);
           writeCaption(caption, progressLabel({ total }));
           writeProgress(meter, { current: 0, total });
           overlay.hidden = false;
@@ -214,6 +226,7 @@
     START_TIMEOUT_MS,
     createOverlay,
     parseProgress,
+    processFrameCount,
     progressLabel,
     scheduleAttach,
     shouldKeepVisible,

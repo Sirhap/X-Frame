@@ -193,6 +193,42 @@ test("nested additionalProperties rejects unknown crop_from keys", () => {
   );
 });
 
+test("shift_frames array items reject unknown properties", () => {
+  const tool = toolDefinitions().find((entry) => entry.name === "xsxb_shift_frames");
+  assert.throws(
+    () =>
+      validateToolArguments("xsxb_shift_frames", tool.inputSchema, {
+        frames: [{ frame: 0, dxx: 9 }],
+      }),
+    /dxx/,
+  );
+});
+
+test("shift_frames array items require frame", () => {
+  const tool = toolDefinitions().find((entry) => entry.name === "xsxb_shift_frames");
+  assert.throws(
+    () =>
+      validateToolArguments("xsxb_shift_frames", tool.inputSchema, {
+        frames: [{ dx: 1 }],
+      }),
+    /missing required argument "frame"/,
+  );
+});
+
+test("place_image target_anchor rejects unknown keys", () => {
+  const tool = toolDefinitions().find((entry) => entry.name === "xsxb_place_image");
+  assert.throws(
+    () =>
+      validateToolArguments("xsxb_place_image", tool.inputSchema, {
+        target_path: "/tmp/t.png",
+        object_path: "/tmp/o.png",
+        target_anchor: { derife: "center" },
+        object_anchor: { mode: "alpha_center" },
+      }),
+    /derife/,
+  );
+});
+
 test("every declared tool schema is one this validator understands", () => {
   const supported = new Set([
     "type",

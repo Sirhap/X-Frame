@@ -469,26 +469,7 @@ const appConfirmation = appConfirmModule.createController({
 
 /** Confirms leaving a populated slice session through app-shell navigation. */
 async function requestScatterSliceLeave(destinationRoute) {
-  if (
-    destinationRoute &&
-    [
-      "organizer",
-      "import",
-      "cutout",
-      "scatter",
-      "export",
-      "godot",
-      "codex-pet",
-      "overview",
-      "animation",
-      "boxes",
-      "trails",
-      "audio",
-      "attachments",
-    ].includes(destinationRoute)
-  ) {
-    return true;
-  }
+  void destinationRoute;
   const pathname = String(globalThis.location.pathname || "");
   if (pathname !== "/tools/scatter-slice" && pathname !== "/workspace/resources/scatter") return true;
   const session = globalThis.XSXBScatterSliceSession;
@@ -508,7 +489,6 @@ async function requestScatterSliceLeave(destinationRoute) {
 /** Protects browser back/forward transitions that bypass app-shell click navigation. */
 function guardScatterSliceHistory(event) {
   void event;
-  lastKnownNavigationUrl = globalThis.location.href;
 }
 globalThis.addEventListener("popstate", guardScatterSliceHistory);
 globalThis.addEventListener("xsxb:routechange", () => {
@@ -783,7 +763,11 @@ const loadFrameAudioBindingsFromDb = frameAudio.loadFromDb;
 const setFrameAudioBinding = frameAudio.setBinding;
 const clearFrameAudioBinding = frameAudio.clearBinding;
 const playFrameAudio = frameAudio.play;
-const collectFrameAudioBindingsForSave = frameAudio.collectForSave;
+const collectFrameAudioBindingsForSave = async () => {
+  const payload = await frameAudio.collectForSave();
+  await frameAudio.persistBindingsToDb?.();
+  return payload;
+};
 const syncFrameAudioBindingsToGame = frameAudio.syncToGame;
 const workspaceLeaveModule = globalThis.XSXBAppWorkspaceLeave;
 if (!workspaceLeaveModule) throw new Error("XSXBAppWorkspaceLeave is required.");
@@ -848,10 +832,14 @@ const {
   confirmWorkspaceLeave,
   currentNavigationContext,
   currentWorkbenchRoute,
-  syncUrlState,
+  syncUrlState: writeSelectionUrl,
   syncWorkbenchRoute,
   updateDocumentTitle,
 } = routing;
+function syncUrlState(options) {
+  writeSelectionUrl(options);
+  lastKnownNavigationUrl = window.location.href;
+}
 cutoutNavigationContext = currentNavigationContext();
 organizerNavigationContext = currentNavigationContext();
 const playbackTiming = globalThis.XSXBPlaybackTiming.createController({
@@ -2057,6 +2045,7 @@ function cloneState() {
     selectedFrames: Array.from(selectedFrames),
     selectionAnchorFrame,
     groupName: currentGroup?.uiId,
+    frameAudioBindings: structuredClone(frameAudioBindings),
   };
 }
 
@@ -2087,6 +2076,17 @@ function restoreHistoryState(state) {
   soulPlaybackOverrides = structuredClone(state.soulPlaybackOverrides || {});
   soulFrameBoxOverrides = structuredClone(state.soulFrameBoxOverrides || {});
   yechengPropFrameOverrides = structuredClone(state.yechengPropFrameOverrides || {});
+  if (typeof resetFrameAudioBindings === "function") resetFrameAudioBindings();
+  const nextAudioBindings = structuredClone(state.frameAudioBindings || {});
+  const urlApi = globalThis.URL;
+  if (urlApi?.createObjectURL) {
+    for (const binding of Object.values(nextAudioBindings)) {
+      if (!binding?.blob) continue;
+      if (binding.url && urlApi.revokeObjectURL) urlApi.revokeObjectURL(binding.url);
+      binding.url = urlApi.createObjectURL(binding.blob);
+    }
+  }
+  frameAudioBindings = nextAudioBindings;
   const group = config.groups.find((entry) => entry.uiId === state.groupName) || currentGroup;
   renderSceneSelect();
   syncSceneInputs();
@@ -2468,12 +2468,9 @@ function imageFileFromList(fileList) {
 async function bindFrameAudioFile(file, index = selectedFrame, group = currentGroup) {
   if (!file || !group) return false;
   const frameIndex = clampFrameIndex(index, group);
+  pushUndo(t("boundFrameSfx", { name: file.name }));
   await setFrameAudioBinding(file, frameIndex, group);
   markDirty();
-  await persistBrowserSessionProject();
-  await syncFrameAudioBindingsToGame().catch((error) => {
-    status(t("boxSyncFailed", { message: error.message }));
-  });
   clearSelectedAttachment();
   if (els.frameAudioFile) els.frameAudioFile.value = "";
   if (group.uiId === currentGroup?.uiId) {
@@ -2506,12 +2503,9 @@ async function removeFrameAudioFromCard(index = selectedFrame, group = currentGr
     }))
   )
     return false;
+  pushUndo(t("clearFrameSfx"));
   await clearFrameAudioBinding(frameIndex, group);
   markDirty();
-  await persistBrowserSessionProject();
-  await syncFrameAudioBindingsToGame().catch((error) => {
-    status(t("frameSfxDeleteFailed", { message: error.message }));
-  });
   syncFrameAudioInputs();
   renderFilmstrip();
   draw();
@@ -2893,6 +2887,7 @@ attachmentManipulationController = attachmentManipulationModule.createController
   cachedImageForFrame,
   loadImageCached,
   frameTransform,
+  baseTransform,
   frameScreenRect,
   renderTransformForGroup,
   runtimeBaseScaleForGroup,
@@ -3533,44 +3528,29 @@ function moveDirectManipulationFrameByClientDelta(startTransform, clientDeltaX, 
   syncAdjustmentInputs();
 }
 
+const attackTrailMappingModule = globalThis.XSXBAppAttackTrailMapping;
+if (!attackTrailMappingModule) throw new Error("XSXBAppAttackTrailMapping is required.");
+const attackTrailMappingController = attackTrailMappingModule.createController({
+  getCurrentGroup: () => currentGroup,
+  getImages: () => images,
+  getSelectedFrame: () => selectedFrame,
+  getView: () => view,
+  getDevicePixelRatio: () => devicePixelRatio,
+  frameTransform,
+  frameScreenRect,
+  renderTransformForGroup,
+  runtimeBaseScaleForGroup,
+  effectiveFlipH,
+});
+
 /** Converts attack-trail group-local coordinates into canvas pixels. */
-function attackTrailLocalToScreen(point, group = currentGroup, groupImages = images) {
-  const stableTransform = baseTransform(group);
-  const rect = frameScreenRect(0, group, groupImages, { transform: stableTransform });
-  if (!rect || !group) return { x: 0, y: 0 };
-  const transform = renderTransformForGroup(stableTransform, group);
-  const runtimeScale = runtimeBaseScaleForGroup(0, group, groupImages);
-  const worldScale = view.zoom * devicePixelRatio;
-  const facing = effectiveFlipH(group) ? -1 : 1;
-  const scaleX = runtimeScale * transform.scaleX * worldScale * facing;
-  const scaleY = runtimeScale * transform.scaleY * worldScale;
-  const rotation = (Number(transform.rotation || 0) * facing * Math.PI) / 180;
-  const x = Number(point?.x || 0) * scaleX;
-  const y = Number(point?.y || 0) * scaleY;
-  return {
-    x: rect.originX + x * Math.cos(rotation) - y * Math.sin(rotation),
-    y: rect.originY + x * Math.sin(rotation) + y * Math.cos(rotation),
-  };
+function attackTrailLocalToScreen(...args) {
+  return attackTrailMappingController.attackTrailLocalToScreen(...args);
 }
 
 /** Converts canvas pixels into attack-trail group-local coordinates. */
-function attackTrailScreenToLocal(point, group = currentGroup, groupImages = images) {
-  const stableTransform = baseTransform(group);
-  const rect = frameScreenRect(0, group, groupImages, { transform: stableTransform });
-  if (!rect || !group) return { x: 0, y: 0 };
-  const transform = renderTransformForGroup(stableTransform, group);
-  const runtimeScale = runtimeBaseScaleForGroup(0, group, groupImages);
-  const worldScale = view.zoom * devicePixelRatio;
-  const facing = effectiveFlipH(group) ? -1 : 1;
-  const scaleX = runtimeScale * transform.scaleX * worldScale * facing;
-  const scaleY = runtimeScale * transform.scaleY * worldScale;
-  const rotation = -(Number(transform.rotation || 0) * facing * Math.PI) / 180;
-  const dx = Number(point?.x || 0) - rect.originX;
-  const dy = Number(point?.y || 0) - rect.originY;
-  return {
-    x: (dx * Math.cos(rotation) - dy * Math.sin(rotation)) / (scaleX || 1),
-    y: (dx * Math.sin(rotation) + dy * Math.cos(rotation)) / (scaleY || 1),
-  };
+function attackTrailScreenToLocal(...args) {
+  return attackTrailMappingController.attackTrailScreenToLocal(...args);
 }
 
 /** Returns the time at which a trail control stick is reached. */
@@ -3848,8 +3828,11 @@ navigationGuardModule.createController({
     Boolean(globalThis.XSXBScatterSliceSession?.hasUnsavedChanges?.()),
   requestNavigation: async () => {
     const hasToolChanges = frameOrganizer?.hasUnsavedChanges?.() || batchCutout?.hasUnsavedChanges?.();
+    const scatterSession = globalThis.XSXBScatterSliceSession;
+    const hasScatterChanges = Boolean(scatterSession?.hasUnsavedChanges?.());
+    const hasTuningChanges = Boolean(dirty);
     if (hasToolChanges) {
-      return appConfirmation.requestConfirmation(
+      const acceptedTools = await appConfirmation.requestConfirmation(
         language === "en"
           ? "Leaving will discard unapplied results in the current tool."
           : "离开会丢弃当前工具中尚未应用的处理结果。",
@@ -3861,21 +3844,51 @@ navigationGuardModule.createController({
           tone: "danger",
         },
       );
+      if (!acceptedTools) return false;
+      if (!hasScatterChanges && !hasTuningChanges) return true;
     }
-    const decision = await appConfirmation.requestDecision(
-      language === "en" ? "Your latest tuning changes have not been saved." : "刚才的调参改动尚未保存。",
-      {
-        title: language === "en" ? "Leave the editor?" : "离开编辑器？",
-        saveLabel: language === "en" ? "Save and leave" : "保存并离开",
-        discardLabel: language === "en" ? "Discard and leave" : "放弃并离开",
-        cancelLabel: language === "en" ? "Keep editing" : "继续编辑",
-      },
-    );
-    if (decision === "save") {
-      await save();
-      return !dirty;
+    let scatterConfirmed = false;
+    if (hasScatterChanges) {
+      const acceptedScatter = await appConfirmation.requestConfirmation(
+        "当前零散切片结果只保留在本次会话。离开将丢弃源图、检测框和分组结果。",
+        [],
+        {
+          title: "离开零散切片？",
+          confirmLabel: "放弃并离开",
+          cancelLabel: language === "en" ? "Keep editing" : "继续编辑",
+          tone: "danger",
+        },
+      );
+      if (!acceptedScatter) return false;
+      scatterConfirmed = true;
+      if (!hasTuningChanges) {
+        scatterSession.allowDiscard?.();
+        return true;
+      }
     }
-    return decision === "discard";
+    if (hasTuningChanges) {
+      const decision = await appConfirmation.requestDecision(
+        language === "en" ? "Your latest tuning changes have not been saved." : "刚才的调参改动尚未保存。",
+        {
+          title: language === "en" ? "Leave the editor?" : "离开编辑器？",
+          saveLabel: language === "en" ? "Save and leave" : "保存并离开",
+          discardLabel: language === "en" ? "Discard and leave" : "放弃并离开",
+          cancelLabel: language === "en" ? "Keep editing" : "继续编辑",
+        },
+      );
+      if (decision === "save") {
+        await save();
+        if (hasScatterChanges && !scatterConfirmed) return false;
+        if (!dirty) scatterSession.allowDiscard?.();
+        return !dirty;
+      }
+      if (decision === "discard") {
+        scatterSession.allowDiscard?.();
+        return true;
+      }
+      return false;
+    }
+    return true;
   },
   reportError: (error) => status(t("saveFailed", { message: error.message })),
 });
@@ -3888,8 +3901,20 @@ window.addEventListener("popstate", () => {
   const restore = async () => {
     selectedProfileId = "all";
     if (requestedProject && requestedProject !== activeProjectId()) {
-      selectedProjectId = requestedProject;
-      await loadConfig();
+      const previousProjectId = activeProjectId();
+      const previousHref =
+        typeof lastKnownNavigationUrl === "string" && lastKnownNavigationUrl
+          ? lastKnownNavigationUrl
+          : window.location.href;
+      const previousUrl = new URL(previousHref);
+      if (previousProjectId) previousUrl.searchParams.set("project", previousProjectId);
+      else previousUrl.searchParams.delete("project");
+      const switched = await activateProject(requestedProject);
+      if (!switched) {
+        window.history.replaceState({ xsxbSelection: true }, "", previousUrl.toString());
+        return;
+      }
+      lastKnownNavigationUrl = window.location.href;
       await applyWorkbenchRoute();
       return;
     }
@@ -3904,6 +3929,7 @@ window.addEventListener("popstate", () => {
     );
     if (group) await selectGroup(group, { frameIndex: requestedFrame, history: false });
     await applyWorkbenchRoute();
+    lastKnownNavigationUrl = window.location.href;
   };
   restore().catch((error) => status(t("loadFailed", { message: error.message })));
 });
@@ -4344,6 +4370,8 @@ function browserProjectSnapshot(projectId) {
     frameVisualOverrides: frameOverrides,
     framePlaybackOverrides: framePlaybackOverrides,
     frameBoxOverrides: frameBoxOverrides,
+    vfxFrameOverrides,
+    vfxPlaybackOverrides,
     sceneSettings,
     frameAudioBindings: structuredClone(frameAudioBindings),
     frameImageAttachments: structuredClone(frameImageAttachments),

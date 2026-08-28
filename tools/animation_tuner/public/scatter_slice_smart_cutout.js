@@ -77,7 +77,71 @@
   }
 
   /**
+   * True when a color is a studio plate: near-white, gray, near-black, or chroma green.
+   * Decorative editor borders (cyan, teal, etc.) stay false so image-wide majority wins.
+   * @param {{r:number,g:number,b:number}|null} color Sampled RGB.
+   * @returns {boolean} Whether the sample looks like a keyable plate.
+   */
+  function isStudioPlateColor(color) {
+    if (!color) return false;
+    if (smartCutoutDefaults.classifySmartBackground(color) === "plate") return true;
+    const red = Number(color.r);
+    const green = Number(color.g);
+    const blue = Number(color.b);
+    if (![red, green, blue].every(Number.isFinite)) return false;
+    return green > red + 24 && green > blue + 24;
+  }
+
+  /**
+   * Estimates the most frequent visible color in a perimeter band.
+   * @param {Uint8ClampedArray} rgba Source RGBA pixels.
+   * @param {number} width Image width.
+   * @param {number} height Image height.
+   * @returns {{r:number,g:number,b:number}|null} Dominant visible RGB color.
+   */
+  function detectDominantPerimeterColor(rgba, width, height) {
+    const edgeDepth = Math.max(2, Math.min(12, Math.ceil(Math.min(width, height) * 0.04)));
+    const buckets = new Map();
+    const addPixel = (x, y) => {
+      const offset = (y * width + x) * 4;
+      if (rgba[offset + 3] < 16) return;
+      const red = rgba[offset];
+      const green = rgba[offset + 1];
+      const blue = rgba[offset + 2];
+      const bucketKey = `${red >> 4},${green >> 4},${blue >> 4}`;
+      const bucket = buckets.get(bucketKey) || { count: 0, colors: new Map() };
+      const exactKey = (red << 16) | (green << 8) | blue;
+      const exact = bucket.colors.get(exactKey) || { r: red, g: green, b: blue, count: 0 };
+      exact.count += 1;
+      bucket.colors.set(exactKey, exact);
+      bucket.count += 1;
+      buckets.set(bucketKey, bucket);
+    };
+    for (let y = 0; y < height; y += 1) {
+      for (let depth = 0; depth < edgeDepth; depth += 1) {
+        addPixel(depth, y);
+        addPixel(width - 1 - depth, y);
+      }
+    }
+    for (let x = edgeDepth; x < width - edgeDepth; x += 1) {
+      for (let depth = 0; depth < edgeDepth; depth += 1) {
+        addPixel(x, depth);
+        addPixel(x, height - 1 - depth);
+      }
+    }
+    let dominantBucket = null;
+    for (const bucket of buckets.values()) {
+      if (!dominantBucket || bucket.count > dominantBucket.count) dominantBucket = bucket;
+    }
+    if (!dominantBucket) return null;
+    return [...dominantBucket.colors.values()].sort((left, right) => right.count - left.count)[0] || null;
+  }
+
+  /**
    * Detects one shared background sample from the complete source image.
+   * Prefers a perimeter studio plate over the image-wide majority so a large
+   * subject is not keyed as the background. Decorative borders that are not
+   * plates fall through to the image-wide dominant color.
    * @param {Uint8ClampedArray} rgba Source RGBA pixels.
    * @param {number} width Image width.
    * @param {number} height Image height.
@@ -85,8 +149,18 @@
    */
   function detectBackgroundColor(rgba, width, height) {
     validateImage(rgba, width, height);
+    const perimeter = detectDominantPerimeterColor(rgba, width, height);
+    const imageWide = detectDominantImageColor(rgba, width, height);
+    const chromaBehindChrome =
+      perimeter &&
+      imageWide &&
+      smartCutoutDefaults.classifySmartBackground(perimeter) === "plate" &&
+      imageWide.g > imageWide.r + 24 &&
+      imageWide.g > imageWide.b + 24;
     const detected =
-      detectDominantImageColor(rgba, width, height) ||
+      (chromaBehindChrome ? imageWide : null) ||
+      (isStudioPlateColor(perimeter) ? perimeter : null) ||
+      imageWide ||
       cutoutCore.estimateBackgroundColor(rgba, width, height);
     return { r: detected.r, g: detected.g, b: detected.b };
   }

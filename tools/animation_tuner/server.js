@@ -27,7 +27,7 @@ const {
   syncCodexPetProject,
 } = require("../codex_pets");
 const { createHttpUtilities } = require("./server_http");
-const { createProjectPersistence } = require("./server_project_persistence");
+const { createProjectPersistence, tuningFileForClient } = require("./server_project_persistence");
 const { createProjectSaveTransaction } = require("./server_project_save");
 const { createProjectValidation } = require("./server_project_validation");
 const { createProjectView } = require("./server_project_view");
@@ -608,6 +608,14 @@ function readTuningFile(project) {
         : {},
     frame_box_overrides:
       raw.frame_box_overrides && typeof raw.frame_box_overrides === "object" ? raw.frame_box_overrides : {},
+    attack_vfx_frame_overrides:
+      raw.attack_vfx_frame_overrides && typeof raw.attack_vfx_frame_overrides === "object"
+        ? raw.attack_vfx_frame_overrides
+        : {},
+    attack_vfx_playback_overrides:
+      raw.attack_vfx_playback_overrides && typeof raw.attack_vfx_playback_overrides === "object"
+        ? raw.attack_vfx_playback_overrides
+        : {},
   };
 }
 
@@ -687,14 +695,7 @@ function readAttachmentAssets(project) {
 }
 
 function tuningForClient(tuningFile) {
-  return {
-    ...tuningFile.values,
-    scene_settings: tuningFile.scene_settings,
-    reference_frame: tuningFile.reference_frame,
-    frame_visual_overrides: tuningFile.frame_visual_overrides,
-    frame_playback_overrides: tuningFile.frame_playback_overrides,
-    frame_box_overrides: tuningFile.frame_box_overrides,
-  };
+  return tuningFileForClient(tuningFile);
 }
 
 function profileForClient(profile) {

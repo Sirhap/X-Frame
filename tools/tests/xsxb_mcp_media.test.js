@@ -8,7 +8,7 @@ const test = require("node:test");
 const { createProjectStore } = require("../project_store");
 const { createXsxbMcpService } = require("../xsxb_mcp_service");
 const { decodePngRgba, encodePngRgba } = require("../xsxb_mcp_cutout");
-const { parseGroupPoint } = require("../xsxb_mcp_arguments");
+const { parseGroupPoint, requireFps } = require("../xsxb_mcp_arguments");
 const { encodeGifWithFfmpeg } = require("../xsxb_mcp_processes");
 const { measureLongAxis } = require("../xsxb_mcp_visual_qa");
 
@@ -384,6 +384,26 @@ test("compress_frames names the first missing on-disk frame instead of succeedin
   }
 });
 
+test("xsxb_cutout names the first missing on-disk frame instead of succeeding", async () => {
+  const current = fixture();
+  try {
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), solidPng(16));
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), solidPng(16, [40, 200, 40, 255]));
+    await importWalk(current);
+    const animation = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    const firstPath = animation.animation.frames[0].absolutePath;
+    const secondPath = animation.animation.frames[1].absolutePath;
+    fs.rmSync(secondPath);
+    await assert.rejects(
+      () => current.service.call("xsxb_cutout", { animation_id: "walk" }),
+      /missing on-disk frame/,
+    );
+    assert.equal(fs.existsSync(firstPath), true);
+  } finally {
+    current.cleanup();
+  }
+});
+
 test("MCP GIF defaults and relative exports land in the project .xsxb folder, not the MCP dump", async () => {
   const current = fixture({
     encodeGifImpl: async (job) => {
@@ -744,6 +764,331 @@ test("add_attack_trail parses string group points on sticks", async () => {
     assert.equal(added.segment.coordinateSpace, "group");
     assert.deepEqual(added.segment.sticks[0].top, { x: -10, y: -20 });
     assert.deepEqual(added.segment.sticks[0].bottom, { x: -10, y: -4 });
+  } finally {
+    current.cleanup();
+  }
+});
+
+/**
+ * Counts near-magenta pixels so scaled sheet cells still match the marker.
+ * @param {Uint8ClampedArray|Buffer} rgba Pixel buffer.
+ * @returns {number} Matching pixels.
+ */
+function countMagentaPixels(rgba) {
+  let count = 0;
+  for (let offset = 0; offset < rgba.length; offset += 4) {
+    if (rgba[offset + 3] < 128) continue;
+    if (rgba[offset] > 180 && rgba[offset + 1] < 80 && rgba[offset + 2] > 180) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Weighted centroid of magenta marker pixels in a PNG.
+ * @param {string} filePath PNG path.
+ * @returns {{x:number,y:number,n:number,width:number}}
+ */
+function magentaCentroid(filePath) {
+  const decoded = decodePngRgba(filePath);
+  const rgba = decoded.data;
+  const width = decoded.width;
+  let sumX = 0;
+  let sumY = 0;
+  let count = 0;
+  for (let offset = 0, index = 0; offset < rgba.length; offset += 4, index += 1) {
+    if (rgba[offset + 3] < 128) continue;
+    if (!(rgba[offset] > 180 && rgba[offset + 1] < 80 && rgba[offset + 2] > 180)) continue;
+    sumX += index % width;
+    sumY += Math.floor(index / width);
+    count += 1;
+  }
+  return { x: count ? sumX / count : 0, y: count ? sumY / count : 0, n: count, width };
+}
+
+/**
+ * Writes pet millisecond-clock fps and per-frame duration multipliers into the manifest.
+ * @param {object} current Media fixture.
+ * @param {string} animationId Animation id.
+ * @param {number[]} durations Pet duration multipliers (milliseconds at fps 1000).
+ * @returns {void}
+ */
+function patchMillisecondClock(current, animationId, durations) {
+  const project = current.store.readRegistry().projects[0];
+  const paths = current.store.projectPaths(project);
+  const manifest = current.store.readJson(paths.manifest);
+  for (const profile of manifest.profiles || []) {
+    for (const animation of profile.animations || []) {
+      if (String(animation.id || animation.name) !== animationId) continue;
+      animation.fps = 1000;
+      animation.type = "pet";
+      (animation.frames || []).forEach((frame, index) => {
+        frame.duration = durations[index] ?? durations[durations.length - 1] ?? 280;
+      });
+    }
+  }
+  current.store.writeJson(paths.manifest, manifest);
+}
+
+test("export_sheet bakes a magenta attachment marker instead of matching the pre-attach sheet", async () => {
+  const current = fixture();
+  try {
+    const frameSize = 128;
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), solidPng(frameSize, [40, 80, 40, 255]));
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), solidPng(frameSize, [40, 80, 40, 255]));
+    await importWalk(current);
+    const before = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      cell: 256,
+      pad: 4,
+      columns: 2,
+      grid: false,
+    });
+    const beforeBytes = fs.readFileSync(before.outputPath);
+    assert.equal(countMagentaPixels(decodePngRgba(before.outputPath).data), 0);
+    assert.equal(before.bakedAttachments, false);
+
+    const markerPath = path.join(current.root, "magenta-marker.png");
+    fs.writeFileSync(markerPath, solidPng(64, [255, 0, 255, 255]));
+    const added = await current.service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      file_path: markerPath,
+      id: "magenta-marker",
+      frames: [
+        { frame: 0, offset_x: 0, offset_y: -64, scale: 1 },
+        { frame: 1, offset_x: 0, offset_y: -64, scale: 1 },
+      ],
+      sync: false,
+    });
+    assert.equal(added.updatedFrames, 2);
+
+    const after = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      cell: 256,
+      pad: 4,
+      columns: 2,
+      grid: false,
+    });
+    const afterBytes = fs.readFileSync(after.outputPath);
+    assert.equal(after.bakedAttachments, true);
+    assert.ok(after.attachmentIds.includes("magenta-marker"));
+    assert.equal(afterBytes.equals(beforeBytes), false, "sheet must change after attaching the marker");
+    const magenta = countMagentaPixels(decodePngRgba(after.outputPath).data);
+    assert.ok(magenta > 100, `sheet must contain the magenta marker, got ${magenta} pixels`);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_sheet bakes Tuner 7-part attachment keys whose metadata.animation is the clip name", async () => {
+  const current = fixture();
+  try {
+    const frameSize = 128;
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), solidPng(frameSize, [40, 80, 40, 255]));
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), solidPng(frameSize, [40, 80, 40, 255]));
+    await importWalk(current);
+    const before = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      cell: 256,
+      pad: 4,
+      columns: 2,
+      grid: false,
+    });
+    const beforeBytes = fs.readFileSync(before.outputPath);
+    assert.equal(countMagentaPixels(decodePngRgba(before.outputPath).data), 0);
+
+    const markerPath = path.join(current.root, "magenta-marker.png");
+    fs.writeFileSync(markerPath, solidPng(64, [255, 0, 255, 255]));
+    await current.service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      file_path: markerPath,
+      id: "magenta-marker",
+      frames: [
+        { frame: 0, offset_x: 0, offset_y: -64, scale: 1 },
+        { frame: 1, offset_x: 0, offset_y: -64, scale: 1 },
+      ],
+      sync: false,
+    });
+    const project = current.store.readRegistry().projects[0];
+    const paths = current.store.projectPaths(project);
+    const bindings = current.store.readJson(paths.frameImageAttachments, []);
+    const rewritten = bindings.map((binding) => ({
+      ...binding,
+      key: `proj:player:hero:animation:walk:sheet.png:${binding.frame}`,
+      frameKey: `proj:player:hero:animation:walk:sheet.png:${binding.frame}`,
+      metadata: {
+        profileId: "hero",
+        animation: "walk",
+        frame: binding.frame,
+      },
+    }));
+    current.store.writeJson(paths.frameImageAttachments, rewritten);
+
+    const after = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      cell: 256,
+      pad: 4,
+      columns: 2,
+      grid: false,
+    });
+    const afterBytes = fs.readFileSync(after.outputPath);
+    assert.equal(after.bakedAttachments, true);
+    assert.ok(after.attachmentIds.includes("magenta-marker"));
+    assert.equal(afterBytes.equals(beforeBytes), false, "Tuner-keyed marker must change the sheet");
+    const magenta = countMagentaPixels(decodePngRgba(after.outputPath).data);
+    assert.ok(magenta > 100, `sheet must contain the Tuner-keyed magenta marker, got ${magenta} pixels`);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_sheet attachment bake applies owner visual_size and flipH like Tuner", async () => {
+  const current = fixture();
+  try {
+    const frameSize = 64;
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), solidPng(frameSize, [20, 40, 20, 255]));
+    fs.unlinkSync(path.join(current.sequenceDir, "b.png"));
+    await importWalk(current);
+    const markerPath = path.join(current.root, "magenta-marker.png");
+    fs.writeFileSync(markerPath, solidPng(8, [255, 0, 255, 255]));
+    await current.service.call("xsxb_add_attachment", {
+      animation_id: "walk",
+      file_path: markerPath,
+      id: "magenta-marker",
+      frames: [{ frame: 0, offset_x: 10, offset_y: -10, scale: 1 }],
+      sync: false,
+    });
+    const exportOne = () =>
+      current.service.call("xsxb_export_sheet", {
+        animation_id: "walk",
+        cell: frameSize,
+        pad: 1,
+        columns: 1,
+        grid: false,
+      });
+
+    const baseline = magentaCentroid((await exportOne()).outputPath);
+    assert.ok(baseline.n > 10, `baseline marker missing, n=${baseline.n}`);
+
+    await current.service.call("xsxb_set_visual_transform", { level: "group", visual_size: 2 });
+    const scaled = magentaCentroid((await exportOne()).outputPath);
+    const originX = 1 + frameSize / 2;
+    const originY = 1 + frameSize;
+    const baseDx = baseline.x - originX;
+    const scaledDx = scaled.x - originX;
+    const baseDy = baseline.y - originY;
+    const scaledDy = scaled.y - originY;
+    assert.ok(
+      Math.abs(scaledDx) > Math.abs(baseDx) * 1.5,
+      `visual_size=2 must multiply offset (base dx=${baseDx.toFixed(2)} scaled dx=${scaledDx.toFixed(2)})`,
+    );
+    assert.ok(
+      Math.abs(scaledDy) > Math.abs(baseDy) * 1.5,
+      `visual_size=2 must multiply offset y (base dy=${baseDy.toFixed(2)} scaled dy=${scaledDy.toFixed(2)})`,
+    );
+
+    await current.service.call("xsxb_set_visual_transform", { level: "group", visual_size: 1 });
+    const project = current.store.readRegistry().projects[0];
+    const paths = current.store.projectPaths(project);
+    const manifest = current.store.readJson(paths.manifest);
+    const animation = manifest.profiles[0].animations[0];
+    animation.flipH = true;
+    current.store.writeJson(paths.manifest, manifest);
+    const flipped = magentaCentroid((await exportOne()).outputPath);
+    const flippedDx = flipped.x - originX;
+    assert.ok(
+      flippedDx * baseDx < 0,
+      `flipH must mirror attachment offset x (base dx=${baseDx.toFixed(2)} flipped dx=${flippedDx.toFixed(2)})`,
+    );
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_sheet of an fps-1000 pet clip uses millisecond durations and does not throw", async () => {
+  const captured = [];
+  const current = fixture({
+    encodeGifImpl: async (job) => {
+      captured.push(job.durations.slice());
+      fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
+    },
+  });
+  try {
+    const idleMs = [280, 110, 110, 140, 140, 320];
+    for (let index = 0; index < idleMs.length; index += 1) {
+      fs.writeFileSync(
+        path.join(current.sequenceDir, `${String(index).padStart(2, "0")}.png`),
+        solidPng(16, [40, 80, 120, 255]),
+      );
+    }
+    fs.unlinkSync(path.join(current.sequenceDir, "a.png"));
+    fs.unlinkSync(path.join(current.sequenceDir, "b.png"));
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: current.sequenceDir,
+      project_id: "media",
+      animation_id: "idle",
+    });
+    patchMillisecondClock(current, "idle", idleMs);
+
+    assert.throws(() => requireFps(1000), /between 1 and 120/);
+
+    const sheet = await current.service.call("xsxb_export_sheet", {
+      animation_id: "idle",
+      cell: 32,
+      pad: 2,
+      columns: 6,
+      grid: false,
+    });
+    assert.equal(sheet.frameCount, 6);
+    assert.equal(sheet.fps, 1000);
+
+    const gif = await current.service.call("xsxb_export_gif", { animation_id: "idle" });
+    assert.equal(gif.fps, 1000);
+    assert.equal(gif.totalDurationMs, 1100);
+    assert.deepEqual(
+      captured[0].map((seconds) => Math.round(seconds * 1000)),
+      idleMs,
+    );
+    assert.notEqual(gif.totalDurationMs, Math.round((idleMs.length / 12) * 1000));
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_gif fps override on a pet clip keeps millisecond durations", async () => {
+  const captured = [];
+  const current = fixture({
+    encodeGifImpl: async (job) => {
+      captured.push(job.durations.slice());
+      fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
+    },
+  });
+  try {
+    const idleMs = [280, 110, 110, 140, 140, 320];
+    for (let index = 0; index < idleMs.length; index += 1) {
+      fs.writeFileSync(
+        path.join(current.sequenceDir, `${String(index).padStart(2, "0")}.png`),
+        solidPng(16, [40, 80, 120, 255]),
+      );
+    }
+    fs.unlinkSync(path.join(current.sequenceDir, "a.png"));
+    fs.unlinkSync(path.join(current.sequenceDir, "b.png"));
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: current.sequenceDir,
+      project_id: "media",
+      animation_id: "idle",
+    });
+    patchMillisecondClock(current, "idle", idleMs);
+
+    const gif = await current.service.call("xsxb_export_gif", { animation_id: "idle", fps: 12 });
+    assert.equal(gif.fps, 1000);
+    assert.equal(gif.totalDurationMs, 1100);
+    assert.deepEqual(
+      captured[0].map((seconds) => Math.round(seconds * 1000)),
+      idleMs,
+    );
+    assert.notEqual(Math.round((captured[0][0] || 0) * 1000), Math.round((280 / 12) * 1000));
   } finally {
     current.cleanup();
   }

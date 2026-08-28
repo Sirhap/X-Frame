@@ -1,6 +1,24 @@
 "use strict";
 
 /**
+ * Maps a persisted tuning.json document onto the client-facing tuning object.
+ * @param {object} tuningFile Saved tuning document.
+ * @returns {object} Client tuning payload.
+ */
+function tuningFileForClient(tuningFile) {
+  return {
+    ...tuningFile.values,
+    scene_settings: tuningFile.scene_settings,
+    reference_frame: tuningFile.reference_frame,
+    frame_visual_overrides: tuningFile.frame_visual_overrides,
+    frame_playback_overrides: tuningFile.frame_playback_overrides,
+    frame_box_overrides: tuningFile.frame_box_overrides,
+    attack_vfx_frame_overrides: tuningFile.attack_vfx_frame_overrides,
+    attack_vfx_playback_overrides: tuningFile.attack_vfx_playback_overrides,
+  };
+}
+
+/**
  * Creates the project-persistence operations used by the animation tuner HTTP
  * server.  The factory keeps filesystem and project-store dependencies at the
  * boundary so the mutation logic can be tested without starting a server.
@@ -79,6 +97,14 @@ function createProjectPersistence({
       frame_box_overrides:
         payload.frame_box_overrides && typeof payload.frame_box_overrides === "object"
           ? payload.frame_box_overrides
+          : {},
+      attack_vfx_frame_overrides:
+        payload.attack_vfx_frame_overrides && typeof payload.attack_vfx_frame_overrides === "object"
+          ? payload.attack_vfx_frame_overrides
+          : {},
+      attack_vfx_playback_overrides:
+        payload.attack_vfx_playback_overrides && typeof payload.attack_vfx_playback_overrides === "object"
+          ? payload.attack_vfx_playback_overrides
           : {},
     };
     projectStore.writeJson(projectStore.projectPaths(project).tuning, next);
@@ -286,4 +312,4 @@ function createProjectPersistence({
   };
 }
 
-module.exports = { createProjectPersistence };
+module.exports = { createProjectPersistence, tuningFileForClient };

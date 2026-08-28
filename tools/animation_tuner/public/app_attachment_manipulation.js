@@ -35,6 +35,7 @@
       cachedImageForFrame = () => null,
       loadImageCached = () => Promise.resolve(),
       frameTransform = () => ({ scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 }),
+      baseTransform = () => ({ scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 }),
       frameScreenRect = () => null,
       renderTransformForGroup = (transform) => transform,
       runtimeBaseScaleForGroup = () => 1,
@@ -51,6 +52,21 @@
       draw = () => {},
       windowRef = globalScope,
     } = dependencies;
+
+    /**
+     * Owner render transform for attachments: group/value-store rotation still
+     * applies when a per-frame override pins rotation to 0.
+     */
+    function renderOwnerTransformForGroup(ownerTransform, group) {
+      const base = baseTransform(group) || {};
+      return renderTransformForGroup(
+        {
+          ...ownerTransform,
+          rotation: Number(ownerTransform?.rotation || 0) || Number(base.rotation || 0),
+        },
+        group,
+      );
+    }
 
     /**
      * Calculates the screen-space bounding rectangle for an image attachment.
@@ -77,25 +93,29 @@
       const ownerTransform = frameTransform(index, group);
       const ownerRect = frameScreenRect(index, group, groupImages, { transform: ownerTransform });
       if (!ownerRect) return;
-      const ownerRenderTransform = renderTransformForGroup(ownerTransform, group);
+      const ownerRenderTransform = renderOwnerTransformForGroup(ownerTransform, group);
       const local = normalizeAttachmentTransform(attachment.transform);
       const runtimeBaseScale = runtimeBaseScaleForGroup(index, group, groupImages);
       const flipH = effectiveFlipH(group);
-      const facing = flipH ? -1 : 1;
       const view = getView();
       const worldScale = view.zoom * Number(getDevicePixelRatio() || 1);
-      // Match Godot _apply_frame_image_attachments: local scale changes size only,
-      // while local offset is measured from the owner sprite origin.
-      const spriteScaleX = runtimeBaseScale * ownerRenderTransform.scaleX * local.scaleX * worldScale;
-      const spriteScaleY = runtimeBaseScale * ownerRenderTransform.scaleY * local.scaleY * worldScale;
-      const originX =
-        ownerRect.originX +
-        local.offset.x * ownerRenderTransform.scaleX * runtimeBaseScale * worldScale * facing;
-      const originY =
-        ownerRect.originY + local.offset.y * ownerRenderTransform.scaleY * runtimeBaseScale * worldScale;
-      const rotation = (Number(ownerRenderTransform.rotation || 0) + Number(local.rotation || 0)) * facing;
-      const width = img.width * Math.abs(spriteScaleX);
-      const height = img.height * Math.abs(spriteScaleY);
+      const utils =
+        (typeof module === "object" && module.exports
+          ? require("./app_attachment_utils")
+          : globalScope.XSXBAttachmentUtils) || {};
+      const placed = utils.attachmentOwnerPlacement(local, {
+        scaleX: ownerRenderTransform.scaleX,
+        scaleY: ownerRenderTransform.scaleY,
+        runtimeScale: runtimeBaseScale,
+        worldScale,
+        flipH,
+        rotation: Number(ownerRenderTransform.rotation || 0),
+      });
+      const originX = ownerRect.originX + placed.originX;
+      const originY = ownerRect.originY + placed.originY;
+      const rotation = placed.rotation;
+      const width = img.width * Math.abs(placed.scaleX);
+      const height = img.height * Math.abs(placed.scaleY);
       const halfWidth = width / 2;
       const halfHeight = height / 2;
       const rotationRadians = (rotation * Math.PI) / 180;
@@ -168,7 +188,7 @@
       const group = getCurrentGroup();
       const index = attachmentFrameIndex(attachment, group);
       const ownerTransform = frameTransform(index, group);
-      const ownerRenderTransform = renderTransformForGroup(ownerTransform, group);
+      const ownerRenderTransform = renderOwnerTransformForGroup(ownerTransform, group);
       const runtimeBaseScale = runtimeBaseScaleForGroup(index, group, getImages());
       const facing = effectiveFlipH(group) ? -1 : 1;
       const view = getView();
@@ -176,9 +196,11 @@
       const scaleY = ownerRenderTransform.scaleY * runtimeBaseScale * view.zoom;
       const safeScaleX = Math.abs(scaleX) > 0.0001 ? scaleX : scaleX < 0 ? -0.0001 : 0.0001;
       const safeScaleY = Math.abs(scaleY) > 0.0001 ? scaleY : scaleY < 0 ? -0.0001 : 0.0001;
+      const ownerRotationRadians = (Number(ownerRenderTransform.rotation || 0) * facing * Math.PI) / 180;
+      const unrotated = rotateVector({ x: dx, y: dy }, -ownerRotationRadians);
       return {
-        x: dx / safeScaleX,
-        y: dy / safeScaleY,
+        x: unrotated.x / safeScaleX,
+        y: unrotated.y / safeScaleY,
       };
     }
 

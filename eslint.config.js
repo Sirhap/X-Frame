@@ -122,6 +122,7 @@ module.exports = [
       "tools/animation_tuner/public/app_box_adjustment.js",
       "tools/animation_tuner/public/app_adjustment_inputs.js",
       "tools/animation_tuner/public/app_attachment_manipulation.js",
+      "tools/animation_tuner/public/app_attack_trail_mapping.js",
       "tools/animation_tuner/public/app_playback_inputs.js",
       "tools/animation_tuner/public/app_project_selects.js",
       "tools/animation_tuner/public/godot_handoff_controller.js",

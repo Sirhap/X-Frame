@@ -12,7 +12,10 @@ const {
   isInside,
   safeResolve,
 } = require("../animation_tuner/server_validation");
-const { createProjectPersistence } = require("../animation_tuner/server_project_persistence");
+const {
+  createProjectPersistence,
+  tuningFileForClient,
+} = require("../animation_tuner/server_project_persistence");
 
 /**
  * Creates a minimal valid PNG payload with predictable dimensions.
@@ -194,6 +197,61 @@ test("asset-library persistence removes metadata without deleting content-addres
     assert.deepEqual(JSON.parse(fs.readFileSync(fixture.paths.attachmentAssets, "utf8")), []);
     assert.equal(fs.existsSync(physicalFile), true);
     assert.deepEqual(fs.readFileSync(physicalFile), bytes);
+  } finally {
+    fixture.dispose();
+  }
+});
+
+test("tuning persistence retains attack VFX frame and playback overrides through save and client reload", () => {
+  const fixture = createFixture();
+  try {
+    const payload = {
+      values: { "profiles.hero.groups.slash.visual_size": 1 },
+      scene_settings: { scene: "main" },
+      reference_frame: null,
+      frame_visual_overrides: { "hero/idle#0": { offset: { x: 1, y: 2 } } },
+      frame_playback_overrides: { "hero/idle#0": { hold: 2 } },
+      frame_box_overrides: { "hero/idle#0": { hitbox: { enabled: true } } },
+      attack_vfx_frame_overrides: {
+        "hero/slash_fx#0": { offset: { x: 7, y: 9 }, visual_size: 1.4, rotation: 15 },
+      },
+      attack_vfx_playback_overrides: {
+        "hero/slash_fx#0": { hold: 3, disabled: false },
+      },
+    };
+    fixture.persistence.saveTuningPayload(payload, fixture.project);
+    const saved = JSON.parse(fs.readFileSync(fixture.paths.tuning, "utf8"));
+    assert.deepEqual(saved.attack_vfx_frame_overrides, payload.attack_vfx_frame_overrides);
+    assert.deepEqual(saved.attack_vfx_playback_overrides, payload.attack_vfx_playback_overrides);
+    assert.deepEqual(saved.frame_visual_overrides, payload.frame_visual_overrides);
+    assert.deepEqual(saved.frame_playback_overrides, payload.frame_playback_overrides);
+    assert.deepEqual(saved.frame_box_overrides, payload.frame_box_overrides);
+
+    const clientTuning = tuningFileForClient(saved);
+    assert.deepEqual(clientTuning.attack_vfx_frame_overrides, payload.attack_vfx_frame_overrides);
+    assert.deepEqual(clientTuning.attack_vfx_playback_overrides, payload.attack_vfx_playback_overrides);
+    assert.equal(clientTuning["profiles.hero.groups.slash.visual_size"], 1);
+    assert.deepEqual(clientTuning.frame_visual_overrides, payload.frame_visual_overrides);
+
+    fixture.persistence.saveTuningPayload({ values: {} }, fixture.project);
+    const emptySaved = JSON.parse(fs.readFileSync(fixture.paths.tuning, "utf8"));
+    assert.deepEqual(emptySaved.attack_vfx_frame_overrides, {});
+    assert.deepEqual(emptySaved.attack_vfx_playback_overrides, {});
+
+    fixture.persistence.saveTuningPayload(
+      {
+        values: {},
+        attack_vfx_frame_overrides: "nope",
+        attack_vfx_playback_overrides: 3,
+      },
+      fixture.project,
+    );
+    const invalidSaved = JSON.parse(fs.readFileSync(fixture.paths.tuning, "utf8"));
+    assert.deepEqual(invalidSaved.attack_vfx_frame_overrides, {});
+    assert.deepEqual(invalidSaved.attack_vfx_playback_overrides, {});
+    const invalidClient = tuningFileForClient(invalidSaved);
+    assert.deepEqual(invalidClient.attack_vfx_frame_overrides, {});
+    assert.deepEqual(invalidClient.attack_vfx_playback_overrides, {});
   } finally {
     fixture.dispose();
   }

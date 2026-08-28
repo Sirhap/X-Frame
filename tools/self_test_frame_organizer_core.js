@@ -149,7 +149,7 @@ function runFrameOrganizerCoreTests() {
         maxPeriod: 10,
         preference,
       })[0].period,
-      9,
+      8,
     );
   }
 }

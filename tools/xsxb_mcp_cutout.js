@@ -7,6 +7,7 @@ const { parsePng, unfilterPng } = require("./attachment_sequence_analysis");
 const { NUMERIC_PARAMETER_LIMITS } = require("./animation_tuner/public/batch_cutout_session_core");
 const {
   REGULAR_AUTO_BACKGROUND_PARAMETERS,
+  classifySmartBackground,
   referenceChromaKeyFor,
 } = require("./animation_tuner/public/smart_cutout_defaults");
 const { applyProductCutout } = require("./animation_tuner/public/batch_cutout_core");
@@ -222,13 +223,27 @@ function parseProtectedColors(value) {
 }
 
 /**
+ * True when a visible RGB sample looks like a studio plate (near-white, gray,
+ * near-black, or chroma green) rather than a subject.
+ * @param {number} red Red channel.
+ * @param {number} green Green channel.
+ * @param {number} blue Blue channel.
+ * @returns {boolean} Whether the pixel is a keyable plate color.
+ */
+function isStudioPlatePixel(red, green, blue) {
+  if (classifySmartBackground({ r: red, g: green, b: blue }) === "plate") return true;
+  return green > red + 24 && green > blue + 24;
+}
+
+/**
  * True when the image border is already transparent, so a second cutout would chew the subject.
  *
- * The whole border ring is sampled rather than the four corners: a frame that
- * still carries its background but happens to have transparent corners would
- * otherwise be skipped, and the receipt would report the frame as done while
- * nothing was removed. A minority of opaque ring pixels is still accepted so a
- * subject standing on the bottom edge does not trigger a second destructive cut.
+ * A band several pixels deep is sampled rather than the 1px outer ring: a
+ * still-plated frame with a 1px transparent pad would otherwise look 100%
+ * clear on that ring and be skipped. Remaining studio-plate pixels in that
+ * band mean the frame is still plated, unless the band is already majority
+ * transparent (a body or pale slash on the edge). The outer ring is only a
+ * fallback when no plate remains.
  * @param {Uint8ClampedArray|Uint8Array} rgba RGBA pixels.
  * @param {number} width Image width.
  * @param {number} height Image height.
@@ -236,17 +251,45 @@ function parseProtectedColors(value) {
  */
 function alreadyCutOut(rgba, width, height) {
   if (width < 2 || height < 2) return false;
+  const edgeDepth = Math.max(3, Math.min(12, Math.ceil(Math.min(width, height) * 0.04)));
   let ringPixels = 0;
   let clearPixels = 0;
+  let platePixels = 0;
+  let outerPixels = 0;
+  let outerClear = 0;
+  let interiorPixels = 0;
+  let interiorClear = 0;
   for (let y = 0; y < height; y += 1) {
-    const edgeRow = y === 0 || y === height - 1;
     for (let x = 0; x < width; x += 1) {
-      if (!edgeRow && x !== 0 && x !== width - 1) continue;
+      const onOuter = x === 0 || y === 0 || x === width - 1 || y === height - 1;
+      const inBand = x < edgeDepth || x >= width - edgeDepth || y < edgeDepth || y >= height - edgeDepth;
+      const offset = (y * width + x) * 4;
+      if (onOuter) {
+        outerPixels += 1;
+        if (rgba[offset + 3] <= ALPHA_VISIBLE) outerClear += 1;
+      }
+      if (!inBand) {
+        interiorPixels += 1;
+        if (rgba[offset + 3] <= ALPHA_VISIBLE) interiorClear += 1;
+        continue;
+      }
       ringPixels += 1;
-      if (rgba[(y * width + x) * 4 + 3] <= ALPHA_VISIBLE) clearPixels += 1;
+      if (rgba[offset + 3] <= ALPHA_VISIBLE) {
+        clearPixels += 1;
+        continue;
+      }
+      if (isStudioPlatePixel(rgba[offset], rgba[offset + 1], rgba[offset + 2])) platePixels += 1;
     }
   }
-  return ringPixels > 0 && clearPixels / ringPixels >= CUT_BORDER_CLEAR_RATIO;
+  if (ringPixels <= 0) return false;
+  const interiorPunched = interiorPixels > 0 && interiorClear / interiorPixels >= CUT_BORDER_CLEAR_RATIO;
+  if (platePixels / ringPixels >= CUT_BORDER_CLEAR_RATIO) {
+    if (interiorPunched) return true;
+    return false;
+  }
+  if (clearPixels / ringPixels >= CUT_BORDER_CLEAR_RATIO) return true;
+  if (platePixels > 0 && !interiorPunched) return false;
+  return outerPixels > 0 && outerClear / outerPixels >= CUT_BORDER_CLEAR_RATIO;
 }
 
 /**
@@ -773,32 +816,9 @@ function cutoutPngFile(inputPath, outputPath, options = {}) {
   if (path.resolve(inputPath) === path.resolve(outputPath)) {
     return cutoutFrameFiles([inputPath], options);
   }
-  const image = decodePngRgba(inputPath);
-  const requestedBackground = parseHexColor(options.keyColor);
-  const backgroundColor = requestedBackground || detectBackgroundColor(image.data, image.width, image.height);
-  const cut = {
-    data: applyProtectedSmartCutout(image.data, image.width, image.height, backgroundColor, options),
-    width: image.width,
-    height: image.height,
-  };
-  const canvasWidth = Number.isInteger(Number(options.outputWidth))
-    ? Math.max(8, Number(options.outputWidth))
-    : 0;
-  const canvasHeight = Number.isInteger(Number(options.outputHeight))
-    ? Math.max(8, Number(options.outputHeight))
-    : canvasWidth;
-  const rematched = canvasWidth > 0 && canvasHeight > 0;
-  const output = rematched ? placeFramesOnCanvas([cut], canvasWidth, canvasHeight)[0] : cut;
-  fs.writeFileSync(outputPath, encodePngRgba(output.data, output.width, output.height));
-  return {
-    pipeline: "smart_product",
-    rematched,
-    backgroundColor: formatHexColor(backgroundColor),
-    outputWidth: output.width,
-    outputHeight: output.height,
-    processedFrameCount: 1,
-    options: createSmartCutoutOptions(backgroundColor),
-  };
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.copyFileSync(inputPath, outputPath);
+  return cutoutFrameFiles([outputPath], options);
 }
 
 module.exports = {

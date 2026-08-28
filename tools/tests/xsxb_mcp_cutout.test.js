@@ -341,6 +341,30 @@ test("cutout still processes a frame whose corners alone are transparent", () =>
   }
 });
 
+test("pale subject pixels on the already-cut edge do not force a second cut", () => {
+  const width = 32;
+  const height = 32;
+  const band = 3;
+  for (const [label, color] of [
+    ["white hair", [250, 248, 245, 255]],
+    ["gray cloak", [128, 128, 132, 255]],
+    ["near-black outline", [18, 16, 14, 255]],
+  ]) {
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < band; y += 1) {
+      for (let x = 0; x < width; x += 1) setPixel(rgba, width, x, y, color);
+    }
+    for (let y = band; y < height; y += 1) {
+      for (let x = 0; x < band; x += 1) setPixel(rgba, width, x, y, color);
+    }
+    assert.equal(
+      alreadyCutOut(rgba, width, height),
+      true,
+      `${label} on a punched field must stay already-cut`,
+    );
+  }
+});
+
 test("a subject touching the frame edge does not force a second destructive cutout", () => {
   const width = 16;
   const height = 16;
@@ -352,6 +376,110 @@ test("a subject touching the frame edge does not force a second destructive cuto
   }
 
   assert.equal(alreadyCutOut(rgba, width, height), true);
+});
+
+/**
+ * Large studio plate with a 1px transparent gutter. The leftover plate sits
+ * inside the sampled band but is a minority of that band, so the outer-ring
+ * fallback would skip it on canvases bigger than 16×16.
+ * @param {number} size Edge length.
+ * @param {number[]} background Plate RGB.
+ * @returns {{data:Uint8ClampedArray,width:number,height:number}} RGBA frame.
+ */
+function largeGutterPlateFrame(size, background) {
+  const rgba = new Uint8ClampedArray(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const dist = Math.min(x, y, size - 1 - x, size - 1 - y);
+      if (dist === 0) setPixel(rgba, size, x, y, [0, 0, 0, 0]);
+      else if (dist <= 2) setPixel(rgba, size, x, y, [...background, 255]);
+      else setPixel(rgba, size, x, y, BODY);
+    }
+  }
+  return { data: rgba, width: size, height: size };
+}
+
+test("a 1px gutter on a large still-plated canvas is not treated as cut out", () => {
+  for (const [label, background] of [
+    ["white", [255, 255, 255]],
+    ["green", [0, 177, 64]],
+  ]) {
+    const frame = largeGutterPlateFrame(256, background);
+    assert.equal(
+      alreadyCutOut(frame.data, 256, 256),
+      false,
+      `${label} leftover plate in the inner band must not be skipped`,
+    );
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-large-gutter-"));
+    const framePath = path.join(folder, "frame.png");
+    try {
+      fs.writeFileSync(framePath, encodePngRgba(frame.data, frame.width, frame.height));
+      const keyColor =
+        background[0] === 255 && background[1] === 255 ? "#ffffff" : "#00b140";
+      const receipt = cutoutFrameFiles([framePath], { keyColor });
+      assert.equal(receipt.skippedFrameCount, 0, `${label} leftover plate must be processed`);
+      assert.equal(receipt.processedFrameCount, 1, `${label} leftover plate must be keyed`);
+      const cut = decodePngRgba(framePath);
+      assert.equal(cut.data[(2 * 256 + 2) * 4 + 3], 0, `${label} leftover plate is keyed`);
+      const bodyX = 128;
+      const bodyY = 128;
+      assert.equal(cut.data[(bodyY * 256 + bodyX) * 4 + 3], 255, `${label} body stays opaque`);
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a transparent gutter around a still-plated frame is not treated as cut out", () => {
+  const frame = flatBackgroundFrame([255, 255, 255]);
+  for (let y = 0; y < 16; y += 1) {
+    for (let x = 0; x < 16; x += 1) {
+      if (y === 0 || y === 15 || x === 0 || x === 15) setPixel(frame.data, 16, x, y, [0, 0, 0, 0]);
+    }
+  }
+  assert.equal(
+    alreadyCutOut(frame.data, 16, 16),
+    false,
+    "a 1px transparent pad must not hide an opaque studio plate",
+  );
+
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-gutter-"));
+  const framePath = path.join(folder, "frame.png");
+  try {
+    fs.writeFileSync(framePath, encodePngRgba(frame.data, frame.width, frame.height));
+    const receipt = cutoutFrameFiles([framePath]);
+    assert.equal(receipt.skippedFrameCount, 0);
+    assert.equal(receipt.processedFrameCount, 1);
+    const cut = decodePngRgba(framePath);
+    assert.equal(cut.data[(2 * 16 + 2) * 4 + 3], 0, "studio plate is keyed");
+    assert.equal(cut.data[(6 * 16 + 6) * 4 + 3], 255, "body stays opaque");
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("auto-key uses the studio plate, not the majority subject", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-majority-"));
+  const framePath = path.join(folder, "frame.png");
+  try {
+    const width = 32;
+    const height = 32;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const margin = y < 2 || y >= height - 2 || x < 2 || x >= width - 2;
+        setPixel(rgba, width, x, y, margin ? [255, 255, 255, 255] : BODY);
+      }
+    }
+    fs.writeFileSync(framePath, encodePngRgba(rgba, width, height));
+    const receipt = cutoutFrameFiles([framePath]);
+    assert.match(receipt.backgroundColor, /^#f{2}/i, "auto-key must pick the white studio plate");
+    const cut = decodePngRgba(framePath);
+    assert.equal(cut.data[3], 0, "white margin becomes transparent");
+    assert.equal(cut.data[(16 * 32 + 16) * 4 + 3], 255, "center body stays opaque");
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
 });
 
 test("explicit canvas rematch shares one scale and pins body feet to the bottom", () => {
@@ -632,5 +760,56 @@ test("xsxb_cutout file_path cuts a standalone workspace PNG", async () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     if (fs.existsSync(escapePath)) fs.rmSync(escapePath, { force: true });
+  }
+});
+
+/**
+ * Already-cut 32×32 body on a transparent field (interior 8..24).
+ * @returns {Uint8ClampedArray} RGBA pixels.
+ */
+function alreadyCutBody32() {
+  const width = 32;
+  const height = 32;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 8; y < 24; y += 1) {
+    for (let x = 8; x < 24; x += 1) setPixel(rgba, width, x, y, BODY);
+  }
+  return rgba;
+}
+
+test("file_path cutout does not key an already-cut subject to empty", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-file-skip-"));
+  const service = createXsxbMcpService({ root });
+  try {
+    const rgba = alreadyCutBody32();
+    assert.equal(alreadyCutOut(rgba, 32, 32), true);
+    const filePath = path.join(root, "cut.png");
+    fs.writeFileSync(filePath, encodePngRgba(rgba, 32, 32));
+    const receipt = await service.call("xsxb_cutout", { file_path: filePath });
+    const out = decodePngRgba(receipt.output_path);
+    assert.equal(out.data[(16 * 32 + 16) * 4 + 3], 255, "already-cut body must not be keyed to empty");
+    assert.notEqual(out.data[3], 255, "transparent field stays transparent");
+    let opaque = 0;
+    for (let offset = 3; offset < out.data.length; offset += 4) if (out.data[offset] === 255) opaque += 1;
+    assert.ok(opaque > 0, "output must not be fully transparent");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("in-place file_path cutout does not report processedFrameCount 1 when it skipped", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-inplace-skip-"));
+  const service = createXsxbMcpService({ root });
+  try {
+    const rgba = alreadyCutBody32();
+    const filePath = path.join(root, "cut.png");
+    fs.writeFileSync(filePath, encodePngRgba(rgba, 32, 32));
+    const before = fs.readFileSync(filePath);
+    const receipt = await service.call("xsxb_cutout", { file_path: filePath, output_path: filePath });
+    assert.equal(receipt.skippedFrameCount, 1);
+    assert.equal(receipt.processedFrameCount, 0);
+    assert.deepEqual(fs.readFileSync(filePath), before, "skipped in-place cutout must not rewrite bytes");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

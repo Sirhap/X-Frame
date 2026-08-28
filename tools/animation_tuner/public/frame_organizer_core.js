@@ -284,12 +284,13 @@
     let squaredError = 0;
     let comparedPixels = 0;
     for (let offset = 0, pixel = 0; offset < leftSignature.data.length; offset += 4, pixel += 1) {
-      if (resolvedLeftMask?.[pixel] || resolvedRightMask?.[pixel]) continue;
+      if (resolvedLeftMask?.[pixel] && resolvedRightMask?.[pixel]) continue;
       const leftAlphaByte = leftSignature.data[offset + 3];
       const rightAlphaByte = rightSignature.data[offset + 3];
       if (
         useBackground &&
-        (leftAlphaByte < BACKGROUND_ALPHA_THRESHOLD || rightAlphaByte < BACKGROUND_ALPHA_THRESHOLD)
+        leftAlphaByte < BACKGROUND_ALPHA_THRESHOLD &&
+        rightAlphaByte < BACKGROUND_ALPHA_THRESHOLD
       )
         continue;
       const leftWeight = smoothstep(0, 40, leftAlphaByte);
@@ -373,6 +374,23 @@
   }
 
   /**
+   * True when auto-adjust would mark a regular translation stride (every other
+   * walk card, or a dense 1-step hold of most of the clip). That is motion, not duplicates.
+   * @param {number[]} indexes Marked frame indexes.
+   * @param {number} frameCount Sequence length.
+   * @returns {boolean} Whether the marks look like a uniform walk.
+   */
+  function isUniformTranslationStride(indexes, frameCount) {
+    if (!Array.isArray(indexes) || indexes.length < 3 || frameCount < 4) return false;
+    const gaps = [];
+    for (let index = 1; index < indexes.length; index += 1) {
+      gaps.push(indexes[index] - indexes[index - 1]);
+    }
+    if (!gaps.length || !gaps.every((gap) => gap === gaps[0] && gap >= 1)) return false;
+    return indexes.length >= Math.floor((frameCount - 1) / 2);
+  }
+
+  /**
    * Runs ordered duplicate-frame analysis with a persistent non-duplicate anchor.
    * This avoids deleting a whole slow transition merely because adjacent frames are similar.
    * @param {Uint8Array[]} signatures Ordered signatures.
@@ -404,11 +422,34 @@
     }
     const strongestSimilarity = Math.max(...comparisons.map((entry) => entry.similarity));
     const adjustedThreshold = Math.floor(strongestSimilarity);
-    if (adjustedThreshold < 30 || adjustedThreshold >= requestedThreshold) {
+    if (
+      adjustedThreshold <= ORGANIZER_SIMILARITY_THRESHOLD.min ||
+      adjustedThreshold >= requestedThreshold
+    ) {
       return { matches, autoAdjustedThreshold: null };
     }
+    const adjustedMatches = [];
+    let adjustedAnchorIndex = 0;
+    for (let index = 1; index < signatures.length; index += 1) {
+      const similarity = compare(index - 1, index);
+      const anchorSimilarity = compare(adjustedAnchorIndex, index);
+      if (similarity >= adjustedThreshold && anchorSimilarity >= adjustedThreshold) {
+        adjustedMatches.push({
+          index,
+          matchIndex: adjustedAnchorIndex,
+          similarity,
+          anchorSimilarity,
+        });
+      } else {
+        adjustedAnchorIndex = index;
+      }
+    }
+    const adjustedIndexes = adjustedMatches.map((entry) => entry.index);
+    if (isUniformTranslationStride(adjustedIndexes, signatures.length)) {
+      return { matches: [], autoAdjustedThreshold: null };
+    }
     return {
-      matches: comparisons.filter((entry) => entry.similarity >= adjustedThreshold),
+      matches: adjustedMatches,
       autoAdjustedThreshold: adjustedThreshold,
     };
   }
@@ -651,7 +692,7 @@
           smoothness = seamSimilarity;
         }
       });
-      const end = bestStart + period - 2;
+      const end = bestStart + period - 1;
       if (end < bestStart) return;
       const coverage = period / total;
       const score = acfScore * smoothness;

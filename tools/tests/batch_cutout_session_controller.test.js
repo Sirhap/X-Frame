@@ -8,7 +8,7 @@ const { createController } = require("../animation_tuner/public/batch_cutout_ses
  * Creates a modal/session fixture with browser APIs reduced to deterministic stubs.
  * @returns {{controller:object,state:object,statuses:string[]}}
  */
-function createFixture() {
+function createFixture(overrides = {}) {
   const statuses = [];
   const confirmations = [];
   const lifecycle = [];
@@ -84,7 +84,7 @@ function createFixture() {
     applyProcessingParametersToControls(parameters) {
       appliedParameters.push(parameters);
     },
-    estimateBackgroundColor: () => ({ r: 12, g: 34, b: 56 }),
+    estimateBackgroundColor: overrides.estimateBackgroundColor || (() => ({ r: 12, g: 34, b: 56 })),
     backgroundController: {
       normalizeColor: (color) => ({ ...color, a: 255 }),
     },
@@ -260,6 +260,56 @@ test("session controller auto-detects each batch background and restores the req
   assert.equal(await resultPromise, null);
 });
 
+test("session autoDetectBackground keys chroma behind 4px white chrome", async () => {
+  const { estimateBackgroundColor } = require("../animation_tuner/public/batch_cutout_background_estimator");
+  const { applyCutout } = require("../animation_tuner/public/batch_cutout_core");
+  const { resolveAutomaticSettingsHintKey } = require("../animation_tuner/public/batch_cutout_settings");
+  const width = 64;
+  const height = 64;
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < data.length; offset += 4) data.set([255, 255, 255, 255], offset);
+  for (let y = 4; y < height - 4; y += 1) {
+    for (let x = 4; x < width - 4; x += 1) data.set([0, 177, 64, 255], (y * width + x) * 4);
+  }
+  const { appliedParameters, controller, state } = createFixture({ estimateBackgroundColor });
+  state.items = [];
+  state.selectedIds.clear();
+  state.sourceKind = "";
+  const resultPromise = controller.openWorkset({
+    name: "chrome",
+    mode: "batch",
+    autoDetectBackground: true,
+    items: [{ name: "green-behind-white-chrome.png", image: { sourceImageData: { data, width, height } } }],
+  });
+  const item = state.items[0];
+  assert.equal(item.processingParameters.backgroundColor, "#00b140");
+  assert.equal(item.automaticCutoutActivated, true);
+  assert.ok(item.backgroundSamples.length);
+  assert.equal(appliedParameters.at(-1)?.backgroundColor, "#00b140");
+  assert.notEqual(
+    resolveAutomaticSettingsHintKey({
+      itemAvailable: true,
+      automatic: true,
+      hasBackgroundSample: Boolean(item.backgroundSamples.length),
+    }),
+    "needsBackgroundSampleHint",
+  );
+  const keyed = applyCutout(data, width, height, {
+    backgroundColor: estimateBackgroundColor(data, width, height),
+    automaticCutout: true,
+    connected: false,
+    tolerance: 1,
+  });
+  let remainingGreen = 0;
+  for (let offset = 0; offset < keyed.data.length; offset += 4) {
+    if (keyed.data[offset + 3] < 16) continue;
+    if (keyed.data[offset] < 40 && keyed.data[offset + 1] > 150 && keyed.data[offset + 2] < 90) remainingGreen += 1;
+  }
+  assert.equal(remainingGreen, 0);
+  controller.close();
+  assert.equal(await resultPromise, null);
+});
+
 test("editing an auto-detected workset asks to discard", async () => {
   const { confirmations, controller, state } = createFixture();
   state.items = [];
@@ -314,5 +364,99 @@ test("single-frame reopen keeps prior cutout parameters armed on the true source
   const closed = await controller.requestClose();
   assert.equal(closed, true);
   assert.equal(confirmations.length, 0);
+  assert.equal(await resultPromise, null);
+});
+
+function platedRedBodySource() {
+  const width = 256;
+  const height = 256;
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
+        data.set([0, 0, 0, 0], offset);
+      } else if (x <= 2 || y <= 2 || x >= width - 3 || y >= height - 3) {
+        data.set([255, 255, 255, 255], offset);
+      } else {
+        data.set([210, 36, 42, 255], offset);
+      }
+    }
+  }
+  return { data, width, height };
+}
+
+function paleEdgeCutSource() {
+  const width = 32;
+  const height = 32;
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 4; y < height - 4; y += 1) {
+    for (let x = 4; x < width - 4; x += 1) data.set([210, 36, 42, 255], (y * width + x) * 4);
+  }
+  for (let i = 0; i < 16; i += 1) data.set([250, 250, 250, 255], (0 * width + (8 + i)) * 4);
+  return { data, width, height };
+}
+
+test("/tools/cutout session import keys the white plate not the red body", async () => {
+  const { estimateBackgroundColor } = require("../animation_tuner/public/batch_cutout_background_estimator");
+  const { applyCutout } = require("../animation_tuner/public/batch_cutout_core");
+  const source = platedRedBodySource();
+  const { controller, state } = createFixture({ estimateBackgroundColor });
+  state.items = [];
+  state.selectedIds.clear();
+  state.sourceKind = "";
+  const resultPromise = controller.openWorkset({
+    name: "plate",
+    mode: "batch",
+    autoDetectBackground: true,
+    items: [{ name: "large-gutter-plate.png", image: { sourceImageData: source } }],
+  });
+  const item = state.items[0];
+  assert.notEqual(item.processingParameters.backgroundColor, "#d2242a");
+  assert.match(item.processingParameters.backgroundColor, /^#f[ef]f[ef]f[ef]$/i);
+  const keyed = applyCutout(source.data, source.width, source.height, {
+    backgroundColor: estimateBackgroundColor(source.data, source.width, source.height),
+    automaticCutout: true,
+    connected: false,
+    tolerance: 1,
+  });
+  let opaqueRed = 0;
+  let opaqueWhite = 0;
+  for (let offset = 0; offset < keyed.data.length; offset += 4) {
+    if (keyed.data[offset + 3] < 16) continue;
+    if (keyed.data[offset] > 180 && keyed.data[offset + 1] < 60) opaqueRed += 1;
+    if (keyed.data[offset] > 240 && keyed.data[offset + 1] > 240 && keyed.data[offset + 2] > 240) opaqueWhite += 1;
+  }
+  assert.ok(opaqueRed > 1000, `red body must stay, got ${opaqueRed} opaque red px`);
+  assert.equal(opaqueWhite, 0, "white plate must be keyed to alpha 0");
+  controller.close();
+  assert.equal(await resultPromise, null);
+});
+
+test("/tools/cutout session import does not recut already-cut pale hair", async () => {
+  const { estimateBackgroundColor } = require("../animation_tuner/public/batch_cutout_background_estimator");
+  const { alreadyCutOut } = require("../xsxb_mcp_cutout");
+  const source = paleEdgeCutSource();
+  assert.equal(alreadyCutOut(source.data, source.width, source.height), true);
+  const { controller, state } = createFixture({ estimateBackgroundColor });
+  state.items = [];
+  state.selectedIds.clear();
+  state.sourceKind = "";
+  const resultPromise = controller.openWorkset({
+    name: "pale",
+    mode: "batch",
+    autoDetectBackground: true,
+    items: [{ name: "pale-edge-cut.png", image: { sourceImageData: source } }],
+  });
+  const item = state.items[0];
+  assert.ok(!item.automaticCutoutActivated, "already-cut frames must not arm a second key");
+  assert.notEqual(item.processingParameters.backgroundColor, "#fafafa");
+  let hair = 0;
+  for (let offset = 0; offset < source.data.length; offset += 4) {
+    if (source.data[offset + 3] < 16) continue;
+    if (source.data[offset] > 240 && source.data[offset + 1] > 240 && source.data[offset + 2] > 240) hair += 1;
+  }
+  assert.equal(hair, 16, "pale edge hair must stay opaque");
+  controller.close();
   assert.equal(await resultPromise, null);
 });

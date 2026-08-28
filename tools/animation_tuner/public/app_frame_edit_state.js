@@ -94,7 +94,7 @@
         scaleX: scaleVector.x,
         scaleY: scaleVector.y,
         offset: cloneVector(override.offset ?? base.offset),
-        rotation: Number(override.rotation || 0),
+        rotation: Number(override.rotation ?? base.rotation),
       };
     }
 

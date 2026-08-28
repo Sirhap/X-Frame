@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { ORGANIZER_SIMILARITY_THRESHOLD } = require("../animation_tuner/public/frame_organizer_core");
 const {
+  applyAutoAdjustedThreshold,
   applyReduceIncludedFlags,
   bindSimilarityThreshold,
   canReuseLoadedAnimation,
@@ -25,6 +26,23 @@ test("bindSimilarityThreshold writes the exported organizer range onto the slide
   assert.equal(input.max, String(ORGANIZER_SIMILARITY_THRESHOLD.max));
   assert.equal(input.value, String(ORGANIZER_SIMILARITY_THRESHOLD.fallback));
   assert.equal(output.textContent, String(ORGANIZER_SIMILARITY_THRESHOLD.fallback));
+});
+
+test("auto-adjust does not write the duplicate slider down to the walk-step floor", () => {
+  const input = { min: String(ORGANIZER_SIMILARITY_THRESHOLD.min), max: "100", value: "88" };
+  const output = { textContent: "88" };
+  const written = applyAutoAdjustedThreshold(
+    { organizerThreshold: input, organizerThresholdValue: output },
+    ORGANIZER_SIMILARITY_THRESHOLD.min,
+  );
+  assert.equal(written, false);
+  assert.equal(input.value, "88");
+  assert.equal(output.textContent, "88");
+  assert.equal(
+    applyAutoAdjustedThreshold({ organizerThreshold: input, organizerThresholdValue: output }, 90),
+    true,
+  );
+  assert.equal(input.value, "90");
 });
 
 /**

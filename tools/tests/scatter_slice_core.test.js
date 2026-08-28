@@ -6,6 +6,7 @@ const {
   detectScatterSlices,
   normalizeOptions,
   removeColorKey,
+  resolveDetectionMode,
   samplePixelHex,
   sortBoxes,
 } = require("../animation_tuner/public/scatter_slice_core");
@@ -34,6 +35,25 @@ function createImage(width, height, color) {
  */
 function setPixel(rgba, width, x, y, color) {
   rgba.set(color, (y * width + x) * 4);
+}
+
+/**
+ * Fills a rectangle in a test image.
+ * @param {Uint8ClampedArray} rgba Pixel buffer.
+ * @param {number} width Image width.
+ * @param {number} x Horizontal origin.
+ * @param {number} y Vertical origin.
+ * @param {number} rectWidth Rectangle width.
+ * @param {number} rectHeight Rectangle height.
+ * @param {[number,number,number,number]} color RGBA color.
+ * @returns {void}
+ */
+function fillRect(rgba, width, x, y, rectWidth, rectHeight, color) {
+  for (let row = y; row < y + rectHeight; row += 1) {
+    for (let column = x; column < x + rectWidth; column += 1) {
+      setPixel(rgba, width, column, row, color);
+    }
+  }
 }
 
 test("scatter detector finds and sorts disconnected color-key regions", () => {
@@ -96,6 +116,102 @@ test("automatic detection uses alpha and filters small noise", () => {
 
   assert.equal(result.mode, "alpha");
   assert.deepEqual(result.boxes, [{ x: 1, y: 1, w: 1, h: 2, pixels: 2 }]);
+});
+
+test("automatic detection stays on color-key when only a stray AA pixel is semi-transparent", () => {
+  const width = 20;
+  const height = 10;
+  const rgba = createImage(width, height, [255, 255, 255, 255]);
+  fillRect(rgba, width, 2, 2, 4, 6, [20, 30, 40, 255]);
+  fillRect(rgba, width, 12, 2, 4, 6, [20, 30, 40, 255]);
+  rgba[3] = 200;
+
+  const expectedBoxes = [
+    { x: 2, y: 2, w: 4, h: 6, pixels: 24 },
+    { x: 12, y: 2, w: 4, h: 6, pixels: 24 },
+  ];
+  const colorKeyResult = detectScatterSlices(rgba, width, height, {
+    mode: "colorkey",
+    colorKey: "#ffffff",
+  });
+  const autoResult = detectScatterSlices(rgba, width, height, { mode: "auto" });
+
+  assert.equal(resolveDetectionMode(rgba, "auto", width, height), "colorkey");
+  assert.equal(autoResult.mode, "colorkey");
+  assert.deepEqual(autoResult.boxes, expectedBoxes);
+  assert.deepEqual(colorKeyResult.boxes, expectedBoxes);
+  assert.equal(autoResult.boxes.length, 2);
+  assert.notEqual(autoResult.boxes.length, 1);
+  assert.ok(
+    !(autoResult.boxes.length === 1 && autoResult.boxes[0].w === 20 && autoResult.boxes[0].h === 10),
+    "a stray a=200 pixel must not collapse the white plate into one 20×10 box",
+  );
+});
+
+/**
+ * Tight real-alpha sprite: 1px a=0 gutter and cream clothing that colorkey
+ * would treat as the white plate.
+ * @param {number} size Edge length.
+ * @returns {Uint8ClampedArray} RGBA pixels.
+ */
+function tightAlphaCreamCharacter(size) {
+  const rgba = createImage(size, size, [0, 0, 0, 0]);
+  const cream = [250, 240, 220, 255];
+  const ink = [40, 28, 22, 255];
+  for (let y = 1; y < size - 1; y += 1) {
+    for (let x = 1; x < size - 1; x += 1) {
+      setPixel(rgba, size, x, y, cream);
+    }
+  }
+  const mid = Math.floor(size / 2);
+  fillRect(rgba, size, mid - 8, 8, 16, size - 20, ink);
+  return rgba;
+}
+
+test("AUTO treats a tight real-alpha cream character as alpha and finds the subject", () => {
+  for (const size of [128, 256]) {
+    const rgba = tightAlphaCreamCharacter(size);
+    const outerRing = 4 * (size - 1);
+    assert.ok((outerRing / (size * size)) * 100 < 5, `${size}×${size} gutter is under the old 5% bar`);
+    assert.equal(resolveDetectionMode(rgba, "auto", size, size), "alpha", `${size}×${size} must pick alpha`);
+    const result = detectScatterSlices(rgba, size, size, { mode: "auto", minPixels: 16 });
+    assert.equal(result.mode, "alpha");
+    assert.ok(result.boxes.length >= 1, `${size}×${size} must find a subject box`);
+    assert.ok(result.foregroundPixels > 100, `${size}×${size} cream clothing must stay foreground`);
+    assert.notEqual(result.boxes.length, 0);
+  }
+});
+
+test("AUTO stays colorkey when just-over-5% of a white plate is punched corners", () => {
+  const width = 20;
+  const height = 10;
+  const rgba = createImage(width, height, [255, 255, 255, 255]);
+  fillRect(rgba, width, 2, 2, 4, 6, [20, 30, 40, 255]);
+  fillRect(rgba, width, 12, 2, 4, 6, [20, 30, 40, 255]);
+  const corners = [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [width - 1, 0],
+    [width - 2, 0],
+    [width - 1, 1],
+    [0, height - 1],
+    [1, height - 1],
+    [0, height - 2],
+    [width - 1, height - 1],
+    [width - 2, height - 1],
+  ];
+  for (const [x, y] of corners) setPixel(rgba, width, x, y, [255, 255, 255, 0]);
+  assert.ok(corners.length * 20 > width * height, "punched corners exceed the old 5% bar");
+
+  assert.equal(resolveDetectionMode(rgba, "auto", width, height), "colorkey");
+  const result = detectScatterSlices(rgba, width, height, { mode: "auto" });
+  assert.equal(result.mode, "colorkey");
+  assert.equal(result.boxes.length, 2);
+  assert.ok(
+    !(result.boxes.length === 1 && result.boxes[0].w === width && result.boxes[0].h === height),
+    "just-over-5% punched corners must not merge the plate into one box",
+  );
 });
 
 test("color-key detection removes thin editor guides before finding subjects", () => {

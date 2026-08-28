@@ -29,6 +29,9 @@
       imagePixelBudget,
       assertImagePixelBudget,
       createItem,
+      estimateBackgroundColor,
+      backgroundController,
+      applyProcessingParametersToControls,
       processingOptions,
       repairReplayCore,
       cutoutExecutor,
@@ -255,9 +258,19 @@
         });
         if (!additions.length) throw new Error(failures.join(", ") || text("invalidFiles"));
         const firstAddedIndex = state.items.length;
+        const sessionApi =
+          root?.BatchCutoutSessionController ||
+          (typeof module === "object" && module.exports ? require("./batch_cutout_session_controller") : null);
         additions.forEach((item) => {
-          item.automaticCutoutActivated = false;
-          item.processingActivated = false;
+          if (typeof sessionApi?.activateAutomaticBackgroundDetection === "function") {
+            sessionApi.activateAutomaticBackgroundDetection(item, {
+              estimateBackgroundColor,
+              backgroundController,
+            });
+          } else {
+            item.automaticCutoutActivated = false;
+            item.processingActivated = false;
+          }
         });
         state.items.push(...additions);
         state.sessionMode = "batch";
@@ -271,6 +284,7 @@
         state.previewPanY = 0;
         state.previewMode = "result";
         state.qualityOnly = false;
+        applyProcessingParametersToControls?.(selectedItem()?.processingParameters || additions[0]?.processingParameters);
         renderQueue();
         renderPreview();
         scheduleBatchThumbnails();

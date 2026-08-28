@@ -14,6 +14,8 @@ const EMPTY_TUNING = {
   frame_visual_overrides: {},
   frame_playback_overrides: {},
   frame_box_overrides: {},
+  attack_vfx_frame_overrides: {},
+  attack_vfx_playback_overrides: {},
 };
 
 function clone(value) {

@@ -536,11 +536,9 @@ function toolDefinitions() {
                     "Group units down toward the foot origin. Same as overlay y ticks. Negative lifts the subject.",
                 },
                 from: {
-                  type: "object",
                   description: 'Group point to move, {x,y} or "x,y", read from the overlay ticks.',
                 },
                 to: {
-                  type: "object",
                   description:
                     "Group point that from should land on. MCP computes dx/dy. Plant soles to y=-1, not 0,0: yellow 0,0 is outside the bitmap (canvasAnchor y=height).",
                 },
@@ -615,11 +613,9 @@ function toolDefinitions() {
               properties: {
                 frame: { type: "integer", minimum: 0 },
                 top: {
-                  type: "object",
                   description: 'Blade tip in group coordinates. {x,y} or "x,y", same as overlay ticks.',
                 },
                 bottom: {
-                  type: "object",
                   description: 'Blade grip in group coordinates. {x,y} or "x,y", same as overlay ticks.',
                 },
                 layer: {
@@ -930,7 +926,7 @@ function toolDefinitions() {
     {
       name: "xsxb_export_gif",
       description:
-        "Export one animation as an animated GIF preview via FFmpeg, honoring per-frame durations, group/frame visual_size, and authored attack-trail meshes. Skips disabled frames. Returns the absolute output path. After a 像素层 月牙 trail, also xsxb_export_sheet — GIF forward-play can hide a 7字.",
+        "Export one animation as an animated GIF preview via FFmpeg, honoring per-frame durations, group/frame visual_size, authored attack-trail meshes, and frame image attachments. Skips disabled frames. Returns the absolute output path. After a 像素层 月牙 trail, also xsxb_export_sheet — GIF forward-play can hide a 7字.",
       inputSchema: {
         type: "object",
         properties: {
@@ -956,7 +952,7 @@ function toolDefinitions() {
     {
       name: "xsxb_export_sheet",
       description:
-        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size, leftover dirt, and authored attack-trail meshes stay comparable. The sheet paints an overlay grid (lines follow grid_density/grid_divs) plus row/col indices matching receipt grid.cells[row][col] (row 0 = top, col 0 = left; x,y is that square's top-left group corner). Group coordinates are code-generated in that JSON and grid.legend — do not OCR overlay digits. Yellow 0,0 and last-pixel -1 are landmarks. Last pixel row is group y=-1 — plant soles there, not to 0,0. Receipt lastPixel names that row. metrics.feetY is the boot sole and ignores connected bright slash/glow below it. Pass grid_density, grid_divs like 8x8, or grid_x/grid_y, and grid_scope canvas|subject — AI fills these; omit to keep the auto step. Source animation PNGs are unchanged. Receipt JSON repeats origin, step, divs, ticks, labels, lastPixel, xLines, yLines, cells, and legend. mark_frame highlights one cell for a second cull pass. output_path must stay inside the XSXB root. Inspect a 月牙 trail here when GIF playback is hard to read: accept a continuous bow, reject a 7字/slice. When the sheet is for a human to look at the animation (not planting), pass grid=false so 0,0 / -1 ticks stay off the PNG.",
+        "Export a contact sheet PNG that scales every source canvas into a shared cell so standing size, leftover dirt, authored attack-trail meshes, and frame image attachments stay comparable. The sheet paints an overlay grid (lines follow grid_density/grid_divs) plus row/col indices matching receipt grid.cells[row][col] (row 0 = top, col 0 = left; x,y is that square's top-left group corner). Group coordinates are code-generated in that JSON and grid.legend — do not OCR overlay digits. Yellow 0,0 and last-pixel -1 are landmarks. Last pixel row is group y=-1 — plant soles there, not to 0,0. Receipt lastPixel names that row. metrics.feetY is the boot sole and ignores connected bright slash/glow below it. Pass grid_density, grid_divs like 8x8, or grid_x/grid_y, and grid_scope canvas|subject — AI fills these; omit to keep the auto step. Source animation PNGs are unchanged. Receipt JSON repeats origin, step, divs, ticks, labels, lastPixel, xLines, yLines, cells, and legend. mark_frame highlights one cell for a second cull pass. output_path must stay inside the XSXB root. Inspect a 月牙 trail here when GIF playback is hard to read: accept a continuous bow, reject a 7字/slice. When the sheet is for a human to look at the animation (not planting), pass grid=false so 0,0 / -1 ticks stay off the PNG.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1100,13 +1096,40 @@ function toolDefinitions() {
           object_path: { type: "string", description: "Absolute PNG to composite." },
           target_anchor: {
             type: "object",
+            additionalProperties: false,
             description:
               "{view, cells, derive} or {x_from, y_from} with the same fields on each arm. derive: center|bottom_center|top_center|left_center|right_center|median_center.",
+            properties: {
+              view: { type: "object", description: "Overlay view that produced the cell ids." },
+              cells: { type: "array", items: { type: "string" }, description: "Speakable cell ids." },
+              derive: {
+                type: "string",
+                description: "center|bottom_center|top_center|left_center|right_center|median_center.",
+              },
+              x_from: {
+                type: "object",
+                description: "{view, cells, derive} used for the X coordinate.",
+              },
+              y_from: {
+                type: "object",
+                description: "{view, cells, derive} used for the Y coordinate.",
+              },
+            },
           },
           object_anchor: {
             type: "object",
+            additionalProperties: false,
             description:
               "mode alpha_center|alpha_bottom_center|alpha_support, or cells+derive on the object image. alpha_support uses the opaque bbox bottom band; footY is maxY+1.",
+            properties: {
+              mode: {
+                type: "string",
+                description: "alpha_center|alpha_bottom_center|alpha_support.",
+              },
+              view: { type: "object", description: "Overlay view that produced the cell ids." },
+              cells: { type: "array", items: { type: "string" }, description: "Speakable cell ids." },
+              derive: { type: "string", description: "Cell derive when anchoring by cells." },
+            },
           },
           scale: {
             description:

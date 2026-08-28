@@ -143,10 +143,13 @@ function validateToolArguments(toolName, schema, args) {
     if (Array.isArray(property.enum) && !property.enum.includes(value)) {
       reject(`argument "${name}" must be one of: ${property.enum.join(", ")}. Received "${value}".`);
     }
-    if (property.type === "array" && property.items?.type) {
+    if (property.type === "array" && property.items) {
       for (const [index, item] of value.entries()) {
-        if (!matchesType(item, property.items.type)) {
+        if (property.items.type && !matchesType(item, property.items.type)) {
           reject(`argument "${name}"[${index}] must be ${property.items.type}, received ${typeOf(item)}.`);
+        }
+        if (item && typeof item === "object" && !Array.isArray(item)) {
+          validateToolArguments(`${toolName}.${name}[${index}]`, property.items, item);
         }
       }
     }

@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
-  /** Resolves a stable animation deep link before falling back to a generated UI identifier. */
+  /** Resolves animation=profile/id first, then an exact uiId, then a stale index-suffixed uiId by identity prefix. */
   function requestedGroup(groups, urlState, savedGroupUiId = "") {
     const values = Array.from(groups || []);
     const animationKey = String(urlState?.get?.("animation") || "");
@@ -21,7 +21,34 @@
       if (animationMatch) return animationMatch;
     }
     const groupUiId = String(urlState?.get?.("group") || savedGroupUiId || "");
-    return values.find((group) => group.uiId === groupUiId) || null;
+    const stalePrefix = groupUiId.replace(/:\d+$/, "");
+    const staleIndexMatch = groupUiId.match(/:(\d+)$/);
+    const staleIndex = staleIndexMatch ? Number(staleIndexMatch[1]) : -1;
+    const prefixMatches = values.filter((group) => {
+      const currentId = String(group.uiId || "");
+      const currentPrefix = currentId.replace(/:\d+$/, "");
+      if (currentPrefix === stalePrefix) return true;
+      const assembled = `${group.tuningTarget || "player"}:${group.type}:${group.name}`;
+      const assembledWithProfile = `${group.tuningTarget || "player"}:${group.profileId || ""}:${group.type}:${group.name}`;
+      return assembled === stalePrefix || assembledWithProfile === stalePrefix;
+    });
+    const exact = values.find((group) => group.uiId === groupUiId);
+    const uiIndex = (group) => {
+      const match = String(group.uiId || "").match(/:(\d+)$/);
+      return match ? Number(match[1]) : -1;
+    };
+    const bumpedSibling = prefixMatches.some((group) => uiIndex(group) === staleIndex + 1);
+    if (exact && (prefixMatches.length <= 1 || !bumpedSibling)) return exact;
+    if (!stalePrefix || stalePrefix === groupUiId) return exact || null;
+    if (prefixMatches.length <= 1) return prefixMatches[0] || exact || null;
+    const shifted = prefixMatches
+      .filter((group) => uiIndex(group) > staleIndex)
+      .sort((left, right) => uiIndex(left) - uiIndex(right));
+    if (shifted[0]) return shifted[0];
+    const byProfile = prefixMatches.find(
+      (group) => group.profileId && stalePrefix.includes(`:${group.profileId}:`),
+    );
+    return byProfile || prefixMatches[0];
   }
 
   /**

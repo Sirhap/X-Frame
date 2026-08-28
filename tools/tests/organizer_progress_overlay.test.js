@@ -14,12 +14,31 @@ const {
 } = require("../animation_tuner/public/organizer_progress_overlay");
 
 /**
+ * Counts organizer cards the way the overlay queries them.
+ * Unset `state.included` means every card is included, matching the all-checked fixture.
+ * @param {{frames?:number,included?:number|null}} state Card counts.
+ * @param {string} selector Overlay querySelectorAll argument.
+ * @returns {number}
+ */
+function frameCountForSelector(state, selector) {
+  const all = Number(state.frames) || 0;
+  const included = state.included == null ? all : Number(state.included) || 0;
+  const selectedIncluded = Number(state.selectedIncluded) || 0;
+  if (String(selector || "") === ".organizerFrame.included.selected") return selectedIncluded;
+  if (String(selector || "") === ".organizerFrame.included") return included;
+  if (String(selector || "") === ".organizerFrame") return all;
+  return 0;
+}
+
+/**
  * Builds the minimal organizer DOM the overlay observes.
  * @returns {{overlay:object,harness:object}}
  */
 function createHarness() {
   const state = {
     frames: 0,
+    included: null,
+    selectedIncluded: 0,
     time: 0,
     observers: 0,
     observerInstances: [],
@@ -63,7 +82,7 @@ function createHarness() {
   const documentApi = {
     body: {},
     querySelector: (selector) => nodes[selector] || null,
-    querySelectorAll: () => ({ length: state.frames }),
+    querySelectorAll: (selector) => ({ length: frameCountForSelector(state, selector) }),
   };
   const windowApi = {
     Date: { now: () => state.time },
@@ -222,7 +241,7 @@ test("scheduleAttach waits until DOMContentLoaded when the document is still loa
     readyState: "loading",
     body: {},
     querySelector: (selector) => harness.nodes[selector] || null,
-    querySelectorAll: () => ({ length: harness.state.frames }),
+    querySelectorAll: (selector) => ({ length: frameCountForSelector(harness.state, selector) }),
     addEventListener: (type, handler) => listeners.push({ type, handler }),
   };
   const api = {
@@ -249,7 +268,7 @@ test("scheduleAttach is a no-op the second time so production boot cannot double
     readyState: "complete",
     body: {},
     querySelector: (selector) => harness.nodes[selector] || null,
-    querySelectorAll: () => ({ length: harness.state.frames }),
+    querySelectorAll: (selector) => ({ length: frameCountForSelector(harness.state, selector) }),
   };
   let clicks = 0;
   harness.nodes["#organizerBatchCutout"].addEventListener = (type, handler) => {
@@ -261,6 +280,65 @@ test("scheduleAttach is a no-op the second time so production boot cannot double
   assert.equal(scheduleAttach(api, documentApi, windowApi), true);
   assert.equal(scheduleAttach(api, documentApi, windowApi), true);
   assert.equal(clicks, 1);
+});
+
+test("overlay first paint uses selected included cards the same way process does", () => {
+  const { overlay, harness } = createHarness();
+  overlay.attach();
+  harness.state.frames = 10;
+  harness.state.included = 3;
+  harness.state.selectedIncluded = 1;
+
+  harness.click();
+
+  assert.equal(
+    harness.nodes["#organizerSmartCutoutProgressText"].textContent,
+    "智能抠图处理中 · 共 1 帧",
+    "first paint must match process selected∩included, not all included cards",
+  );
+  assert.equal(harness.nodes["#organizerSmartCutoutProgressBar"].max, 1);
+});
+
+test("overlay first paint counts included frames only when some cards are excluded", () => {
+  const { overlay, harness } = createHarness();
+  overlay.attach();
+  harness.state.frames = 10;
+  harness.state.included = 3;
+
+  harness.click();
+
+  assert.equal(harness.nodes["#organizerSmartCutoutProgressText"].textContent, "智能抠图处理中 · 共 3 帧");
+  assert.deepEqual(
+    {
+      hidden: harness.nodes["#organizerSmartCutoutProgress"].hidden,
+      max: harness.nodes["#organizerSmartCutoutProgressBar"].max,
+      value: harness.nodes["#organizerSmartCutoutProgressBar"].value,
+    },
+    { hidden: false, max: 3, value: 0 },
+  );
+
+  harness.nodes["#organizerBatchCutout"].disabled = true;
+  harness.nodes["#organizerStatus"].textContent = "智能抠图 0 / 3 帧";
+  harness.tick();
+  assert.equal(harness.nodes["#organizerSmartCutoutProgressText"].textContent, "智能抠图处理中 · 共 3 帧");
+  assert.deepEqual(
+    {
+      max: harness.nodes["#organizerSmartCutoutProgressBar"].max,
+      value: harness.nodes["#organizerSmartCutoutProgressBar"].value,
+    },
+    { max: 3, value: 0 },
+  );
+
+  harness.nodes["#organizerStatus"].textContent = "智能抠图 3 / 3 帧";
+  harness.tick();
+  assert.equal(harness.nodes["#organizerSmartCutoutProgressText"].textContent, "智能抠图处理中 · 3 / 3 帧");
+  assert.deepEqual(
+    {
+      max: harness.nodes["#organizerSmartCutoutProgressBar"].max,
+      value: harness.nodes["#organizerSmartCutoutProgressBar"].value,
+    },
+    { max: 3, value: 3 },
+  );
 });
 
 test("overlay reports missing organizer markup instead of throwing", () => {

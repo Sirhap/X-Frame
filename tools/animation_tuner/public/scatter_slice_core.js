@@ -118,17 +118,38 @@
   }
 
   /**
-   * Resolves automatic mode by checking whether the source contains transparency.
+   * Resolves automatic mode from a border-connected punched field (a<16).
+   * A 1px real-alpha gutter is alpha even when it is under 5% of the canvas.
+   * Corner punches on an opaque plate stay color-key. A stray a=200 fringe
+   * must not leave color-key detection.
    * @param {Uint8ClampedArray} rgba Raw pixels.
    * @param {DetectionMode} mode Requested mode.
+   * @param {number} [width] Image width.
+   * @param {number} [height] Image height.
    * @returns {"alpha"|"colorkey"} Concrete mode.
    */
-  function resolveDetectionMode(rgba, mode) {
+  function resolveDetectionMode(rgba, mode, width, height) {
     if (mode !== "auto") return mode;
-    for (let offset = 3; offset < rgba.length; offset += 4) {
-      if (rgba[offset] < 250) return "alpha";
+    const w = Number(width);
+    const h = Number(height);
+    if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0 || rgba.length !== w * h * 4) {
+      return "colorkey";
     }
-    return "colorkey";
+    let ring = 0;
+    let punched = 0;
+    const visit = (x, y) => {
+      ring += 1;
+      if (rgba[(y * w + x) * 4 + 3] < 16) punched += 1;
+    };
+    for (let x = 0; x < w; x += 1) {
+      visit(x, 0);
+      if (h > 1) visit(x, h - 1);
+    }
+    for (let y = 1; y < h - 1; y += 1) {
+      visit(0, y);
+      if (w > 1) visit(w - 1, y);
+    }
+    return ring > 0 && punched * 2 >= ring ? "alpha" : "colorkey";
   }
 
   /**
@@ -158,7 +179,7 @@
    * @returns {{mask:Uint8Array,mode:"alpha"|"colorkey",foregroundPixels:number}} Mask result.
    */
   function createForegroundMask(rgba, width, height, options) {
-    const mode = resolveDetectionMode(rgba, options.mode);
+    const mode = resolveDetectionMode(rgba, options.mode, width, height);
     const colorKey = hexToRgb(options.colorKey);
     const mask = new Uint8Array(width * height);
     let foregroundPixels = 0;

@@ -25,16 +25,55 @@
    * Normalized transform.
    */
   function normalizeAttachmentTransform(transform = {}) {
-    const scale = Math.max(0.001, Number(transform.scale ?? 1));
+    const rawScale = transform.scale;
+    const scaleFromVector =
+      rawScale && typeof rawScale === "object" ? Number(rawScale.x ?? rawScale.y) : Number(rawScale);
+    const scale = Math.max(0.001, Number.isFinite(scaleFromVector) && scaleFromVector > 0 ? scaleFromVector : 1);
     return {
       scale,
-      scaleX: Math.max(0.001, Number(transform.scaleX ?? transform.visual_scale?.x ?? scale)),
-      scaleY: Math.max(0.001, Number(transform.scaleY ?? transform.visual_scale?.y ?? scale)),
+      scaleX: Math.max(
+        0.001,
+        Number(transform.scaleX ?? transform.visual_scale?.x ?? (rawScale && rawScale.x) ?? scale),
+      ),
+      scaleY: Math.max(
+        0.001,
+        Number(transform.scaleY ?? transform.visual_scale?.y ?? (rawScale && rawScale.y) ?? scale),
+      ),
       offset: {
         x: Number(transform.offset?.x || 0),
         y: Number(transform.offset?.y || 0),
       },
       rotation: Number(transform.rotation || 0),
+    };
+  }
+
+  /**
+   * Places an attachment under a VisualOwner the way Tuner/Godot do:
+   * owner visual_size/scale multiplies offset, flipH mirrors facing, owner rotation is added.
+   * @param {object} local Normalized local transform.
+   * @param {{visual_size?:number,scale?:number,scaleX?:number,scaleY?:number,runtimeScale?:number,worldScale?:number,flipH?:boolean,rotation?:number}} [owner]
+   * Owner render transform.
+   * @returns {{originX:number,originY:number,scaleX:number,scaleY:number,rotation:number,flipH:boolean}}
+   */
+  function attachmentOwnerPlacement(local, owner = {}) {
+    const transform = normalizeAttachmentTransform(local);
+    const ownerScale = Number(owner.visual_size ?? owner.scale ?? 1);
+    const scaleX = Number(owner.scaleX ?? ownerScale);
+    const scaleY = Number(owner.scaleY ?? ownerScale);
+    const runtimeScale = Number(owner.runtimeScale ?? 1);
+    const worldScale = Number(owner.worldScale ?? 1);
+    const facing = owner.flipH ? -1 : 1;
+    const ownerRotation = Number(owner.rotation || 0);
+    const ox = transform.offset.x * scaleX * runtimeScale * worldScale * facing;
+    const oy = transform.offset.y * scaleY * runtimeScale * worldScale;
+    const ownerRotationRadians = (ownerRotation * facing * Math.PI) / 180;
+    return {
+      originX: ox * Math.cos(ownerRotationRadians) - oy * Math.sin(ownerRotationRadians),
+      originY: ox * Math.sin(ownerRotationRadians) + oy * Math.cos(ownerRotationRadians),
+      scaleX: Math.max(0.001, runtimeScale * scaleX * transform.scaleX * worldScale),
+      scaleY: Math.max(0.001, runtimeScale * scaleY * transform.scaleY * worldScale),
+      rotation: (ownerRotation + transform.rotation) * facing,
+      flipH: Boolean(owner.flipH),
     };
   }
 
@@ -104,6 +143,7 @@
   return {
     attachmentLayerOrder: normalizeAttachmentLayerOrder,
     frameImageAttachmentClipboardItem,
+    attachmentOwnerPlacement,
     newLocalId,
     normalizeAttachmentLayerOrder,
     normalizeAttachmentTransform,

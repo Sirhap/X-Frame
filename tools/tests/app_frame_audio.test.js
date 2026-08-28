@@ -153,6 +153,49 @@ function createMemoryIndexedDb() {
   };
 }
 
+test("undo of a bind does not let loadFromDb resurrect an unsaved IDB write", async () => {
+  const indexedDb = createMemoryIndexedDb();
+  const blob = { name: "slash.wav", type: "audio/wav", size: 32 };
+  const bindings = {};
+  const { controller } = createAudioController({
+    getBindings: () => bindings,
+    getActiveProjectId: () => "project",
+    getFrameAudioKey: (index, group) => `project:${group.animationId}:${index}`,
+    getFrameAudioMetadata: (index, group) => ({
+      projectId: "project",
+      animation: group.animationId,
+      frame: index,
+    }),
+    getFrameAudioMetadataFromKey: (key) => ({
+      projectId: "project",
+      animation: "idle",
+      frame: 0,
+      key,
+    }),
+    indexedDBRef: indexedDb,
+    urlApi: {
+      createObjectURL: (value) => `blob:live/${value.name || "audio"}`,
+      revokeObjectURL() {},
+    },
+  });
+  const group = { animationId: "idle" };
+  await controller.setBinding(blob, 0, group);
+  assert.ok(bindings["project:idle:0"], "bind stays in memory");
+  delete bindings["project:idle:0"];
+  await controller.loadFromDb();
+  assert.equal(
+    bindings["project:idle:0"],
+    undefined,
+    "IDB is write-through-on-save; undo of an unsaved bind must not resurrect",
+  );
+
+  await controller.setBinding(blob, 0, group);
+  await controller.persistBindingsToDb();
+  delete bindings["project:idle:0"];
+  await controller.loadFromDb();
+  assert.equal(bindings["project:idle:0"]?.name, "slash.wav", "save writes IDB so reload can restore");
+});
+
 test("SAV-011 loadFromDb restores imported WAV after reload with empty bindings", async () => {
   const indexedDb = createMemoryIndexedDb();
   const blob = { name: "beep.wav", type: "audio/wav", size: 24 };

@@ -65,6 +65,46 @@ function requireFps(value, fallback = 12) {
   return fps;
 }
 
+/** Pet state clips store milliseconds in `frame.duration` and set fps to this sentinel. */
+const PET_MILLISECOND_FPS = 1000;
+
+/**
+ * Resolves GIF/sheet playback fps. Pet fps 1000 is a millisecond clock and must
+ * not go through requireFps, sanitize to 12, or honor a 1–120 fps override.
+ * @param {{fps?:unknown}|null|undefined} animation Animation record.
+ * @param {unknown} [override] Optional GIF fps argument.
+ * @returns {number} Playback fps used for delays.
+ */
+function resolveExportFps(animation, override) {
+  const fps = Number(animation?.fps);
+  if (fps === PET_MILLISECOND_FPS) return PET_MILLISECOND_FPS;
+  if (override !== undefined && override !== null && override !== "") {
+    return requireFps(override, 12);
+  }
+  return requireFps(animation?.fps, 12);
+}
+
+/**
+ * Converts one frame's duration multiplier into seconds.
+ * Prefers a playback override, then the animation frame's duration (pet ms clock).
+ * @param {{duration?:unknown}|null|undefined} frame Animation frame.
+ * @param {{duration?:unknown,disabled?:boolean}|null|undefined} playbackOverride Tuning override.
+ * @param {number} fps Playback fps.
+ * @returns {number} Seconds.
+ */
+function exportFrameDurationSeconds(frame, playbackOverride, fps) {
+  const rate = Number(fps);
+  const safeRate = Number.isFinite(rate) && rate > 0 ? rate : 12;
+  const overrideDuration = playbackOverride?.duration;
+  const source =
+    overrideDuration !== undefined && overrideDuration !== null && overrideDuration !== ""
+      ? overrideDuration
+      : frame?.duration !== undefined && frame?.duration !== null && frame?.duration !== ""
+        ? frame.duration
+        : 1;
+  return Math.max(0.001, Number(source) || 1) / safeRate;
+}
+
 /**
  * Parses a TCP port for the Tuner, including values taken from process.env.
  * @param {unknown} value Raw port.
@@ -409,8 +449,11 @@ module.exports = {
   mergeBox,
   parseGroupPoint,
   pngFileToItem,
+  PET_MILLISECOND_FPS,
   requireExistingFile,
   requireFps,
+  resolveExportFps,
+  exportFrameDurationSeconds,
   requireGroupPoint,
   requireTunerPort,
   requireFrameIndex,

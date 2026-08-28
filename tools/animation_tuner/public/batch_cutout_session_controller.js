@@ -42,6 +42,81 @@
   }
 
   /**
+   * Converts an estimated RGB background into the color input's canonical HEX.
+   * @param {{r:number,g:number,b:number}} color Estimated background color.
+   * @returns {string} Six-digit lowercase HEX color.
+   */
+  function backgroundHex(color) {
+    const channel = (value) => Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+    return `#${[color.r, color.g, color.b]
+      .map((value) => channel(value).toString(16).padStart(2, "0"))
+      .join("")}`;
+  }
+
+  /**
+   * Commits an auto-detected key color onto a queue item and arms automatic cutout.
+   * Used by workset import and the live /tools/cutout file path.
+   * @param {object} item Queue item with sourceImageData.
+   * @param {{estimateBackgroundColor?:Function,backgroundController?:object}} [options] Detector and color helper.
+   * @returns {void}
+   */
+  function activateAutomaticBackgroundDetection(item, options = {}) {
+    const estimate = options.estimateBackgroundColor;
+    if (typeof estimate !== "function") {
+      throw new Error("Automatic background detection is unavailable.");
+    }
+    if (!item?.sourceImageData?.data) return;
+    const estimatorApi =
+      (typeof module === "object" && module.exports
+        ? require("./batch_cutout_background_estimator")
+        : root?.BatchCutoutBackgroundEstimator) || {};
+    const alreadyCutOut =
+      options.alreadyCutOut ||
+      estimatorApi.alreadyCutOut ||
+      (typeof module === "object" && module.exports
+        ? require("../../xsxb_mcp_cutout").alreadyCutOut
+        : null);
+    if (
+      typeof alreadyCutOut === "function" &&
+      alreadyCutOut(
+        item.sourceImageData.data,
+        item.sourceImageData.width,
+        item.sourceImageData.height,
+      )
+    ) {
+      return;
+    }
+    const estimated = estimate(
+      item.sourceImageData.data,
+      item.sourceImageData.width,
+      item.sourceImageData.height,
+    );
+    const background = options.backgroundController?.normalizeColor
+      ? options.backgroundController.normalizeColor(estimated)
+      : { r: estimated.r, g: estimated.g, b: estimated.b, a: 255 };
+    const smartDefaults =
+      (typeof module === "object" && module.exports
+        ? require("./smart_cutout_defaults")
+        : typeof globalThis !== "undefined"
+          ? globalThis.XSXBSmartCutoutDefaults
+          : null) || {};
+    if (typeof smartDefaults.overlaySmartCutoutParameters === "function") {
+      item.processingParameters = smartDefaults.overlaySmartCutoutParameters(
+        item.processingParameters,
+        background,
+      );
+    } else {
+      item.processingParameters = { ...(item.processingParameters || {}) };
+    }
+    item.processingParameters.backgroundColor = backgroundHex(background);
+    item.backgroundSamples = [background];
+    item.seedPoints = [];
+    item.automaticCutoutActivated = true;
+    item.processingActivated = true;
+    item.pendingAutomaticPropagation = false;
+  }
+
+  /**
    * Creates the modal and isolated-workset session controller.
    * @param {object} dependencies Modal/session dependencies supplied by the host.
    * @returns {{clear:Function,deleteSelectedItems:Function,open:Function,openWorkset:Function,close:Function,requestClose:Function,hasWorksetChanges:Function,hasUnsavedChanges:Function}}
@@ -69,7 +144,8 @@
       renderQueue,
       setStatus,
       requestConfirmation,
-      estimateBackgroundColor = root?.BatchCutoutCore?.estimateBackgroundColor,
+      estimateBackgroundColor = root?.BatchCutoutBackgroundEstimator?.estimateBackgroundColor ||
+        root?.BatchCutoutCore?.estimateBackgroundColor,
       backgroundController = root?.BatchCutoutBackgroundController,
       onSessionReset = () => {},
     } = dependencies;
@@ -126,18 +202,6 @@
     }
 
     /**
-     * Converts an estimated RGB background into the color input's canonical HEX representation.
-     * @param {{r:number,g:number,b:number}} color Estimated background color.
-     * @returns {string} Six-digit lowercase HEX color.
-     */
-    function backgroundHex(color) {
-      const channel = (value) => Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
-      return `#${[color.r, color.g, color.b]
-        .map((value) => channel(value).toString(16).padStart(2, "0"))
-        .join("")}`;
-    }
-
-    /**
      * Restores persisted workset parameters, then optionally activates per-image background detection.
      * Explicit workset parameters take precedence so a new batch always starts from its requested profile.
      * @param {object} item Newly created cutout queue item.
@@ -155,33 +219,7 @@
       item.backgroundSamples = Array.from(persisted.backgroundSamples || [], (color) => ({ ...color }));
       item.seedPoints = Array.from(persisted.seedPoints || [], (point) => ({ ...point }));
       if (!workset.autoDetectBackground) return;
-      if (typeof estimateBackgroundColor !== "function") {
-        throw new Error("Automatic background detection is unavailable.");
-      }
-      const estimated = estimateBackgroundColor(
-        item.sourceImageData.data,
-        item.sourceImageData.width,
-        item.sourceImageData.height,
-      );
-      const background = backgroundController?.normalizeColor
-        ? backgroundController.normalizeColor(estimated)
-        : { ...estimated, a: 255 };
-      const smartDefaults =
-        (typeof module === "object" && module.exports
-          ? require("./smart_cutout_defaults")
-          : root?.XSXBSmartCutoutDefaults) || {};
-      if (typeof smartDefaults.overlaySmartCutoutParameters === "function") {
-        item.processingParameters = smartDefaults.overlaySmartCutoutParameters(
-          item.processingParameters,
-          background,
-        );
-      }
-      item.processingParameters.backgroundColor = backgroundHex(background);
-      item.backgroundSamples = [background];
-      item.seedPoints = [];
-      item.automaticCutoutActivated = true;
-      item.processingActivated = true;
-      item.pendingAutomaticPropagation = false;
+      activateAutomaticBackgroundDetection(item, { estimateBackgroundColor, backgroundController });
     }
 
     /** Clears transient batch-preview state without touching committed repairs. @returns {void} */
@@ -499,5 +537,10 @@
     };
   }
 
-  return { createController, sessionChangeSignature, acceptSession };
+  return {
+    createController,
+    sessionChangeSignature,
+    acceptSession,
+    activateAutomaticBackgroundDetection,
+  };
 });

@@ -497,7 +497,6 @@
       );
       listen(elements.workspaceFlowBack, "click", () => {
         if (elements.body?.dataset.workspaceTool !== "scatter") return;
-        windowRef.XSXBScatterSliceSession?.allowDiscard?.();
         navigate(elements.body?.dataset.appMode === "projects" ? "animation" : "tools");
       });
       listen(documentRef, "keydown", (event) => {

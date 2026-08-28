@@ -203,6 +203,24 @@
     }
 
     /**
+     * Writes an auto-adjusted duplicate/jump threshold onto the Tuner slider.
+     * The walk-step floor (slider min, 55) is not a duplicate threshold.
+     * @param {{organizerThreshold?:{min?:string,value?:string},organizerThresholdValue?:{textContent?:string}}} elements Slider nodes.
+     * @param {number|null|undefined} autoAdjustedThreshold Adjusted similarity, or null.
+     * @returns {boolean} Whether the slider value changed.
+     */
+    function applyAutoAdjustedThreshold(elements, autoAdjustedThreshold) {
+      if (autoAdjustedThreshold == null || !elements?.organizerThreshold) return false;
+      const minimum = Number(elements.organizerThreshold.min ?? similarityThreshold?.min ?? 55);
+      if (Number(autoAdjustedThreshold) <= minimum) return false;
+      elements.organizerThreshold.value = String(autoAdjustedThreshold);
+      if (elements.organizerThresholdValue) {
+        elements.organizerThresholdValue.textContent = String(autoAdjustedThreshold);
+      }
+      return true;
+    }
+
+    /**
      * Clamps the keep-1-of-N interval used by organizer reduce.
      * @param {unknown} rawValue Slider or typed value.
      * @returns {number}
@@ -1041,6 +1059,7 @@
 
     return {
       applyReduceIncludedFlags,
+      applyAutoAdjustedThreshold,
       bindSimilarityThreshold,
       canReuseLoadedAnimation,
       confirmReduceIncludedFlags,

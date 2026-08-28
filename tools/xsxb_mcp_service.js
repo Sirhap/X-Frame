@@ -68,6 +68,8 @@ const {
   parseGroupPoint,
   requireExistingFile,
   requireFps,
+  resolveExportFps,
+  exportFrameDurationSeconds,
   requireTunerPort,
   requireFrameIndex,
   resolveImportSource,
@@ -118,11 +120,13 @@ function bakedVisualScales(tuning, profileId, animationId, frameCount) {
  * @param {object} tuning Project tuning file.
  * @param {string} profileId Profile id.
  * @param {string} animationId Animation id.
- * @param {number} frameCount Frame count.
+ * @param {object[]|number} framesOrCount Animation frames or a count.
  * @param {number} fps Playback fps.
  * @returns {number[]} Seconds per absolute frame.
  */
-function playbackDurations(tuning, profileId, animationId, frameCount, fps) {
+function playbackDurations(tuning, profileId, animationId, framesOrCount, fps) {
+  const frames = Array.isArray(framesOrCount) ? framesOrCount : [];
+  const frameCount = frames.length || Number(framesOrCount) || 0;
   const overrides =
     tuning?.frame_playback_overrides && typeof tuning.frame_playback_overrides === "object"
       ? tuning.frame_playback_overrides
@@ -135,7 +139,7 @@ function playbackDurations(tuning, profileId, animationId, frameCount, fps) {
       durations.push(0);
       continue;
     }
-    durations.push(Math.max(0.001, Number(override.duration || 1)) / fps);
+    durations.push(exportFrameDurationSeconds(frames[index], override, fps));
   }
   return durations;
 }
@@ -182,7 +186,7 @@ function createXsxbMcpService(options = {}) {
   }
 
   /**
-   * Composites authored attack-trail meshes onto export frames.
+   * Composites authored attack-trail meshes and frame image attachments onto export frames.
    * @param {object} selection Project/profile/animation.
    * @param {string[]} framePaths Source PNG paths.
    * @param {number[]} frameIndexes Absolute indexes.
@@ -194,14 +198,23 @@ function createXsxbMcpService(options = {}) {
     const { project, profile, animation } = selection;
     const paths = projectStore.projectPaths(project);
     const trails = normalizeAttackTrails(projectStore.readJson(paths.attackTrails, EMPTY_ATTACK_TRAILS));
+    const attachments = projectStore.readJson(paths.frameImageAttachments, []);
+    const animationId = String(animation.id || animation.name);
+    const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
+    const ownerScales = bakedVisualScales(tuning, profile.id, animationId, (animation.frames || []).length);
+    const ownerRotation = Number(tuning?.values?.[`profiles.${profile.id}.groups.${animationId}.rotation`] || 0);
     return compositeTrailImpl({
       framePaths,
       frameIndexes,
       durations,
       fps,
       trails,
+      attachments: Array.isArray(attachments) ? attachments : [],
       bindingKey: `${profile.id}/${animation.id || animation.name}`,
       root,
+      ownerScales,
+      flipH: animation.flipH === true,
+      ownerRotation,
     });
   }
 
@@ -1455,7 +1468,7 @@ function createXsxbMcpService(options = {}) {
       file_path: inputPath,
       outputWidth: receipt.outputWidth || outputWidth || 0,
       outputHeight: receipt.outputHeight || outputHeight || 0,
-      processedFrameCount: receipt.processedFrameCount || 1,
+      processedFrameCount: receipt.processedFrameCount ?? 1,
       skippedFrameCount: Number(receipt.skippedFrameCount || 0),
     };
   }
@@ -1488,7 +1501,9 @@ function createXsxbMcpService(options = {}) {
         unsafePaths.push(rawPath);
         continue;
       }
-      if (!fs.existsSync(absolutePath)) continue;
+      if (!fs.existsSync(absolutePath)) {
+        throw new Error(`Cutout refused missing on-disk frame ${index}: ${rawPath || absolutePath}`);
+      }
       jobs.push({ index, absolutePath });
     }
     if (unsafePaths.length) {
@@ -2252,7 +2267,7 @@ function createXsxbMcpService(options = {}) {
     const startFrame = args.start_frame === undefined ? 0 : requireFrameIndex(args.start_frame, lastIndex);
     const endFrame = args.end_frame === undefined ? lastIndex : requireFrameIndex(args.end_frame, lastIndex);
     if (endFrame < startFrame) throw new Error("end_frame must be greater than or equal to start_frame.");
-    const fps = requireFps(args.fps === undefined ? animation.fps : args.fps, 12);
+    const fps = resolveExportFps(animation, args.fps);
     const includeDisabled = booleanFlag(args.include_disabled);
     const animationId = String(animation.id || animation.name);
     const paths = projectStore.projectPaths(project);
@@ -2280,7 +2295,7 @@ function createXsxbMcpService(options = {}) {
       }
       framePaths.push(absolute);
       selectedScales.push(visualScales[index]);
-      durations.push(Math.max(0.001, Number(override.duration || 1)) / fps);
+      durations.push(exportFrameDurationSeconds(frames[index], override, fps));
     }
     if (!framePaths.length) {
       throw new Error("No exportable frames in the selected range (all frames are disabled).");
@@ -2306,7 +2321,9 @@ function createXsxbMcpService(options = {}) {
       exportedIndexes.push(index);
     }
     let bakedTrails = false;
+    let bakedAttachments = false;
     let trailIds = [];
+    let attachmentIds = [];
     try {
       if (appliedVisual) {
         visualTemp = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-gif-visual-"));
@@ -2324,12 +2341,14 @@ function createXsxbMcpService(options = {}) {
         { project, profile, animation },
         encodePaths,
         exportedIndexes,
-        playbackDurations(tuning, profile.id, animationId, frames.length, fps),
+        playbackDurations(tuning, profile.id, animationId, frames, fps),
         fps,
       );
       bakedTrails = baked.bakedTrails === true;
+      bakedAttachments = baked.bakedAttachments === true;
       trailIds = baked.trailIds || [];
-      if (baked.bakedTrails) {
+      attachmentIds = baked.attachmentIds || [];
+      if (baked.bakedTrails || baked.bakedAttachments) {
         encodePaths = baked.framePaths;
         trailTemp = baked.tempDir;
       }
@@ -2351,7 +2370,9 @@ function createXsxbMcpService(options = {}) {
       fps,
       appliedVisual,
       bakedTrails,
+      bakedAttachments,
       trailIds,
+      attachmentIds,
       frameScales: appliedVisual ? selectedScales : undefined,
       totalDurationMs: Math.round(durations.reduce((sum, value) => sum + value, 0) * 1000),
       bytes: fs.statSync(outputPath).size,
@@ -2371,7 +2392,7 @@ function createXsxbMcpService(options = {}) {
     const startFrame = args.start_frame === undefined ? 0 : requireFrameIndex(args.start_frame, lastIndex);
     const endFrame = args.end_frame === undefined ? lastIndex : requireFrameIndex(args.end_frame, lastIndex);
     if (endFrame < startFrame) throw new Error("end_frame must be greater than or equal to start_frame.");
-    const fps = requireFps(animation.fps, 12);
+    const fps = resolveExportFps(animation);
     const paths = projectStore.projectPaths(project);
     const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
     const sourcePaths = [];
@@ -2388,7 +2409,7 @@ function createXsxbMcpService(options = {}) {
       { project, profile, animation },
       sourcePaths,
       indexes,
-      playbackDurations(tuning, profile.id, String(animation.id || animation.name), frames.length, fps),
+      playbackDurations(tuning, profile.id, String(animation.id || animation.name), frames, fps),
       fps,
     );
     let selected;
@@ -2460,8 +2481,11 @@ function createXsxbMcpService(options = {}) {
       width: sheet.width,
       height: sheet.height,
       bytes: fs.statSync(outputPath).size,
+      fps,
       bakedTrails: baked.bakedTrails === true,
+      bakedAttachments: baked.bakedAttachments === true,
       trailIds: baked.trailIds || [],
+      attachmentIds: baked.attachmentIds || [],
       grid: grid
         ? describeGroupGrid(
             cell,

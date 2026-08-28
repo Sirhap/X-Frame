@@ -821,12 +821,12 @@
           matches.map((match) => included[match.index].index),
           "jump",
         );
-        if (result.autoAdjustedThreshold != null) {
-          elements.organizerThreshold.value = String(result.autoAdjustedThreshold);
-          elements.organizerThresholdValue.textContent = String(result.autoAdjustedThreshold);
-        }
+        const wroteJumpThreshold = organizerUi.applyAutoAdjustedThreshold(
+          elements,
+          result.autoAdjustedThreshold,
+        );
         const adjusted =
-          result.autoAdjustedThreshold == null
+          result.autoAdjustedThreshold == null || !wroteJumpThreshold
             ? ""
             : ` · ${text("thresholdAdjusted", { threshold: result.autoAdjustedThreshold })}`;
         const message = matches.length
@@ -842,12 +842,9 @@
         matches.map((match) => included[match.index].index),
         "duplicate",
       );
-      if (result.autoAdjustedThreshold != null) {
-        elements.organizerThreshold.value = String(result.autoAdjustedThreshold);
-        elements.organizerThresholdValue.textContent = String(result.autoAdjustedThreshold);
-      }
+      const wroteThreshold = organizerUi.applyAutoAdjustedThreshold(elements, result.autoAdjustedThreshold);
       const adjusted =
-        result.autoAdjustedThreshold == null
+        result.autoAdjustedThreshold == null || !wroteThreshold
           ? ""
           : ` · ${text("thresholdAdjusted", { threshold: result.autoAdjustedThreshold })}`;
       const message = matches.length

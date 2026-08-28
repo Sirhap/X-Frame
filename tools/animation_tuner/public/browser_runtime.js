@@ -507,6 +507,8 @@
    *   frameVisualOverrides?:object,
    *   framePlaybackOverrides?:object,
    *   frameBoxOverrides?:object,
+   *   vfxFrameOverrides?:object,
+   *   vfxPlaybackOverrides?:object,
    *   sceneSettings?:object,
    *   frameAudioBindings?:object,
    *   frameImageAttachments?:object,
@@ -531,6 +533,12 @@
     }
     if (state.frameBoxOverrides !== undefined) {
       next.tuning.frame_box_overrides = cloneValue(state.frameBoxOverrides);
+    }
+    if (state.vfxFrameOverrides !== undefined) {
+      next.tuning.attack_vfx_frame_overrides = cloneValue(state.vfxFrameOverrides);
+    }
+    if (state.vfxPlaybackOverrides !== undefined) {
+      next.tuning.attack_vfx_playback_overrides = cloneValue(state.vfxPlaybackOverrides);
     }
     if (state.sceneSettings !== undefined) next.tuning.scene_settings = cloneValue(state.sceneSettings);
     if (state.frameAudioBindings !== undefined)

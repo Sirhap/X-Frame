@@ -134,6 +134,38 @@ test("background detection prefers the image-wide dominant color over a decorati
   assert.deepEqual(detectBackgroundColor(rgba, width, height), { r: 40, g: 160, b: 140 });
 });
 
+test("background detection keys white under a large subject", () => {
+  const width = 64;
+  const height = 64;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < rgba.length; offset += 4) rgba.set([255, 255, 255, 255], offset);
+  for (let y = 8; y < height - 8; y += 1) {
+    for (let x = 8; x < width - 8; x += 1) setPixel(rgba, width, x, y, [210, 36, 42, 255]);
+  }
+  assert.deepEqual(detectBackgroundColor(rgba, width, height), { r: 255, g: 255, b: 255 });
+});
+
+test("background detection keys chroma behind 4px white or cyan chrome", () => {
+  const width = 64;
+  const height = 64;
+  const green = [0, 177, 64, 255];
+  for (const [label, chrome] of [
+    ["white", [255, 255, 255, 255]],
+    ["cyan", [0, 255, 255, 255]],
+  ]) {
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let offset = 0; offset < rgba.length; offset += 4) rgba.set(chrome, offset);
+    for (let y = 4; y < height - 4; y += 1) {
+      for (let x = 4; x < width - 4; x += 1) setPixel(rgba, width, x, y, green);
+    }
+    assert.deepEqual(
+      detectBackgroundColor(rgba, width, height),
+      { r: 0, g: 177, b: 64 },
+      `${label} chrome around a green screen must key the chroma`,
+    );
+  }
+});
+
 test("regular background clear removes enclosed background regions instead of preserving them", () => {
   const width = 7;
   const height = 7;

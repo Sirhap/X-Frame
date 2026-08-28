@@ -65,6 +65,16 @@ test("findLoopInPngFiles ranks the same 3-frame period as the Tuner core", () =>
     const found = findLoopInPngFiles(files, { minPeriod: 2, maxPeriod: 4, sampleSize: 8 });
     assert.equal(found.frameCount, 7);
     assert.equal(found.recommended.period, 3);
+    assert.equal(
+      found.recommended.length,
+      found.recommended.period,
+      "inclusive start..end must keep every unique pose in the period",
+    );
+    assert.equal(
+      found.recommended.end - found.recommended.start + 1,
+      found.recommended.period,
+      "end = start + period - 1 so RGBRGB keeps three poses, not two",
+    );
     assert.deepEqual(
       found.recommended.order,
       Array.from(

@@ -87,6 +87,29 @@ test("frame edit state preserves transforms, box overrides, source geometry, and
   assert.equal(dirtyCount, 4);
 });
 
+test("offset-only frame overrides inherit group rotation instead of falling to 0", () => {
+  const group = { uiId: "atk", frames: [{}] };
+  const base = { scale: 1, scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0.785 };
+  const overrideStore = { 0: { offset: { x: 1, y: 2 } } };
+  const controller = createController({
+    getCurrentGroup: () => group,
+    getSelectedFrame: () => 0,
+    baseTransform: () => base,
+    overrideStore: () => overrideStore,
+    tuningFrameKey: (index) => String(index),
+  });
+
+  const resolved = controller.frameTransform(0, group);
+  assert.equal(resolved.rotation, 0.785);
+  assert.deepEqual(resolved.offset, { x: 1, y: 2 });
+
+  overrideStore["0"] = { offset: { x: 1, y: 2 }, rotation: 0 };
+  assert.equal(controller.frameTransform(0, group).rotation, 0);
+
+  overrideStore["0"] = { offset: { x: 1, y: 2 }, rotation: 0.2 };
+  assert.equal(controller.frameTransform(0, group).rotation, 0.2);
+});
+
 test("setBoxOverride rejects a box object as the first argument", () => {
   const boxOverrides = {};
   const controller = createController({

@@ -137,6 +137,38 @@
     }
 
     /**
+     * Writes the in-memory bindings to IndexedDB. Call from save, not from bind/clear.
+     * @returns {Promise<void>}
+     */
+    async function persistBindingsToDb() {
+      const bindings = getBindings() || {};
+      const liveKeys = new Set();
+      for (const [key, binding] of Object.entries(bindings)) {
+        if (!binding?.blob) continue;
+        liveKeys.add(key);
+        await saveToDb(key, binding);
+      }
+      try {
+        const db = await open();
+        if (!db) return;
+        const records = await new Promise((resolve, reject) => {
+          const tx = db.transaction(storeName, "readonly");
+          const request = tx.objectStore(storeName).getAll();
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error || new Error("Audio load failed"));
+        });
+        for (const record of records) {
+          if (!record?.key || liveKeys.has(record.key)) continue;
+          const metadata = record.metadata || getFrameAudioMetadataFromKey(record.key);
+          if (metadata?.projectId && metadata.projectId !== getActiveProjectId()) continue;
+          await deleteFromDb(record.key);
+        }
+      } catch (error) {
+        reportFailure("frameSfxSessionOnly", error);
+      }
+    }
+
+    /**
      * Restores persisted records that still have a matching project binding.
      * @returns {Promise<void>}
      */
@@ -196,7 +228,6 @@
         metadata: getFrameAudioMetadata(index, group),
         blob: file,
       };
-      await saveToDb(key, bindings[key]);
     }
 
     /**
@@ -210,7 +241,6 @@
       const bindings = getBindings();
       revokeBinding(bindings[key]);
       delete bindings[key];
-      await deleteFromDb(key);
     }
 
     /**
@@ -309,6 +339,7 @@
       collectForSave,
       deleteFromDb,
       loadFromDb,
+      persistBindingsToDb,
       open,
       play,
       saveToDb,

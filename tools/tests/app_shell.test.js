@@ -99,6 +99,7 @@ function createFixture(options = {}) {
     toolRailContextMenu: createElement(),
     toolRailContextTitle: createElement(),
     toolRailContextHint: createElement(),
+    workspaceFlowBack: createElement(),
   };
   const contextToolActions = ["current-frame-cutout", "batch-cutout", "organizer"].map((tool) => {
     const element = createElement();
@@ -148,6 +149,7 @@ function createFixture(options = {}) {
     ["#toolRailContextMenu", elements.toolRailContextMenu],
     ["#toolRailContextTitle", elements.toolRailContextTitle],
     ["#toolRailContextHint", elements.toolRailContextHint],
+    ["#workspaceFlowBack", elements.workspaceFlowBack],
   ]);
   const documentRef = {
     body: elements.body,
@@ -197,6 +199,7 @@ function createFixture(options = {}) {
     filmstripButtons,
     routeItems,
     storage,
+    windowRef,
     workbenchRouteItems,
     contextToolActions,
     /** @param {string} selector Sidebar panel selector. @returns {string|undefined} Stamped category. */
@@ -537,4 +540,124 @@ test("narrow chrome wraps flow tabs instead of clipping their labels", () => {
     /@media \(max-width: 1100px\)[\s\S]*\.cutoutSettingTabs \.premiumOption::after[\s\S]*display:\s*none/,
   );
   assert.match(organizer, /\.organizerFrameTag\s*\{[^}]*overflow:\s*visible/);
+});
+
+test("scatter flow-back from a project navigates without discarding first", async () => {
+  const events = [];
+  const fixture = createFixture({
+    pathname: "/workspace/resources/scatter",
+    navigate: async (route) => {
+      events.push(`navigate:${route}`);
+      return true;
+    },
+  });
+  fixture.windowRef.XSXBScatterSliceSession = {
+    allowDiscard() {
+      events.push("allowDiscard");
+    },
+    hasUnsavedChanges() {
+      return true;
+    },
+  };
+  fixture.controller.bind();
+  fixture.elements.body.dataset.workspaceTool = "scatter";
+  fixture.elements.body.dataset.appMode = "projects";
+
+  fixture.elements.workspaceFlowBack.click();
+  await Promise.resolve();
+
+  assert.deepEqual(events, ["navigate:animation"]);
+});
+
+test("standalone scatter flow-back navigates to tools without discarding first", async () => {
+  const events = [];
+  const fixture = createFixture({
+    pathname: "/tools/scatter-slice",
+    navigate: async (route) => {
+      events.push(`navigate:${route}`);
+      return true;
+    },
+  });
+  fixture.windowRef.XSXBScatterSliceSession = {
+    allowDiscard() {
+      events.push("allowDiscard");
+    },
+    hasUnsavedChanges() {
+      return true;
+    },
+  };
+  fixture.controller.bind();
+  fixture.elements.body.dataset.workspaceTool = "scatter";
+  fixture.elements.body.dataset.appMode = "tools";
+
+  fixture.elements.workspaceFlowBack.click();
+  await Promise.resolve();
+
+  assert.deepEqual(events, ["navigate:tools"]);
+});
+
+/**
+ * Loads `requestScatterSliceLeave` from app.js so the dirty-leave dialog can be
+ * exercised without booting the rest of the workbench.
+ * @param {{dirty?:boolean,pathname?:string,accepted?:boolean,events?:string[]}} [options]
+ * @returns {(destinationRoute:string)=>Promise<boolean>}
+ */
+function loadRequestScatterSliceLeave(options = {}) {
+  const source = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app.js"), "utf8");
+  const start = source.indexOf("async function requestScatterSliceLeave(");
+  const end = source.indexOf("function guardScatterSliceHistory", start);
+  assert.ok(start >= 0 && end > start, "requestScatterSliceLeave should be extractable");
+  const events = options.events || [];
+  const globalRef = {
+    location: { pathname: options.pathname || "/workspace/resources/scatter" },
+    XSXBScatterSliceSession: {
+      hasUnsavedChanges() {
+        return options.dirty !== false;
+      },
+      allowDiscard() {
+        events.push("allowDiscard");
+      },
+    },
+  };
+  const rewritten = source.slice(start, end).replace(/\bglobalThis\b/g, "__xsxbGlobal");
+  return new Function(
+    "__xsxbGlobal",
+    "requestAppConfirmation",
+    `${rewritten}\nreturn requestScatterSliceLeave;`,
+  )(globalRef, async () => {
+    events.push("confirm");
+    return options.accepted === true;
+  });
+}
+
+test("dirty scatter leave confirms before discard regardless of destination", async () => {
+  for (const destination of ["animation", "organizer", "cutout", "tools"]) {
+    const events = [];
+    const leave = loadRequestScatterSliceLeave({ dirty: true, accepted: false, events });
+    assert.equal(await leave(destination), false, destination);
+    assert.deepEqual(events, ["confirm"], destination);
+  }
+
+  const acceptedEvents = [];
+  const acceptedLeave = loadRequestScatterSliceLeave({
+    dirty: true,
+    accepted: true,
+    events: acceptedEvents,
+  });
+  assert.equal(await acceptedLeave("animation"), true);
+  assert.deepEqual(acceptedEvents, ["confirm", "allowDiscard"]);
+
+  const cleanEvents = [];
+  const cleanLeave = loadRequestScatterSliceLeave({ dirty: false, events: cleanEvents });
+  assert.equal(await cleanLeave("animation"), true);
+  assert.deepEqual(cleanEvents, []);
+
+  const elsewhereEvents = [];
+  const elsewhereLeave = loadRequestScatterSliceLeave({
+    dirty: true,
+    pathname: "/workspace/animation/transform",
+    events: elsewhereEvents,
+  });
+  assert.equal(await elsewhereLeave("animation"), true);
+  assert.deepEqual(elsewhereEvents, []);
 });
