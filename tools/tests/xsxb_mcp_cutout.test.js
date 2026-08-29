@@ -414,8 +414,7 @@ test("a 1px gutter on a large still-plated canvas is not treated as cut out", ()
     const framePath = path.join(folder, "frame.png");
     try {
       fs.writeFileSync(framePath, encodePngRgba(frame.data, frame.width, frame.height));
-      const keyColor =
-        background[0] === 255 && background[1] === 255 ? "#ffffff" : "#00b140";
+      const keyColor = background[0] === 255 && background[1] === 255 ? "#ffffff" : "#00b140";
       const receipt = cutoutFrameFiles([framePath], { keyColor });
       assert.equal(receipt.skippedFrameCount, 0, `${label} leftover plate must be processed`);
       assert.equal(receipt.processedFrameCount, 1, `${label} leftover plate must be keyed`);
