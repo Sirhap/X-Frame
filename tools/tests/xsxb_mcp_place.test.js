@@ -185,7 +185,7 @@ test("overlay_grid and place_image sit after measure_image in the catalog", () =
 
 test("core place schema fields stay generic", () => {
   const banned = /门|人|刀|西门|door|person|blade/i;
-  const src = fs.readFileSync(path.join(__dirname, "../xsxb_mcp_place.js"), "utf8");
+  const src = fs.readFileSync(path.join(__dirname, "../../mcp/xsxb_mcp_place.js"), "utf8");
   assert.doesNotMatch(src, banned);
   for (const name of ["xsxb_overlay_grid", "xsxb_place_image"]) {
     const tool = toolDefinitions().find((entry) => entry.name === name);

@@ -41,7 +41,7 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 - `tools/godot_sync.js` 和 `tools/godot_runtime.js`：把调参数据、素材和 runtime 同步到 Godot 项目。
 - `skills/xsxb-animation-production/`：从动画需求、生成/已有素材到导入、同步、验证和启动工作台的上层 Codex/Agent skill。
 - `skills/xsxb-frame-tuner/`：具体 XSXB 导入、整理、调参、Godot runtime 同步和验证执行层 skill。
-- `mcp/`：给人看的 MCP 接入说明和 Cursor 示例配置。实现仍在 `tools/xsxb_mcp_server.js`。
+- `mcp/`：XSXB MCP 实现（`xsxb_mcp_server.js` 等）以及接入说明、Cursor 示例配置。`tools/xsxb_mcp_*.js` 只是兼容转发，前端界面代码不经过这里。
 - `data/`、`workspace/`、`audio/`：本地运行时目录。真实项目数据不提交。
 
 ## 安装方式

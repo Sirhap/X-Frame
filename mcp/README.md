@@ -1,12 +1,12 @@
 # XSXB MCP
 
-本目录是给人看的安装入口，不是独立产品仓库。STDIO 服务仍在仓库内：
+本目录是 XSXB MCP 的实现与安装入口，不是独立产品仓库。
 
-- `../tools/xsxb_mcp_server.js`：JSON-RPC 传输与 `initialize.instructions`
-- `../tools/xsxb_mcp_service.js`：工具实现
+- `xsxb_mcp_server.js`：JSON-RPC 传输与 `initialize.instructions`
+- `xsxb_mcp_service.js`：工具实现
 - `../docs/mcp-bridge-architecture.md`：Web / Skill / MCP / 本地 Bridge 职责
 
-不要把实现拆到单独的 MCP 仓库。改能力时改 `tools/`，这里只更新安装说明。
+不要把实现拆到单独的 MCP 仓库。改 MCP 能力时改本目录。`../tools/xsxb_mcp_*.js` 只是兼容转发，不要把逻辑写回 `tools/`。前端 Tuner 界面不在这里改。
 
 ## 谁能读到什么
 
@@ -29,7 +29,7 @@ Cursor 配置可以放在：
 - 用户级 `~/.cursor/mcp.json`
 - 打开了本仓库时的项目级 `.cursor/mcp.json`
 
-Cursor **不会**展开 `${workspaceFolder}`。`args` 必须是指向 `tools/xsxb_mcp_server.js` 的**绝对路径**，否则会去加载字面量 `${workspaceFolder}/...` 并循环报 MODULE_NOT_FOUND。
+Cursor **不会**展开 `${workspaceFolder}`。`args` 必须是指向 `mcp/xsxb_mcp_server.js` 的**绝对路径**，否则会去加载字面量 `${workspaceFolder}/...` 并循环报 MODULE_NOT_FOUND。
 
 把下面的 `/absolute/path/to/XSXB-Frame-Tuner` 换成你本机仓库根目录：
 
@@ -39,13 +39,13 @@ Cursor **不会**展开 `${workspaceFolder}`。`args` 必须是指向 `tools/xsx
     "xsxb": {
       "type": "stdio",
       "command": "node",
-      "args": ["/absolute/path/to/XSXB-Frame-Tuner/tools/xsxb_mcp_server.js"]
+      "args": ["/absolute/path/to/XSXB-Frame-Tuner/mcp/xsxb_mcp_server.js"]
     }
   }
 }
 ```
 
-如果 Cursor 打开的是外层 `3D-images-tools/`，绝对路径仍指向本仓库内的 `XSXB-Frame-Tuner/tools/xsxb_mcp_server.js`。
+如果 Cursor 打开的是外层 `3D-images-tools/`，绝对路径仍指向本仓库内的 `XSXB-Frame-Tuner/mcp/xsxb_mcp_server.js`。
 
 命令行自检：
 
@@ -81,7 +81,7 @@ npm run mcp:start
 - 如实回报工具结果，不要编造成功
 - MCP 报错、缺能力、或必须离开 MCP 才能做完时：告诉用户，并提到 `XSXB-Frame-Tuner` 项目。带上工具名、参数、回执或错误、期望结果、实际结果。不要静默绕过缺口
 
-完整条文以 `tools/xsxb_mcp_server.js` 的 `INSTRUCTIONS` 为准。Skill 侧见 `skills/xsxb-frame-tuner/SKILL.md` 的 MCP Feedback。
+完整条文以 `mcp/xsxb_mcp_server.js` 的 `INSTRUCTIONS` 为准。Skill 侧见 `skills/xsxb-frame-tuner/SKILL.md` 的 MCP Feedback。
 
 ## 当前工具
 
