@@ -1079,9 +1079,12 @@ test("target_anchor rejects freehand x,y without cells", async () => {
 test("INSTRUCTIONS mention snap and MCP-resolved coordinates", () => {
   assert.match(INSTRUCTIONS, /snap/i);
   assert.match(INSTRUCTIONS, /resolved|verify_overlay/i);
+  assert.match(INSTRUCTIONS, /measure_t/);
+  assert.match(INSTRUCTIONS, /alpha_centroid/);
   const place = toolDefinitions().find((entry) => entry.name === "xsxb_place_image");
   assert.match(place.description, /snap/);
   assert.match(place.inputSchema.properties.target_anchor.properties.snap.type, /string/);
+  assert.equal(place.inputSchema.properties.object_anchor.properties.measure_t.type, "number");
 });
 
 test("nudge shifts a snapped target by finite pixel dx/dy and records it on resolved", async () => {
