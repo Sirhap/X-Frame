@@ -5,7 +5,7 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { createProjectStore } = require("../tools/project_store");
+const { createProjectStore } = require("./lib/project_store");
 const {
   MCP_TOOL_NAMES,
   createTestWav,
@@ -34,7 +34,7 @@ function createFixture(serviceOptions = {}) {
   );
   const realPreset = path.join(
     __dirname,
-    "../tools/animation_tuner/public/presets/attack_trails/dynamic_trail_luma.png",
+    "lib/animation_tuner/public/presets/attack_trails/dynamic_trail_luma.png",
   );
   fs.mkdirSync(path.dirname(presetPath), { recursive: true });
   if (fs.existsSync(realPreset)) fs.copyFileSync(realPreset, presetPath);

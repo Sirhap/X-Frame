@@ -45,3 +45,62 @@ test("frontend still requires the tools/ cutout shim path, not mcp/", () => {
   const { alreadyCutOut } = require("../xsxb_mcp_cutout");
   assert.equal(typeof alreadyCutOut, "function");
 });
+
+const REQUIRE_RE = /require\(\s*["']([^"']+)["']\s*\)/g;
+const NODE_BUILTIN = /^(node:|[a-z][a-z0-9_]*$)/;
+
+/**
+ * Collects relative require specifiers from a CommonJS file.
+ * @param {string} file Absolute path.
+ * @returns {string[]} Specifiers that start with `.`.
+ */
+function relativeRequires(file) {
+  const src = fs.readFileSync(file, "utf8");
+  return [...src.matchAll(REQUIRE_RE)].map((match) => match[1]).filter((spec) => spec.startsWith("."));
+}
+
+/**
+ * Walks the MCP require graph and returns files that resolve outside mcp/.
+ * @returns {{file:string,spec:string,resolved:string}[]} Escapes.
+ */
+function mcpRequireEscapes() {
+  const queue = MCP_MODULES.map((name) => path.join(MCP_DIR, `${name}.js`));
+  const seen = new Set();
+  const escapes = [];
+  while (queue.length) {
+    const file = queue.pop();
+    if (seen.has(file) || !fs.existsSync(file)) continue;
+    seen.add(file);
+    for (const spec of relativeRequires(file)) {
+      const resolved = require.resolve(spec, { paths: [path.dirname(file)] });
+      if (!resolved.startsWith(`${MCP_DIR}${path.sep}`) && resolved !== MCP_DIR) {
+        escapes.push({ file: path.relative(REPO, file), spec, resolved: path.relative(REPO, resolved) });
+        continue;
+      }
+      if (!NODE_BUILTIN.test(spec)) queue.push(resolved);
+    }
+  }
+  return escapes;
+}
+
+test("MCP require graph stays inside mcp/ (vendored lib, no tools/ imports)", () => {
+  const escapes = mcpRequireEscapes();
+  assert.deepEqual(
+    escapes,
+    [],
+    `MCP still imports outside mcp/:\n${escapes.map((row) => `${row.file} -> ${row.spec} (${row.resolved})`).join("\n")}`,
+  );
+  assert.ok(fs.existsSync(path.join(MCP_DIR, "lib/project_store.js")), "vendored project_store");
+  assert.ok(
+    fs.existsSync(path.join(MCP_DIR, "lib/runtime/xsxb_attack_trail_renderer.gd")),
+    "vendored Godot trail runtime",
+  );
+  assert.ok(
+    fs.existsSync(
+      path.join(MCP_DIR, "lib/animation_tuner/public/presets/attack_trails/dynamic_trail_luma.png"),
+    ),
+    "vendored trail preset",
+  );
+  const { resolveXsxbRoot } = require("../../mcp/lib/xsxb_root");
+  assert.equal(resolveXsxbRoot(path.join(MCP_DIR, "lib")), REPO);
+});

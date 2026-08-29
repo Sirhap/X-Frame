@@ -3,18 +3,18 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
-const { parsePng, unfilterPng } = require("../tools/attachment_sequence_analysis");
-const { NUMERIC_PARAMETER_LIMITS } = require("../tools/animation_tuner/public/batch_cutout_session_core");
+const { parsePng, unfilterPng } = require("./lib/attachment_sequence_analysis");
+const { NUMERIC_PARAMETER_LIMITS } = require("./lib/animation_tuner/public/batch_cutout_session_core");
 const {
   REGULAR_AUTO_BACKGROUND_PARAMETERS,
   classifySmartBackground,
   referenceChromaKeyFor,
-} = require("../tools/animation_tuner/public/smart_cutout_defaults");
-const { applyProductCutout } = require("../tools/animation_tuner/public/batch_cutout_core");
+} = require("./lib/animation_tuner/public/smart_cutout_defaults");
+const { applyProductCutout } = require("./lib/animation_tuner/public/batch_cutout_core");
 const {
   createSmartCutoutOptions,
   detectBackgroundColor,
-} = require("../tools/animation_tuner/public/scatter_slice_smart_cutout");
+} = require("./lib/animation_tuner/public/scatter_slice_smart_cutout");
 
 const REFERENCE_MODES = Object.freeze(["general", "blend", "chroma"]);
 

@@ -14,7 +14,7 @@ const {
   analyzeDuplicateFrames,
   createSignature,
   findLoopCandidates,
-} = require("../tools/animation_tuner/public/frame_organizer_core");
+} = require("./lib/animation_tuner/public/frame_organizer_core");
 const { PNG_NAME, listPngSequence, requireExistingFile } = require("./xsxb_mcp_arguments");
 const { decodePngRgba } = require("./xsxb_mcp_cutout");
 

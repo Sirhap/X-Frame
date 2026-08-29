@@ -5,16 +5,16 @@ const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 const { encodePngRgba } = require("./xsxb_mcp_cutout");
-const { createSoftwareDom, SoftwareImage } = require("../tools/xsxb_software_canvas");
+const { createSoftwareDom, SoftwareImage } = require("./lib/xsxb_software_canvas");
 const {
   attachmentOwnerPlacement,
   normalizeAttachmentTransform,
-} = require("../tools/animation_tuner/public/app_attachment_utils");
+} = require("./lib/animation_tuner/public/app_attachment_utils");
 
-const EDITOR_SCRIPT = path.join(__dirname, "../tools/animation_tuner/public/attack_trails.js");
+const EDITOR_SCRIPT = path.join(__dirname, "lib/animation_tuner/public/attack_trails.js");
 const FALLBACK_TEXTURE = path.join(
   __dirname,
-  "../tools/animation_tuner/public/presets/attack_trails/dynamic_trail_luma.png",
+  "lib/animation_tuner/public/presets/attack_trails/dynamic_trail_luma.png",
 );
 
 /**

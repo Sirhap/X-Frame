@@ -1,12 +1,13 @@
 # XSXB MCP
 
-本目录是 XSXB MCP 的实现与安装入口，不是独立产品仓库。
+本目录是 XSXB MCP 的实现与安装入口。
 
 - `xsxb_mcp_server.js`：JSON-RPC 传输与 `initialize.instructions`
 - `xsxb_mcp_service.js`：工具实现
+- `lib/`：MCP 运行所需的业务/算法副本（抠图、工程、Godot 同步等），不再 `require` 仓库其余部分
 - `../docs/mcp-bridge-architecture.md`：Web / Skill / MCP / 本地 Bridge 职责
 
-不要把实现拆到单独的 MCP 仓库。改 MCP 能力时改本目录。`../tools/xsxb_mcp_*.js` 只是兼容转发，不要把逻辑写回 `tools/`。前端 Tuner 界面不在这里改。
+改 MCP 能力时改本目录。`../tools/xsxb_mcp_*.js` 只是兼容转发，不要把逻辑写回 `tools/`。前端 Tuner 界面不在这里改。`lib/` 是为以后拆成独立 MCP 包准备的副本；Tuner 原文件仍在 `tools/`，两边暂时双份维护。`xsxb_open_tuner` 仍会在工作区里找 Tuner 的 `server.js`（可选，不是 require）。
 
 ## 谁能读到什么
 

@@ -12,14 +12,14 @@ const {
   pngInfo,
   stickCenterTravel,
   validateAttackTrails,
-} = require("../tools/attack_trails");
-const { deleteAnimation } = require("../tools/animation_mutations");
-const { frameBoxKey, upsertEstimatedFrameBoxes } = require("../tools/box_estimator");
-const { importAnimation, reorganizeAnimation } = require("../tools/frame_organizer");
-const { syncGodotProject, validGodotProjectRoot } = require("../tools/godot_sync");
-const { parseSpriteFrames } = require("../tools/import_spriteframes");
-const { createProjectStore, EMPTY_TUNING, reslash, slug } = require("../tools/project_store");
-const { validateImport } = require("../tools/validate_import");
+} = require("./lib/attack_trails");
+const { deleteAnimation } = require("./lib/animation_mutations");
+const { frameBoxKey, upsertEstimatedFrameBoxes } = require("./lib/box_estimator");
+const { importAnimation, reorganizeAnimation } = require("./lib/frame_organizer");
+const { syncGodotProject, validGodotProjectRoot } = require("./lib/godot_sync");
+const { parseSpriteFrames } = require("./lib/import_spriteframes");
+const { createProjectStore, EMPTY_TUNING, reslash, slug } = require("./lib/project_store");
+const { validateImport } = require("./lib/validate_import");
 const {
   collectWorkbenchExtras,
   compressPngFile,

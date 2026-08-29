@@ -8,7 +8,7 @@
  */
 
 const path = require("node:path");
-const { ORGANIZER_SIMILARITY_THRESHOLD } = require("../tools/animation_tuner/public/frame_organizer_core");
+const { ORGANIZER_SIMILARITY_THRESHOLD } = require("./lib/animation_tuner/public/frame_organizer_core");
 const { workbenchSliderSchemaProperties } = require("./xsxb_mcp_cutout");
 
 const DEFAULT_PROFILE_ID = "mcp_imports";
