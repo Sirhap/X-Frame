@@ -133,11 +133,12 @@ Read group coordinates from `xsxb_export_sheet` receipt `grid.cells[row][col]` (
 
 Still-image overlay and place (agent is the eye; MCP does not call a VLM):
 
-1. `xsxb_overlay_grid` on the PNG. Look at `overlay_path` and report only speakable cell ids (`A1`–`H8`). Do not OCR pixel x,y.
-2. To refine, call `xsxb_overlay_grid` again with `crop_from: { parent_view, cells, padding_cells }`. Receipt `view` stays in original-image pixels; crop origin equals remapped A1.
-3. `xsxb_place_image` with `target_anchor` / `object_anchor` (cell `derive` or `alpha_support`) and `scale` `relative` or `physical` from the selected span. `layer` `under_target` puts the object under opaque pixels inside the target cell union (a grip in a palm); `behind` restores every opaque target pixel; omit for `front`. `rotation` is clockwise degrees around the object anchor (screen y-down). Held objects follow pose physics, not source-upright: rotation 0 is the PNG as generated (often the heavy head down). Rotate around the grip so the mass/striking end faces the figure's facing or attack side and the shaft follows the forearm, not world-vertical. Scale from the body span — two full canvases are not 1:1 meters. The tool does not redraw a hand; if the head clips the canvas, pad that edge or grip closer to the head. Example: stand a figure in a doorway by naming the door cells and a physical width — those are cell ids, not domain field names.
-4. `xsxb_measure_image` `anchor=alpha_bottom` returns the same opaque-foot geometry.
-5. `xsxb_cutout` `file_path` runs the same smart-cutout on one workspace PNG.
+1. `xsxb_overlay_grid` on each PNG involved. Look at `overlay_path` and report only speakable cell ids (`A1`–`H8`). Do not OCR pixel x,y.
+2. To refine a region, call `xsxb_overlay_grid` again with `crop_from: { parent_view, cells, padding_cells }`. Receipt `view` stays in original-image pixels; crop origin equals remapped A1.
+3. **Generic place path (any two images):** name the contact patch on the **target** and the contact patch on the **object** as cell ids → `target_anchor: { view, cells, snap: "alpha_centroid" }` and `object_anchor: { view, cells, snap: "alpha_centroid" }` so MCP pins opaque **mass** means together (not empty cell mid-points). Prefer `crop_from` when the patch is small inside a coarse cell. Optional `nudge: {dx,dy}` after one verify look. Never freehand `x,y`.
+4. `scale` `relative`|`physical` from a named cell span on the target (not full-canvas width). `layer` `front`|`under_target`|`behind` as needed for occlusion. `rotation` is clockwise degrees around the object anchor (screen y-down); align to the pose you see, not “source upright by default”. `verify_overlay` defaults on — inspect `verify_overlay_path`. The tool composites; it does not redraw pixels (e.g. it will not invent fingers wrapping a handle).
+5. Optional: `object_anchor.measure_t` / `xsxb_measure_image` when you already want a fraction along a long opaque axis — not a required special case. `anchor=alpha_bottom` is the opaque-foot helper.
+6. `xsxb_cutout` `file_path` runs the same smart-cutout on one workspace PNG.
 
 Attack-trail sickle (像素层, not Hermite mesh):
 

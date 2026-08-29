@@ -9,6 +9,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { ALPHA_VISIBLE, decodePngRgba, encodePngRgba } = require("./xsxb_mcp_cutout");
 const { mcpArtifactDir, requireExistingFile, resolveMcpArtifactPath } = require("./xsxb_mcp_arguments");
+const { measureLongAxis } = require("./xsxb_mcp_visual_qa");
 
 const DEFAULT_GRID = 8;
 const GRID_MIN = 2;
@@ -26,7 +27,7 @@ const DERIVE_MODES = Object.freeze([
   "right_center",
   "median_center",
 ]);
-const ALPHA_MODES = Object.freeze(["alpha_center", "alpha_bottom_center", "alpha_support"]);
+const ALPHA_MODES = Object.freeze(["alpha_center", "alpha_centroid", "alpha_bottom_center", "alpha_support"]);
 const LAYER_MODES = Object.freeze(["front", "behind", "under_target"]);
 const LABEL_MAX_SCALE = 2;
 
@@ -285,12 +286,28 @@ function deriveFromCells(spec) {
  * @returns {{minX:number,minY:number,maxX:number,maxY:number}} Box.
  */
 function opaqueBBox(rgba, width, height) {
+  return opaqueBBoxClipped(rgba, width, height, null);
+}
+
+/**
+ * Opaque bounding box, optionally clipped to a half-open region in image pixels.
+ * @param {Uint8ClampedArray} rgba Pixels.
+ * @param {number} width Width.
+ * @param {number} height Height.
+ * @param {{x1:number,y1:number,x2:number,y2:number}|null} [clip] Optional clip.
+ * @returns {{minX:number,minY:number,maxX:number,maxY:number}} Box.
+ */
+function opaqueBBoxClipped(rgba, width, height, clip = null) {
+  const xStart = clip ? Math.max(0, Math.floor(clip.x1)) : 0;
+  const yStart = clip ? Math.max(0, Math.floor(clip.y1)) : 0;
+  const xEnd = clip ? Math.min(width, Math.ceil(clip.x2)) : width;
+  const yEnd = clip ? Math.min(height, Math.ceil(clip.y2)) : height;
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
+  for (let y = yStart; y < yEnd; y += 1) {
+    for (let x = xStart; x < xEnd; x += 1) {
       if (rgba[(y * width + x) * 4 + 3] <= ALPHA_VISIBLE) continue;
       if (x < minX) minX = x;
       if (y < minY) minY = y;
@@ -298,7 +315,15 @@ function opaqueBBox(rgba, width, height) {
       if (y > maxY) maxY = y;
     }
   }
-  if (!Number.isFinite(minX)) throw new Error("Image has no opaque pixels to anchor.");
+  if (!Number.isFinite(minX)) {
+    const error = new Error(
+      clip
+        ? "Snap region has no opaque pixels. Pick cells that cover the subject, or omit snap."
+        : "Image has no opaque pixels to anchor.",
+    );
+    error.code = clip ? "SNAP_EMPTY_REGION" : "ALPHA_EMPTY";
+    throw error;
+  }
   return { minX, minY, maxX, maxY };
 }
 
@@ -308,16 +333,40 @@ function opaqueBBox(rgba, width, height) {
  * @param {number} width Width.
  * @param {number} height Height.
  * @param {string} mode Alpha mode.
+ * @param {{x1:number,y1:number,x2:number,y2:number}|null} [clip] Optional cell-union clip.
  * @returns {{x:number,y:number,bbox:object}} Anchor.
  */
-function alphaAnchor(rgba, width, height, mode) {
+function alphaAnchor(rgba, width, height, mode, clip = null) {
   if (!ALPHA_MODES.includes(mode)) {
-    throw new Error(`object_anchor.mode must be one of: ${ALPHA_MODES.join(", ")}. Received: ${mode}`);
+    throw new Error(`snap/object_anchor mode must be one of: ${ALPHA_MODES.join(", ")}. Received: ${mode}`);
   }
-  const bbox = opaqueBBox(rgba, width, height);
+  const bbox = opaqueBBoxClipped(rgba, width, height, clip);
   const centerX = (bbox.minX + bbox.maxX + 1) / 2;
   const centerY = (bbox.minY + bbox.maxY + 1) / 2;
   if (mode === "alpha_center") return { x: centerX, y: centerY, bbox };
+  if (mode === "alpha_centroid") {
+    const xStart = clip ? Math.max(0, Math.floor(clip.x1)) : bbox.minX;
+    const yStart = clip ? Math.max(0, Math.floor(clip.y1)) : bbox.minY;
+    const xEnd = clip ? Math.min(width, Math.ceil(clip.x2)) : bbox.maxX + 1;
+    const yEnd = clip ? Math.min(height, Math.ceil(clip.y2)) : bbox.maxY + 1;
+    let n = 0;
+    let sx = 0;
+    let sy = 0;
+    for (let y = yStart; y < yEnd; y += 1) {
+      for (let x = xStart; x < xEnd; x += 1) {
+        if (rgba[(y * width + x) * 4 + 3] <= ALPHA_VISIBLE) continue;
+        n += 1;
+        sx += x;
+        sy += y;
+      }
+    }
+    if (!n) {
+      const error = new Error("Snap region has no opaque pixels for alpha_centroid.");
+      error.code = "SNAP_EMPTY_REGION";
+      throw error;
+    }
+    return { x: sx / n, y: sy / n, bbox, samples: n };
+  }
   if (mode === "alpha_bottom_center") return { x: centerX, y: bbox.maxY + 1, bbox };
   const bboxHeight = bbox.maxY - bbox.minY + 1;
   const band = Math.max(1, Math.round(bboxHeight * SUPPORT_BAND_RATIO));
@@ -911,15 +960,106 @@ function overlayGridImage(args = {}, options = {}) {
  * @param {object} anchor Target anchor.
  * @returns {{x:number,y:number}} Point.
  */
-function resolveTargetAnchor(anchor) {
+/**
+ * Resolves the target placement point. Agent speaks cells; MCP emits pixels.
+ * @param {object} anchor Target anchor.
+ * @param {{data:Uint8ClampedArray,width:number,height:number}|null} [image] Target image (required for snap).
+ * @returns {{x:number,y:number,resolved:object}} Point plus provenance.
+ */
+function resolveTargetAnchor(anchor, image = null) {
   if (!anchor || typeof anchor !== "object") throw new Error("target_anchor is required.");
+  requireKnownKeys(anchor, ["view", "cells", "derive", "snap", "nudge", "x_from", "y_from"], "target_anchor");
+  if (anchor.x !== undefined || anchor.y !== undefined) {
+    throwCode(
+      "UNGROUNDED_POINT",
+      "target_anchor cannot take freehand x,y. Report speakable cells (and optional snap/nudge); MCP resolves pixel coordinates in the receipt.",
+    );
+  }
+  /**
+   * Applies optional pixel nudge after cell/snap grounding.
+   * @param {{x:number,y:number,resolved:object}} grounded Point.
+   * @returns {{x:number,y:number,resolved:object}} Nudged point.
+   */
+  function applyNudge(grounded) {
+    if (anchor.nudge === undefined || anchor.nudge === null || anchor.nudge === "") return grounded;
+    requireKnownKeys(anchor.nudge, ["dx", "dy"], "target_anchor.nudge");
+    const dx = Number(anchor.nudge.dx);
+    const dy = Number(anchor.nudge.dy);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+      throw new Error("target_anchor.nudge.dx and dy must be finite pixel numbers.");
+    }
+    const x = grounded.x + dx;
+    const y = grounded.y + dy;
+    return {
+      x,
+      y,
+      resolved: {
+        ...grounded.resolved,
+        before_nudge: { x: grounded.x, y: grounded.y },
+        nudge: { dx, dy },
+        x,
+        y,
+      },
+    };
+  }
   if (anchor.x_from || anchor.y_from) {
     if (!anchor.x_from || !anchor.y_from) {
       throw new Error("target_anchor x_from and y_from must both be provided.");
     }
-    return { x: deriveFromCells(anchor.x_from).x, y: deriveFromCells(anchor.y_from).y };
+    if (anchor.snap) {
+      throw new Error(
+        "target_anchor.snap cannot combine with x_from/y_from; snap on a single cells union instead.",
+      );
+    }
+    const point = { x: deriveFromCells(anchor.x_from).x, y: deriveFromCells(anchor.y_from).y };
+    return applyNudge({
+      ...point,
+      resolved: {
+        mode: "derive_axes",
+        cells: [...(anchor.x_from.cells || []), ...(anchor.y_from.cells || [])],
+        x: point.x,
+        y: point.y,
+        space: "image_pixels",
+      },
+    });
   }
-  return deriveFromCells(anchor);
+  if (!Array.isArray(anchor.cells) || !anchor.cells.length) {
+    throw new Error(
+      "target_anchor requires speakable cells (and view), or x_from/y_from. Do not invent pixel x,y.",
+    );
+  }
+  const view = requireView(anchor.view, "target_anchor.view");
+  if (anchor.snap) {
+    if (!image) throw new Error("target_anchor.snap requires the target image.");
+    const mode = String(anchor.snap).trim();
+    const box = unionCells(view, anchor.cells);
+    const snapped = alphaAnchor(image.data, image.width, image.height, mode, box);
+    return applyNudge({
+      x: snapped.x,
+      y: snapped.y,
+      resolved: {
+        mode: "snap",
+        snap: mode,
+        cells: [...anchor.cells],
+        x: snapped.x,
+        y: snapped.y,
+        space: "image_pixels",
+        bbox: snapped.bbox,
+      },
+    });
+  }
+  const point = deriveFromCells(anchor);
+  return applyNudge({
+    ...point,
+    resolved: {
+      mode: "derive",
+      derive: anchor.derive || "center",
+      cells: [...anchor.cells],
+      x: point.x,
+      y: point.y,
+      space: "image_pixels",
+    },
+  });
 }
 
 /**
@@ -930,15 +1070,35 @@ function resolveTargetAnchor(anchor) {
  */
 function resolveObjectAnchor(anchor, image) {
   if (!anchor || typeof anchor !== "object") throw new Error("object_anchor is required.");
+  requireKnownKeys(anchor, ["mode", "view", "cells", "derive", "snap", "measure_t"], "object_anchor");
+  if (anchor.measure_t !== undefined && anchor.measure_t !== null && anchor.measure_t !== "") {
+    if (anchor.cells || anchor.mode || anchor.snap) {
+      throw new Error("object_anchor.measure_t cannot combine with mode/cells/snap.");
+    }
+    const measured = measureLongAxis(image.data, image.width, image.height, { t: anchor.measure_t });
+    return { x: measured.at.x, y: measured.at.y, measure_t: measured.t };
+  }
   if (Array.isArray(anchor.cells) && anchor.cells.length) {
     if (!anchor.view || typeof anchor.view !== "object") {
       throw new Error("object_anchor.cells requires view (the overlay that produced those ids).");
     }
+    const view = requireView(anchor.view, "object_anchor.view");
+    if (anchor.snap) {
+      const mode = String(anchor.snap).trim();
+      const box = unionCells(view, anchor.cells);
+      const snapped = alphaAnchor(image.data, image.width, image.height, mode, box);
+      return { x: snapped.x, y: snapped.y, bbox: snapped.bbox, snap: mode };
+    }
     return deriveFromCells({
-      view: requireView(anchor.view, "object_anchor.view"),
+      view,
       cells: anchor.cells,
       derive: anchor.derive || "center",
     });
+  }
+  if (anchor.snap) {
+    throw new Error(
+      "object_anchor.snap requires cells (and view) naming the grip region on the object overlay.",
+    );
   }
   return alphaAnchor(image.data, image.width, image.height, anchor.mode || "alpha_center");
 }
@@ -1023,7 +1183,7 @@ function placeImageOnTarget(args = {}, options = {}) {
   }
   const target = decodePngRgba(targetPath);
   const object = decodePngRgba(objectPath);
-  const targetPoint = resolveTargetAnchor(args.target_anchor);
+  const targetPoint = resolveTargetAnchor(args.target_anchor, target);
   const objectPoint = resolveObjectAnchor(args.object_anchor, object);
   const bbox = objectPoint.bbox || opaqueBBox(object.data, object.width, object.height);
   const scaled = resolveScale(args.scale, bbox);
@@ -1074,17 +1234,38 @@ function placeImageOnTarget(args = {}, options = {}) {
   const outputPath = resolveOutputPath(args, { root, inputPath: targetPath, suffix: "_placed" });
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, encodePngRgba(dest, target.width, target.height));
+  const wantVerify =
+    args.verify_overlay === undefined || args.verify_overlay === null || args.verify_overlay === ""
+      ? true
+      : Boolean(args.verify_overlay);
+  let verifyOverlayPath;
+  if (wantVerify) {
+    const verifyArgs = {
+      file_path: outputPath,
+      rows: args.target_anchor?.view?.rows,
+      cols: args.target_anchor?.view?.cols,
+    };
+    if (args.verify_overlay_path) verifyArgs.output_path = args.verify_overlay_path;
+    else {
+      verifyArgs.output_path = resolveOutputPath({}, { root, inputPath: outputPath, suffix: "_verify" });
+    }
+    if (!Number.isInteger(verifyArgs.rows)) delete verifyArgs.rows;
+    if (!Number.isInteger(verifyArgs.cols)) delete verifyArgs.cols;
+    verifyOverlayPath = overlayGridImage(verifyArgs, { root }).overlay_path;
+  }
   return {
     output_path: outputPath,
     scale: scaled.value,
     warning: scaled.warning,
     rotation,
     layer,
-    target: targetPoint,
+    target: { x: targetPoint.x, y: targetPoint.y },
+    resolved: targetPoint.resolved,
     object_anchor: { x: objectPoint.x, y: objectPoint.y },
     mapped,
     left: origin.left,
     top: origin.top,
+    verify_overlay_path: verifyOverlayPath,
   };
 }
 
