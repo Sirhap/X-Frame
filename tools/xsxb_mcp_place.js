@@ -944,12 +944,39 @@ function overlayGridImage(args = {}, options = {}) {
  */
 function resolveTargetAnchor(anchor, image = null) {
   if (!anchor || typeof anchor !== "object") throw new Error("target_anchor is required.");
-  requireKnownKeys(anchor, ["view", "cells", "derive", "snap", "x_from", "y_from"], "target_anchor");
+  requireKnownKeys(anchor, ["view", "cells", "derive", "snap", "nudge", "x_from", "y_from"], "target_anchor");
   if (anchor.x !== undefined || anchor.y !== undefined) {
     throwCode(
       "UNGROUNDED_POINT",
-      "target_anchor cannot take freehand x,y. Report speakable cells (and optional snap); MCP resolves pixel coordinates in the receipt.",
+      "target_anchor cannot take freehand x,y. Report speakable cells (and optional snap/nudge); MCP resolves pixel coordinates in the receipt.",
     );
+  }
+  /**
+   * Applies optional pixel nudge after cell/snap grounding.
+   * @param {{x:number,y:number,resolved:object}} grounded Point.
+   * @returns {{x:number,y:number,resolved:object}} Nudged point.
+   */
+  function applyNudge(grounded) {
+    if (anchor.nudge === undefined || anchor.nudge === null || anchor.nudge === "") return grounded;
+    requireKnownKeys(anchor.nudge, ["dx", "dy"], "target_anchor.nudge");
+    const dx = Number(anchor.nudge.dx);
+    const dy = Number(anchor.nudge.dy);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+      throw new Error("target_anchor.nudge.dx and dy must be finite pixel numbers.");
+    }
+    const x = grounded.x + dx;
+    const y = grounded.y + dy;
+    return {
+      x,
+      y,
+      resolved: {
+        ...grounded.resolved,
+        before_nudge: { x: grounded.x, y: grounded.y },
+        nudge: { dx, dy },
+        x,
+        y,
+      },
+    };
   }
   if (anchor.x_from || anchor.y_from) {
     if (!anchor.x_from || !anchor.y_from) {
@@ -961,7 +988,7 @@ function resolveTargetAnchor(anchor, image = null) {
       );
     }
     const point = { x: deriveFromCells(anchor.x_from).x, y: deriveFromCells(anchor.y_from).y };
-    return {
+    return applyNudge({
       ...point,
       resolved: {
         mode: "derive_axes",
@@ -970,7 +997,7 @@ function resolveTargetAnchor(anchor, image = null) {
         y: point.y,
         space: "image_pixels",
       },
-    };
+    });
   }
   if (!Array.isArray(anchor.cells) || !anchor.cells.length) {
     throw new Error(
@@ -983,7 +1010,7 @@ function resolveTargetAnchor(anchor, image = null) {
     const mode = String(anchor.snap).trim();
     const box = unionCells(view, anchor.cells);
     const snapped = alphaAnchor(image.data, image.width, image.height, mode, box);
-    return {
+    return applyNudge({
       x: snapped.x,
       y: snapped.y,
       resolved: {
@@ -995,10 +1022,10 @@ function resolveTargetAnchor(anchor, image = null) {
         space: "image_pixels",
         bbox: snapped.bbox,
       },
-    };
+    });
   }
   const point = deriveFromCells(anchor);
-  return {
+  return applyNudge({
     ...point,
     resolved: {
       mode: "derive",
@@ -1008,7 +1035,7 @@ function resolveTargetAnchor(anchor, image = null) {
       y: point.y,
       space: "image_pixels",
     },
-  };
+  });
 }
 
 /**

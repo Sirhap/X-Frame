@@ -1098,7 +1098,7 @@ function toolDefinitions() {
             type: "object",
             additionalProperties: false,
             description:
-              "{view, cells, derive} or {view, cells, snap} or {x_from, y_from}. snap beats derive: alpha_* inside the cell union. Never pass freehand x,y.",
+              "{view, cells, derive} or {view, cells, snap} or {x_from, y_from}, optional nudge {dx,dy}. snap beats derive: alpha_* inside the cell union. Never pass freehand x,y.",
             properties: {
               view: { type: "object", description: "Overlay view that produced the cell ids." },
               cells: { type: "array", items: { type: "string" }, description: "Speakable cell ids." },
@@ -1110,6 +1110,16 @@ function toolDefinitions() {
                 type: "string",
                 description:
                   "alpha_center|alpha_bottom_center|alpha_support — resolve the point from opaque pixels inside the cell union (MCP emits x,y in receipt.resolved).",
+              },
+              nudge: {
+                type: "object",
+                additionalProperties: false,
+                description:
+                  "Optional finite pixel {dx,dy} applied after cell derive/snap. Use to tweak a grounded point; never a substitute for freehand x,y.",
+                properties: {
+                  dx: { type: "number", description: "Pixels to add on X after grounding." },
+                  dy: { type: "number", description: "Pixels to add on Y after grounding." },
+                },
               },
               x_from: {
                 type: "object",

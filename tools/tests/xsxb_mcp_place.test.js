@@ -1083,3 +1083,75 @@ test("INSTRUCTIONS mention snap and MCP-resolved coordinates", () => {
   assert.match(place.description, /snap/);
   assert.match(place.inputSchema.properties.target_anchor.properties.snap.type, /string/);
 });
+
+test("nudge shifts a snapped target by finite pixel dx/dy and records it on resolved", async () => {
+  const current = fixture();
+  try {
+    const character = characterWithOffsetHand();
+    const targetPath = writePng(
+      path.join(current.root, "hero-nudge.png"),
+      character.data,
+      character.width,
+      character.height,
+    );
+    const grip = new Uint8ClampedArray(16 * 16 * 4);
+    setPixel(grip, 16, 8, 8, STAMP);
+    const objectPath = writePng(path.join(current.root, "sword-nudge.png"), grip, 16, 16);
+    const base = await current.service.call("xsxb_place_image", {
+      target_path: targetPath,
+      object_path: objectPath,
+      target_anchor: {
+        view: character.view,
+        cells: [character.cell],
+        snap: "alpha_center",
+      },
+      object_anchor: { mode: "alpha_center" },
+      scale: { mode: "none" },
+      verify_overlay: false,
+    });
+    const nudged = await current.service.call("xsxb_place_image", {
+      target_path: targetPath,
+      object_path: objectPath,
+      target_anchor: {
+        view: character.view,
+        cells: [character.cell],
+        snap: "alpha_center",
+        nudge: { dx: -3, dy: 2 },
+      },
+      object_anchor: { mode: "alpha_center" },
+      scale: { mode: "none" },
+      verify_overlay: false,
+    });
+    assert.equal(nudged.target.x, base.target.x - 3);
+    assert.equal(nudged.target.y, base.target.y + 2);
+    assert.deepEqual(nudged.resolved.nudge, { dx: -3, dy: 2 });
+    assert.equal(nudged.resolved.before_nudge.x, base.target.x);
+    assert.equal(nudged.resolved.before_nudge.y, base.target.y);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("nudge rejects non-finite values and freehand-only anchors stay forbidden", async () => {
+  const current = fixture();
+  try {
+    const scene = fieldImage(64, 64);
+    const targetPath = writePng(path.join(current.root, "t.png"), scene.data, 64, 64);
+    const object = new Uint8ClampedArray(8 * 8 * 4);
+    fillRect(object, 8, 2, 2, 6, 6, STAMP);
+    const objectPath = writePng(path.join(current.root, "o.png"), object, 8, 8);
+    const view = { x: 0, y: 0, width: 64, height: 64, rows: 8, cols: 8 };
+    await assert.rejects(
+      () =>
+        current.service.call("xsxb_place_image", {
+          target_path: targetPath,
+          object_path: objectPath,
+          target_anchor: { view, cells: ["D4"], derive: "center", nudge: { dx: "nope", dy: 0 } },
+          object_anchor: { mode: "alpha_center" },
+        }),
+      /nudge/i,
+    );
+  } finally {
+    current.cleanup();
+  }
+});
