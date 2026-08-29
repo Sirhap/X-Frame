@@ -1087,7 +1087,7 @@ function toolDefinitions() {
     {
       name: "xsxb_place_image",
       description:
-        "Composite one PNG onto another using generic cell/alpha anchors. Agent reports speakable cells only — never freehand pixel x,y; MCP resolves coordinates into receipt.resolved and receipt.target. target_anchor is {view,cells,derive} or {view,cells,snap} or {x_from,y_from}. snap alpha_center|alpha_bottom_center|alpha_support restricts alpha geometry to the cell union (use for an offset hand inside a coarse cell). object_anchor is alpha_center|alpha_bottom_center|alpha_support or cells+derive. scale is none, relative (target view+cells, span width|height, ratio), or physical (span, target_m, object_m, object_span bbox_width|bbox_height) from the selected span — never image width per meter. Aspect mismatch scales one edge and warns; it does not stretch. layer front (default) paints the object on top; behind restores every opaque target pixel; under_target restores opaque target pixels only inside the target_anchor cell union so a grip can sit in a palm while the blade stays in front outside that box. rotation is clockwise degrees around the object anchor (screen y-down). Held objects: do not leave source-upright (rotation 0 is the generated PNG). Point the mass/striking end along the figure's facing, shaft with the forearm, scale from the body span not canvas 1:1, grip on the handle, under_target in the palm. xsxb_place_image does not redraw a hand. If the head clips the canvas, pad the target or grip closer to the head. verify_overlay defaults true and writes a speakable grid on the result (verify_overlay_path). output_path must stay inside the XSXB root. 月牙/镰刀 VFX: after xsxb_plan_smear, place the cut-out 像素层 on committed-strike frames with cell anchors from that brief (not canvas-pixel math). Start = far cell already swept; end = leading/outer side of the striking face — do not pin the head on the striking-mass cell or the ribbon overlaps the cup/shaft. layer behind so opaque weapon pixels stay readable (hairline); reject a full-grid-cell void. Do not send a polyline/7字 path to xsxb_add_attack_trail.",
+        "Composite one PNG onto another using generic cell/alpha anchors. Agent reports speakable cell ids only — never freehand pixel x,y; MCP resolves coordinates into receipt.resolved / receipt.target. Generic path: overlay both images, name the contact patch on each, snap alpha_centroid (opaque mass mean) on target_anchor and object_anchor; crop_from to refine small patches; optional nudge after verify_overlay. target_anchor is {view,cells,derive|snap} or {x_from,y_from}; object_anchor is alpha_* mode, cells+derive, cells+snap, or optional measure_t along a long opaque axis. scale none|relative|physical from a named span — never image width per meter. layer front|behind|under_target; rotation clockwise degrees around the object anchor (screen y-down) from the pose you see. The tool composites only — it does not redraw either sprite. verify_overlay defaults true. output_path must stay inside the XSXB root. 月牙/镰刀 VFX: after xsxb_plan_smear, place the cut-out 像素层 with cell anchors from that brief; layer behind; do not send a polyline/7字 path to xsxb_add_attack_trail.",
       inputSchema: {
         type: "object",
         required: ["target_path", "object_path", "target_anchor", "object_anchor"],
@@ -1109,7 +1109,7 @@ function toolDefinitions() {
               snap: {
                 type: "string",
                 description:
-                  "alpha_center|alpha_centroid|alpha_bottom_center|alpha_support — resolve from opaque pixels inside the cell union (MCP emits x,y in receipt.resolved). Prefer alpha_centroid for fists/grips.",
+                  "alpha_center|alpha_centroid|alpha_bottom_center|alpha_support — resolve from opaque pixels inside the cell union (MCP emits x,y in receipt.resolved). Prefer alpha_centroid when the contact mass is off-center in the cell.",
               },
               nudge: {
                 type: "object",
@@ -1135,7 +1135,7 @@ function toolDefinitions() {
             type: "object",
             additionalProperties: false,
             description:
-              "mode alpha_center|alpha_centroid|alpha_bottom_center|alpha_support; cells+derive; cells+snap (prefer alpha_centroid on grip cells); or measure_t (pommel→tip fraction — use ~0.12–0.2 for a sword grip). Cell mid-points miss offset handles.",
+              "mode alpha_* ; cells+derive; cells+snap (prefer alpha_centroid on the contact patch); or measure_t along a long opaque axis. Cell mid-points miss offset contact masses.",
             properties: {
               mode: {
                 type: "string",
@@ -1147,14 +1147,14 @@ function toolDefinitions() {
               snap: {
                 type: "string",
                 description:
-                  "alpha_center|alpha_centroid|alpha_bottom_center|alpha_support inside object cells. Use alpha_centroid for an offset brown grip.",
+                  "alpha_center|alpha_centroid|alpha_bottom_center|alpha_support inside object cells. Use alpha_centroid for an offset contact mass.",
               },
               measure_t: {
                 type: "number",
                 minimum: 0,
                 maximum: 1,
                 description:
-                  "Grip along pommel→tip from xsxb_measure_image geometry (0=pommel, 1=tip). Typical sword grip ~0.12–0.2. Cannot combine with mode/cells/snap.",
+                  "Optional fraction along the long opaque axis from xsxb_measure_image geometry (0 and 1 are the axis ends). Cannot combine with mode/cells/snap.",
               },
             },
           },

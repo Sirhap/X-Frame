@@ -133,11 +133,11 @@ Read group coordinates from `xsxb_export_sheet` receipt `grid.cells[row][col]` (
 
 Still-image overlay and place (agent is the eye; MCP does not call a VLM):
 
-1. `xsxb_overlay_grid` on the PNG. Look at `overlay_path` and report only speakable cell ids (`A1`–`H8`). Do not OCR pixel x,y.
-2. To refine, call `xsxb_overlay_grid` again with `crop_from: { parent_view, cells, padding_cells }`. Receipt `view` stays in original-image pixels; crop origin equals remapped A1.
-3. `xsxb_place_image` with `target_anchor` / `object_anchor` (cell `derive`, `snap`, or weapon `measure_t`) and `scale` `relative` or `physical` from the selected span. MCP writes `receipt.resolved` — do not invent freehand x,y. `verify_overlay` defaults on.
-4. **Held weapon / prop fast path (use this first):** cut out both PNGs → overlay the figure → name the hand cell → `target_anchor: { view, cells, snap: "alpha_centroid" }` → `object_anchor: { measure_t: 0.15 }` (sword grip; adjust 0.12–0.2 after one look) → `layer: "under_target"` → `rotation` so the tip follows the forearm/facing (not world-up; rotation 0 is the generated upright PNG) → `scale` from the **body** cell span, not full canvas → inspect `verify_overlay_path`; optional `nudge: {dx,dy}` if the handle is still a few pixels off. Do **not** use object cell mid-points for a grip (that is what made the handle miss the fist by tens of pixels). Prefer `alpha_centroid` over `alpha_center` on fists. The tool does not redraw fingers wrapping the grip — for a true redrawn hold, GenerateImage; MCP only aligns.
-5. `xsxb_measure_image` `anchor=alpha_bottom` returns opaque-foot geometry; weapon `t` is the same pommel→tip axis used by `object_anchor.measure_t`.
+1. `xsxb_overlay_grid` on each PNG involved. Look at `overlay_path` and report only speakable cell ids (`A1`–`H8`). Do not OCR pixel x,y.
+2. To refine a region, call `xsxb_overlay_grid` again with `crop_from: { parent_view, cells, padding_cells }`. Receipt `view` stays in original-image pixels; crop origin equals remapped A1.
+3. **Generic place path (any two images):** name the contact patch on the **target** and the contact patch on the **object** as cell ids → `target_anchor: { view, cells, snap: "alpha_centroid" }` and `object_anchor: { view, cells, snap: "alpha_centroid" }` so MCP pins opaque **mass** means together (not empty cell mid-points). Prefer `crop_from` when the patch is small inside a coarse cell. Optional `nudge: {dx,dy}` after one verify look. Never freehand `x,y`.
+4. `scale` `relative`|`physical` from a named cell span on the target (not full-canvas width). `layer` `front`|`under_target`|`behind` as needed for occlusion. `rotation` is clockwise degrees around the object anchor (screen y-down); align to the pose you see, not “source upright by default”. `verify_overlay` defaults on — inspect `verify_overlay_path`. The tool composites; it does not redraw pixels (e.g. it will not invent fingers wrapping a handle).
+5. Optional: `object_anchor.measure_t` / `xsxb_measure_image` when you already want a fraction along a long opaque axis — not a required special case. `anchor=alpha_bottom` is the opaque-foot helper.
 6. `xsxb_cutout` `file_path` runs the same smart-cutout on one workspace PNG.
 
 Attack-trail sickle (像素层, not Hermite mesh):

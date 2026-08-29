@@ -637,18 +637,23 @@ test("INSTRUCTIONS tell the agent to report cell ids and crop_from to refine", (
   assert.match(INSTRUCTIONS, /under_target/);
 });
 
-test("INSTRUCTIONS and place_image require physical held-object pose", () => {
+test("INSTRUCTIONS and place_image teach a generic contact-cell path", () => {
   const place = toolDefinitions().find((entry) => entry.name === "xsxb_place_image");
   assert.ok(place, "xsxb_place_image is a catalog tool");
   for (const [label, text] of [
     ["INSTRUCTIONS", INSTRUCTIONS],
     ["xsxb_place_image", place.description],
   ]) {
-    assert.match(text, /source-upright|generated upright/i, `${label} must reject leaving rotation 0`);
-    assert.match(text, /forearm/, `${label} must align the shaft with the forearm`);
-    assert.match(text, /does not redraw/i, `${label} must say place_image does not redraw a hand`);
-    assert.match(text, /body span/, `${label} must scale from the body span`);
-    assert.match(text, /clips/, `${label} must say what to do when the head clips`);
+    assert.match(text, /alpha_centroid/, `${label} must prefer opaque mass mean snap`);
+    assert.match(text, /contact (cells|patch)|both images/i, `${label} must name contact on both images`);
+    assert.match(text, /does not redraw/i, `${label} must say the tool only composites`);
+    assert.match(text, /named span|from a named/i, `${label} must scale from a named span`);
+    assert.match(text, /pose you see|from the pose/i, `${label} must rotate from the observed pose`);
+    assert.doesNotMatch(
+      text,
+      /Held weapon fast path|measure_t\s*~?\s*0\.1|forearm|source-upright/i,
+      `${label} must stay generic`,
+    );
   }
 });
 
@@ -1079,8 +1084,9 @@ test("target_anchor rejects freehand x,y without cells", async () => {
 test("INSTRUCTIONS mention snap and MCP-resolved coordinates", () => {
   assert.match(INSTRUCTIONS, /snap/i);
   assert.match(INSTRUCTIONS, /resolved|verify_overlay/i);
-  assert.match(INSTRUCTIONS, /measure_t/);
   assert.match(INSTRUCTIONS, /alpha_centroid/);
+  assert.match(INSTRUCTIONS, /contact cells|both images/i);
+  assert.doesNotMatch(INSTRUCTIONS, /measure_t\s*~?\s*0\.1|Held weapon fast path/i);
   const place = toolDefinitions().find((entry) => entry.name === "xsxb_place_image");
   assert.match(place.description, /snap/);
   assert.match(place.inputSchema.properties.target_anchor.properties.snap.type, /string/);
