@@ -1,7 +1,7 @@
 # Design: `xsxb_plan_place` — 图度自检后再贴图
 
 Date: 2026-08-29  
-Status: draft for review  
+Status: implemented  
 Branch: `cursor/plan-place-brief-857a`
 
 ## Goal
@@ -10,12 +10,12 @@ Branch: `cursor/plan-place-brief-857a`
 
 ## Decisions (locked)
 
-| Topic | Choice |
-|-------|--------|
-| Flow | **C**：读图 → 物理规则 + 验收 → 3～5 步方案 → 再 place |
-| Where | **C**：skill / INSTRUCTIONS **强制**；MCP 提供可选计划工具；`xsxb_place_image` **不硬拦** |
-| User confirm | **C**：默认写完自检就执行；仅当用户说「先方案再贴」或 `await_confirm: true` 时停下等确认 |
-| Implementation shape | **2**：新工具 `xsxb_plan_place`，镜像 `xsxb_plan_smear`（编译 `brief`，不写合成图） |
+| Topic                | Choice                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| Flow                 | **C**：读图 → 物理规则 + 验收 → 3～5 步方案 → 再 place                                    |
+| Where                | **C**：skill / INSTRUCTIONS **强制**；MCP 提供可选计划工具；`xsxb_place_image` **不硬拦** |
+| User confirm         | **C**：默认写完自检就执行；仅当用户说「先方案再贴」或 `await_confirm: true` 时停下等确认  |
+| Implementation shape | **2**：新工具 `xsxb_plan_place`，镜像 `xsxb_plan_smear`（编译 `brief`，不写合成图）       |
 
 ## What 「图度」 means
 
@@ -38,17 +38,17 @@ Branch: `cursor/plan-place-brief-857a`
 
 ### Input (generic)
 
-| Field | Required | Notes |
-|-------|----------|--------|
-| `target_path` | yes | Target PNG under XSXB root |
-| `object_path` | yes | Object PNG under XSXB root |
-| `intent` | yes | One-line task (user wording or rewrite); min length enforced |
-| `read` | yes | Object: `target_contact`, `object_contact` (strings); optional `target_cells` / `object_cells` (speakable ids); optional `notes` |
-| `physics` | yes | Non-empty string array (rules). Soft-check: reject empty; warn if fewer than 2 |
-| `accept` | yes | Non-empty string array (pass criteria) |
-| `plan` | yes | Array of 3–5 step strings (or objects `{step, detail}`) |
-| `await_confirm` | no | Boolean; default false. When true, receipt flags pause-before-place |
-| `proposed` | no | Optional draft of place args intent only: `layer`, `snap` hint (`alpha_centroid` preferred), rotation/scale **as prose** — not freehand `x,y` |
+| Field           | Required | Notes                                                                                                                                         |
+| --------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `target_path`   | yes      | Target PNG under XSXB root                                                                                                                    |
+| `object_path`   | yes      | Object PNG under XSXB root                                                                                                                    |
+| `intent`        | yes      | One-line task (user wording or rewrite); min length enforced                                                                                  |
+| `read`          | yes      | Object: `target_contact`, `object_contact` (strings); optional `target_cells` / `object_cells` (speakable ids); optional `notes`              |
+| `physics`       | yes      | Non-empty string array (rules). Soft-check: reject empty; warn if fewer than 2                                                                |
+| `accept`        | yes      | Non-empty string array (pass criteria)                                                                                                        |
+| `plan`          | yes      | Array of 3–5 step strings (or objects `{step, detail}`)                                                                                       |
+| `await_confirm` | no       | Boolean; default false. When true, receipt flags pause-before-place                                                                           |
+| `proposed`      | no       | Optional draft of place args intent only: `layer`, `snap` hint (`alpha_centroid` preferred), rotation/scale **as prose** — not freehand `x,y` |
 
 Schema: `additionalProperties: false`. Coerce `"true"`/`"false"` like other MCP tools. No domain keys (`hand`, `grip`, `weapon`, …).
 
@@ -103,15 +103,15 @@ Bulk / trivial “stamp at known cells already planned” may skip only when the
 
 ## Module layout
 
-| File | Duty |
-|------|------|
-| `tools/xsxb_mcp_place_brief.js` | `compilePlaceBrief(args)` |
-| `tools/xsxb_mcp_tool_catalog.js` | schema + name in `MCP_TOOL_NAMES` (near place tools) |
-| `tools/xsxb_mcp_service.js` | wire handler |
-| `tools/xsxb_mcp_server.js` | INSTRUCTIONS one-liner pointing at plan-before-place |
-| `skills/xsxb-frame-tuner/SKILL.md` + `references/media-and-tuning-workflows.md` | 图度 flow |
-| `mcp/README.md` | short bullet |
-| `tools/tests/xsxb_mcp_place_brief.test.js` | unit tests (failing first) |
+| File                                                                            | Duty                                                 |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `tools/xsxb_mcp_place_brief.js`                                                 | `compilePlaceBrief(args)`                            |
+| `tools/xsxb_mcp_tool_catalog.js`                                                | schema + name in `MCP_TOOL_NAMES` (near place tools) |
+| `tools/xsxb_mcp_service.js`                                                     | wire handler                                         |
+| `tools/xsxb_mcp_server.js`                                                      | INSTRUCTIONS one-liner pointing at plan-before-place |
+| `skills/xsxb-frame-tuner/SKILL.md` + `references/media-and-tuning-workflows.md` | 图度 flow                                            |
+| `mcp/README.md`                                                                 | short bullet                                         |
+| `tools/tests/xsxb_mcp_place_brief.test.js`                                      | unit tests (failing first)                           |
 
 Reuse path validation patterns from place/overlay; do not invent a second grid parser — import cell helpers from `xsxb_mcp_place.js` if exported, or share a tiny require of existing parsers.
 

@@ -133,11 +133,12 @@ Read group coordinates from `xsxb_export_sheet` receipt `grid.cells[row][col]` (
 
 Still-image overlay and place (agent is the eye; MCP does not call a VLM):
 
-1. `xsxb_overlay_grid` on the PNG. Look at `overlay_path` and report only speakable cell ids (`A1`–`H8`). Do not OCR pixel x,y.
+1. `xsxb_overlay_grid` on each PNG involved. Look at `overlay_path` and report only speakable cell ids (`A1`–`H8`). Do not OCR pixel x,y.
 2. To refine, call `xsxb_overlay_grid` again with `crop_from: { parent_view, cells, padding_cells }`. Receipt `view` stays in original-image pixels; crop origin equals remapped A1.
-3. `xsxb_place_image` with `target_anchor` / `object_anchor` (cell `derive` or `alpha_support`) and `scale` `relative` or `physical` from the selected span. `layer` `under_target` puts the object under opaque pixels inside the target cell union (a grip in a palm); `behind` restores every opaque target pixel; omit for `front`. `rotation` is clockwise degrees around the object anchor (screen y-down). Held objects follow pose physics, not source-upright: rotation 0 is the PNG as generated (often the heavy head down). Rotate around the grip so the mass/striking end faces the figure's facing or attack side and the shaft follows the forearm, not world-vertical. Scale from the body span — two full canvases are not 1:1 meters. The tool does not redraw a hand; if the head clips the canvas, pad that edge or grip closer to the head. Example: stand a figure in a doorway by naming the door cells and a physical width — those are cell ids, not domain field names.
-4. `xsxb_measure_image` `anchor=alpha_bottom` returns the same opaque-foot geometry.
-5. `xsxb_cutout` `file_path` runs the same smart-cutout on one workspace PNG.
+3. **图度自检（必做）：** after the user confirms a composite, call `xsxb_plan_place` with `intent`, `read` (contact on both images + optional cells), `physics`, `accept`, and a 3–5 step `plan`. Execute `receipt.brief`. If `receipt.next` is `await_user` or the user asked for plan-first, stop and show the brief. Prefer `snap: "alpha_centroid"` on contact cells — never freehand `x,y`.
+4. `xsxb_place_image` with `target_anchor` / `object_anchor` (cell `derive`, `snap`, or `alpha_*`) and `scale` `relative` or `physical` from the selected span. `layer` `under_target` puts the object under opaque pixels inside the target cell union; `behind` restores every opaque target pixel; omit for `front`. `rotation` is clockwise degrees around the object anchor (screen y-down) from the pose you see. The tool composites only — it does not redraw either sprite. Inspect `verify_overlay_path` against the accept criteria.
+5. `xsxb_measure_image` `anchor=alpha_bottom` returns the same opaque-foot geometry.
+6. `xsxb_cutout` `file_path` runs the same smart-cutout on one workspace PNG.
 
 Attack-trail sickle (像素层, not Hermite mesh):
 

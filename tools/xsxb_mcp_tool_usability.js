@@ -956,6 +956,40 @@ animations = [{
     return verdict("xsxb_overlay_grid", "ready", `overlay ${path.basename(receipt.overlay_path)}`);
   },
 
+  async xsxb_plan_place(fixture) {
+    const targetPath = path.join(fixture.root, "plan-place-target.png");
+    const objectPath = path.join(fixture.root, "plan-place-object.png");
+    const pixel = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    fs.writeFileSync(targetPath, pixel);
+    fs.writeFileSync(objectPath, pixel);
+    const planned = await fixture.service.call("xsxb_plan_place", {
+      target_path: targetPath,
+      object_path: objectPath,
+      intent: "Composite object onto target at named contact patches",
+      read: {
+        target_contact: "opaque contact on target",
+        object_contact: "opaque contact on object",
+        target_cells: ["E5"],
+        object_cells: ["C4"],
+      },
+      physics: ["Contact opaque centroids coincide", "Composite only — do not redraw"],
+      accept: ["verify_overlay shows contact patches overlapping"],
+      plan: [
+        "overlay both images",
+        "place with snap alpha_centroid",
+        "inspect verify_overlay_path",
+        "nudge only if accept fails",
+      ],
+    });
+    if (!String(planned.brief || "").includes("alpha_centroid") || planned.next !== "place") {
+      return verdict("xsxb_plan_place", "fail", JSON.stringify(planned));
+    }
+    return verdict("xsxb_plan_place", "ready", "compiles a still-image place brief");
+  },
+
   async xsxb_place_image(fixture) {
     const target = new Uint8ClampedArray(32 * 32 * 4);
     const object = new Uint8ClampedArray(16 * 16 * 4);

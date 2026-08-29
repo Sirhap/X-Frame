@@ -45,6 +45,7 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_export_sheet",
   "xsxb_measure_image",
   "xsxb_overlay_grid",
+  "xsxb_plan_place",
   "xsxb_place_image",
   "xsxb_open_tuner",
 ]);
@@ -1085,9 +1086,79 @@ function toolDefinitions() {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     {
+      name: "xsxb_plan_place",
+      description:
+        "Compile a still-image place brief (图度) before xsxb_place_image: read contact patches on both PNGs, list physics rules and accept criteria, then a 3–5 step plan. Call this after the user confirms a composite and after overlay_grid on both images; execute receipt.brief. Prefer snap alpha_centroid on contact cells — never freehand x,y. Does not composite or redraw. await_confirm true pauses until the user OKs the brief. place_image stays callable without a plan id, but agent-led composites must plan first.",
+      inputSchema: {
+        type: "object",
+        required: ["target_path", "object_path", "intent", "read", "physics", "accept", "plan"],
+        properties: {
+          target_path: { type: "string", description: "Target PNG inside the XSXB root." },
+          object_path: { type: "string", description: "Object PNG inside the XSXB root." },
+          intent: {
+            type: "string",
+            description: "One-line task (user wording or rewrite).",
+          },
+          read: {
+            type: "object",
+            additionalProperties: false,
+            description: "What you see on each image before placing.",
+            properties: {
+              target_contact: { type: "string", description: "Contact patch on the target." },
+              object_contact: { type: "string", description: "Contact patch on the object." },
+              target_cells: {
+                type: "array",
+                items: { type: "string" },
+                description: "Optional speakable cells on the target.",
+              },
+              object_cells: {
+                type: "array",
+                items: { type: "string" },
+                description: "Optional speakable cells on the object.",
+              },
+              notes: { type: "string", description: "Optional orientation / occlusion notes." },
+            },
+          },
+          physics: {
+            type: "array",
+            items: { type: "string" },
+            description: "Physical / picture rules the composite must obey.",
+          },
+          accept: {
+            type: "array",
+            items: { type: "string" },
+            description: "verify_overlay pass criteria.",
+          },
+          plan: {
+            type: "array",
+            description: "Exactly 3–5 executable step strings.",
+            items: { type: "string" },
+          },
+          await_confirm: {
+            type: "boolean",
+            description: "When true, receipt.next is await_user — do not place until the user confirms.",
+          },
+          proposed: {
+            type: "object",
+            additionalProperties: false,
+            description: "Optional place intent prose only — no freehand x,y.",
+            properties: {
+              layer: { type: "string" },
+              snap: { type: "string", description: "Prefer alpha_centroid." },
+              rotation: { type: "string" },
+              scale: { type: "string" },
+              notes: { type: "string" },
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
       name: "xsxb_place_image",
       description:
-        "Composite one PNG onto another using generic cell/alpha anchors. target_anchor is {view,cells,derive} or {x_from,y_from} each with view/cells/derive. object_anchor is alpha_center|alpha_bottom_center|alpha_support or cells+derive. scale is none, relative (target view+cells, span width|height, ratio), or physical (span, target_m, object_m, object_span bbox_width|bbox_height) from the selected span — never image width per meter. Aspect mismatch scales one edge and warns; it does not stretch. layer front (default) paints the object on top; behind restores every opaque target pixel; under_target restores opaque target pixels only inside the target_anchor cell union so a grip can sit in a palm while the blade stays in front outside that box. rotation is clockwise degrees around the object anchor (screen y-down). Held objects: do not leave source-upright (rotation 0 is the generated PNG). Point the mass/striking end along the figure's facing, shaft with the forearm, scale from the body span not canvas 1:1, grip on the handle, under_target in the palm. xsxb_place_image does not redraw a hand. If the head clips the canvas, pad the target or grip closer to the head. output_path must stay inside the XSXB root. 月牙/镰刀 VFX: after xsxb_plan_smear, place the cut-out 像素层 on committed-strike frames with cell anchors from that brief (not canvas-pixel math). Start = far cell already swept; end = leading/outer side of the striking face — do not pin the head on the striking-mass cell or the ribbon overlaps the cup/shaft. layer behind so opaque weapon pixels stay readable (hairline); reject a full-grid-cell void. Do not send a polyline/7字 path to xsxb_add_attack_trail.",
+        "Composite one PNG onto another using generic cell/alpha anchors. For agent-led still composites, call xsxb_plan_place first and execute receipt.brief. target_anchor is {view,cells,derive} or {x_from,y_from} each with view/cells/derive. object_anchor is alpha_center|alpha_bottom_center|alpha_support or cells+derive. Prefer snap alpha_centroid on named contact cells. scale is none, relative (target view+cells, span width|height, ratio), or physical (span, target_m, object_m, object_span bbox_width|bbox_height) from the selected span — never image width per meter. Aspect mismatch scales one edge and warns; it does not stretch. layer front (default) paints the object on top; behind restores every opaque target pixel; under_target restores opaque target pixels only inside the target_anchor cell union so a grip can sit in a palm while the blade stays in front outside that box. rotation is clockwise degrees around the object anchor (screen y-down). Held objects: do not leave source-upright (rotation 0 is the generated PNG). Point the mass/striking end along the figure's facing, shaft with the forearm, scale from the body span not canvas 1:1, grip on the handle, under_target in the palm. xsxb_place_image does not redraw a hand. If the head clips the canvas, pad the target or grip closer to the head. output_path must stay inside the XSXB root. 月牙/镰刀 VFX: after xsxb_plan_smear, place the cut-out 像素层 on committed-strike frames with cell anchors from that brief (not canvas-pixel math). Start = far cell already swept; end = leading/outer side of the striking face — do not pin the head on the striking-mass cell or the ribbon overlaps the cup/shaft. layer behind so opaque weapon pixels stay readable (hairline); reject a full-grid-cell void. Do not send a polyline/7字 path to xsxb_add_attack_trail.",
       inputSchema: {
         type: "object",
         required: ["target_path", "object_path", "target_anchor", "object_anchor"],

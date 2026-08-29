@@ -96,13 +96,13 @@ After a write, export another sheet and check the ticks. `xsxb_get_animation` re
 
 ## MCP still overlay and place
 
-`xsxb_overlay_grid` and `xsxb_place_image` work on still PNGs. MCP does not call a VLM; the agent is the eye.
+`xsxb_overlay_grid`, `xsxb_plan_place`, and `xsxb_place_image` work on still PNGs. MCP does not call a VLM; the agent is the eye.
 
-1. Overlay the source PNG with `xsxb_overlay_grid` (default 8×8). Report only speakable cell ids such as `A1`. Do not OCR pixel x,y. Source PNG is unchanged.
+1. Overlay each PNG with `xsxb_overlay_grid` (default 8×8). Report only speakable cell ids such as `A1`. Do not OCR pixel x,y. Source PNG is unchanged.
 2. Refine with `crop_from: { parent_view, cells, padding_cells }`. The crop is integer (floor origin, ceil far edge) and `view` stays in original-image pixels so remapped `A1` starts at the crop origin.
-3. Place with `xsxb_place_image`: `target_anchor` `{view, cells, derive}` (or `x_from` / `y_from`), `object_anchor` `alpha_support` / `alpha_center` / cell derive, and `scale` `relative` or `physical` from the selected span. Do not scale from full image width per meter. Aspect mismatch warns and does not stretch.
-4. `layer`: `front` (default) paints the object on top; `under_target` restores opaque pixels inside the `target_anchor` cell union so a grip can sit in a palm while pixels outside that box stay in front; `behind` restores every opaque target pixel. `rotation` is clockwise degrees around the object anchor (screen y-down). Held objects follow pose physics, not source-upright: rotation 0 is the generated PNG (often the heavy head down). Rotate around the grip so the mass/striking end faces the figure's facing or attack side and the shaft follows the forearm, not world-vertical. Scale from the body span. The tool does not redraw a hand; if the head clips the canvas, pad that edge or grip closer to the head.
-5. Example only: standing a person in a doorway is cell `bottom_center` plus physical width — there are no door/person fields on the tools.
+3. **图度：** after the user confirms a composite, call `xsxb_plan_place` (`intent`, `read`, `physics`, `accept`, 3–5 step `plan`). Execute `receipt.brief`. Default is to place next; `await_confirm` or a user “先方案” request pauses. Prefer contact-cell `snap: "alpha_centroid"` — never freehand `x,y`.
+4. Place with `xsxb_place_image` per that brief. `scale` `relative`|`physical` from a named span. `layer` `front`|`under_target`|`behind`. `rotation` from the pose you see. The tool does not redraw either sprite. Inspect `verify_overlay_path` against `accept`.
+5. Example only: standing a figure on a marked region is cell ids plus a physical width — there are no domain-specific place fields.
 6. `xsxb_measure_image` `anchor=alpha_bottom` returns the same opaque-foot geometry.
 7. `xsxb_cutout` `file_path` runs the same smart-cutout on one workspace PNG (sibling `_cut.png` by default). Animation-frame cutout is unchanged.
 
