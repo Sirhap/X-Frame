@@ -1087,7 +1087,7 @@ function toolDefinitions() {
     {
       name: "xsxb_place_image",
       description:
-        "Composite one PNG onto another using generic cell/alpha anchors. target_anchor is {view,cells,derive} or {x_from,y_from} each with view/cells/derive. object_anchor is alpha_center|alpha_bottom_center|alpha_support or cells+derive. scale is none, relative (target view+cells, span width|height, ratio), or physical (span, target_m, object_m, object_span bbox_width|bbox_height) from the selected span — never image width per meter. Aspect mismatch scales one edge and warns; it does not stretch. layer front (default) paints the object on top; behind restores every opaque target pixel; under_target restores opaque target pixels only inside the target_anchor cell union so a grip can sit in a palm while the blade stays in front outside that box. rotation is clockwise degrees around the object anchor (screen y-down). Held objects: do not leave source-upright (rotation 0 is the generated PNG). Point the mass/striking end along the figure's facing, shaft with the forearm, scale from the body span not canvas 1:1, grip on the handle, under_target in the palm. xsxb_place_image does not redraw a hand. If the head clips the canvas, pad the target or grip closer to the head. output_path must stay inside the XSXB root. 月牙/镰刀 VFX: after xsxb_plan_smear, place the cut-out 像素层 on committed-strike frames with cell anchors from that brief (not canvas-pixel math). Start = far cell already swept; end = leading/outer side of the striking face — do not pin the head on the striking-mass cell or the ribbon overlaps the cup/shaft. layer behind so opaque weapon pixels stay readable (hairline); reject a full-grid-cell void. Do not send a polyline/7字 path to xsxb_add_attack_trail.",
+        "Composite one PNG onto another using generic cell/alpha anchors. Agent reports speakable cells only — never freehand pixel x,y; MCP resolves coordinates into receipt.resolved and receipt.target. target_anchor is {view,cells,derive} or {view,cells,snap} or {x_from,y_from}. snap alpha_center|alpha_bottom_center|alpha_support restricts alpha geometry to the cell union (use for an offset hand inside a coarse cell). object_anchor is alpha_center|alpha_bottom_center|alpha_support or cells+derive. scale is none, relative (target view+cells, span width|height, ratio), or physical (span, target_m, object_m, object_span bbox_width|bbox_height) from the selected span — never image width per meter. Aspect mismatch scales one edge and warns; it does not stretch. layer front (default) paints the object on top; behind restores every opaque target pixel; under_target restores opaque target pixels only inside the target_anchor cell union so a grip can sit in a palm while the blade stays in front outside that box. rotation is clockwise degrees around the object anchor (screen y-down). Held objects: do not leave source-upright (rotation 0 is the generated PNG). Point the mass/striking end along the figure's facing, shaft with the forearm, scale from the body span not canvas 1:1, grip on the handle, under_target in the palm. xsxb_place_image does not redraw a hand. If the head clips the canvas, pad the target or grip closer to the head. verify_overlay defaults true and writes a speakable grid on the result (verify_overlay_path). output_path must stay inside the XSXB root. 月牙/镰刀 VFX: after xsxb_plan_smear, place the cut-out 像素层 on committed-strike frames with cell anchors from that brief (not canvas-pixel math). Start = far cell already swept; end = leading/outer side of the striking face — do not pin the head on the striking-mass cell or the ribbon overlaps the cup/shaft. layer behind so opaque weapon pixels stay readable (hairline); reject a full-grid-cell void. Do not send a polyline/7字 path to xsxb_add_attack_trail.",
       inputSchema: {
         type: "object",
         required: ["target_path", "object_path", "target_anchor", "object_anchor"],
@@ -1098,13 +1098,18 @@ function toolDefinitions() {
             type: "object",
             additionalProperties: false,
             description:
-              "{view, cells, derive} or {x_from, y_from} with the same fields on each arm. derive: center|bottom_center|top_center|left_center|right_center|median_center.",
+              "{view, cells, derive} or {view, cells, snap} or {x_from, y_from}. snap beats derive: alpha_* inside the cell union. Never pass freehand x,y.",
             properties: {
               view: { type: "object", description: "Overlay view that produced the cell ids." },
               cells: { type: "array", items: { type: "string" }, description: "Speakable cell ids." },
               derive: {
                 type: "string",
                 description: "center|bottom_center|top_center|left_center|right_center|median_center.",
+              },
+              snap: {
+                type: "string",
+                description:
+                  "alpha_center|alpha_bottom_center|alpha_support — resolve the point from opaque pixels inside the cell union (MCP emits x,y in receipt.resolved).",
               },
               x_from: {
                 type: "object",
@@ -1161,6 +1166,17 @@ function toolDefinitions() {
             type: "string",
             description:
               "PNG destination inside the XSXB root. Defaults to the current project's .xsxb/<name>_placed.png. Relative paths hang off .xsxb/.",
+          },
+          verify_overlay: {
+            type: "boolean",
+            default: true,
+            description:
+              "When true (default), paint a speakable grid on the placed PNG and return verify_overlay_path for eye QA.",
+          },
+          verify_overlay_path: {
+            type: "string",
+            description:
+              "Optional PNG path for the verify grid. Defaults to .xsxb/<placed>_verify.png inside the XSXB root.",
           },
         },
         additionalProperties: false,

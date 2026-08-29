@@ -941,3 +941,145 @@ test("placeImageOnTarget keeps the target file bytes unchanged", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/**
+ * Character with the right hand blob in the corner of G4 — cell center is empty.
+ * G4 on 64×64 / 8×8 is [48,24)–(56,32); hand occupies only the SE corner.
+ * @returns {{data:Uint8ClampedArray,width:number,height:number,hand:{x:number,y:number},cell:string,view:object}}
+ */
+function characterWithOffsetHand() {
+  const width = 64;
+  const height = 64;
+  const data = new Uint8ClampedArray(width * height * 4);
+  // Transparent field — only body + hand are opaque (snap must ignore empty cell center).
+  fillRect(data, width, 22, 12, 42, 48, FIGURE); // torso (ends at x=42, left of G column)
+  fillRect(data, width, 54, 30, 56, 32, FINGER); // right hand SE corner of G4
+  return {
+    data,
+    width,
+    height,
+    hand: { x: 55, y: 31 },
+    cell: "G4",
+    view: { x: 0, y: 0, width, height, rows: 8, cols: 8 },
+  };
+}
+
+test("cell-center alone misses an offset hand; snap alpha_center hits the hand", async () => {
+  const current = fixture();
+  try {
+    const character = characterWithOffsetHand();
+    const targetPath = writePng(
+      path.join(current.root, "hero.png"),
+      character.data,
+      character.width,
+      character.height,
+    );
+    const grip = new Uint8ClampedArray(16 * 16 * 4);
+    // 1×1 opaque grip at (8,8) so mapped == target within 1px.
+    setPixel(grip, 16, 8, 8, STAMP);
+    const objectPath = writePng(path.join(current.root, "sword.png"), grip, 16, 16);
+
+    const naive = await current.service.call("xsxb_place_image", {
+      target_path: targetPath,
+      object_path: objectPath,
+      target_anchor: { view: character.view, cells: [character.cell], derive: "center" },
+      object_anchor: { mode: "alpha_center" },
+      scale: { mode: "none" },
+      verify_overlay: false,
+    });
+    const naiveErr = Math.hypot(naive.target.x - character.hand.x, naive.target.y - character.hand.y);
+    assert.ok(naiveErr > 4, `naive cell center should miss the hand; err=${naiveErr}`);
+
+    const snapped = await current.service.call("xsxb_place_image", {
+      target_path: targetPath,
+      object_path: objectPath,
+      target_anchor: {
+        view: character.view,
+        cells: [character.cell],
+        snap: "alpha_center",
+      },
+      object_anchor: { mode: "alpha_center" },
+      scale: { mode: "none" },
+      verify_overlay: false,
+    });
+    const snapErr = Math.hypot(snapped.target.x - character.hand.x, snapped.target.y - character.hand.y);
+    assert.ok(
+      snapErr <= 1,
+      `snap must land on the hand; err=${snapErr} at ${JSON.stringify(snapped.target)}`,
+    );
+    assert.ok(snapErr < naiveErr, "snap must beat naive cell-center");
+    assert.equal(snapped.resolved.mode, "snap");
+    assert.equal(snapped.resolved.snap, "alpha_center");
+    assert.deepEqual(snapped.resolved.cells, [character.cell]);
+    assert.equal(typeof snapped.resolved.x, "number");
+    assert.equal(typeof snapped.resolved.y, "number");
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("place_image writes verify_overlay by default and lists resolved coordinates", async () => {
+  const current = fixture();
+  try {
+    const character = characterWithOffsetHand();
+    const targetPath = writePng(
+      path.join(current.root, "hero2.png"),
+      character.data,
+      character.width,
+      character.height,
+    );
+    const grip = new Uint8ClampedArray(16 * 16 * 4);
+    setPixel(grip, 16, 8, 8, STAMP);
+    const objectPath = writePng(path.join(current.root, "sword2.png"), grip, 16, 16);
+    const placed = await current.service.call("xsxb_place_image", {
+      target_path: targetPath,
+      object_path: objectPath,
+      target_anchor: {
+        view: character.view,
+        cells: [character.cell],
+        snap: "alpha_center",
+      },
+      object_anchor: { mode: "alpha_center" },
+      scale: { mode: "none" },
+    });
+    assert.ok(placed.verify_overlay_path);
+    assert.match(placed.verify_overlay_path.split(path.sep).join("/"), /\/\.xsxb\//);
+    assert.ok(fs.existsSync(placed.verify_overlay_path));
+    assert.equal(placed.resolved.snap, "alpha_center");
+    assert.equal(placed.resolved.x, placed.target.x);
+    assert.equal(placed.resolved.y, placed.target.y);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("target_anchor rejects freehand x,y without cells", async () => {
+  const current = fixture();
+  try {
+    const scene = fieldImage(64, 64);
+    const targetPath = writePng(path.join(current.root, "t.png"), scene.data, 64, 64);
+    const object = new Uint8ClampedArray(8 * 8 * 4);
+    fillRect(object, 8, 2, 2, 6, 6, STAMP);
+    const objectPath = writePng(path.join(current.root, "o.png"), object, 8, 8);
+    await assert.rejects(
+      () =>
+        current.service.call("xsxb_place_image", {
+          target_path: targetPath,
+          object_path: objectPath,
+          target_anchor: { x: 40, y: 32 },
+          object_anchor: { mode: "alpha_center" },
+        }),
+      /cells|speakable|ungrounded|view/i,
+    );
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("INSTRUCTIONS mention snap and MCP-resolved coordinates", () => {
+  assert.match(INSTRUCTIONS, /snap/i);
+  assert.match(INSTRUCTIONS, /resolved|verify_overlay/i);
+  const place = toolDefinitions().find((entry) => entry.name === "xsxb_place_image");
+  assert.match(place.description, /snap/);
+  assert.match(place.inputSchema.properties.target_anchor.properties.snap.type, /string/);
+});
