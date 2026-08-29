@@ -505,6 +505,7 @@ test("MCP catalog includes the production editing tools", () => {
     "xsxb_shift_frames",
     "xsxb_measure_image",
     "xsxb_overlay_grid",
+    "xsxb_plan_place",
     "xsxb_place_image",
     "xsxb_plan_smear",
     "xsxb_update_frame_boxes",

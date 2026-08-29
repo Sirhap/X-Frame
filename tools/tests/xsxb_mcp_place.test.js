@@ -176,8 +176,9 @@ function fieldImage(width, height, color = FIELD) {
 test("overlay_grid and place_image sit after measure_image in the catalog", () => {
   const measure = MCP_TOOL_NAMES.indexOf("xsxb_measure_image");
   assert.equal(MCP_TOOL_NAMES[measure + 1], "xsxb_overlay_grid");
-  assert.equal(MCP_TOOL_NAMES[measure + 2], "xsxb_place_image");
-  assert.equal(MCP_TOOL_NAMES[measure + 3], "xsxb_open_tuner");
+  assert.equal(MCP_TOOL_NAMES[measure + 2], "xsxb_plan_place");
+  assert.equal(MCP_TOOL_NAMES[measure + 3], "xsxb_place_image");
+  assert.equal(MCP_TOOL_NAMES[measure + 4], "xsxb_open_tuner");
   const names = toolDefinitions().map((tool) => tool.name);
   assert.deepEqual(names, [...MCP_TOOL_NAMES]);
 });

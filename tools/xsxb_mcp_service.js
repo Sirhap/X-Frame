@@ -51,6 +51,7 @@ const {
 } = require("./xsxb_mcp_visual_qa");
 const { overlayGridImage, placeImageOnTarget, measureAlphaBottom } = require("./xsxb_mcp_place");
 const { compileSmearBrief } = require("./xsxb_mcp_smear_brief");
+const { compilePlaceBrief } = require("./xsxb_mcp_place_brief");
 const { validateToolArguments } = require("./xsxb_mcp_schema");
 const { compositeAttackTrails } = require("./xsxb_mcp_trail_preview");
 const { DEFAULT_PROFILE_ID, MCP_TOOL_NAMES, toolDefinitions } = require("./xsxb_mcp_tool_catalog");
@@ -202,7 +203,9 @@ function createXsxbMcpService(options = {}) {
     const animationId = String(animation.id || animation.name);
     const tuning = projectStore.readJson(paths.tuning, EMPTY_TUNING);
     const ownerScales = bakedVisualScales(tuning, profile.id, animationId, (animation.frames || []).length);
-    const ownerRotation = Number(tuning?.values?.[`profiles.${profile.id}.groups.${animationId}.rotation`] || 0);
+    const ownerRotation = Number(
+      tuning?.values?.[`profiles.${profile.id}.groups.${animationId}.rotation`] || 0,
+    );
     return compositeTrailImpl({
       framePaths,
       frameIndexes,
@@ -2549,6 +2552,15 @@ function createXsxbMcpService(options = {}) {
     return placeImageOnTarget(args, { root, artifactDir: currentArtifactDir() });
   }
 
+  /**
+   * Compiles a still-image place brief (图度) without compositing.
+   * @param {object} args Tool arguments.
+   * @returns {object} Brief receipt.
+   */
+  function planPlace(args = {}) {
+    return compilePlaceBrief(args, { root });
+  }
+
   const handlers = {
     xsxb_list_projects: listProjects,
     xsxb_get_project: projectSnapshot,
@@ -2570,6 +2582,7 @@ function createXsxbMcpService(options = {}) {
     xsxb_export_sheet: exportSheet,
     xsxb_measure_image: measureImage,
     xsxb_overlay_grid: overlayGrid,
+    xsxb_plan_place: planPlace,
     xsxb_place_image: placeImage,
     xsxb_validate_project: validateProject,
     xsxb_add_attack_trail: addAttackTrail,
