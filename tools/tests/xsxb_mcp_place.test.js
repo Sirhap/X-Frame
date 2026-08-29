@@ -1132,6 +1132,65 @@ test("nudge shifts a snapped target by finite pixel dx/dy and records it on reso
   }
 });
 
+test("object_anchor snap inside grip cells lands the brown handle on the fist", async () => {
+  const current = fixture();
+  try {
+    // Target: empty field + fist blob in G4 SE corner (same as characterWithOffsetHand geometry)
+    const character = characterWithOffsetHand();
+    const targetPath = writePng(
+      path.join(current.root, "hero-grip.png"),
+      character.data,
+      character.width,
+      character.height,
+    );
+    // Weapon: tall transparent canvas, brown grip block offset from geometric mid so cell-center misses it
+    const ww = 64;
+    const wh = 64;
+    const weapon = new Uint8ClampedArray(ww * wh * 4);
+    // blade (silver) top
+    fillRect(weapon, ww, 28, 4, 36, 28, [180, 180, 190, 255]);
+    // brown grip lower-right of E6-ish region — not at cell center
+    fillRect(weapon, ww, 34, 40, 42, 52, [120, 70, 40, 255]);
+    const objectPath = writePng(path.join(current.root, "blade.png"), weapon, ww, wh);
+    const view = { x: 0, y: 0, width: 64, height: 64, rows: 8, cols: 8 };
+    // E6/F6/E7/F7 cover the offset grip; E6+E7 alone clips x>=40
+    const gripCells = ["E6", "F6", "E7", "F7"];
+    const bad = await current.service.call("xsxb_place_image", {
+      target_path: targetPath,
+      object_path: objectPath,
+      target_anchor: { view, cells: [character.cell], snap: "alpha_center" },
+      object_anchor: { view, cells: gripCells, derive: "center" },
+      scale: { mode: "none" },
+      rotation: 0,
+      layer: "front",
+      verify_overlay: false,
+    });
+    const good = await current.service.call("xsxb_place_image", {
+      target_path: targetPath,
+      object_path: objectPath,
+      target_anchor: { view, cells: [character.cell], snap: "alpha_centroid" },
+      object_anchor: { view, cells: gripCells, snap: "alpha_centroid" },
+      scale: { mode: "none" },
+      rotation: 0,
+      layer: "front",
+      verify_overlay: false,
+    });
+    assert.ok(
+      Math.hypot(good.object_anchor.x - 37.5, good.object_anchor.y - 45.5) <= 1,
+      `object snap should sit on grip mass; got ${JSON.stringify(good.object_anchor)}`,
+    );
+    assert.ok(
+      Math.hypot(bad.object_anchor.x - 37.5, bad.object_anchor.y - 45.5) > 2,
+      "cell-center object_anchor should miss the offset grip",
+    );
+    assert.equal(good.mapped.x, good.target.x);
+    assert.equal(good.mapped.y, good.target.y);
+    assert.ok(Math.hypot(good.target.x - 54.5, good.target.y - 30.5) <= 1);
+  } finally {
+    current.cleanup();
+  }
+});
+
 test("nudge rejects non-finite values and freehand-only anchors stay forbidden", async () => {
   const current = fixture();
   try {
@@ -1151,6 +1210,43 @@ test("nudge rejects non-finite values and freehand-only anchors stay forbidden",
         }),
       /nudge/i,
     );
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("object_anchor measure_t puts the pommel-tip station on the fist snap point", async () => {
+  const current = fixture();
+  try {
+    const character = characterWithOffsetHand();
+    const targetPath = writePng(
+      path.join(current.root, "hero-mt.png"),
+      character.data,
+      character.width,
+      character.height,
+    );
+    const ww = 32;
+    const wh = 64;
+    const weapon = new Uint8ClampedArray(ww * wh * 4);
+    // vertical bar: tip at top, grip near bottom — opaque column
+    fillRect(weapon, ww, 14, 4, 18, 60, [160, 160, 170, 255]);
+    fillRect(weapon, ww, 13, 48, 19, 58, [120, 70, 40, 255]);
+    const objectPath = writePng(path.join(current.root, "pole.png"), weapon, ww, wh);
+    const view = { x: 0, y: 0, width: 64, height: 64, rows: 8, cols: 8 };
+    const placed = await current.service.call("xsxb_place_image", {
+      target_path: targetPath,
+      object_path: objectPath,
+      target_anchor: { view, cells: [character.cell], snap: "alpha_centroid" },
+      object_anchor: { measure_t: 0.15 },
+      scale: { mode: "none" },
+      rotation: 0,
+      layer: "front",
+      verify_overlay: false,
+    });
+    assert.equal(typeof placed.object_anchor.x, "number");
+    assert.equal(placed.mapped.x, placed.target.x);
+    assert.equal(placed.mapped.y, placed.target.y);
+    assert.ok(placed.object_anchor.y > 40, "grip t=0.15 should sit toward the pommel end");
   } finally {
     current.cleanup();
   }

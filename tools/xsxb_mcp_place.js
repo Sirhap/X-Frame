@@ -9,6 +9,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { ALPHA_VISIBLE, decodePngRgba, encodePngRgba } = require("./xsxb_mcp_cutout");
 const { mcpArtifactDir, requireExistingFile, resolveMcpArtifactPath } = require("./xsxb_mcp_arguments");
+const { measureLongAxis } = require("./xsxb_mcp_visual_qa");
 
 const DEFAULT_GRID = 8;
 const GRID_MIN = 2;
@@ -26,7 +27,7 @@ const DERIVE_MODES = Object.freeze([
   "right_center",
   "median_center",
 ]);
-const ALPHA_MODES = Object.freeze(["alpha_center", "alpha_bottom_center", "alpha_support"]);
+const ALPHA_MODES = Object.freeze(["alpha_center", "alpha_centroid", "alpha_bottom_center", "alpha_support"]);
 const LAYER_MODES = Object.freeze(["front", "behind", "under_target"]);
 const LABEL_MAX_SCALE = 2;
 
@@ -343,6 +344,29 @@ function alphaAnchor(rgba, width, height, mode, clip = null) {
   const centerX = (bbox.minX + bbox.maxX + 1) / 2;
   const centerY = (bbox.minY + bbox.maxY + 1) / 2;
   if (mode === "alpha_center") return { x: centerX, y: centerY, bbox };
+  if (mode === "alpha_centroid") {
+    const xStart = clip ? Math.max(0, Math.floor(clip.x1)) : bbox.minX;
+    const yStart = clip ? Math.max(0, Math.floor(clip.y1)) : bbox.minY;
+    const xEnd = clip ? Math.min(width, Math.ceil(clip.x2)) : bbox.maxX + 1;
+    const yEnd = clip ? Math.min(height, Math.ceil(clip.y2)) : bbox.maxY + 1;
+    let n = 0;
+    let sx = 0;
+    let sy = 0;
+    for (let y = yStart; y < yEnd; y += 1) {
+      for (let x = xStart; x < xEnd; x += 1) {
+        if (rgba[(y * width + x) * 4 + 3] <= ALPHA_VISIBLE) continue;
+        n += 1;
+        sx += x;
+        sy += y;
+      }
+    }
+    if (!n) {
+      const error = new Error("Snap region has no opaque pixels for alpha_centroid.");
+      error.code = "SNAP_EMPTY_REGION";
+      throw error;
+    }
+    return { x: sx / n, y: sy / n, bbox, samples: n };
+  }
   if (mode === "alpha_bottom_center") return { x: centerX, y: bbox.maxY + 1, bbox };
   const bboxHeight = bbox.maxY - bbox.minY + 1;
   const band = Math.max(1, Math.round(bboxHeight * SUPPORT_BAND_RATIO));
@@ -1046,15 +1070,35 @@ function resolveTargetAnchor(anchor, image = null) {
  */
 function resolveObjectAnchor(anchor, image) {
   if (!anchor || typeof anchor !== "object") throw new Error("object_anchor is required.");
+  requireKnownKeys(anchor, ["mode", "view", "cells", "derive", "snap", "measure_t"], "object_anchor");
+  if (anchor.measure_t !== undefined && anchor.measure_t !== null && anchor.measure_t !== "") {
+    if (anchor.cells || anchor.mode || anchor.snap) {
+      throw new Error("object_anchor.measure_t cannot combine with mode/cells/snap.");
+    }
+    const measured = measureLongAxis(image.data, image.width, image.height, { t: anchor.measure_t });
+    return { x: measured.at.x, y: measured.at.y, measure_t: measured.t };
+  }
   if (Array.isArray(anchor.cells) && anchor.cells.length) {
     if (!anchor.view || typeof anchor.view !== "object") {
       throw new Error("object_anchor.cells requires view (the overlay that produced those ids).");
     }
+    const view = requireView(anchor.view, "object_anchor.view");
+    if (anchor.snap) {
+      const mode = String(anchor.snap).trim();
+      const box = unionCells(view, anchor.cells);
+      const snapped = alphaAnchor(image.data, image.width, image.height, mode, box);
+      return { x: snapped.x, y: snapped.y, bbox: snapped.bbox, snap: mode };
+    }
     return deriveFromCells({
-      view: requireView(anchor.view, "object_anchor.view"),
+      view,
       cells: anchor.cells,
       derive: anchor.derive || "center",
     });
+  }
+  if (anchor.snap) {
+    throw new Error(
+      "object_anchor.snap requires cells (and view) naming the grip region on the object overlay.",
+    );
   }
   return alphaAnchor(image.data, image.width, image.height, anchor.mode || "alpha_center");
 }

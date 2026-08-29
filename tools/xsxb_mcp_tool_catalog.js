@@ -1109,7 +1109,7 @@ function toolDefinitions() {
               snap: {
                 type: "string",
                 description:
-                  "alpha_center|alpha_bottom_center|alpha_support — resolve the point from opaque pixels inside the cell union (MCP emits x,y in receipt.resolved).",
+                  "alpha_center|alpha_centroid|alpha_bottom_center|alpha_support — resolve from opaque pixels inside the cell union (MCP emits x,y in receipt.resolved). Prefer alpha_centroid for fists/grips.",
               },
               nudge: {
                 type: "object",
@@ -1135,15 +1135,27 @@ function toolDefinitions() {
             type: "object",
             additionalProperties: false,
             description:
-              "mode alpha_center|alpha_bottom_center|alpha_support, or cells+derive on the object image. alpha_support uses the opaque bbox bottom band; footY is maxY+1.",
+              "mode alpha_center|alpha_centroid|alpha_bottom_center|alpha_support; cells+derive; cells+snap (prefer alpha_centroid on grip cells); or measure_t (pommel→tip fraction — use ~0.12–0.2 for a sword grip). Cell mid-points miss offset handles.",
             properties: {
               mode: {
                 type: "string",
-                description: "alpha_center|alpha_bottom_center|alpha_support.",
+                description: "alpha_center|alpha_centroid|alpha_bottom_center|alpha_support.",
               },
               view: { type: "object", description: "Overlay view that produced the cell ids." },
               cells: { type: "array", items: { type: "string" }, description: "Speakable cell ids." },
               derive: { type: "string", description: "Cell derive when anchoring by cells." },
+              snap: {
+                type: "string",
+                description:
+                  "alpha_center|alpha_centroid|alpha_bottom_center|alpha_support inside object cells. Use alpha_centroid for an offset brown grip.",
+              },
+              measure_t: {
+                type: "number",
+                minimum: 0,
+                maximum: 1,
+                description:
+                  "Grip along pommel→tip from xsxb_measure_image geometry (0=pommel, 1=tip). Typical sword grip ~0.12–0.2. Cannot combine with mode/cells/snap.",
+              },
             },
           },
           scale: {
