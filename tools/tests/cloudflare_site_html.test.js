@@ -40,7 +40,7 @@ test("Cloudflare landing removes local-server-only tool cards", () => {
   assert.match(output, /data-workstation-count>ONE</u);
 });
 
-test("factory copy counts remaining workstation cards instead of advertising SIX", () => {
+test("factory landing keeps the watermark station and derives workstation count from cards", () => {
   const html = fs.readFileSync(
     new URL("../animation_tuner/public/animation_factory.html", `file://${__dirname}/`),
     "utf8",
@@ -48,14 +48,15 @@ test("factory copy counts remaining workstation cards instead of advertising SIX
   assert.doesNotMatch(
     html,
     /workstationCount\.textContent = language === "en" \? "SIX" : "六个"/u,
-    "NAV-005: cloud landing strips the watermark station; do not keep advertising SIX",
+    "workstation count must follow visible tool cards",
   );
   assert.match(html, /querySelectorAll\([^)]*tool-card/u);
+  assert.match(html, /href="\/tools\/watermark"/u);
+  assert.doesNotMatch(html, /cloudflare-local-only:start[\s\S]*tools\/watermark/u);
 
   const cloud = prepareCloudflareLanding(html);
-  assert.doesNotMatch(cloud, /tools\/watermark/u);
-  assert.match(cloud, /data-workstation-count>FIVE</u);
-  assert.doesNotMatch(cloud, /data-workstation-count>SIX</u);
+  assert.match(cloud, /tools\/watermark/u);
+  assert.match(cloud, /data-workstation-count>SIX</u);
 });
 
 test("Cloudflare landing rejects an unclosed local-only marker", () => {
@@ -72,12 +73,34 @@ test("Cloudflare landing requires the workstation-count marker", () => {
   assert.throws(() => prepareCloudflareLanding('<a class="tool-card">Tool</a>'), /workstation-count/u);
 });
 
-test("workbench marks watermark as local-only and reveals hubs before app boot", () => {
+test("quick tools hub lists import as a first-class card before organizer", () => {
   const html = fs.readFileSync(
     new URL("../animation_tuner/public/index.html", `file://${__dirname}/`),
     "utf8",
   );
-  assert.match(html, /cloudflare-local-only:start[\s\S]*tools\/watermark[\s\S]*cloudflare-local-only:end/u);
+  const grid = html.match(/class="quickToolGrid">[\s\S]*?<\/div>\s*<\/section>/u);
+  assert.ok(grid, "quick tools grid markup is present");
+  assert.match(grid[0], /href="\/tools\/import"[^>]*data-document-navigation/u);
+  assert.match(grid[0], /导入与预处理/u);
+  assert.match(grid[0], /href="\/tools\/organizer"/u);
+  assert.match(grid[0], /href="\/tools\/cutout"/u);
+  assert.match(grid[0], /href="\/tools\/scatter-slice"/u);
+  assert.match(grid[0], /href="\/tools\/watermark"/u);
+  assert.match(grid[0], /视频去水印/u);
+  assert.match(grid[0], /href="\/tools\/export"/u);
+  assert.ok(
+    grid[0].indexOf('href="/tools/import"') < grid[0].indexOf('href="/tools/organizer"'),
+    "import card precedes organizer so ingest stays first in the pipeline",
+  );
+});
+
+test("workbench lists watermark as a first-class quick tool and reveals hubs before app boot", () => {
+  const html = fs.readFileSync(
+    new URL("../animation_tuner/public/index.html", `file://${__dirname}/`),
+    "utf8",
+  );
+  assert.match(html, /class="quickToolCard"[^>]*href="\/tools\/watermark"/u);
+  assert.doesNotMatch(html, /cloudflare-local-only:start[\s\S]*tools\/watermark/u);
   assert.match(html, /function revealXsxbSurface\(\)/u);
   assert.match(html, /src="\/app_surface\.js"/u);
   assert.match(html, /src="\/app_workspace_leave\.js"/u);

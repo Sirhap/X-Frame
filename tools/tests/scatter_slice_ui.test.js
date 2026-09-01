@@ -67,6 +67,15 @@ test("scatter-slice routes recoverable failures through one error boundary", () 
   assert.doesNotMatch(script, /console\.error\(error\)/);
 });
 
+test("scatter-slice rail includes video watermark repair", () => {
+  const html = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/scatter-slice.html"),
+    "utf8",
+  );
+  assert.match(html, /href="\/tools\/watermark"/);
+  assert.match(html, /aria-label="视频去水印"/);
+});
+
 test("scatter-slice exposes a confirmed full-source clear action", () => {
   const html = fs.readFileSync(
     path.resolve(__dirname, "../animation_tuner/public/scatter-slice.html"),

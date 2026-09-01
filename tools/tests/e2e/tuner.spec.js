@@ -600,6 +600,8 @@ test("the website home, import flow, and tuning workbench use separate URLs", as
   await expect(page.locator("#stage")).toHaveCount(0);
   await page.getByRole("link", { name: "打开快速工具" }).click();
   await expect(page).toHaveURL(/\/tools$/);
+  await expect(page.getByRole("link", { name: /导入与预处理/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /视频去水印/ })).toBeVisible();
   await page.getByRole("link", { name: /序列处理/ }).click();
   await expect(page).toHaveURL(/\/tools\/organizer/);
   await expect(page.locator("#organizerModal")).toBeVisible();
