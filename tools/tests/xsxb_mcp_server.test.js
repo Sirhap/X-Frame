@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -97,6 +98,40 @@ test("MCP transport initializes, lists tools, and returns structured tool result
   assert.equal(called.result.isError, false);
 });
 
+test("stdio entrypoints stay alive and answer initialize", async () => {
+  const repo = path.join(__dirname, "../..");
+  const request = `${JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } },
+  })}\n`;
+  for (const rel of ["mcp/xsxb_mcp_server.js", "tools/xsxb_mcp_server.js"]) {
+    const child = spawn(process.execPath, [path.join(repo, rel)], {
+      cwd: repo,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    const closed = new Promise((resolve) => child.on("close", resolve));
+    child.stdin.write(request);
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve("ready"), 1500);
+      child.stdout.once("data", () => {
+        clearTimeout(timer);
+        resolve("ready");
+      });
+      child.once("error", reject);
+    });
+    child.kill("SIGTERM");
+    const code = await closed;
+    assert.match(stdout, /"xsxb-frame-tuner"/, `${rel} must answer initialize (exit ${code})`);
+  }
+});
+
 test("INSTRUCTIONS and shift_frames name last-pixel planting and a stale catalog", () => {
   const shift = toolDefinitions().find((entry) => entry.name === "xsxb_shift_frames");
   assert.ok(shift, "xsxb_shift_frames is a catalog tool");
@@ -120,6 +155,12 @@ test("INSTRUCTIONS and shift_frames name last-pixel planting and a stale catalog
   }
   assert.match(INSTRUCTIONS, /cells\[row\]\[col\]/, "INSTRUCTIONS must point at the 2d grid.cells lookup");
   assert.match(INSTRUCTIONS, /do not OCR/i, "INSTRUCTIONS must say not to OCR overlay digits");
+  assert.match(INSTRUCTIONS, /xsxb_analyze/, "INSTRUCTIONS must use one-pass analyze after import");
+  assert.match(
+    INSTRUCTIONS,
+    /do not export_sheet every candidate|preview\.path/i,
+    "INSTRUCTIONS must not send agents through per-candidate sheets by default",
+  );
   const sheet = toolDefinitions().find((entry) => entry.name === "xsxb_export_sheet");
   assert.match(sheet.description, /cells\[row\]\[col\]/);
   assert.match(sheet.description, /do not OCR/i);
@@ -500,6 +541,7 @@ test("MCP catalog includes the production editing tools", () => {
     "xsxb_find_loop",
     "xsxb_find_duplicates",
     "xsxb_find_motion",
+    "xsxb_analyze",
     "xsxb_estimate_visual",
     "xsxb_export_sheet",
     "xsxb_shift_frames",

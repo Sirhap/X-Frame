@@ -17,6 +17,7 @@ const {
 } = require("./lib/animation_tuner/public/frame_organizer_core");
 const { PNG_NAME, listPngSequence, requireExistingFile } = require("./xsxb_mcp_arguments");
 const { decodePngRgba } = require("./xsxb_mcp_cutout");
+const { findMotionWindow, measureFrame, median } = require("./xsxb_mcp_visual_qa");
 
 const MINIMUM_LOOP_FRAMES = 4;
 const MINIMUM_DUPLICATE_FRAMES = 3;
@@ -73,32 +74,60 @@ function loadSignature(filePath, sampleSize) {
 }
 
 /**
- * Public fields copied off one core candidate.
- * @param {object} candidate Core loop candidate.
- * @returns {object} Agent-facing candidate.
- */
-/**
- * Warns when the recommended loop is only a burst inside a longer clip.
- * Short cycles stay unflagged so a 7-frame walk period is not called a one-shot.
+ * Warns when the recommended loop is a short burst inside a longer clip.
+ * Short repeating cycles stay unflagged. A solid interior gait in a long take
+ * is also not a one-shot — coverage below half is normal for a source dump.
  * @param {number} frameCount Clip length.
- * @param {{coverage?:number}|null} recommended Ranked candidate, if any.
+ * @param {{coverage?:number,length?:number,period?:number,score?:number,smoothness?:number,similarity?:number}|null} recommended Ranked candidate, if any.
  * @returns {{oneShotLikely:boolean,note:string}} Advice for the receipt.
  */
 function adviseLoopCandidate(frameCount, recommended) {
-  const coverage = Number(recommended && recommended.coverage);
-  const oneShotLikely = !recommended || !Number.isFinite(coverage) || (frameCount >= 12 && coverage < 0.5);
+  if (!recommended) {
+    return {
+      oneShotLikely: true,
+      note: "No loop candidate. Inspect sheets or use xsxb_find_motion.",
+    };
+  }
+  if (!(frameCount >= 12)) {
+    return { oneShotLikely: false, note: "" };
+  }
+  const coverage = Number(recommended.coverage);
+  const length = Number(recommended.length);
+  const period = Number(recommended.period);
+  const score = Number(recommended.score);
+  const smoothness = Number(recommended.smoothness);
+  const similarity = Number(recommended.similarity);
+  const coverageLow = !Number.isFinite(coverage) || coverage < 0.5;
+  const burstLength = Number.isFinite(length) && length < 12;
+  const solidCycle =
+    Number.isFinite(period) &&
+    Number.isFinite(length) &&
+    period === length &&
+    length >= 12 &&
+    ((Number.isFinite(smoothness) && smoothness >= 0.7) ||
+      (Number.isFinite(similarity) && similarity >= 70) ||
+      (Number.isFinite(score) && score >= 0.45));
+  if (solidCycle) {
+    return {
+      oneShotLikely: false,
+      note: coverageLow
+        ? "Recommended loop is an interior cycle in a longer take. Inspect the preview before applying."
+        : "",
+    };
+  }
+  const oneShotLikely = coverageLow && (burstLength || !Number.isFinite(length));
   return {
     oneShotLikely,
     note: oneShotLikely
-      ? "Recommended loop covers less than half of the clip. Inspect sheets before applying; a one-shot should keep the full order or use xsxb_find_motion."
+      ? "Recommended loop looks like a burst inside a longer clip. Inspect sheets before applying; a one-shot should keep the full order or use xsxb_find_motion."
       : "",
   };
 }
 
-function summarizeCandidate(candidate) {
+function summarizeCandidate(candidate, options = {}) {
   const start = Number(candidate.start);
   const end = Number(candidate.end);
-  return {
+  const summary = {
     start,
     end,
     length: Number(candidate.length),
@@ -109,7 +138,44 @@ function summarizeCandidate(candidate) {
     coverage: Number(candidate.coverage),
     smoothness: Number(candidate.smoothness),
     acfScore: Number(candidate.acfScore),
-    order: inclusiveRange(start, end),
+  };
+  if (options.includeOrder !== false) summary.order = inclusiveRange(start, end);
+  return summary;
+}
+
+/**
+ * Duplicate-hold analysis on already-built signatures.
+ * @param {object[]} signatures Loop signatures.
+ * @param {{threshold?:number,autoAdjust?:boolean}} [options] Finder options.
+ * @returns {object} Compact duplicate receipt.
+ */
+function duplicatesFromSignatures(signatures, options = {}) {
+  const threshold = options.threshold === undefined ? DEFAULT_DUPLICATE_THRESHOLD : Number(options.threshold);
+  if (
+    !Number.isFinite(threshold) ||
+    threshold < ORGANIZER_SIMILARITY_THRESHOLD.min ||
+    threshold > ORGANIZER_SIMILARITY_THRESHOLD.max
+  ) {
+    throw new Error(
+      `threshold must be a number between ${ORGANIZER_SIMILARITY_THRESHOLD.min} and ${ORGANIZER_SIMILARITY_THRESHOLD.max}.`,
+    );
+  }
+  const analyzed = analyzeDuplicateFrames(signatures, threshold);
+  const suggestedDrop = analyzed.matches.map((entry) => Number(entry.index));
+  const applyAuto = Boolean(options.autoAdjust) && analyzed.autoAdjustedThreshold != null;
+  const drop = analyzed.autoAdjustedThreshold == null || applyAuto ? suggestedDrop : [];
+  const dropped = new Set(drop);
+  const suggestedDropped = new Set(suggestedDrop);
+  return {
+    threshold,
+    autoAdjustedThreshold: analyzed.autoAdjustedThreshold,
+    drop,
+    order: signatures.map((_, index) => index).filter((index) => !dropped.has(index)),
+    suggestedDrop,
+    suggestedOrder: signatures.map((_, index) => index).filter((index) => !suggestedDropped.has(index)),
+    matchCount: analyzed.matches.length,
+    matches: analyzed.matches,
+    applied: false,
   };
 }
 
@@ -160,35 +226,93 @@ function findDuplicatesInPngFiles(filePaths, options = {}) {
     );
   }
   const sampleSize = Math.max(8, Math.round(options.sampleSize || REFERENCE_SAMPLE_SIZE));
-  const threshold = options.threshold === undefined ? DEFAULT_DUPLICATE_THRESHOLD : Number(options.threshold);
-  if (
-    !Number.isFinite(threshold) ||
-    threshold < ORGANIZER_SIMILARITY_THRESHOLD.min ||
-    threshold > ORGANIZER_SIMILARITY_THRESHOLD.max
-  ) {
-    throw new Error(
-      `threshold must be a number between ${ORGANIZER_SIMILARITY_THRESHOLD.min} and ${ORGANIZER_SIMILARITY_THRESHOLD.max}.`,
-    );
-  }
   const signatures = filePaths.map((filePath) => loadSignature(filePath, sampleSize));
-  const analyzed = analyzeDuplicateFrames(signatures, threshold);
-  const suggestedDrop = analyzed.matches.map((entry) => Number(entry.index));
-  const applyAuto = Boolean(options.autoAdjust) && analyzed.autoAdjustedThreshold != null;
-  const drop = analyzed.autoAdjustedThreshold == null || applyAuto ? suggestedDrop : [];
-  const dropped = new Set(drop);
-  const order = filePaths.map((_, index) => index).filter((index) => !dropped.has(index));
-  const suggestedDropped = new Set(suggestedDrop);
   return {
     frameCount: filePaths.length,
     sampleSize,
-    threshold,
-    autoAdjustedThreshold: analyzed.autoAdjustedThreshold,
-    drop,
-    order,
-    suggestedDrop,
-    suggestedOrder: filePaths.map((_, index) => index).filter((index) => !suggestedDropped.has(index)),
-    matches: analyzed.matches,
-    applied: false,
+    ...duplicatesFromSignatures(signatures, options),
+  };
+}
+
+/**
+ * One-pass duplicate, loop, and motion analysis. Decodes each PNG once.
+ * `images` is for the caller to render a preview; strip it before an MCP receipt.
+ * @param {string[]} filePaths Absolute PNG paths in playback order.
+ * @param {{minPeriod?:number,maxPeriod?:number,startFrame?:number,preference?:string,boundaryFactor?:number,sampleSize?:number,threshold?:number,autoAdjust?:boolean,decodePngRgba?:Function}} [options] Analysis options.
+ * @returns {object} Compact analysis plus decoded frames.
+ */
+function analyzePngFiles(filePaths, options = {}) {
+  if (!Array.isArray(filePaths) || filePaths.length < MINIMUM_LOOP_FRAMES) {
+    throw new Error(
+      `Clip analysis needs at least ${MINIMUM_LOOP_FRAMES} PNG frames; received ${filePaths?.length || 0}.`,
+    );
+  }
+  const sampleSize = Math.max(8, Math.round(options.sampleSize || REFERENCE_SAMPLE_SIZE));
+  const decode = options.decodePngRgba || decodePngRgba;
+  const images = filePaths.map((filePath) => {
+    if (!PNG_NAME.test(filePath)) throw new Error(`Loop frame must be a PNG: ${filePath}`);
+    const image = decode(filePath);
+    return { data: image.data, width: image.width, height: image.height };
+  });
+  const signatures = images.map((image) => downsampleRgba(image, sampleSize));
+  const measured = images.map((image, index) => ({
+    index,
+    ...measureFrame(image.data, image.width, image.height),
+  }));
+  const loopCandidates = findLoopCandidates(signatures, {
+    minPeriod: options.minPeriod,
+    maxPeriod: options.maxPeriod,
+    startFrame: options.startFrame,
+    preference: options.preference,
+    boundaryFactor: options.boundaryFactor,
+  }).map((candidate) => summarizeCandidate(candidate, { includeOrder: false }));
+  const recommended = loopCandidates[0]
+    ? {
+        ...loopCandidates[0],
+        order: inclusiveRange(loopCandidates[0].start, loopCandidates[0].end),
+      }
+    : null;
+  const advice = adviseLoopCandidate(filePaths.length, recommended);
+  const duplicates = duplicatesFromSignatures(signatures, options);
+  duplicates.matches = duplicates.matches.slice(0, 12);
+  const motionFound = findMotionWindow(
+    measured.map((frame) => ({
+      opaque: frame.opaque,
+      height: frame.bodyHeight,
+      cy: frame.cy,
+    })),
+  );
+  const heights = measured.map((frame) => Number(frame.bodyHeight || 0));
+  const feet = measured.map((frame) => Number(frame.feetY || 0));
+  return {
+    frameCount: filePaths.length,
+    sampleSize,
+    decodeCount: images.length,
+    duplicates,
+    loop: {
+      candidates: loopCandidates.slice(0, 5),
+      recommended,
+      oneShotLikely: advice.oneShotLikely,
+      note: advice.note || undefined,
+    },
+    motion: {
+      start: motionFound.start,
+      end: motionFound.end,
+      order: motionFound.order,
+    },
+    metrics: {
+      bodyHeight: {
+        min: heights.length ? Math.min(...heights) : 0,
+        max: heights.length ? Math.max(...heights) : 0,
+        median: median(heights),
+      },
+      feetY: {
+        min: feet.length ? Math.min(...feet) : 0,
+        max: feet.length ? Math.max(...feet) : 0,
+        median: median(feet),
+      },
+    },
+    images,
   };
 }
 
@@ -220,6 +344,7 @@ module.exports = {
   MINIMUM_DUPLICATE_FRAMES,
   MINIMUM_LOOP_FRAMES,
   adviseLoopCandidate,
+  analyzePngFiles,
   downsampleRgba,
   findDuplicatesInPngFiles,
   findLoopInPngFiles,

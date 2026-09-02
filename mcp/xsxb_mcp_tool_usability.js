@@ -375,6 +375,53 @@ animations = [{
     return verdict("xsxb_find_motion", "ready", `start=${found.start} end=${found.end}`);
   },
 
+  async xsxb_analyze(fixture) {
+    const directory = path.join(fixture.root, "analyze-seq");
+    const width = 8;
+    const height = 8;
+    const phases = [
+      [255, 0, 0, 255],
+      [0, 255, 0, 255],
+      [0, 0, 255, 255],
+    ];
+    fs.mkdirSync(directory, { recursive: true });
+    for (let index = 0; index < 7; index += 1) {
+      const rgba = new Uint8ClampedArray(width * height * 4);
+      for (let offset = 0; offset < rgba.length; offset += 4) rgba.set(phases[index % 3], offset);
+      fs.writeFileSync(
+        path.join(directory, `${String(index + 1).padStart(2, "0")}.png`),
+        encodePngRgba(rgba, width, height),
+      );
+    }
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "cycle",
+    });
+    const analyzed = await fixture.service.call("xsxb_analyze", {
+      animation_id: "cycle",
+      sample_size: 8,
+      min_period: 2,
+      max_period: 4,
+    });
+    if (
+      analyzed.source !== "animation" ||
+      analyzed.applied !== false ||
+      analyzed.decodeCount !== 7 ||
+      analyzed.loop?.recommended?.period !== 3 ||
+      analyzed.preview?.kind !== "loop" ||
+      !analyzed.preview?.path ||
+      !fs.existsSync(analyzed.preview.path)
+    ) {
+      return verdict("xsxb_analyze", "fail", JSON.stringify(analyzed));
+    }
+    return verdict(
+      "xsxb_analyze",
+      "ready",
+      `period=${analyzed.loop.recommended.period} preview=${path.basename(analyzed.preview.path)}`,
+    );
+  },
+
   async xsxb_update_frame_boxes(fixture) {
     await importSequence(fixture, "walk");
     const boxes = await fixture.service.call("xsxb_update_frame_boxes", {

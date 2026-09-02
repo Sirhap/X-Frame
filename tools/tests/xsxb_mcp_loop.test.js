@@ -7,10 +7,15 @@ const path = require("node:path");
 const test = require("node:test");
 const { ORGANIZER_SIMILARITY_THRESHOLD } = require("../animation_tuner/public/frame_organizer_core");
 const { createProjectStore } = require("../project_store");
-const { adviseLoopCandidate, findDuplicatesInPngFiles, findLoopInPngFiles } = require("../xsxb_mcp_loop");
+const {
+  adviseLoopCandidate,
+  analyzePngFiles,
+  findDuplicatesInPngFiles,
+  findLoopInPngFiles,
+} = require("../xsxb_mcp_loop");
 const { createXsxbMcpService, toolDefinitions } = require("../xsxb_mcp_service");
 const { validateToolArguments } = require("../xsxb_mcp_schema");
-const { encodePngRgba } = require("../xsxb_mcp_cutout");
+const { encodePngRgba, decodePngRgba } = require("../xsxb_mcp_cutout");
 
 const PHASES = [
   [255, 0, 0, 255],
@@ -88,13 +93,28 @@ test("findLoopInPngFiles ranks the same 3-frame period as the Tuner core", () =>
   }
 });
 
-test("adviseLoopCandidate flags a long clip whose recommended loop covers less than half", () => {
+test("adviseLoopCandidate flags a burst, not an interior gait in a long take", () => {
   const partial = adviseLoopCandidate(26, { coverage: 0.42 });
   assert.equal(partial.oneShotLikely, true);
   assert.match(partial.note, /find_motion|one-shot/i);
+  const burst = adviseLoopCandidate(26, { coverage: 0.42, length: 8, period: 8, score: 0.4 });
+  assert.equal(burst.oneShotLikely, true);
   const shortCycle = adviseLoopCandidate(7, { coverage: 0.43 });
   assert.equal(shortCycle.oneShotLikely, false);
   assert.equal(shortCycle.note, "");
+  const interiorGait = adviseLoopCandidate(145, {
+    coverage: 0.276,
+    length: 40,
+    period: 40,
+    score: 0.5,
+    smoothness: 0.77,
+    similarity: 77,
+  });
+  assert.equal(
+    interiorGait.oneShotLikely,
+    false,
+    "a 40-frame run cycle inside a long take is not a one-shot",
+  );
 });
 
 test("xsxb_find_loop queries a PNG directory without importing", async () => {
@@ -296,4 +316,77 @@ test("xsxb_find_duplicates queries an imported animation without mutating it", a
   } finally {
     current.cleanup();
   }
+});
+
+test("analyzePngFiles decodes each PNG once and returns compact dup/loop/motion", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-analyze-core-"));
+  try {
+    const files = writeCycle(directory);
+    let decodes = 0;
+    const found = analyzePngFiles(files, {
+      sampleSize: 8,
+      minPeriod: 2,
+      maxPeriod: 4,
+      decodePngRgba: (filePath) => {
+        decodes += 1;
+        return decodePngRgba(filePath);
+      },
+    });
+    assert.equal(found.decodeCount, files.length);
+    assert.equal(decodes, files.length, "one decode per frame, not three finder passes");
+    assert.equal(found.loop.recommended.period, 3);
+    assert.ok(Array.isArray(found.loop.recommended.order));
+    assert.equal(
+      found.loop.candidates.some((candidate) => Array.isArray(candidate.order)),
+      false,
+      "extra loop candidates omit order arrays",
+    );
+    assert.equal(found.duplicates.applied, false);
+    assert.ok(Array.isArray(found.duplicates.order));
+    assert.equal(Number.isInteger(found.motion.start), true);
+    assert.equal(found.motion.activity, undefined);
+    assert.equal(found.motion.frames, undefined);
+    assert.ok(found.metrics.bodyHeight);
+    assert.equal(found.images.length, files.length);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("xsxb_analyze runs after import, writes a preview sheet, and does not mutate frames", async () => {
+  const current = fixture();
+  try {
+    const directory = path.join(current.root, "analyze-seq");
+    writeCycle(directory);
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "cycle",
+    });
+    const analyzed = await current.service.call("xsxb_analyze", {
+      animation_id: "cycle",
+      sample_size: 8,
+      min_period: 2,
+      max_period: 4,
+    });
+    assert.equal(analyzed.source, "animation");
+    assert.equal(analyzed.applied, false);
+    assert.equal(analyzed.animationId, "cycle");
+    assert.equal(analyzed.decodeCount, 7);
+    assert.equal(analyzed.loop.recommended.period, 3);
+    assert.equal(analyzed.images, undefined, "decoded pixels stay off the MCP receipt");
+    assert.equal(analyzed.preview.kind, "loop");
+    assert.ok(analyzed.preview.path);
+    assert.equal(fs.existsSync(analyzed.preview.path), true);
+    const still = await current.service.call("xsxb_get_animation", { animation_id: "cycle" });
+    assert.equal(still.frameCount, 7);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("MCP catalog lists xsxb_analyze after the surgical finders", () => {
+  const names = toolDefinitions().map((tool) => tool.name);
+  assert.ok(names.includes("xsxb_analyze"));
+  assert.ok(names.indexOf("xsxb_analyze") > names.indexOf("xsxb_find_motion"));
 });

@@ -58,15 +58,13 @@ Do not claim a clean cutout solely because the batch completed. Check edge halos
 For a local video that should become one looping animation, stay on XSXB MCP:
 
 1. Import with `xsxb_import_animation` or `xsxb_import_video`.
-2. Remove near-duplicate holds: `xsxb_find_duplicates` (`threshold` / `duplicate_ratio` is the organizer 重复比例 slider, 55–100, default 88). Skip apply when the receipt has `autoAdjustedThreshold` unless you passed `auto_adjust`. Otherwise `xsxb_reorganize_frames` with the returned `order`.
-3. Run `xsxb_cutout` (omit sliders for the shared smart profile). This can wait until just before sheet export.
-4. Query loops with `xsxb_find_loop`. Export each candidate as a Sprite Sheet via `xsxb_export_sheet` `start_frame` / `end_frame`.
-5. Every sheet cell is labeled with its absolute 0-based index. `mark_frame` highlights one cell (defaults to the candidate start) so a second pass can drop that frame from the current loop group.
-6. Inspect the sheets, pick the smoothest loop, and `xsxb_reorganize_frames` to that `order`. Drop any extra labeled cells that still break the cycle.
-7. Keep character scale the same across clips: choose one animation as the template, `xsxb_estimate_visual` with `reference_animation_id` and `apply`, then `xsxb_cutout apply_visual` on a shared canvas.
-8. Finish with one `xsxb_export_gif` of the kept loop.
+2. Run `xsxb_cutout` (omit sliders for the shared smart profile) so loop search is not poisoned by a keyed background.
+3. `xsxb_analyze` (one decode: duplicates, loop, motion, plus a `grid=false` preview sheet). Look at `preview.path` — do not export every candidate with `xsxb_export_sheet`. `oneShotLikely` means a short burst inside a longer clip; a solid interior cycle in a long take is not a one-shot. Skip apply when the receipt has `autoAdjustedThreshold` unless you passed `auto_adjust`.
+4. Inspect the preview, pick `loop.recommended.order` or `motion.order`, and `xsxb_reorganize_frames`.
+5. Keep character scale the same across clips: choose one animation as the template, `xsxb_estimate_visual` with `reference_animation_id` and `apply`, then `xsxb_cutout apply_visual` on a shared canvas.
+6. Finish with one `xsxb_export_gif` of the kept loop.
 
-Do not treat a finder receipt as applied. `xsxb_find_duplicates` and `xsxb_find_loop` only return orders.
+Do not treat a finder or analyze receipt as applied. `xsxb_analyze`, `xsxb_find_duplicates`, and `xsxb_find_loop` only return orders.
 
 ## MCP overlay grid and group coordinates
 

@@ -25,6 +25,8 @@
 3. 重启 Cursor MCP，或在 MCP 面板重载 `xsxb`。
 4. 用 `xsxb_list_projects` 确认服务已起来。
 
+不要把 Cursor 的 `args` 指到 `tools/xsxb_mcp_server.js` 再指望旧 shim 自己起来：那个文件以前只 `module.exports = require(...)`，当主进程跑时 **不会** 调用 `startServer()`，进程立刻退出，客户端看到 `MCP error -32000: Connection closed`。现在 shim 在 `require.main === module` 时会启动，但配置仍应指向 `mcp/xsxb_mcp_server.js`。
+
 Cursor 配置可以放在：
 
 - 用户级 `~/.cursor/mcp.json`
@@ -62,8 +64,8 @@ npm run mcp:start
 - 同步前先 `xsxb_bind_godot`
 - 导入用 `xsxb_import_animation`（支持 `start_frame` / `end_frame` / `replace`）；`xsxb_import_video` 只是视频别名
 - 抠图用 `xsxb_cutout`（网页同一套智能抠图和滑块；可传 `tolerance` / `feather` / `protected_colors` 等，省略则用共用智能档；已抠帧默认跳过，除非 `force`；回执带 `bodyHeight` / `nearWhite`，`metrics=false` 可关）
-- 视频做成循环动画：导入 → `xsxb_find_duplicates`（`threshold` / `duplicate_ratio` 即整理台重复比例滑块，55–100，默认 88）去重复帧 → `xsxb_cutout` → `xsxb_find_loop` → 每个候选 `xsxb_export_sheet`（格子上有绝对帧号，`mark_frame` 标出一格供二次剔除）→ 选最流畅的一组 `xsxb_reorganize_frames` → 以其中一个动画为模版 `xsxb_estimate_visual` 统一比例 → `xsxb_export_gif`
-- 循环段用 `xsxb_find_loop`（已导入动画、PNG 目录或 `file_paths`）；重复 hold 用 `xsxb_find_duplicates`；单次动作去头尾 hold 用 `xsxb_find_motion`；应用候选时再 `xsxb_reorganize_frames` 传 `order`
+- 视频做成循环动画：导入 → `xsxb_cutout`（省略滑块用共用智能档）→ `xsxb_analyze`（一次解码：去重 / 循环 / 动作窗，并写出推荐窗的 `grid=false` 预览 sheet）。看 `preview.path`，不要给每个候选单独 `xsxb_export_sheet`。`oneShotLikely` 表示长镜头里的短爆发，长镜头里的完整步态循环不是 one-shot。套用时 `xsxb_reorganize_frames` 传 `loop.recommended.order` 或 `motion.order`。回执若带 `autoAdjustedThreshold`，不要直接套用 `duplicates.order`，除非传了 `auto_adjust`。再以其中一个动画为模版 `xsxb_estimate_visual` 统一比例 → `xsxb_cutout apply_visual` 加画布 → `xsxb_export_gif`
+- 循环段用 `xsxb_find_loop`（已导入动画、PNG 目录或 `file_paths`）；重复 hold 用 `xsxb_find_duplicates`；单次动作去头尾 hold 用 `xsxb_find_motion`；导入之后优先 `xsxb_analyze`。应用候选时再 `xsxb_reorganize_frames` 传 `order`
 - 统一角色大小先 `xsxb_estimate_visual`（对照参考动画或 `target_height`），或手填 `xsxb_set_visual_transform`；要把组/帧缩放写进像素时用 `xsxb_cutout apply_visual` 加画布，不要在 MCP 外烤图
 - 预览用 `xsxb_export_gif`（尊重单帧时长和组/帧 `visual_size`）或 `xsxb_export_sheet` 拼表（格子带调参台组坐标网格，脚底 `0,0`，身体在负 y）。`grid_density` 加密网格线；图上标的是与回执 `grid.cells[row][col]` 对应的行列号。组坐标由代码写在 JSON / `grid.legend` 里，**不要 OCR**。写回用 `grid.cells[row][col]`（row 0 是顶、col 0 是左，`x,y` 是该格左上角组坐标）。AI 按任务和画布大小填 `grid_density`（sparse/normal/dense）、`grid_divs`（如 `8x8`）或 `grid_x`/`grid_y`，以及 `grid_scope`（canvas|subject）；省略则用自动步长。源 PNG 不变
 - 写回只报网格上的组坐标：`xsxb_shift_frames` 的 `from`/`to` 或 `dx`/`dy`、框的 `min`/`max`、挂件的 `hand`+`t`、拖尾棍子、视觉偏移。不要自己换成画布像素。改完再 `export_sheet` 核对
@@ -86,6 +88,6 @@ npm run mcp:start
 
 ## 当前工具
 
-`xsxb_list_projects` · `xsxb_get_project` · `xsxb_set_active_project` · `xsxb_bind_godot` · `xsxb_import_animation` · `xsxb_import_video` · `xsxb_get_animation` · `xsxb_find_loop` · `xsxb_find_duplicates` · `xsxb_find_motion` · `xsxb_cutout` · `xsxb_estimate_visual` · `xsxb_set_visual_transform` · `xsxb_estimate_boxes` · `xsxb_update_frame_boxes` · `xsxb_update_timing` · `xsxb_replace_frame` · `xsxb_shift_frames` · `xsxb_reorganize_frames` · `xsxb_add_attack_trail` · `xsxb_plan_smear` · `xsxb_add_attachment` · `xsxb_add_sfx` · `xsxb_remove_binding` · `xsxb_delete_animation` · `xsxb_sync_godot` · `xsxb_validate_project` · `xsxb_export_gif` · `xsxb_export_sheet` · `xsxb_measure_image` · `xsxb_overlay_grid` · `xsxb_plan_place` · `xsxb_place_image` · `xsxb_open_tuner`
+`xsxb_list_projects` · `xsxb_get_project` · `xsxb_set_active_project` · `xsxb_bind_godot` · `xsxb_import_animation` · `xsxb_import_video` · `xsxb_get_animation` · `xsxb_find_loop` · `xsxb_find_duplicates` · `xsxb_find_motion` · `xsxb_analyze` · `xsxb_cutout` · `xsxb_estimate_visual` · `xsxb_set_visual_transform` · `xsxb_estimate_boxes` · `xsxb_update_frame_boxes` · `xsxb_update_timing` · `xsxb_replace_frame` · `xsxb_shift_frames` · `xsxb_reorganize_frames` · `xsxb_add_attack_trail` · `xsxb_plan_smear` · `xsxb_add_attachment` · `xsxb_add_sfx` · `xsxb_remove_binding` · `xsxb_delete_animation` · `xsxb_sync_godot` · `xsxb_validate_project` · `xsxb_export_gif` · `xsxb_export_sheet` · `xsxb_measure_image` · `xsxb_overlay_grid` · `xsxb_plan_place` · `xsxb_place_image` · `xsxb_open_tuner`
 
 工具只接受项目、角色、动画、帧等业务标识，不接受任意 Shell 或不受限文件路径。

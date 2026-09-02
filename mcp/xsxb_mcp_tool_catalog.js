@@ -21,6 +21,7 @@ const MCP_TOOL_NAMES = Object.freeze([
   "xsxb_find_loop",
   "xsxb_find_duplicates",
   "xsxb_find_motion",
+  "xsxb_analyze",
   "xsxb_update_frame_boxes",
   "xsxb_estimate_boxes",
   "xsxb_update_timing",
@@ -201,7 +202,7 @@ function toolDefinitions() {
     {
       name: "xsxb_find_loop",
       description:
-        "Rank loop-segment candidates with the same Tuner loop finder. Query an imported animation, a PNG directory, or file_paths. Does not mutate frames; apply a candidate with xsxb_reorganize_frames order. oneShotLikely is set when the recommended loop covers less than half of a clip with 12+ frames — inspect sheets or use xsxb_find_motion instead of applying a burst.",
+        "Rank loop-segment candidates with the same Tuner loop finder. Query an imported animation, a PNG directory, or file_paths. Does not mutate frames; apply a candidate with xsxb_reorganize_frames order. oneShotLikely means a short burst inside a longer clip — inspect the preview or use xsxb_find_motion. A solid interior cycle in a long take is not a one-shot. Prefer xsxb_analyze after import.",
       inputSchema: {
         type: "object",
         properties: {
@@ -328,6 +329,94 @@ function toolDefinitions() {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    {
+      name: "xsxb_analyze",
+      description:
+        "One-pass clip analysis after import: duplicates, loop, and motion window. Decodes each PNG once. Writes a grid=false preview sheet of the recommended window (loop, or motion when oneShotLikely). Does not mutate frames; apply with xsxb_reorganize_frames using loop.recommended.order or motion.order. Look at preview.path — do not export_sheet every candidate. oneShotLikely means a short burst inside a longer clip; a solid interior cycle in a long take is not a one-shot. After duplicates, do not apply order when autoAdjustedThreshold is set unless you passed auto_adjust. Surgical find_loop / find_duplicates / find_motion remain for a single query.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...animationProperties,
+          directory: {
+            type: "string",
+            description: "Absolute PNG sequence directory. Overrides the imported animation when set.",
+          },
+          file_paths: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Absolute PNG paths in playback order. Overrides directory and the imported animation when set.",
+          },
+          threshold: {
+            type: "number",
+            minimum: ORGANIZER_SIMILARITY_THRESHOLD.min,
+            maximum: ORGANIZER_SIMILARITY_THRESHOLD.max,
+            default: ORGANIZER_SIMILARITY_THRESHOLD.fallback,
+            description: "Organizer 相似度阈值 / 重复比例 slider. Higher keeps more near-duplicates.",
+          },
+          duplicate_ratio: {
+            type: "number",
+            minimum: ORGANIZER_SIMILARITY_THRESHOLD.min,
+            maximum: ORGANIZER_SIMILARITY_THRESHOLD.max,
+            default: ORGANIZER_SIMILARITY_THRESHOLD.fallback,
+            description: "Alias of threshold. Same organizer 重复比例 slider.",
+          },
+          auto_adjust: {
+            type: "boolean",
+            default: false,
+            description:
+              "If true, apply the finder's lowered threshold when nothing matches the requested slider. Default keeps order unchanged and reports autoAdjustedThreshold / suggestedOrder.",
+          },
+          min_period: {
+            type: "integer",
+            minimum: 2,
+            description: "Smallest loop period to consider. Defaults to the Tuner minimum of 2.",
+          },
+          max_period: {
+            type: "integer",
+            minimum: 2,
+            description: "Largest loop period to consider. Defaults to two-thirds of the frame count.",
+          },
+          start_frame: {
+            type: "integer",
+            minimum: 0,
+            description: "Ignore loop candidates that start before this 0-based index.",
+          },
+          preference: {
+            type: "string",
+            enum: ["auto", "short", "long"],
+            default: "auto",
+            description: "Bias loop ranking toward shorter or longer periods without dropping valid ones.",
+          },
+          boundary_factor: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            default: 0.85,
+            description: "Same Tuner seam threshold as the organizer loop search.",
+          },
+          sample_size: {
+            type: "integer",
+            minimum: 8,
+            maximum: 256,
+            default: 256,
+            description: "Square analysis sample. Matches the Tuner 256×256 reference size.",
+          },
+          preview: {
+            type: "boolean",
+            default: true,
+            description: "Write a contact sheet of the recommended window. Default true.",
+          },
+          output_path: {
+            type: "string",
+            description:
+              "Preview PNG destination inside the XSXB root. Relative paths hang off the current project's .xsxb/ folder.",
+          },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     {
       name: "xsxb_update_frame_boxes",

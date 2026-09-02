@@ -35,6 +35,7 @@ const {
   findDuplicatesInPngFiles,
   findLoopInPngFiles,
   resolveExternalLoopFrames,
+  analyzePngFiles,
 } = require("./xsxb_mcp_loop");
 const {
   describeGroupGrid,
@@ -1286,6 +1287,95 @@ function createXsxbMcpService(options = {}) {
         cy: frame.cy,
       })),
     };
+  }
+
+  /**
+   * Writes a grid=false contact sheet of the recommended analyze window.
+   * @param {object} args Tool arguments.
+   * @param {object|null} project Active project when known.
+   * @param {{profileId?:string,animationId?:string}} payload Identity fields.
+   * @param {object} analyzed Compact analysis.
+   * @param {Array<{data:Uint8ClampedArray,width:number,height:number}>} images Decoded frames.
+   * @returns {{kind:string,path:string,start:number,end:number,frameCount:number}} Preview receipt.
+   */
+  function writeAnalyzePreview(args, project, payload, analyzed, images) {
+    const loop = analyzed.loop.recommended;
+    const useLoop = Boolean(loop) && analyzed.loop.oneShotLikely !== true;
+    const start = useLoop ? loop.start : analyzed.motion.start;
+    const end = useLoop ? loop.end : analyzed.motion.end;
+    const selected = images.slice(start, end + 1);
+    if (!selected.length) {
+      throw new Error("Analyze preview has no frames in the recommended window.");
+    }
+    const sheet = renderContactSheet(selected, {
+      cell: args.cell === undefined ? 160 : Math.max(8, Number(args.cell)),
+      pad: 8,
+      columns: Math.min(selected.length, 8),
+      startIndex: start,
+      markFrame: start,
+      grid: false,
+    });
+    const defaultName = `${payload.profileId || "clip"}_${payload.animationId || "preview"}_analyze.png`;
+    const outputPath = resolveMcpArtifactPath(args.output_path, {
+      root,
+      artifactDir: currentArtifactDir(project),
+      defaultName,
+      extensionPattern: /\.png$/i,
+      extensionLabel: ".png",
+    });
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, encodePngRgba(sheet.data, sheet.width, sheet.height));
+    return {
+      kind: useLoop ? "loop" : "motion",
+      path: outputPath,
+      start,
+      end,
+      frameCount: selected.length,
+    };
+  }
+
+  /**
+   * One-pass duplicate, loop, and motion analysis after import.
+   * @param {object} args Tool arguments.
+   * @returns {object} Compact analysis receipt.
+   */
+  function analyzeClip(args = {}) {
+    const external = resolveExternalLoopFrames(args);
+    const source = external?.source || "animation";
+    let filePaths = external?.filePaths || [];
+    const payload = { source, applied: false };
+    let project = null;
+    if (!external) {
+      const selection = animationFor(args);
+      payload.projectId = selection.project.id;
+      payload.profileId = selection.profile.id;
+      payload.animationId = String(selection.animation.id || selection.animation.name);
+      filePaths = collectFramePaths(selection.project, selection.animation);
+      project = selection.project;
+    } else {
+      project = projectStore.activeProject(context.projectId);
+    }
+    if (args.duplicate_ratio !== undefined && args.threshold !== undefined) {
+      if (Number(args.duplicate_ratio) !== Number(args.threshold)) {
+        throw new Error("threshold and duplicate_ratio disagree. Pass only one.");
+      }
+    }
+    const analyzed = analyzePngFiles(filePaths, {
+      minPeriod: args.min_period,
+      maxPeriod: args.max_period,
+      startFrame: args.start_frame,
+      preference: args.preference,
+      boundaryFactor: args.boundary_factor,
+      sampleSize: args.sample_size,
+      threshold: args.duplicate_ratio !== undefined ? args.duplicate_ratio : args.threshold,
+      autoAdjust: booleanFlag(args.auto_adjust, false),
+    });
+    const images = analyzed.images;
+    delete analyzed.images;
+    const preview = booleanFlag(args.preview, true)
+      ? writeAnalyzePreview(args, project, payload, analyzed, images)
+      : { skipped: true };
+    return { ...payload, ...analyzed, preview };
   }
 
   /**
@@ -2570,6 +2660,7 @@ function createXsxbMcpService(options = {}) {
     xsxb_find_loop: findLoop,
     xsxb_find_duplicates: findDuplicates,
     xsxb_find_motion: findMotion,
+    xsxb_analyze: analyzeClip,
     xsxb_update_frame_boxes: updateFrameBoxes,
     xsxb_estimate_boxes: estimateBoxes,
     xsxb_update_timing: updateTiming,
