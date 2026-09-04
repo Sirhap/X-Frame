@@ -1,5 +1,7 @@
 # 三个开源 Computer Use 项目的源码对比及对 XSXB MCP 的启示
 
+> MCP 实现已迁到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。下文里指向本仓 `mcp/*.js` 的链接已失效，请到那个仓库对照源码。
+
 研究日期：2026-09-03
 
 ## 结论先行

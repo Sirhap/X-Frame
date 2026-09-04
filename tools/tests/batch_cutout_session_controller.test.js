@@ -435,7 +435,7 @@ test("/tools/cutout session import keys the white plate not the red body", async
 
 test("/tools/cutout session import does not recut already-cut pale hair", async () => {
   const { estimateBackgroundColor } = require("../animation_tuner/public/batch_cutout_background_estimator");
-  const { alreadyCutOut } = require("../xsxb_mcp_cutout");
+  const { alreadyCutOut } = require("../animation_tuner/public/batch_cutout_background_estimator");
   const source = paleEdgeCutSource();
   assert.equal(alreadyCutOut(source.data, source.width, source.height), true);
   const { controller, state } = createFixture({ estimateBackgroundColor });

@@ -41,7 +41,7 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 - `tools/godot_sync.js` 和 `tools/godot_runtime.js`：把调参数据、素材和 runtime 同步到 Godot 项目。
 - `skills/xsxb-animation-production/`：从动画需求、生成/已有素材到导入、同步、验证和启动工作台的上层 Codex/Agent skill。
 - `skills/xsxb-frame-tuner/`：具体 XSXB 导入、整理、调参、Godot runtime 同步和验证执行层 skill。
-- `mcp/`：XSXB MCP 实现（`xsxb_mcp_server.js` 等）以及接入说明、Cursor 示例配置。`tools/xsxb_mcp_*.js` 只是兼容转发，前端界面代码不经过这里。
+- MCP 已迁到独立仓库 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。本仓 `mcp/README.md` 只留指向。
 - `data/`、`workspace/`、`audio/`：本地运行时目录。真实项目数据不提交。
 
 ## 安装方式
@@ -54,7 +54,7 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 以后处理 Godot 帧动画制作、角色导入、动画追加、碰撞框调参、音效/挂件同步时，默认使用 `$xsxb-animation-production`；具体 XSXB 数据操作继续使用 `$xsxb-frame-tuner`。
 ```
 
-Cursor 或其他 MCP 客户端接入本地 STDIO 服务时，见 [`mcp/README.md`](mcp/README.md)。实现没有单独拆仓，示例配置在 [`mcp/cursor.mcp.example.json`](mcp/cursor.mcp.example.json)。
+Cursor 或其他 MCP 客户端接入本地 STDIO 服务时，见独立仓库 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)，说明在该仓 `mcp/README.md`。本仓库不再带 MCP 实现。
 
 ## 使用方式
 

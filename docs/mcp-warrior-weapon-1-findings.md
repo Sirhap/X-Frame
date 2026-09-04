@@ -1,5 +1,7 @@
 # 战士皮肤武器1 · MCP 实测报告
 
+> MCP 实现已迁到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。本文是当时的实测记录。
+
 日期：2026-09-03  
 路径：user-xsxb MCP（会话刚 reload），不是 Node 单元测试。  
 素材：站姿人+刀 JPG、单独斜置冰剑 JPG（皆 1408×1408 黑底）、挥砍片 MP4（944×944，6.04s，145 帧 @24fps）。  

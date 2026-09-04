@@ -115,62 +115,9 @@ For a main character attack animation plus an ordered attachment sequence such a
 
 Do not use MCP for this local attachment workflow. The Core/CLI owns deterministic data operations; Codex owns orchestration and visual judgment; the browser plugin is reserved for rendered QA and exceptional-frame tuning.
 
-## MCP 工程流程
+## MCP
 
-MCP v0.2 回执的业务字段位于 `data`。`ok` 只表示工具调用完成；分别检查 `execution.effect`、`verification.status`、`observation` 和 `escalation`。使用观察结果重排帧或写入 A1 cell 时传回 `basis_snapshot_id`，静图 crop/place 必须传精确视图的 `overlay_id`。
-
-素材感知固定为代码优先：先调用 `xsxb_detect_regions provider=code|auto`，使用 alpha、连通域、颜色、形状和时序证据。`auto` 只有在代码置信度不足或存在歧义时才尝试本地 Florence-2；模型不可用时查看候选 overlay，不得把未验证的 region 直接用于 mutation，也不得改用自由像素坐标。
-
-连上 xsxb 之后，工具 playbook 之前先走这四步。不要一上来连打导入/抠图。
-
-1. **开工先分析：** 用一句话写下用户要的结果，`xsxb_list_projects` / `xsxb_get_project` 看当前项目和动画，再选 playbook（走循环锁尺、视频成循环、静图 place、刀光 smear）。选错 playbook 比少调一个工具更糟。
-2. **多步用 todo：** 把步骤写成有序列表（例如导入 → 抠图 → 看 `preview.path` → 种脚 → 导出）。做完一项勾掉再开下一项。
-3. **完成一项就 check：** 每个会改盘的工具之后，打开图（`preview.path`、overlay、gif、`grid=false` 表），不要只看 `confirmed` / `keyed`。眼睛不过就停在这一项修，不要继续 playbook。
-4. **缺能力就报：** 见下面 MCP Feedback。不要默默换工具链假装 MCP 已经覆盖。
-
-## MCP Feedback
-
-When using XSXB MCP: if a tool errors, a needed capability is missing, or you must leave MCP to finish the request, tell the user and raise it to the `XSXB-Frame-Tuner` project. Include tool name, arguments, receipt or error, expected result, and actual result. Do not silently work around a product gap as if the MCP already covers it.
-
-Video-to-loop playbook (simple clip → one looping animation):
-
-1. If the registry has no project, `xsxb_create_project`. Then `xsxb_import_animation` / `xsxb_import_video` the source clip (optional `start_time` / `duration` instead of offline ffmpeg).
-2. `xsxb_cutout` (omit sliders for the shared smart profile) so loop search is not poisoned by a keyed background. Pass `basis_snapshot_id` from `xsxb_get_animation` / `xsxb_analyze`. Look at `preview.path` (magenta). A standing figure that already holds a weapon: `xsxb_place_image` stacks a second blade, it does not swap.
-3. `xsxb_analyze` (one decode: duplicates, loop, motion, plus a `grid=false` preview sheet). Look at `preview.path` — do not `xsxb_export_sheet` every candidate. `oneShotLikely` means a short burst inside a longer clip; a solid interior cycle in a long take is not a one-shot. If `autoAdjustedThreshold` is set, do not apply `duplicates.order` unless you passed `auto_adjust`.
-4. Look at the preview and `xsxb_reorganize_frames` with `loop.recommended.order` or `motion.order`, passing the analyze receipt's `observation.snapshotId` as `basis_snapshot_id`.
-5. Keep character scale consistent: pick one clip as the template, `xsxb_estimate_visual` `reference_animation_id` + `apply`, then `xsxb_cutout apply_visual` with a shared canvas.
-6. Finish with one `xsxb_export_gif` of the kept loop.
-
-Read group coordinates from `xsxb_export_sheet` receipt `grid.cells[row][col]` (row 0 = top, col 0 = left; `x,y` is that square's top-left group corner). Overlay paints matching row/col indices; group numbers are in that JSON — **do not OCR**. Foot origin `0,0`, body is negative y; source animation PNGs stay unchanged. Grid lines follow `grid_density`. Yellow `0,0` is outside the bitmap (`canvasAnchor` `y=height`); last pixel row is group `y=-1` — do not plant soles to `0,0` or they clip 1px. Plant the sole to `y=-1`. `metrics.feetY` is the boot sole and ignores connected bright slash/glow below it; confirm on the overlay before planting. `xsxb_shift_frames` is already in the catalog (`MCP_TOOL_NAMES` / `tools/list`); if a client reports it not found, the session catalog is stale — reload the `xsxb` MCP server. Do not skip planting or convert overlay numbers to canvas pixels. `grid_divs` / `grid_density` already work on `xsxb_export_sheet` / `xsxb_cutout`. Walk-loop plant after measure with `xsxb_plant_feet` (translate only; lock height with `xsxb_register_clip`). Default target is `y=-1`, not `0,0`; still confirm on the overlay. Write tools accept overlay cell ids (`E5` / `e5` / `{cell:"E5"}`) on `xsxb_shift_frames` from/to, `xsxb_plant_feet` `to`, box min/max, attachment `hand`, and trail stick top/bottom — resolved from the frame PNG size plus `grid_divs` / `grid_density` / `grid_scope`; pass the observation's `snapshotId` back as `basis_snapshot_id`. If boots float above the last pixel after rematch, plant with `xsxb_plant_feet` or `xsxb_shift_frames` (positive `dy`); do not guess boot colors. Measure a weapon PNG with `xsxb_measure_image` (`t=0.5` middle of pommel→tip, `t=2/3` or `"2/3"` two-thirds toward the tip); `localFromCenter` is the grip relative to the image center, so attachment offset = hand − `localFromCenter`. Estimate standing scales with `xsxb_estimate_visual`, override with `xsxb_set_visual_transform` if needed, bake group/frame `visual_size` with `xsxb_cutout apply_visual`, and preview with `xsxb_export_gif` or `xsxb_export_sheet`. `xsxb_cutout` sliders (`tolerance`, `feather`, `protected_colors`, …) match the tuner workbench; omit them for the shared smart-cutout profile. Trim one-shot holds with `xsxb_find_motion`. Do not rematch or bake frames outside MCP.
-
-Still-image overlay and place (agent is the eye; MCP does not call a VLM):
-
-1. `xsxb_overlay_grid` on each PNG involved. Look at `overlay_path` and report only speakable cell ids (`A1`–`H8`). Do not OCR pixel boxes or x,y. Receipt `overlay_id` stamps that PNG+view — agent-led calls MUST pass it on `crop_from` and place anchors. If `next` is `crop_from`, overlay the contact cells before placing. Do not mix still `view` / `overlay_id` with animation `grid.cells`. No AX, VLM, or `[0,1000]`.
-2. To refine, call `xsxb_overlay_grid` again with `crop_from: { parent_view, cells, padding_cells, overlay_id }`. Receipt `view` stays in original-image pixels; crop origin equals remapped A1; the new `overlay_id` is for the cropped view.
-3. **图度自检（必做）：** after the user confirms a composite, call `xsxb_plan_place` with `intent`, `read` (contact on both images + optional cells), `physics`, `accept`, and a 3–5 step `plan`. Execute `receipt.brief`. If `receipt.next` is `await_user` or the user asked for plan-first, stop and show the brief. Named contact cells default to `snap: "alpha_centroid"` — never freehand `x,y`.
-4. `xsxb_place_image` with `target_anchor` / `object_anchor` (named cells default `alpha_centroid` when `derive` is omitted; pass `overlay_id`; optional `nudge` `{dx,dy}` or `alpha_*`) and `scale` `relative` or `physical` from the selected span. Pass optional `plan_id` from the brief. Receipt `resolved` is MCP pixels (debug only); inspect `verify.status` and `verify_overlay_path`. Never freehand `x,y`. `layer` `under_target` puts the object under opaque pixels inside the target cell union; `behind` restores every opaque target pixel; omit for `front`. `rotation` is clockwise degrees around the object anchor (screen y-down) from the pose you see. The tool composites only — it does not redraw either sprite. Inspect `verify_overlay_path` against the accept criteria.
-5. `xsxb_measure_image` `anchor=alpha_bottom` returns the same opaque-foot geometry.
-6. `xsxb_cutout` `file_path` runs the same smart-cutout on one workspace PNG.
-
-Attack-trail sickle (像素层, not Hermite mesh):
-
-Look at **this** animation's frames (sheet / `xsxb_overlay_grid`) and **trace the striking-mass** (weapon head) cell to cell. The smear arc is that observed motion — do not pick a canned chop or 上挑 recipe. A clip like 牛来's plunger that travels overhead then down reads as a downward sickle; a clip whose head scoops upward reads as 上挑. Same playbook.
-
-The generic playbook is only the **skeleton**. Before painting, call `xsxb_plan_smear` with the motion you actually read, `path_kind` `polyline` or `smooth_arc`, sampled color, and per-frame start/end/head cells. `receipt.brief` is the clip-specific prompt — execute that brief. Do not jump from the skeleton to GenerateImage.
-
-Use `xsxb_add_attack_trail` only when that traced path is already a smooth arc that matches the smear you want. Mesh `color` is the striking mass or a user-named hex — do not hardcode red. If what you traced is a polyline that should still read as a sickle (牛来 chop across then down, e.g. D1→G3 then H8, is one case; an 上挑 clip can fail the same way) — do **not** bind Hermite sticks. That mesh always reads as a 7字折杆, a diagonal slice, or a column plus hook. `tangentStrength`, `reverseDirection`, or extra mid sticks only swap 不够弯 and 7字.
-
-Paint the 拖影 as a 像素层 月牙/镰刀 along the traced path:
-
-0. **Lock per-frame start and end cells first** (via `xsxb_plan_smear`). Start = where this smear begins (the far cell already swept). End = on the leading/outer side of the current striking face — do not pin the head on the striking-mass cell (that paints the ribbon onto the cup/shaft). Keep the band tight: `layer` `behind` so opaque weapon pixels punch through (hairline readable cup). Reject a full-grid-cell void. The smear occupies the front half of the weapon (striking-mass side), not the grip, not overlapping the weapon sprite, and not farther ahead than this frame's cup has reached.
-1. Take smear color from the striking mass or the named hex — do not hardcode red. Generate a hollow sickle ribbon on pure white (pixel art; no character, no text) that follows those locked cells. Not a solid fan or triangle slice. If a GIF/sheet already passed eye QA, pass `accepted_path` and reuse it — do not GenerateImage a weaker sickle.
-2. `xsxb_cutout` the white; `protected_colors` for those smear colors.
-3. `xsxb_overlay_grid` then `xsxb_place_image` with cell anchors onto committed-strike frames. `layer` `behind` on the weapon path; do not cover the face or the weapon. Scale/anchor in cells — do not convert canvas pixels. Do not pin mid-swing at the far end with a large scale (crops).
-4. Timing follows the strike you read: wind-up none or faint; committed swing longest/solid; follow-through a remnant; idle none.
-5. Replace-import, `xsxb_export_gif`, and `xsxb_export_sheet`. GIF forward-play can hide a 7字 — inspect the sheet and the frames. Human inspect sheets pass `grid=false`.
-6. Accept a continuous bow between the chord (locked start→locked end) and the smear band. Reject straight bars, triangular slices, 7字, overlap onto the weapon, and a cell-sized gap that floats the smear. Follow the weapon head, not the palm; keep visible width; obvious on the strike only.
-
-Validated reference (example only, not a canned recipe for other attacks): 牛来 downward plunger chop, polyline D1→G3 then H8, 像素层 月牙, `layer` behind — `exports/niulai-plunger-mcp/niulai-chop-crescent-trail-v4.gif`, `exports/niulai-plunger-mcp/niulai-chop-crescent-trail-v4-sheet.png`.
+MCP 不在本仓库。实现、工具 playbook 和测试在 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。本 skill 只管 Tuner 网页与 CLI。
 
 ## Agent-Facing Commands
 

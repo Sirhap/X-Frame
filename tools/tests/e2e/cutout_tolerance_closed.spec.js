@@ -1,7 +1,7 @@
 "use strict";
 
 const { expect, test } = require("./fixtures");
-const { encodePngRgba } = require("../../xsxb_mcp_cutout");
+const { encodePngRgba } = require("../encode_png_rgba");
 
 const SIZE = 32;
 const BACKGROUND = [255, 255, 255];

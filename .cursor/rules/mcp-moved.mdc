@@ -1,0 +1,12 @@
+---
+description: XSXB MCP 已迁到 x-frame-mcp，不要在本仓找实现
+alwaysApply: true
+---
+
+# MCP 在别的仓库
+
+本仓库是 Frame Tuner 网页。MCP 服务、工具和测试在 **x-frame-mcp**：
+
+https://github.com/Sirhap/x-frame-mcp
+
+本地路径：`/Volumes/other/IdeaProjects/sirhao/x-frame-mcp`。Cursor 指那个仓的 `mcp/xsxb_mcp_server.js`。

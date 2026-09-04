@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- Move XSXB MCP out of this repo into [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp). This tree keeps the Tuner webapp; `mcp/README.md` points at the new project.
+
 ### Features
 
-- Add XSXB MCP receipt v2, content-addressed observation freshness, and code-first region perception with an optional Florence-2 fallback.
 - Add non-destructive local A/B cutout suggestions with a shared zoomable split preview, current/selected/all-frame application, reversible batch transactions, and reusable browser-local presets.
 - Add explicit, confirmed source-clearing actions across the frame organizer, batch cutout, scatter slicer, and video watermark studio; clearing watermark media also deletes its local temporary source and terminal exports.
 - Support guarded clipboard paste for image sequences, video frame extraction, batch cutout, scatter slicing, and local video watermark repair while reusing each tool's existing validation and processing pipeline.
@@ -14,9 +17,6 @@
 
 ### Fixes
 
-- Require `basis_snapshot_id` before animation `xsxb_cutout` via MCP and return the post-write observation instead of treating keyed frames as a stale snapshot.
-- Refuse `xsxb_detect_regions` `output_path` that resolves to a source PNG (`OVERWRITE_SOURCE`).
-- Persist `xsxb_plant_feet` canvas padding into the animation manifest height so Tuner/Godot origin matches the PNG.
 - Cap `pngInfo` inflate with the same decoded-pixel budget as `parsePng` (`PNG_PIXEL_LIMIT`).
 - Keep every playable source frame in Lite output while deriving additional trail samples only from its real duration, independent of stick count or saved stick phases.
 - Avoid floating-point over-sampling at exact duration boundaries and distribute integer Sheet durations without changing the animation total.

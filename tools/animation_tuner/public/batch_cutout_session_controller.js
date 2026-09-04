@@ -70,12 +70,7 @@
       (typeof module === "object" && module.exports
         ? require("./batch_cutout_background_estimator")
         : root?.BatchCutoutBackgroundEstimator) || {};
-    const alreadyCutOut =
-      options.alreadyCutOut ||
-      estimatorApi.alreadyCutOut ||
-      (typeof module === "object" && module.exports
-        ? require("../../xsxb_mcp_cutout").alreadyCutOut
-        : null);
+    const alreadyCutOut = options.alreadyCutOut || estimatorApi.alreadyCutOut || null;
     if (
       typeof alreadyCutOut === "function" &&
       alreadyCutOut(

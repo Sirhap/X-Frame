@@ -759,7 +759,7 @@ test("/tools/cutout file import keys the white plate not the red body", async ()
 
 test("/tools/cutout file import does not recut already-cut pale hair", async () => {
   const { estimateBackgroundColor } = require("../animation_tuner/public/batch_cutout_background_estimator");
-  const { alreadyCutOut } = require("../xsxb_mcp_cutout");
+  const { alreadyCutOut } = require("../animation_tuner/public/batch_cutout_background_estimator");
   const width = 32;
   const height = 32;
   const data = new Uint8ClampedArray(width * height * 4);

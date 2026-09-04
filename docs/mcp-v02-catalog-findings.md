@@ -1,5 +1,7 @@
 # XSXB MCP v0.2 · 全目录用例实测
 
+> MCP 实现已迁到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。本文是当时的实测记录。
+
 日期：2026-09-03  
 路径：隔离 `service.callMcp` / `handleMessage`（与 live xsxb 同一套 handler）。6 个 agent 并行，每组独立临时 root，不改 `emberline_enemies` / `warrior_qa` 现有帧。  
 Live 开工前 active：`emberline_enemies`。收尾仍是它。

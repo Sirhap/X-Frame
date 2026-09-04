@@ -1,5 +1,7 @@
 # XSXB Web、MCP 与本地 Bridge 架构
 
+> MCP 实现已迁到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。本文是当时的架构笔记，不是本仓库里的可运行代码。
+
 ## 目标
 
 将 XSXB Frame Tuner 的操作界面部署为网站，同时让 Codex 等 AI 客户端通过 MCP 操作本地图片、视频和 Godot 项目。

@@ -1,5 +1,7 @@
 # Design: `xsxb_plan_place` — 图度自检后再贴图
 
+> MCP 实现已迁到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。本文是当时的设计笔记。
+
 Date: 2026-08-29  
 Status: implemented  
 Branch: `cursor/plan-place-brief-857a`

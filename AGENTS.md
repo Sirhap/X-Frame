@@ -45,21 +45,15 @@ Playwright 用例通过 `tools/tests/e2e/fixtures.js` 在每个测试前把 `XSX
 
 容差滑块的下限是 `-1`，那是它的**关闭档**：参考替换按 `距离 <= 容差` 判定，`-1` 匹配不到任何像素。`smart_cutout_defaults.js` 里曾把 `tolerance` 写成 `-1`，导致「智能抠图」跑完、进度条走完、状态显示「已回写 N 帧」，但白底图一个像素都没抠掉（绿幕图只剩 alpha≈13 的灰雾，勉强看着像抠了）。滑块自身的默认值是 `1`，`PROCESSING_PARAMETER_RANGES.tolerance.fallback` 也是 `1`。改这套参数时先用 `tools/tests/smart_cutout_defaults.test.js` 验结果，别只看数值合不合法。
 
-**这份参数是前端和 MCP 共用的。** `xsxb_cutout` 经 `scatter_slice_smart_cutout` 走同一套默认值，所以前端抠图的参数 bug 会等量地出现在 MCP 工具里。改动之后两边都要验。
+**这份参数是前端抠图用的。** 改这套参数时先用 `tools/tests/smart_cutout_defaults.test.js` 验结果，别只看数值合不合法。MCP 侧已迁到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)，那边若仍共用同一套默认值，两边都要验。
 
 **「已抠过」的判定别只看四角。** `alreadyCutOut` 原来只采样四个角像素，一张背景还在、但角上恰好透明的帧会被判为「抠过了」直接 skip，回执照样报成功——又是一次「报告干了活、其实没动」。现在改成采样整圈边框、过半透明才算抠过：背景还在的帧边框几乎全不透明，已抠帧只在主体或刀光出画的地方贴边，两者余量都很大。别把阈值调到 0.9 那么紧，刀光扫过底边就能占掉 12%。
 
 **抠图必须可逆。** 智能抠图写回的是 `editedCanvas`；单帧再进抠图台时要用 `cutoutSourceCanvas`（没有就退回 `editedCanvas`）当源，不能拿抠完的结果当源再抠一遍，否则调参只能越抠越空，参数还原也不可能回到原图。第一次写回时钉住源图，翻转时源图一起翻转。
 
-## MCP 的约定
+## MCP
 
-- **工具参数在 `call()` 里按 schema 校验**。目录声明了 `additionalProperties: false`，`xsxb_mcp_schema.js` 会真的执行它：拼错的参数直接报错并提示最接近的正确名字，而不是被丢掉、让工具拿默认值跑完。
-- **校验不能收紧现有用法**。handler 一直接受 agent 常发的 `fps: "12"`、`sync: "true"`，校验器要放行这些，只拒绝无法解释的输入。`xsxb_mcp_schema.test.js` 里有一组专门守这个宽容度的用例。
-- **新增 schema 关键字要同步校验器**。`xsxb_mcp_schema.test.js` 会遍历整个目录，用到校验器不认识的关键字就直接失败——加 `exclusiveMinimum` 那次就是它当场抓出来的。
-- **写盘路径要留在 XSXB 根目录内**。帧路径本来就有沙箱。MCP 预览产物（GIF、sheet、overlay、默认 place / 散图抠图）写到**当前 Tuner 项目工作区的 `.xsxb/`**，不要堆到 MCP 仓库根目录的 `exports/`。相对 `output_path` 挂在 `.xsxb/` 下；绝对路径必须落在根目录内，且不能写进仓库根 `exports/`。动画帧本身仍写回项目 assets。agent 传入的 `file_path` 有 64 MB 上限，靠 `requireExistingFile` 的 stat 拦下，不会先读进内存。
-- **模块分工**：实现在 `mcp/`。`xsxb_mcp_tool_catalog.js` 只放 schema 声明，`xsxb_mcp_arguments.js` 放参数规整，`xsxb_mcp_processes.js` 放 ffmpeg 与 Tuner 子进程，`xsxb_mcp_service.js` 只剩共享状态的 handler 闭包。新工具按这个分工放进 `mcp/`，别再堆回 `tools/`。`tools/xsxb_mcp_*.js` 只是兼容转发。
-- **别丢目标**：过几轮对话或修完一刀代码之后，仍以用户最初要的那件东西为终点。中间修的缺陷、回执、具象结果（拖影/GIF/网格）都不是新任务。详见 `.cursor/rules/keep-user-goal.mdc`。
-- **MCP 会话流程**写在 `initialize.instructions` 开头和 skill「MCP 工程流程」：开工先分析、多步 todo、每步看图。那是给连上 xsxb 的 Agent 的，不是替代本文件的测试门禁。
+本仓库不再包含 MCP 实现。要看或改 XSXB MCP，请到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。
 
 ## Agent skills
 

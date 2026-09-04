@@ -2,7 +2,9 @@
 
 日期：2026-09-03
 
-这是 **用例文档**（按项执行和验收），不是 `tools/tests/*.test.js` 的替代。自动化门禁仍走 `npm run check:mcp-v2`。
+> MCP 实现已迁到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。本文是当时的用例记录。自动化门禁在那个仓库跑 `npm run check:mcp-v2`。
+
+这是 **用例文档**（按项执行和验收），不是 `tools/tests/*.test.js` 的替代。
 
 目标：目录里 **每一个** 公开工具至少打一次真实 `callMcp`（Cursor xsxb 或同进程 `service.callMcp`），覆盖 v0.2 回执、快照/overlay 新鲜度、以及会改像素的步骤必须看图。
 
