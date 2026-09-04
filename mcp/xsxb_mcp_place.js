@@ -5,10 +5,17 @@
  * Cell ids are A1-style. Geometry stays in original-image pixels. No VLM.
  */
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { ALPHA_VISIBLE, decodePngRgba, encodePngRgba } = require("./xsxb_mcp_cutout");
-const { mcpArtifactDir, requireExistingFile, resolveMcpArtifactPath } = require("./xsxb_mcp_arguments");
+const {
+  mcpArtifactDir,
+  requireExistingFile,
+  resolveMcpArtifactPath,
+  booleanFlag,
+} = require("./xsxb_mcp_arguments");
+const { measureLongAxis } = require("./xsxb_mcp_visual_qa");
 
 const DEFAULT_GRID = 8;
 const GRID_MIN = 2;
@@ -26,7 +33,7 @@ const DERIVE_MODES = Object.freeze([
   "right_center",
   "median_center",
 ]);
-const ALPHA_MODES = Object.freeze(["alpha_center", "alpha_bottom_center", "alpha_support"]);
+const ALPHA_MODES = Object.freeze(["alpha_center", "alpha_centroid", "alpha_bottom_center", "alpha_support"]);
 const LAYER_MODES = Object.freeze(["front", "behind", "under_target"]);
 const LABEL_MAX_SCALE = 2;
 
@@ -171,6 +178,54 @@ function requireView(value, label = "view") {
 }
 
 /**
+ * Canonical JSON for an overlay view stamp. Key order is fixed.
+ * @param {object} view Normalized view.
+ * @returns {string} Canonical JSON.
+ */
+function canonicalOverlayView(view) {
+  const grid = requireView(view);
+  return JSON.stringify({
+    x: grid.x,
+    y: grid.y,
+    width: grid.width,
+    height: grid.height,
+    rows: grid.rows,
+    cols: grid.cols,
+  });
+}
+
+/**
+ * Content hash for one PNG + view. Not a session registry.
+ * @param {Buffer|Uint8Array} pngBytes Source PNG file bytes.
+ * @param {object} view Overlay view.
+ * @returns {string} overlay_id.
+ */
+function overlayIdFor(pngBytes, view) {
+  const digest = crypto.createHash("sha1").update(pngBytes).update(canonicalOverlayView(view)).digest("hex");
+  return `ovl_${digest.slice(0, 12)}`;
+}
+
+/**
+ * Hard-fails when a provided overlay_id does not match the current file+view.
+ * @param {string} filePath PNG path.
+ * @param {object} view Overlay view.
+ * @param {unknown} overlayId Caller stamp.
+ * @param {string} label Error label.
+ * @returns {void}
+ */
+function assertOverlayId(filePath, view, overlayId, label) {
+  if (overlayId === undefined || overlayId === null || String(overlayId).trim() === "") return;
+  const expected = overlayIdFor(fs.readFileSync(filePath), view);
+  const received = String(overlayId).trim();
+  if (received !== expected) {
+    throwCode(
+      "STALE_OVERLAY",
+      `${label} overlay_id is stale for the current PNG and view. Received ${received}.`,
+    );
+  }
+}
+
+/**
  * Pixel box of one cell in original-image space. Far edge is exclusive.
  * @param {object} view Parent view.
  * @param {unknown} cellId Speakable id.
@@ -285,12 +340,28 @@ function deriveFromCells(spec) {
  * @returns {{minX:number,minY:number,maxX:number,maxY:number}} Box.
  */
 function opaqueBBox(rgba, width, height) {
+  return opaqueBBoxClipped(rgba, width, height, null);
+}
+
+/**
+ * Opaque bounding box, optionally clipped to a half-open region in image pixels.
+ * @param {Uint8ClampedArray} rgba Pixels.
+ * @param {number} width Width.
+ * @param {number} height Height.
+ * @param {{x1:number,y1:number,x2:number,y2:number}|null} [clip] Optional clip.
+ * @returns {{minX:number,minY:number,maxX:number,maxY:number}} Box.
+ */
+function opaqueBBoxClipped(rgba, width, height, clip = null) {
+  const xStart = clip ? Math.max(0, Math.floor(clip.x1)) : 0;
+  const yStart = clip ? Math.max(0, Math.floor(clip.y1)) : 0;
+  const xEnd = clip ? Math.min(width, Math.ceil(clip.x2)) : width;
+  const yEnd = clip ? Math.min(height, Math.ceil(clip.y2)) : height;
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
+  for (let y = yStart; y < yEnd; y += 1) {
+    for (let x = xStart; x < xEnd; x += 1) {
       if (rgba[(y * width + x) * 4 + 3] <= ALPHA_VISIBLE) continue;
       if (x < minX) minX = x;
       if (y < minY) minY = y;
@@ -298,7 +369,15 @@ function opaqueBBox(rgba, width, height) {
       if (y > maxY) maxY = y;
     }
   }
-  if (!Number.isFinite(minX)) throw new Error("Image has no opaque pixels to anchor.");
+  if (!Number.isFinite(minX)) {
+    const error = new Error(
+      clip
+        ? "Snap region has no opaque pixels. Pick cells that cover the subject, or omit snap."
+        : "Image has no opaque pixels to anchor.",
+    );
+    error.code = clip ? "SNAP_EMPTY_REGION" : "ALPHA_EMPTY";
+    throw error;
+  }
   return { minX, minY, maxX, maxY };
 }
 
@@ -308,16 +387,40 @@ function opaqueBBox(rgba, width, height) {
  * @param {number} width Width.
  * @param {number} height Height.
  * @param {string} mode Alpha mode.
+ * @param {{x1:number,y1:number,x2:number,y2:number}|null} [clip] Optional cell-union clip.
  * @returns {{x:number,y:number,bbox:object}} Anchor.
  */
-function alphaAnchor(rgba, width, height, mode) {
+function alphaAnchor(rgba, width, height, mode, clip = null) {
   if (!ALPHA_MODES.includes(mode)) {
-    throw new Error(`object_anchor.mode must be one of: ${ALPHA_MODES.join(", ")}. Received: ${mode}`);
+    throw new Error(`snap/object_anchor mode must be one of: ${ALPHA_MODES.join(", ")}. Received: ${mode}`);
   }
-  const bbox = opaqueBBox(rgba, width, height);
+  const bbox = opaqueBBoxClipped(rgba, width, height, clip);
   const centerX = (bbox.minX + bbox.maxX + 1) / 2;
   const centerY = (bbox.minY + bbox.maxY + 1) / 2;
   if (mode === "alpha_center") return { x: centerX, y: centerY, bbox };
+  if (mode === "alpha_centroid") {
+    const xStart = clip ? Math.max(0, Math.floor(clip.x1)) : bbox.minX;
+    const yStart = clip ? Math.max(0, Math.floor(clip.y1)) : bbox.minY;
+    const xEnd = clip ? Math.min(width, Math.ceil(clip.x2)) : bbox.maxX + 1;
+    const yEnd = clip ? Math.min(height, Math.ceil(clip.y2)) : bbox.maxY + 1;
+    let n = 0;
+    let sx = 0;
+    let sy = 0;
+    for (let y = yStart; y < yEnd; y += 1) {
+      for (let x = xStart; x < xEnd; x += 1) {
+        if (rgba[(y * width + x) * 4 + 3] <= ALPHA_VISIBLE) continue;
+        n += 1;
+        sx += x;
+        sy += y;
+      }
+    }
+    if (!n) {
+      const error = new Error("Snap region has no opaque pixels for alpha_centroid.");
+      error.code = "SNAP_EMPTY_REGION";
+      throw error;
+    }
+    return { x: sx / n, y: sy / n, bbox, samples: n };
+  }
   if (mode === "alpha_bottom_center") return { x: centerX, y: bbox.maxY + 1, bbox };
   const bboxHeight = bbox.maxY - bbox.minY + 1;
   const band = Math.max(1, Math.round(bboxHeight * SUPPORT_BAND_RATIO));
@@ -842,19 +945,38 @@ function resolveOutputPath(args, options) {
 }
 
 /**
- * Builds the cells lookup for one view.
+ * Builds the cells lookup for one view. Pixel boxes stay internal via cellBox.
  * @param {object} view View.
- * @returns {object} Id → box.
+ * @returns {object} Id → {id}.
  */
 function cellsLookup(view) {
   const cells = {};
   for (let row = 1; row <= view.rows; row += 1) {
     for (let col = 0; col < view.cols; col += 1) {
       const id = `${String.fromCharCode(65 + col)}${row}`;
-      cells[id] = cellBox(view, id);
+      cells[id] = { id };
     }
   }
   return cells;
+}
+
+/**
+ * Whether this overlay is the full PNG with coarse cells.
+ * @param {object} view View.
+ * @param {{width:number,height:number}} image Decoded image.
+ * @param {object|null} crop Integer crop, if any.
+ * @returns {{next?:string,reason?:string}} Optional next hint.
+ */
+function overlayNextHint(view, image, crop) {
+  if (crop) return {};
+  const full = view.x === 0 && view.y === 0 && view.width === image.width && view.height === image.height;
+  const cellWidth = view.width / view.cols;
+  const shortSide = Math.min(image.width, image.height);
+  if (!full || shortSide <= 512 || !(cellWidth > 40)) return {};
+  return {
+    next: "crop_from",
+    reason: "cell is coarse; crop_from the contact cells for a finer overlay",
+  };
 }
 
 /**
@@ -867,14 +989,16 @@ function overlayGridImage(args = {}, options = {}) {
   const root = path.resolve(options.root || process.cwd());
   const absolute = requireExistingFile(args.file_path, "Overlay image");
   if (!/\.png$/i.test(absolute)) throw new Error("file_path must be a PNG.");
+  const pngBytes = fs.readFileSync(absolute);
   const image = decodePngRgba(absolute);
   const { rows, cols } = resolveGridSize(args);
   let view = { x: 0, y: 0, width: image.width, height: image.height, rows, cols };
   let crop = null;
   let local = { data: new Uint8ClampedArray(image.data), width: image.width, height: image.height };
   if (args.crop_from) {
-    requireKnownKeys(args.crop_from, ["parent_view", "cells", "padding_cells"], "crop_from");
+    requireKnownKeys(args.crop_from, ["parent_view", "cells", "padding_cells", "overlay_id"], "crop_from");
     const parentView = requireView(args.crop_from.parent_view, "crop_from.parent_view");
+    assertOverlayId(absolute, parentView, args.crop_from.overlay_id, "crop_from");
     const union = unionCells(parentView, args.crop_from.cells);
     const padding = Number(args.crop_from.padding_cells || 0);
     const padded = {
@@ -893,33 +1017,136 @@ function overlayGridImage(args = {}, options = {}) {
     view = { x: crop.x, y: crop.y, width: crop.width, height: crop.height, rows, cols };
   }
   const overlay = paintLabeledOverlay(local.data, local.width, local.height, view.rows, view.cols);
-  const overlayPath = resolveOutputPath(args, { root, inputPath: absolute, suffix: "_grid" });
+  const overlayPath = resolveOutputPath(args, {
+    root,
+    artifactDir: options.artifactDir,
+    inputPath: absolute,
+    suffix: crop ? "_grid_crop" : "_grid",
+  });
   fs.mkdirSync(path.dirname(overlayPath), { recursive: true });
   fs.writeFileSync(overlayPath, encodePngRgba(overlay.data, overlay.width, overlay.height));
+  const hint = overlayNextHint(view, image, crop);
   return {
+    overlay_id: overlayIdFor(pngBytes, view),
     view,
     cell_width_px: view.width / view.cols,
     cell_height_px: view.height / view.rows,
     overlay_path: overlayPath,
     cells: cellsLookup(view),
     crop: crop || undefined,
+    ...hint,
   };
 }
 
 /**
- * Resolves the target point from a generic anchor spec.
+ * Resolves the target placement point. Agent speaks cells; MCP emits pixels.
  * @param {object} anchor Target anchor.
- * @returns {{x:number,y:number}} Point.
+ * @param {{data:Uint8ClampedArray,width:number,height:number}|null} [image] Target image (required for snap).
+ * @returns {{x:number,y:number,resolved:object}} Point plus provenance.
  */
-function resolveTargetAnchor(anchor) {
+function resolveTargetAnchor(anchor, image = null) {
   if (!anchor || typeof anchor !== "object") throw new Error("target_anchor is required.");
+  requireKnownKeys(
+    anchor,
+    ["view", "cells", "derive", "snap", "nudge", "x_from", "y_from", "overlay_id"],
+    "target_anchor",
+  );
+  if (anchor.x !== undefined || anchor.y !== undefined) {
+    throwCode(
+      "UNGROUNDED_POINT",
+      "target_anchor cannot take freehand x,y. Report speakable cells (and optional snap/nudge); MCP resolves pixel coordinates in the receipt.",
+    );
+  }
+  /**
+   * Applies optional pixel nudge after cell/snap grounding.
+   * @param {{x:number,y:number,resolved:object}} grounded Point.
+   * @returns {{x:number,y:number,resolved:object}} Nudged point.
+   */
+  function applyNudge(grounded) {
+    if (anchor.nudge === undefined || anchor.nudge === null || anchor.nudge === "") return grounded;
+    requireKnownKeys(anchor.nudge, ["dx", "dy"], "target_anchor.nudge");
+    const dx = Number(anchor.nudge.dx);
+    const dy = Number(anchor.nudge.dy);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+      throw new Error("target_anchor.nudge.dx and dy must be finite pixel numbers.");
+    }
+    const x = grounded.x + dx;
+    const y = grounded.y + dy;
+    return {
+      x,
+      y,
+      resolved: {
+        ...grounded.resolved,
+        before_nudge: { x: grounded.x, y: grounded.y },
+        nudge: { dx, dy },
+        x,
+        y,
+      },
+    };
+  }
   if (anchor.x_from || anchor.y_from) {
     if (!anchor.x_from || !anchor.y_from) {
       throw new Error("target_anchor x_from and y_from must both be provided.");
     }
-    return { x: deriveFromCells(anchor.x_from).x, y: deriveFromCells(anchor.y_from).y };
+    if (anchor.snap) {
+      throw new Error(
+        "target_anchor.snap cannot combine with x_from/y_from; snap on a single cells union instead.",
+      );
+    }
+    const point = { x: deriveFromCells(anchor.x_from).x, y: deriveFromCells(anchor.y_from).y };
+    return applyNudge({
+      ...point,
+      resolved: {
+        mode: "derive_axes",
+        cells: [...(anchor.x_from.cells || []), ...(anchor.y_from.cells || [])],
+        x: point.x,
+        y: point.y,
+        space: "image_pixels",
+      },
+    });
   }
-  return deriveFromCells(anchor);
+  if (!Array.isArray(anchor.cells) || !anchor.cells.length) {
+    throw new Error(
+      "target_anchor requires speakable cells (and view), or x_from/y_from. Do not invent pixel x,y.",
+    );
+  }
+  const view = requireView(anchor.view, "target_anchor.view");
+  const snapMode =
+    anchor.snap !== undefined && anchor.snap !== null && String(anchor.snap).trim() !== ""
+      ? String(anchor.snap).trim()
+      : anchor.derive
+        ? ""
+        : "alpha_centroid";
+  if (snapMode) {
+    if (!image) throw new Error("target_anchor.snap requires the target image.");
+    const box = unionCells(view, anchor.cells);
+    const snapped = alphaAnchor(image.data, image.width, image.height, snapMode, box);
+    return applyNudge({
+      x: snapped.x,
+      y: snapped.y,
+      resolved: {
+        mode: "snap",
+        snap: snapMode,
+        cells: [...anchor.cells],
+        x: snapped.x,
+        y: snapped.y,
+        space: "image_pixels",
+        bbox: snapped.bbox,
+      },
+    });
+  }
+  const point = deriveFromCells(anchor);
+  return applyNudge({
+    ...point,
+    resolved: {
+      mode: "derive",
+      derive: anchor.derive || "center",
+      cells: [...anchor.cells],
+      x: point.x,
+      y: point.y,
+      space: "image_pixels",
+    },
+  });
 }
 
 /**
@@ -930,15 +1157,44 @@ function resolveTargetAnchor(anchor) {
  */
 function resolveObjectAnchor(anchor, image) {
   if (!anchor || typeof anchor !== "object") throw new Error("object_anchor is required.");
+  requireKnownKeys(
+    anchor,
+    ["mode", "view", "cells", "derive", "snap", "measure_t", "overlay_id"],
+    "object_anchor",
+  );
+  if (anchor.measure_t !== undefined && anchor.measure_t !== null && anchor.measure_t !== "") {
+    if (anchor.cells || anchor.mode || anchor.snap) {
+      throw new Error("object_anchor.measure_t cannot combine with mode/cells/snap.");
+    }
+    const measured = measureLongAxis(image.data, image.width, image.height, { t: anchor.measure_t });
+    return { x: measured.at.x, y: measured.at.y, measure_t: measured.t };
+  }
   if (Array.isArray(anchor.cells) && anchor.cells.length) {
     if (!anchor.view || typeof anchor.view !== "object") {
       throw new Error("object_anchor.cells requires view (the overlay that produced those ids).");
     }
+    const view = requireView(anchor.view, "object_anchor.view");
+    const snapMode =
+      anchor.snap !== undefined && anchor.snap !== null && String(anchor.snap).trim() !== ""
+        ? String(anchor.snap).trim()
+        : anchor.derive
+          ? ""
+          : "alpha_centroid";
+    if (snapMode) {
+      const box = unionCells(view, anchor.cells);
+      const snapped = alphaAnchor(image.data, image.width, image.height, snapMode, box);
+      return { x: snapped.x, y: snapped.y, bbox: snapped.bbox, snap: snapMode };
+    }
     return deriveFromCells({
-      view: requireView(anchor.view, "object_anchor.view"),
+      view,
       cells: anchor.cells,
       derive: anchor.derive || "center",
     });
+  }
+  if (anchor.snap) {
+    throw new Error(
+      "object_anchor.snap requires cells (and view) naming the grip region on the object overlay.",
+    );
   }
   return alphaAnchor(image.data, image.width, image.height, anchor.mode || "alpha_center");
 }
@@ -1003,13 +1259,182 @@ function resolveScale(scale, bbox) {
 }
 
 /**
+ * Whether two speakable cell lists name the same set.
+ * @param {unknown} expected Plan cells.
+ * @param {unknown} actual Place cells.
+ * @returns {boolean} Same set.
+ */
+function sameCellSet(expected, actual) {
+  if (!Array.isArray(expected) || !expected.length) return true;
+  if (!Array.isArray(actual) || actual.length !== expected.length) return false;
+  const left = expected.map((id) => parseCellId(id).id).sort();
+  const right = actual.map((id) => parseCellId(id).id).sort();
+  return left.every((id, index) => id === right[index]);
+}
+
+/**
+ * Effective snap used by an anchor after defaulting.
+ * @param {object} anchor Target or object anchor.
+ * @returns {{kind:string,snap?:string}} Kind.
+ */
+function placeSnapKind(anchor) {
+  if (!anchor || typeof anchor !== "object") return { kind: "none" };
+  if (anchor.x_from || anchor.y_from) return { kind: "axes" };
+  if (anchor.snap !== undefined && anchor.snap !== null && String(anchor.snap).trim() !== "") {
+    return { kind: "snap", snap: String(anchor.snap).trim() };
+  }
+  if (anchor.derive) return { kind: "derive" };
+  if (Array.isArray(anchor.cells) && anchor.cells.length) return { kind: "snap", snap: "alpha_centroid" };
+  return { kind: "none" };
+}
+
+/**
+ * Loads a sibling-written place plan JSON.
+ * @param {unknown} planId Plan id.
+ * @param {string} artifactDir Artifact directory.
+ * @returns {object} Plan body.
+ */
+function loadPlacePlan(planId, artifactDir) {
+  const id = String(planId || "").trim();
+  if (!id) return null;
+  const filePath = path.join(artifactDir, "place-plans", `${id}.json`);
+  if (!fs.existsSync(filePath)) {
+    throwCode("STALE_PLAN", `plan_id ${id} was not found in this workspace.`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    throwCode("STALE_PLAN", `plan_id ${id} could not be read.`);
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throwCode("STALE_PLAN", `plan_id ${id} is not a JSON object.`);
+  }
+  return parsed;
+}
+
+/**
+ * Rejects a place call that disagrees with a stored brief.
+ * @param {object} plan Stored plan.
+ * @param {{targetPath:string,objectPath:string,layer:string,targetAnchor:object,objectAnchor:object}} call Place call.
+ * @returns {void}
+ */
+function assertPlanMatches(plan, call) {
+  const storedTarget = path.resolve(String(plan.target_path || ""));
+  const storedObject = path.resolve(String(plan.object_path || ""));
+  if (storedTarget !== call.targetPath || storedObject !== call.objectPath) {
+    throwCode("PLAN_MISMATCH", "plan_id target_path/object_path do not match this place call.");
+  }
+  const targetCells = plan.read?.target_cells;
+  if (
+    Array.isArray(targetCells) &&
+    targetCells.length &&
+    !sameCellSet(targetCells, call.targetAnchor?.cells)
+  ) {
+    throwCode("PLAN_MISMATCH", "plan_id target cells do not match target_anchor.cells.");
+  }
+  const objectCells = plan.read?.object_cells;
+  const objectUsesMeasureT =
+    call.objectAnchor?.measure_t !== undefined &&
+    call.objectAnchor?.measure_t !== null &&
+    String(call.objectAnchor.measure_t).trim() !== "";
+  if (
+    Array.isArray(objectCells) &&
+    objectCells.length &&
+    !objectUsesMeasureT &&
+    !sameCellSet(objectCells, call.objectAnchor?.cells)
+  ) {
+    throwCode("PLAN_MISMATCH", "plan_id object cells do not match object_anchor.cells.");
+  }
+  const proposedLayer = plan.proposed?.layer ? String(plan.proposed.layer).trim() : "";
+  if (proposedLayer && proposedLayer !== call.layer) {
+    throwCode("PLAN_MISMATCH", `plan_id proposed.layer is ${proposedLayer}, place used ${call.layer}.`);
+  }
+  const proposedSnap = plan.proposed?.snap ? String(plan.proposed.snap).trim() : "";
+  if (proposedSnap) {
+    for (const [label, anchor] of [
+      ["target_anchor", call.targetAnchor],
+      ["object_anchor", call.objectAnchor],
+    ]) {
+      const kind = placeSnapKind(anchor);
+      if (kind.kind === "none" || kind.kind === "axes") continue;
+      if (kind.kind === "snap" && kind.snap === proposedSnap) continue;
+      throwCode(
+        "PLAN_MISMATCH",
+        `plan_id proposed.snap is ${proposedSnap}, ${label} used ${kind.kind === "derive" ? "derive" : kind.snap || kind.kind}.`,
+      );
+    }
+  }
+}
+
+/**
+ * Warns when speakable cells were used without an overlay stamp.
+ * @param {object} anchor Anchor.
+ * @param {string} label target_anchor or object_anchor.
+ * @param {string[]} warnings Warning list.
+ * @returns {void}
+ */
+function warnMissingOverlayId(anchor, label, warnings) {
+  if (!Array.isArray(anchor?.cells) || !anchor.cells.length || !anchor.view) return;
+  if (
+    anchor.overlay_id !== undefined &&
+    anchor.overlay_id !== null &&
+    String(anchor.overlay_id).trim() !== ""
+  ) {
+    return;
+  }
+  warnings.push(`${label}.overlay_id omitted: overlay freshness was not checked`);
+}
+
+/**
+ * Whether a (possibly fractional) point sits on an opaque pixel.
+ * @param {{data:Uint8ClampedArray,width:number,height:number}} image Image.
+ * @param {number} x X.
+ * @param {number} y Y.
+ * @returns {boolean} Opaque.
+ */
+function pixelOpaqueAt(image, x, y) {
+  const px = Math.floor(x);
+  const py = Math.floor(y);
+  if (px < 0 || py < 0 || px >= image.width || py >= image.height) return false;
+  return image.data[(py * image.width + px) * 4 + 3] > ALPHA_VISIBLE;
+}
+
+/**
+ * Geometric place verify. Does not claim a visual grip-in-palm.
+ * @param {{targetPoint:object,image:object,layer:string,anchor:object,scaleWarning?:string,wantVerify:boolean}} spec Spec.
+ * @returns {{status:string,checks:object[]}} Verify receipt.
+ */
+function buildPlaceVerify(spec) {
+  const snapMode = spec.targetPoint.resolved?.snap;
+  const footEdge = snapMode === "alpha_bottom_center" || snapMode === "alpha_support";
+  const snapOpaque =
+    !snapMode || footEdge || pixelOpaqueAt(spec.image, spec.targetPoint.x, spec.targetPoint.y);
+  let coverOk = true;
+  if (spec.layer === "under_target") {
+    const box = targetCoverBox(spec.anchor);
+    coverOk = box.x2 > box.x1 && box.y2 > box.y1;
+  }
+  const checks = [
+    { id: "anchor_mapped", ok: true },
+    { id: "snap_opaque", ok: snapOpaque },
+    { id: "under_target_cover", ok: coverOk },
+  ];
+  let status = "confirmed";
+  if (!spec.wantVerify) status = "unverified";
+  else if (!checks.every((check) => check.ok)) status = "unverifiable";
+  return { status, checks };
+}
+
+/**
  * Composites one PNG onto another using generic anchors.
  * @param {object} args Tool arguments.
- * @param {{root:string}} options Service root.
+ * @param {{root:string,artifactDir?:string}} options Service root.
  * @returns {object} Placement receipt.
  */
 function placeImageOnTarget(args = {}, options = {}) {
   const root = path.resolve(options.root || process.cwd());
+  const artifactDir = options.artifactDir || mcpArtifactDir("", root);
   const targetPath = requireExistingFile(args.target_path, "Target image");
   const objectPath = requireExistingFile(args.object_path, "Object image");
   if (!/\.png$/i.test(targetPath) || !/\.png$/i.test(objectPath)) {
@@ -1021,9 +1446,28 @@ function placeImageOnTarget(args = {}, options = {}) {
   if (!LAYER_MODES.includes(layer)) {
     throw new Error(`layer must be ${LAYER_MODES.join("|")}. Received: ${args.layer}`);
   }
+  if (args.plan_id !== undefined && args.plan_id !== null && String(args.plan_id).trim() !== "") {
+    const plan = loadPlacePlan(args.plan_id, artifactDir);
+    assertPlanMatches(plan, {
+      targetPath,
+      objectPath,
+      layer,
+      targetAnchor: args.target_anchor,
+      objectAnchor: args.object_anchor,
+    });
+  }
+  if (args.target_anchor?.overlay_id && args.target_anchor?.view) {
+    assertOverlayId(targetPath, args.target_anchor.view, args.target_anchor.overlay_id, "target_anchor");
+  }
+  if (args.object_anchor?.overlay_id && args.object_anchor?.view) {
+    assertOverlayId(objectPath, args.object_anchor.view, args.object_anchor.overlay_id, "object_anchor");
+  }
+  const warnings = [];
+  warnMissingOverlayId(args.target_anchor, "target_anchor", warnings);
+  warnMissingOverlayId(args.object_anchor, "object_anchor", warnings);
   const target = decodePngRgba(targetPath);
   const object = decodePngRgba(objectPath);
-  const targetPoint = resolveTargetAnchor(args.target_anchor);
+  const targetPoint = resolveTargetAnchor(args.target_anchor, target);
   const objectPoint = resolveObjectAnchor(args.object_anchor, object);
   const bbox = objectPoint.bbox || opaqueBBox(object.data, object.width, object.height);
   const scaled = resolveScale(args.scale, bbox);
@@ -1071,20 +1515,51 @@ function placeImageOnTarget(args = {}, options = {}) {
   } else if (layer === "under_target") {
     restoreOpaqueTarget(dest, target.data, target.width, target.height, targetCoverBox(args.target_anchor));
   }
-  const outputPath = resolveOutputPath(args, { root, inputPath: targetPath, suffix: "_placed" });
+  const outputPath = resolveOutputPath(args, { root, artifactDir, inputPath: targetPath, suffix: "_placed" });
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, encodePngRgba(dest, target.width, target.height));
+  const wantVerify = booleanFlag(args.verify_overlay, true);
+  let verifyOverlayPath;
+  if (wantVerify) {
+    const verifyArgs = {
+      file_path: outputPath,
+      rows: args.target_anchor?.view?.rows,
+      cols: args.target_anchor?.view?.cols,
+    };
+    if (args.verify_overlay_path) verifyArgs.output_path = args.verify_overlay_path;
+    else {
+      verifyArgs.output_path = resolveOutputPath(
+        {},
+        { root, artifactDir, inputPath: outputPath, suffix: "_verify" },
+      );
+    }
+    if (!Number.isInteger(verifyArgs.rows)) delete verifyArgs.rows;
+    if (!Number.isInteger(verifyArgs.cols)) delete verifyArgs.cols;
+    verifyOverlayPath = overlayGridImage(verifyArgs, { root, artifactDir }).overlay_path;
+  }
+  const verify = buildPlaceVerify({
+    targetPoint,
+    image: target,
+    layer,
+    anchor: args.target_anchor,
+    scaleWarning: scaled.warning,
+    wantVerify,
+  });
   return {
     output_path: outputPath,
     scale: scaled.value,
     warning: scaled.warning,
     rotation,
     layer,
-    target: targetPoint,
+    target: { x: targetPoint.x, y: targetPoint.y },
+    resolved: targetPoint.resolved,
     object_anchor: { x: objectPoint.x, y: objectPoint.y },
     mapped,
     left: origin.left,
     top: origin.top,
+    verify_overlay_path: verifyOverlayPath,
+    verify,
+    warnings,
   };
 }
 
@@ -1114,6 +1589,7 @@ module.exports = {
   LABEL_INK,
   LAYER_MODES,
   alphaAnchor,
+  assertOverlayId,
   cellBox,
   integerCrop,
   measureAlphaBottom,
@@ -1121,5 +1597,6 @@ module.exports = {
   parseCellId,
   placeImageOnTarget,
   placementOrigin,
+  overlayIdFor,
   unionCells,
 };

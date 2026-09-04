@@ -596,6 +596,9 @@ function placeOverlayLabels(ticks, originCell, originLabel, lastCell, cell, scal
     pushLabel("row", row, text, box);
   }
   const colCount = cells[0].length;
+  const rowReserve =
+    overlayPlateSize(String(Math.max(0, cells.length - 1)), scale).width + OVERLAY_LABEL_GUTTER + 2;
+  const colMaxX = Math.max(0, cell - rowReserve);
   for (let col = 0; col < colCount; col += 1) {
     const x0 = linePixel(ticks, originCell, "x", xLines[col]);
     const x1 = linePixel(ticks, originCell, "x", xLines[col + 1]);
@@ -614,6 +617,7 @@ function placeOverlayLabels(ticks, originCell, originLabel, lastCell, cell, scal
         },
         cell,
       );
+      if (box.x + box.width > colMaxX) box.x = Math.max(0, colMaxX - box.width);
       pushLabel("col", col, text, box);
       placed = labels.length > before;
     }
@@ -704,15 +708,14 @@ function describeGroupGrid(
     if (axis === "x") {
       const xCanvas = groupToCanvas(group, 0, sourceWidth, sourceHeight, anchorMode);
       const xCell = canvasToCell(xCanvas.x, xCanvas.y, sourceWidth, sourceHeight, cell);
-      const x = Math.round(xCell.x);
-      if (x >= 0 && x < cell)
-        ticks.push({ axis: "x", group: roundTick(group), cell: { x, y: originCell.y } });
+      const x = Math.max(0, Math.min(cell - 1, Math.round(xCell.x)));
+      ticks.push({ axis: "x", group: roundTick(group), cell: { x, y: originCell.y } });
       return;
     }
     const yCanvas = groupToCanvas(0, group, sourceWidth, sourceHeight, anchorMode);
     const yCell = canvasToCell(yCanvas.x, yCanvas.y, sourceWidth, sourceHeight, cell);
-    const y = Math.round(yCell.y);
-    if (y >= 0 && y < cell) ticks.push({ axis: "y", group: roundTick(group), cell: { x: originCell.x, y } });
+    const y = Math.max(0, Math.min(cell - 1, Math.round(yCell.y)));
+    ticks.push({ axis: "y", group: roundTick(group), cell: { x: originCell.x, y } });
   }
   if (spec.explicit && spec.divs) {
     stepX = (span.maxX - span.minX) / spec.divs.x;
@@ -881,6 +884,16 @@ function estimateVisualScales(frameHeights, targetHeight, options = {}) {
   );
   const nativeHeight = median(heights) || 1;
   const target = Math.max(1, Number(targetHeight) || nativeHeight);
+  const equalize = options.equalize === true || options.mode === "equalize";
+  if (equalize) {
+    const frames = heights.map((height, index) => ({
+      index,
+      bodyHeight: height,
+      scale: Number((target / height).toFixed(3)),
+      reason: "equalize",
+    }));
+    return { targetHeight: target, nativeHeight, groupScale: 1, mode: "equalize", frames };
+  }
   const zoomRatio = Math.max(1, Number(options.zoomRatio || 1.12));
   const groupScale = Number((target / nativeHeight).toFixed(3));
   const frames = heights.map((height, index) => {
@@ -894,7 +907,7 @@ function estimateVisualScales(frameHeights, targetHeight, options = {}) {
     }
     return { index, bodyHeight: height, scale: groupScale, reason: "group" };
   });
-  return { targetHeight: target, nativeHeight, groupScale, frames };
+  return { targetHeight: target, nativeHeight, groupScale, mode: "shared", frames };
 }
 
 /**
@@ -1115,8 +1128,11 @@ function drawIndexBadge(rgba, width, originX, originY, cell, value) {
 }
 
 /**
- * Projects opaque pixels onto their longest axis. The pommel is the end closer
- * to the widest cross-section (guard or forte); the far end is the tip.
+ * Projects opaque pixels onto their longest axis (PCA when the mass is diagonal).
+ * Axis-aligned mass (small covariance) may follow the AABB major axis so a wide
+ * pommel does not flip a vertical blade. The pommel is the end closer to the
+ * widest cross-section (guard or forte); the far end is the tip. Endpoints and
+ * t stations are opaque pixels.
  * @param {Uint8ClampedArray|Uint8Array} rgba Pixels.
  * @param {number} width Width.
  * @param {number} height Height.
@@ -1140,33 +1156,32 @@ function measureLongAxis(rgba, width, height, options = {}) {
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
+  let xx = 0;
+  let xy = 0;
+  let yy = 0;
   for (const point of points) {
     if (point.x < minX) minX = point.x;
     if (point.y < minY) minY = point.y;
     if (point.x > maxX) maxX = point.x;
     if (point.y > maxY) maxY = point.y;
+    const dx = point.x - meanX;
+    const dy = point.y - meanY;
+    xx += dx * dx;
+    xy += dx * dy;
+    yy += dy * dy;
   }
   const extentX = maxX - minX;
   const extentY = maxY - minY;
+  const offAxis = Math.abs(xy) > 0.15 * Math.max(xx, yy, 1);
   let axisX;
   let axisY;
-  if (extentY >= extentX * 1.15) {
+  if (!offAxis && extentY >= extentX * 1.15) {
     axisX = 0;
     axisY = 1;
-  } else if (extentX >= extentY * 1.15) {
+  } else if (!offAxis && extentX >= extentY * 1.15) {
     axisX = 1;
     axisY = 0;
   } else {
-    let xx = 0;
-    let xy = 0;
-    let yy = 0;
-    for (const point of points) {
-      const dx = point.x - meanX;
-      const dy = point.y - meanY;
-      xx += dx * dx;
-      xy += dx * dy;
-      yy += dy * dy;
-    }
     const trace = xx + yy;
     const det = xx * yy - xy * xy;
     const eigenvalue = trace / 2 + Math.sqrt(Math.max(0, (trace / 2) ** 2 - det));
@@ -1177,9 +1192,14 @@ function measureLongAxis(rgba, width, height, options = {}) {
       axisY = 0;
     }
   }
-  const axisLength = Math.max(0.0001, Math.hypot(axisX, axisY));
-  axisX /= axisLength;
-  axisY /= axisLength;
+  const axisLength = Math.hypot(axisX, axisY);
+  if (axisLength < 1e-9) {
+    axisX = extentX >= extentY ? 1 : 0;
+    axisY = extentX >= extentY ? 0 : 1;
+  } else {
+    axisX /= axisLength;
+    axisY /= axisLength;
+  }
   let minProj = Infinity;
   let maxProj = -Infinity;
   for (const point of points) {
@@ -1187,8 +1207,26 @@ function measureLongAxis(rgba, width, height, options = {}) {
     if (projection < minProj) minProj = projection;
     if (projection > maxProj) maxProj = projection;
   }
-  const minEnd = { x: meanX + minProj * axisX, y: meanY + minProj * axisY };
-  const maxEnd = { x: meanX + maxProj * axisX, y: meanY + maxProj * axisY };
+  /**
+   * Snaps a point onto the nearest opaque pixel toward the centroid.
+   * @param {number} x Start x.
+   * @param {number} y Start y.
+   * @returns {{x:number,y:number}} Integer opaque sample.
+   */
+  function clampToOpaque(x, y) {
+    const dist = Math.hypot(meanX - x, meanY - y);
+    const steps = Math.max(1, Math.ceil(dist * 2));
+    for (let i = 0; i <= steps; i += 1) {
+      const t = i / steps;
+      const ix = Math.round(x + (meanX - x) * t);
+      const iy = Math.round(y + (meanY - y) * t);
+      if (ix < 0 || iy < 0 || ix >= width || iy >= height) continue;
+      if (rgba[(iy * width + ix) * 4 + 3] > ALPHA_VISIBLE) return { x: ix, y: iy };
+    }
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+  const minEnd = clampToOpaque(meanX + minProj * axisX, meanY + minProj * axisY);
+  const maxEnd = clampToOpaque(meanX + maxProj * axisX, meanY + maxProj * axisY);
   const span = Math.max(0.0001, maxProj - minProj);
   const binCount = 24;
   const binMin = new Array(binCount).fill(Infinity);
@@ -1221,10 +1259,7 @@ function measureLongAxis(rgba, width, height, options = {}) {
    */
   function along(t) {
     const phase = Math.min(1, Math.max(0, Number(t) || 0));
-    return {
-      x: pommel.x + (tip.x - pommel.x) * phase,
-      y: pommel.y + (tip.y - pommel.y) * phase,
-    };
+    return clampToOpaque(pommel.x + (tip.x - pommel.x) * phase, pommel.y + (tip.y - pommel.y) * phase);
   }
   const gripT = parseGripT(options.t);
   if (!Number.isFinite(gripT) || gripT < 0 || gripT > 1) {
@@ -1368,6 +1403,10 @@ function renderContactSheet(frames, options = {}) {
   const startIndex = Math.max(0, Math.floor(Number(options.startIndex || 0)));
   const labels = options.labels !== false;
   const grid = options.grid !== false;
+  const plant = grid;
+  const normalize = String(options.normalize || "cell");
+  const guides = options.guides === true;
+  const { blitFrameIntoCell } = require("./xsxb_mcp_lock");
   const anchorMode = String(options.anchorMode || "canvas_bottom_center");
   const markFrame = options.markFrame === undefined ? startIndex : Number(options.markFrame);
   const rows = Math.max(1, Math.ceil((items.length || 1) / columns));
@@ -1387,22 +1426,38 @@ function renderContactSheet(frames, options = {}) {
       for (let x = 0; x < cell; x += 1) {
         const checker = (Math.floor(x / 4) + Math.floor(y / 4)) % 2 === 0 ? 200 : 150;
         writePixel(rgba, width, originX + x, originY + y, checker, checker, checker, 255);
-        if (!frame?.width || !frame?.height) continue;
-        const sourceX = Math.min(frame.width - 1, Math.floor(((x + 0.5) * frame.width) / cell));
-        const sourceY = Math.min(frame.height - 1, Math.floor(((y + 0.5) * frame.height) / cell));
-        const source = (sourceY * frame.width + sourceX) * 4;
-        const alpha = frame.data[source + 3];
-        if (alpha <= 16) continue;
-        writePixel(
-          rgba,
-          width,
-          originX + x,
-          originY + y,
-          frame.data[source],
-          frame.data[source + 1],
-          frame.data[source + 2],
-          255,
-        );
+      }
+    }
+    if (frame?.width && frame?.height) {
+      if (normalize === "cell") {
+        for (let y = 0; y < cell; y += 1) {
+          for (let x = 0; x < cell; x += 1) {
+            const sourceX = Math.min(frame.width - 1, Math.floor(((x + 0.5) * frame.width) / cell));
+            const sourceY = Math.min(frame.height - 1, Math.floor(((y + 0.5) * frame.height) / cell));
+            const source = (sourceY * frame.width + sourceX) * 4;
+            if (frame.data[source + 3] <= 16) continue;
+            writePixel(
+              rgba,
+              width,
+              originX + x,
+              originY + y,
+              frame.data[source],
+              frame.data[source + 1],
+              frame.data[source + 2],
+              255,
+            );
+          }
+        }
+      } else {
+        blitFrameIntoCell({ data: rgba, width }, frame, originX, originY, cell, normalize, plant);
+      }
+    }
+    if (guides) {
+      const footY = originY + cell - 1;
+      const headY = originY + 1;
+      for (let x = 0; x < cell; x += 1) {
+        writePixel(rgba, width, originX + x, footY, 220, 32, 32, 255);
+        writePixel(rgba, width, originX + x, headY, 32, 180, 64, 255);
       }
     }
     if (grid && frame?.width && frame?.height) {
@@ -1420,7 +1475,7 @@ function renderContactSheet(frames, options = {}) {
       drawGroupGrid(rgba, width, originX, originY, cell, frame.width, frame.height, anchorMode, gridOptions);
     }
     if (labels) drawIndexBadge(rgba, width, originX, originY, cell, absoluteIndex);
-    if (Number.isInteger(markFrame) && markFrame === absoluteIndex) {
+    if (grid && Number.isInteger(markFrame) && markFrame === absoluteIndex) {
       drawMarkBorder(rgba, width, originX, originY, cell);
     }
     if (grid && frame?.width && frame?.height && cell >= GROUP_GRID_MIN_CELL) {

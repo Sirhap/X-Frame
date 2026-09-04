@@ -1,12 +1,14 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { MCP_TOOL_NAMES, createXsxbMcpService, toolDefinitions } = require("../xsxb_mcp_service");
 const { INSTRUCTIONS } = require("../xsxb_mcp_server");
+const { mcpArtifactDir } = require("../xsxb_mcp_arguments");
 const { compilePlaceBrief } = require("../xsxb_mcp_place_brief");
 
 /** Minimal valid PNG (1×1). */
@@ -227,6 +229,103 @@ test("xsxb_plan_place is catalogued, generic, and returns the compiled brief", a
     const planned = await service.call("xsxb_plan_place", validArgs(pair));
     assert.equal(planned.next, "place");
     assert.match(planned.brief, /alpha_centroid/);
+    assert.match(planned.plan_id, /^pln_[0-9a-f]{12}$/);
+    assert.match(planned.brief, /overlay_id/);
+    assert.ok(planned.brief.includes(planned.plan_id), "brief must name this plan_id");
+    const artifactDir = mcpArtifactDir("", pair.root);
+    assert.equal(fs.existsSync(path.join(artifactDir, "place-plans", `${planned.plan_id}.json`)), true);
+  } finally {
+    pair.cleanup();
+  }
+});
+
+test("object_cells stay on the brief as read notes that may pair with measure_t", () => {
+  const pair = pngPair();
+  try {
+    const planned = compilePlaceBrief(validArgs(pair), { root: pair.root });
+    assert.deepEqual(planned.read.object_cells, ["C4", "C5"]);
+    assert.match(planned.brief, /Object contact cells: C4, C5/);
+    assert.match(
+      planned.brief,
+      /measure_t/,
+      "brief must say place may use object_anchor.measure_t instead of matching those cells",
+    );
+    const planTool = toolDefinitions().find((entry) => entry.name === "xsxb_plan_place");
+    assert.match(
+      planTool.inputSchema.properties.read.properties.object_cells.description,
+      /measure_t|notes/i,
+    );
+    const place = toolDefinitions().find((entry) => entry.name === "xsxb_place_image");
+    assert.match(place.inputSchema.properties.plan_id.description, /measure_t/);
+  } finally {
+    pair.cleanup();
+  }
+});
+
+test("compilePlaceBrief writes a stable plan_id JSON the place consumer can load", () => {
+  const pair = pngPair();
+  const artifactDir = path.join(pair.root, ".xsxb");
+  try {
+    const args = validArgs(pair, {
+      proposed: { layer: "under_target", snap: "alpha_centroid" },
+    });
+    const planned = compilePlaceBrief(args, { root: pair.root, artifactDir });
+    assert.match(planned.plan_id, /^pln_[0-9a-f]{12}$/);
+    assert.match(planned.brief, /overlay_id/);
+    assert.match(planned.brief, /plan_id/);
+    assert.ok(planned.brief.includes(planned.plan_id), "brief must name this plan_id");
+    assert.match(planned.brief, /xsxb_place_image/);
+    assert.match(planned.brief, /never freehand|speakable cell/i);
+
+    const canonical = {
+      target_path: pair.target,
+      object_path: pair.object,
+      read: { target_cells: ["E5"], object_cells: ["C4", "C5"] },
+      proposed: { layer: "under_target", snap: "alpha_centroid" },
+    };
+    const expectedId = `pln_${crypto.createHash("sha1").update(JSON.stringify(canonical)).digest("hex").slice(0, 12)}`;
+    assert.equal(planned.plan_id, expectedId);
+
+    const planPath = path.join(artifactDir, "place-plans", `${planned.plan_id}.json`);
+    assert.equal(fs.existsSync(planPath), true, "plan JSON must land under artifactDir/place-plans");
+    const saved = JSON.parse(fs.readFileSync(planPath, "utf8"));
+    assert.equal(saved.plan_id, planned.plan_id);
+    assert.equal(saved.target_path, pair.target);
+    assert.equal(saved.object_path, pair.object);
+    assert.deepEqual(saved.read.target_cells, ["E5"]);
+    assert.deepEqual(saved.read.object_cells, ["C4", "C5"]);
+    assert.equal(saved.proposed.layer, "under_target");
+    assert.equal(saved.proposed.snap, "alpha_centroid");
+
+    const again = compilePlaceBrief(args, { root: pair.root, artifactDir });
+    assert.equal(again.plan_id, planned.plan_id, "same inputs must reuse the same plan_id");
+  } finally {
+    pair.cleanup();
+  }
+});
+
+test("omitted proposed fields persist as null except default snap alpha_centroid", () => {
+  const pair = pngPair();
+  const artifactDir = path.join(pair.root, ".xsxb");
+  try {
+    const planned = compilePlaceBrief(validArgs(pair), { root: pair.root, artifactDir });
+    const saved = JSON.parse(
+      fs.readFileSync(path.join(artifactDir, "place-plans", `${planned.plan_id}.json`), "utf8"),
+    );
+    assert.equal(saved.proposed.layer, null);
+    assert.equal(saved.proposed.snap, "alpha_centroid");
+    const canonical = {
+      target_path: pair.target,
+      object_path: pair.object,
+      read: { target_cells: ["E5"], object_cells: ["C4", "C5"] },
+      proposed: { layer: null, snap: null },
+    };
+    const expectedId = `pln_${crypto.createHash("sha1").update(JSON.stringify(canonical)).digest("hex").slice(0, 12)}`;
+    assert.equal(
+      planned.plan_id,
+      expectedId,
+      "hash missing snap as null even if the file stores the default",
+    );
   } finally {
     pair.cleanup();
   }

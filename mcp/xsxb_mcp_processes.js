@@ -18,10 +18,30 @@ const { promisify } = require("node:util");
 const execFileAsync = promisify(execFile);
 
 /**
+ * Builds ffmpeg args for native-frame extract. `-ss`/`-t` follow `-i` (accurate seek).
+ * Omit start_time and duration to extract the whole file.
+ * @param {string} videoPath Absolute input video path.
+ * @param {string} outputPattern Output PNG pattern.
+ * @param {{start_time?:unknown,duration?:unknown}} [options] Optional time window.
+ * @returns {string[]} ffmpeg argv.
+ */
+function videoExtractFfmpegArgs(videoPath, outputPattern, options = {}) {
+  const args = ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-map", "0:v:0", "-vsync", "0"];
+  if (options.start_time !== undefined && options.start_time !== null && options.start_time !== "") {
+    args.push("-ss", String(options.start_time));
+  }
+  if (options.duration !== undefined && options.duration !== null && options.duration !== "") {
+    args.push("-t", String(options.duration));
+  }
+  args.push(outputPattern);
+  return args;
+}
+
+/**
  * Extracts every source video frame without changing the source frame rate.
  * @param {string} videoPath Absolute input video path.
  * @param {string} outputDirectory Temporary output directory.
- * @param {{ffmpegBinary?:string}} [options] Optional binary override.
+ * @param {{ffmpegBinary?:string,start_time?:unknown,duration?:unknown}} [options] Optional binary override and time window.
  * @returns {Promise<string[]>} Ordered PNG frame paths.
  */
 async function extractVideoFrames(videoPath, outputDirectory, options = {}) {
@@ -29,7 +49,7 @@ async function extractVideoFrames(videoPath, outputDirectory, options = {}) {
   try {
     await execFileAsync(
       options.ffmpegBinary || process.env.XSXB_FFMPEG || "ffmpeg",
-      ["-hide_banner", "-loglevel", "error", "-i", videoPath, "-map", "0:v:0", "-vsync", "0", outputPattern],
+      videoExtractFfmpegArgs(videoPath, outputPattern, options),
       { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 },
     );
   } catch (error) {
@@ -198,5 +218,6 @@ module.exports = {
   extractVideoFrames,
   launchTunerProcess,
   probeTunerUrl,
+  videoExtractFfmpegArgs,
   waitForTuner,
 };

@@ -6,8 +6,15 @@
  * alone — execute receipt.brief. Does not composite pixels or call a VLM.
  */
 
+const crypto = require("node:crypto");
+const fs = require("node:fs");
 const path = require("node:path");
-const { booleanFlag, isInsideDirectory, requireExistingFile } = require("./xsxb_mcp_arguments");
+const {
+  booleanFlag,
+  isInsideDirectory,
+  mcpArtifactDir,
+  requireExistingFile,
+} = require("./xsxb_mcp_arguments");
 const { parseCellId } = require("./xsxb_mcp_place");
 
 const INTENT_MIN = 8;
@@ -146,13 +153,76 @@ function optionalProposed(raw) {
 }
 
 /**
+ * Canonical plan identity. Missing optional fields are null so the same
+ * inputs always hash to the same plan_id.
+ * @param {string} targetPath Absolute target PNG.
+ * @param {string} objectPath Absolute object PNG.
+ * @param {{target_cells?:string[],object_cells?:string[]}} read Contact cells.
+ * @param {{layer?:string,snap?:string}|null} proposed Place intent.
+ * @returns {{target_path:string,object_path:string,read:{target_cells:string[]|null,object_cells:string[]|null},proposed:{layer:string|null,snap:string|null}}}
+ */
+function canonicalPlacePlan(targetPath, objectPath, read, proposed) {
+  return {
+    target_path: targetPath,
+    object_path: objectPath,
+    read: {
+      target_cells: read.target_cells || null,
+      object_cells: read.object_cells || null,
+    },
+    proposed: {
+      layer: proposed?.layer || null,
+      snap: proposed?.snap || null,
+    },
+  };
+}
+
+/**
+ * @param {object} canonical Canonical plan object.
+ * @returns {string} `pln_` plus 12 hex chars.
+ */
+function placePlanId(canonical) {
+  const digest = crypto.createHash("sha1").update(JSON.stringify(canonical)).digest("hex").slice(0, 12);
+  return `pln_${digest}`;
+}
+
+/**
+ * Writes `{artifactDir}/place-plans/{plan_id}.json` for xsxb_place_image.
+ * File snap defaults to alpha_centroid; the hash still treats omitted snap as null.
+ * @param {string} artifactDir MCP artifact directory.
+ * @param {string} planId Plan id.
+ * @param {ReturnType<typeof canonicalPlacePlan>} canonical Canonical fields.
+ * @returns {string} Absolute JSON path.
+ */
+function persistPlacePlan(artifactDir, planId, canonical) {
+  const dir = path.join(artifactDir, "place-plans");
+  fs.mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, `${planId}.json`);
+  const record = {
+    plan_id: planId,
+    target_path: canonical.target_path,
+    object_path: canonical.object_path,
+    read: {
+      target_cells: canonical.read.target_cells,
+      object_cells: canonical.read.object_cells,
+    },
+    proposed: {
+      layer: canonical.proposed.layer,
+      snap: canonical.proposed.snap || "alpha_centroid",
+    },
+  };
+  fs.writeFileSync(filePath, `${JSON.stringify(record, null, 2)}\n`);
+  return filePath;
+}
+
+/**
  * Compiles the place brief the agent should execute next.
  * @param {object} [args] 图度 fields.
- * @param {{root?:string}} [options] Service root.
+ * @param {{root?:string,artifactDir?:string}} [options] Service root and artifact dir.
  * @returns {object} Brief receipt.
  */
 function compilePlaceBrief(args = {}, options = {}) {
   const root = path.resolve(options.root || process.cwd());
+  const artifactDir = path.resolve(options.artifactDir || mcpArtifactDir("", root));
   const targetPath = requireWorkspacePng(args.target_path, "target_path", root);
   const objectPath = requireWorkspacePng(args.object_path, "object_path", root);
   const intent = requireText(args.intent, "intent", INTENT_MIN);
@@ -167,6 +237,10 @@ function compilePlaceBrief(args = {}, options = {}) {
     warnings.push("physics has fewer than 2 rules — double-check contact, scale, layer, and redraw limits.");
   }
 
+  const canonical = canonicalPlacePlan(targetPath, objectPath, read, proposed);
+  const planId = placePlanId(canonical);
+  persistPlacePlan(artifactDir, planId, canonical);
+
   const lines = [
     "Still-image place brief (图度). Execute this brief. The generic place skeleton alone is not enough.",
     `Intent: ${intent}.`,
@@ -174,7 +248,12 @@ function compilePlaceBrief(args = {}, options = {}) {
     `Read — target contact: ${read.target_contact}. Object contact: ${read.object_contact}.`,
   ];
   if (read.target_cells?.length) lines.push(`Target contact cells: ${read.target_cells.join(", ")}.`);
-  if (read.object_cells?.length) lines.push(`Object contact cells: ${read.object_cells.join(", ")}.`);
+  if (read.object_cells?.length) {
+    lines.push(`Object contact cells: ${read.object_cells.join(", ")}.`);
+    lines.push(
+      "Those object_cells are read notes. Place may use object_anchor.measure_t for the grip instead of matching those cells.",
+    );
+  }
   if (read.notes) lines.push(`Read notes: ${read.notes}.`);
   lines.push("Physics:");
   for (const rule of physics) lines.push(`- ${rule}`);
@@ -184,6 +263,9 @@ function compilePlaceBrief(args = {}, options = {}) {
   plan.forEach((step, index) => lines.push(`${index + 1}. ${step}`));
   lines.push(
     "Place with speakable cell ids and snap alpha_centroid on both contact patches — never freehand x,y. Prefer crop_from when a patch is small inside a coarse cell.",
+  );
+  lines.push(
+    `Execute with xsxb_place_image passing this plan_id ${planId} AND overlay_id from xsxb_overlay_grid.`,
   );
   lines.push(
     "The tool composites only — it does not redraw either sprite. Inspect verify_overlay_path against accept; nudge only if needed.",
@@ -212,6 +294,7 @@ function compilePlaceBrief(args = {}, options = {}) {
     plan,
     await_confirm: awaitConfirm,
     proposed,
+    plan_id: planId,
     warnings,
     next: awaitConfirm ? "await_user" : "place",
   };

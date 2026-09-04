@@ -138,6 +138,19 @@ test("the validated smear reference names the v4 files and is example-only", () 
   assert.ok(VALIDATED_SMEAR_REFERENCE.files.some((file) => file.includes("crescent-trail-v4-sheet.png")));
 });
 
+test("a non-niulai animation_id does not paste the D1→G3 recipe as reference", () => {
+  const planned = compileSmearBrief({
+    animation_id: "ice_slash",
+    motion: "head sweeps from F5 through C7 onto G8",
+    path_kind: "polyline",
+    color: "#54befb",
+    frames: [{ index: 5, start: "F5", end: "C7", head: "C5", weight: "solid" }],
+  });
+  assert.match(String(planned.reference.note || planned.reference), /example only/i);
+  assert.notEqual(planned.reference.headPath, "D1→G3 then H8");
+  assert.doesNotMatch(JSON.stringify(planned.reference), /D1→G3 then H8/);
+});
+
 test("xsxb_plan_smear is a catalog tool that returns the compiled brief", async () => {
   assert.ok(MCP_TOOL_NAMES.includes("xsxb_plan_smear"));
   const tool = toolDefinitions().find((entry) => entry.name === "xsxb_plan_smear");

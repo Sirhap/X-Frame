@@ -5,6 +5,8 @@ const zlib = require("node:zlib");
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const CHANNELS_BY_COLOR_TYPE = Object.freeze({ 0: 1, 2: 3, 4: 2, 6: 4 });
+const MAX_PNG_PIXELS = 16_777_216;
+const MAX_INFLATED_BYTES = MAX_PNG_PIXELS * 4 + 16_384;
 
 /**
  * Clamps a finite number to an inclusive range.
@@ -78,6 +80,13 @@ function parsePng(buffer) {
       `Unsupported PNG format: bit depth ${header.bitDepth}, color type ${header.colorType}, interlace ${header.interlace}.`,
     );
   }
+  if (header.width * header.height > MAX_PNG_PIXELS) {
+    const error = new Error(
+      `PNG exceeds the ${MAX_PNG_PIXELS} decoded-pixel limit: ${header.width}x${header.height}.`,
+    );
+    error.code = "PNG_PIXEL_LIMIT";
+    throw error;
+  }
   return {
     width: header.width,
     height: header.height,
@@ -94,8 +103,9 @@ function parsePng(buffer) {
  */
 function unfilterPng(png) {
   const stride = png.width * png.channels;
-  const inflated = zlib.inflateSync(png.compressed);
   const expected = png.height * (stride + 1);
+  if (expected > MAX_INFLATED_BYTES) throw new Error("PNG decoded payload exceeds the memory limit.");
+  const inflated = zlib.inflateSync(png.compressed, { maxOutputLength: expected });
   if (inflated.length !== expected) {
     throw new Error(`Unexpected PNG payload size: ${inflated.length}, expected ${expected}.`);
   }
@@ -383,6 +393,8 @@ function recommendSpatialTransform(options) {
 }
 
 module.exports = {
+  MAX_INFLATED_BYTES,
+  MAX_PNG_PIXELS,
   analyzePngAlpha,
   evenlySpacedIndexes,
   parsePng,

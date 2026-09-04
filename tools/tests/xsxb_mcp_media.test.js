@@ -525,9 +525,22 @@ test("export_gif rematches group and frame visual_size before encode", async () 
   const current = fixture({
     encodeGifImpl: async (job) => {
       const first = decodePngRgba(job.framePaths[0]);
+      let minY = first.height;
+      let maxY = -1;
+      for (let y = 0; y < first.height; y += 1) {
+        for (let x = 0; x < first.width; x += 1) {
+          const offset = (y * first.width + x) * 4;
+          if (first.data[offset] === 255 && first.data[offset + 1] === 0 && first.data[offset + 2] === 255) {
+            continue;
+          }
+          if (first.data[offset + 3] < 16) continue;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
       jobs.push({
         ...job,
-        firstHeight: subjectAnchor(first.data, first.width, first.height).height,
+        firstHeight: maxY < 0 ? 0 : maxY - minY + 1,
       });
       fs.writeFileSync(job.outputPath, Buffer.from("GIF89a-fake"));
     },
@@ -690,6 +703,9 @@ test("shift_frames from/to group points plant pixels toward the foot origin", as
     assert.equal(shifted.shifted[0].dy, 4);
     assert.equal(shifted.space, "group");
     const next = decodePngRgba(firstPath);
+    assert.equal(next.height, 16, "in-canvas destMaxY must not pad");
+    assert.equal(shifted.shifted[0].width, 16);
+    assert.equal(shifted.shifted[0].height, 16);
     assert.equal(next.data[(8 * width + 8) * 4 + 3], 0, "source pixel vacated");
     assert.equal(next.data[(12 * width + 8) * 4 + 3], 255, "marker moved down 4px");
     assert.equal(next.data[(12 * width + 8) * 4], 210);
@@ -1089,6 +1105,111 @@ test("export_gif fps override on a pet clip keeps millisecond durations", async 
       idleMs,
     );
     assert.notEqual(Math.round((captured[0][0] || 0) * 1000), Math.round((280 / 12) * 1000));
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_sheet 8x8 on a 320 canvas includes column 7", async () => {
+  const current = fixture();
+  try {
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), solidPng(320, [40, 80, 120, 255]));
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), solidPng(320, [40, 80, 120, 255]));
+    await importWalk(current);
+    const exported = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      grid_divs: "8x8",
+      cell: 160,
+    });
+    assert.deepEqual(exported.grid.divs, { x: 8, y: 8 });
+    assert.equal(exported.grid.cells.length, 8);
+    assert.equal(exported.grid.cells[0].length, 8, "8×8 JSON must include col 7");
+    assert.equal(exported.grid.cells[0][7].col, 7);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_sheet default grid true and grid false write distinct files plus sidecar", async () => {
+  const current = fixture();
+  try {
+    await importWalk(current);
+    const withGrid = await current.service.call("xsxb_export_sheet", { animation_id: "walk" });
+    const noGrid = await current.service.call("xsxb_export_sheet", {
+      animation_id: "walk",
+      grid: false,
+    });
+    assert.ok(withGrid.outputPath.endsWith("_sheet.png"), withGrid.outputPath);
+    assert.ok(noGrid.outputPath.endsWith("_sheet_view.png"), noGrid.outputPath);
+    assert.notEqual(withGrid.outputPath, noGrid.outputPath);
+    assert.ok(fs.existsSync(withGrid.outputPath), "grid true default PNG");
+    assert.ok(fs.existsSync(noGrid.outputPath), "grid false default PNG");
+    assert.equal(path.basename(withGrid.outputPath), "mcp_imports_walk_sheet.png");
+    assert.equal(path.basename(noGrid.outputPath), "mcp_imports_walk_sheet_view.png");
+
+    for (const [exported, gridFlag] of [
+      [withGrid, true],
+      [noGrid, false],
+    ]) {
+      const sidecarPath = exported.outputPath.replace(/\.png$/i, ".sheet.json");
+      assert.ok(fs.existsSync(sidecarPath), sidecarPath);
+      const sidecar = JSON.parse(fs.readFileSync(sidecarPath, "utf8"));
+      assert.equal(sidecar.kind, "xsxb_contact_sheet");
+      assert.equal(sidecar.schemaVersion, 1);
+      assert.equal(sidecar.columns, exported.columns);
+      assert.equal(sidecar.rows, exported.rows);
+      assert.equal(sidecar.cell, exported.cell);
+      assert.equal(sidecar.pad, exported.pad);
+      assert.equal(sidecar.grid, gridFlag);
+    }
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("shift_frames pads height so hanging ice is not clipped", async () => {
+  const current = fixture();
+  try {
+    const width = 32;
+    const height = 32;
+    const dy = 6;
+    const iceX = 16;
+    const iceY = height - 1;
+    const ice = [84, 190, 251, 255];
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 8; y < 20; y += 1) {
+      for (let x = 12; x < 20; x += 1) {
+        rgba.set([210, 36, 42, 255], (y * width + x) * 4);
+      }
+    }
+    rgba.set(ice, (iceY * width + iceX) * 4);
+    rgba.set(ice, ((iceY - 1) * width + iceX) * 4);
+    fs.writeFileSync(path.join(current.sequenceDir, "a.png"), encodePngRgba(rgba, width, height));
+    fs.writeFileSync(path.join(current.sequenceDir, "b.png"), encodePngRgba(rgba, width, height));
+    await importWalk(current);
+
+    const shifted = await current.service.call("xsxb_shift_frames", {
+      animation_id: "walk",
+      frames: [{ frame: 0, dx: 0, dy }],
+    });
+    const destIceY = iceY + dy;
+    const expectedHeight = destIceY + 1;
+    assert.equal(shifted.shifted[0].dy, dy);
+    assert.equal(shifted.shifted[0].width, width);
+    assert.equal(shifted.shifted[0].height, expectedHeight, "receipt height must include downward pad");
+
+    const animation = await current.service.call("xsxb_get_animation", { animation_id: "walk" });
+    const image = decodePngRgba(animation.animation.frames[0].absolutePath);
+    assert.ok(image.height > height, "PNG height must grow when ice would leave the canvas");
+    assert.equal(image.height, expectedHeight);
+    assert.equal(image.width, width);
+    assert.equal(animation.animation.frames[0].height, image.height, "manifest height must match PNG");
+    assert.equal(animation.animation.frames[0].width, image.width);
+    const destOffset = (destIceY * width + iceX) * 4;
+    assert.equal(image.data[destOffset + 3], 255, "ice pixel must stay opaque after +dy");
+    assert.equal(image.data[destOffset], ice[0]);
+    assert.equal(image.data[destOffset + 1], ice[1]);
+    assert.equal(image.data[destOffset + 2], ice[2]);
   } finally {
     current.cleanup();
   }

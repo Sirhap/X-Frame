@@ -126,7 +126,12 @@ function compileSmearBrief(args = {}) {
     acceptedPath: acceptedPath || null,
     frames,
     warnings,
-    reference: VALIDATED_SMEAR_REFERENCE,
+    reference:
+      animationId && !/^niulai/i.test(animationId)
+        ? {
+            note: "Example only — not a canned recipe for this clip. Trace this animation's cells; do not paste another attack's D1 path.",
+          }
+        : VALIDATED_SMEAR_REFERENCE,
   };
 }
 

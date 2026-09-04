@@ -35,6 +35,22 @@ function reslash(value) {
 }
 
 /**
+ * Stores a frame path relative to the XSXB root when possible, otherwise absolute
+ * so game-pack files outside the root still round-trip.
+ * @param {string} root XSXB root.
+ * @param {string} absolutePath On-disk PNG path.
+ * @returns {string} Manifest path.
+ */
+function storedImportPath(root, absolutePath) {
+  const resolved = path.resolve(absolutePath);
+  const relative = path.relative(path.resolve(root), resolved);
+  if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+    return reslash(relative);
+  }
+  return reslash(resolved);
+}
+
+/**
  * Reads dimensions from a PNG header.
  * @param {Buffer} buffer PNG data.
  * @returns {{width:number,height:number}}
@@ -340,19 +356,36 @@ function ensureImportProfile(manifest, profileId, profileLabel, profileKind) {
  *   animationType?:string,
  *   anchorMode?:string,
  *   fps?:number,
- *   items:Array<{data:string,name?:string}>
+ *   inPlace?:boolean,
+ *   items:Array<{data?:string,name?:string,sourcePath?:string}>
  * }} options Import operation.
- * @returns {{manifest:object,tuning:object,frameCount:number,targetDir:string,profileId:string,animationId:string}}
+ * @returns {{manifest:object,tuning:object,frameCount:number,targetDir:string,profileId:string,animationId:string,inPlace:boolean}}
  */
 function importAnimation(options) {
   const { root, projectStore, project, profileId, animationId } = options;
   const items = Array.isArray(options.items) ? options.items : [];
+  const inPlace = Boolean(options.inPlace);
   if (!project) throw new Error("An active project is required.");
   if (!profileId || !animationId) throw new Error("Profile and animation names are required.");
   if (!items.length) throw new Error("Import at least one animation frame.");
   if (items.length > 5000) throw new Error("Animation import limit is 5000 frames.");
 
+  const sourcePaths = inPlace
+    ? items.map((item, index) => {
+        const sourcePath = String(item.sourcePath || "").trim();
+        if (!sourcePath || !fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isFile()) {
+          throw new Error(`in_place import requires an existing PNG path for frame ${index + 1}.`);
+        }
+        return path.resolve(sourcePath);
+      })
+    : [];
+
   const buffers = items.map((item, index) => {
+    if (inPlace) {
+      const buffer = fs.readFileSync(sourcePaths[index]);
+      pngSize(buffer);
+      return buffer;
+    }
     const buffer = decodePngDataUrl(item.data);
     if (!buffer) throw new Error(`Frame ${index + 1} is not PNG image data.`);
     pngSize(buffer);
@@ -394,7 +427,7 @@ function importAnimation(options) {
   if (!targetDir.startsWith(`${workspaceDir}${path.sep}`)) {
     throw new Error("Animation assets must stay inside the active project workspace.");
   }
-  if (fs.existsSync(targetDir) && !replacing) {
+  if (!inPlace && fs.existsSync(targetDir) && !replacing) {
     throw new Error(`Animation asset folder already exists: ${profileId}/${animationId}`);
   }
 
@@ -434,18 +467,16 @@ function importAnimation(options) {
   const operationId = crypto.randomBytes(8).toString("hex");
   const stagingDir = `${targetDir}.import-${operationId}`;
   const backupDir = `${targetDir}.backup-${operationId}`;
-  fs.rmSync(stagingDir, { recursive: true, force: true });
-  fs.mkdirSync(stagingDir, { recursive: true });
+  if (!inPlace) {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    fs.mkdirSync(stagingDir, { recursive: true });
+  }
   let frames = [];
   let animation = null;
   try {
     const frameFiles = [];
     const usedFrameIds = new Set();
     frames = buffers.map((buffer, index) => {
-      const frameName = `frame_${String(index + 1).padStart(4, "0")}.png`;
-      const stagingPath = path.join(stagingDir, frameName);
-      fs.writeFileSync(stagingPath, buffer);
-      frameFiles.push(stagingPath);
       const requestedFrameId = String(items[index]?.frameId || items[index]?.id || "")
         .replace(/[\u0000-\u001f]/g, "")
         .slice(0, 160);
@@ -457,6 +488,22 @@ function importAnimation(options) {
         suffix += 1;
       }
       usedFrameIds.add(frameId);
+      if (inPlace) {
+        const sourcePath = sourcePaths[index];
+        frameFiles.push(sourcePath);
+        return {
+          id: frameId,
+          name: path.basename(sourcePath),
+          path: storedImportPath(root, sourcePath),
+          assetRevision: Math.max(0, Number(items[index]?.assetRevision) || 0),
+          duration: 1,
+          ...pngSize(buffer),
+        };
+      }
+      const frameName = `frame_${String(index + 1).padStart(4, "0")}.png`;
+      const stagingPath = path.join(stagingDir, frameName);
+      fs.writeFileSync(stagingPath, buffer);
+      frameFiles.push(stagingPath);
       return {
         id: frameId,
         name: frameName,
@@ -477,9 +524,12 @@ function importAnimation(options) {
       type: animationType,
       anchorMode: String(options.anchorMode || "canvas_bottom_center"),
       fps: Math.max(1, Math.min(120, Number(options.fps || 12))),
-      source: reslash(path.relative(root, targetDir)),
+      source: inPlace
+        ? storedImportPath(root, path.dirname(sourcePaths[0]))
+        : reslash(path.relative(root, targetDir)),
       frames,
     };
+    if (inPlace) animation.inPlace = true;
     if (replacing) profile.animations[existingIndex] = animation;
     else profile.animations.push(animation);
     ensureInitialCharacterScale(
@@ -494,7 +544,7 @@ function importAnimation(options) {
     );
     upsertEstimatedFrameBoxes(tuning, profileId, animation, frameFiles, { replace: true });
   } catch (error) {
-    fs.rmSync(stagingDir, { recursive: true, force: true });
+    if (!inPlace) fs.rmSync(stagingDir, { recursive: true, force: true });
     throw error;
   }
 
@@ -505,8 +555,10 @@ function importAnimation(options) {
       fs.renameSync(targetDir, backupDir);
       backupCreated = true;
     }
-    fs.renameSync(stagingDir, targetDir);
-    directoryInstalled = true;
+    if (!inPlace) {
+      fs.renameSync(stagingDir, targetDir);
+      directoryInstalled = true;
+    }
     projectStore.writeJson(paths.manifest, manifest);
     projectStore.writeJson(paths.tuning, tuning);
     if (replacing) {
@@ -518,7 +570,7 @@ function importAnimation(options) {
   } catch (error) {
     if (directoryInstalled) fs.rmSync(targetDir, { recursive: true, force: true });
     if (backupCreated && fs.existsSync(backupDir)) fs.renameSync(backupDir, targetDir);
-    fs.rmSync(stagingDir, { recursive: true, force: true });
+    if (!inPlace) fs.rmSync(stagingDir, { recursive: true, force: true });
     projectStore.writeJson(paths.manifest, originals.manifest);
     projectStore.writeJson(paths.tuning, originals.tuning);
     if (replacing) {
@@ -541,9 +593,10 @@ function importAnimation(options) {
     manifest,
     tuning,
     frameCount: frames.length,
-    targetDir,
+    targetDir: inPlace ? path.dirname(sourcePaths[0]) : targetDir,
     profileId,
     animationId,
+    inPlace,
   };
 }
 

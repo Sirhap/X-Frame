@@ -55,10 +55,10 @@ Do not claim a clean cutout solely because the batch completed. Check edge halos
 
 ## MCP Video-to-Loop Playbook
 
-For a local video that should become one looping animation, stay on XSXB MCP:
+For a local video that should become one looping animation, stay on XSXB MCP. Follow skill「MCP 工程流程」first: one-sentence goal, ordered todo, look at `preview.path` after cutout before the next step.
 
-1. Import with `xsxb_import_animation` or `xsxb_import_video`.
-2. Run `xsxb_cutout` (omit sliders for the shared smart profile) so loop search is not poisoned by a keyed background.
+1. If no project exists, `xsxb_create_project`. Import with `xsxb_import_animation` or `xsxb_import_video` (optional `start_time` / `duration`; omit for the full file).
+2. Run `xsxb_cutout` (omit sliders for the shared smart profile; generated black/white plates use `key_mode=border_flood`). Look at `preview.path` (magenta flatten) — not the planted contact sheet — to confirm dark clothes remain.
 3. `xsxb_analyze` (one decode: duplicates, loop, motion, plus a `grid=false` preview sheet). Look at `preview.path` — do not export every candidate with `xsxb_export_sheet`. `oneShotLikely` means a short burst inside a longer clip; a solid interior cycle in a long take is not a one-shot. Skip apply when the receipt has `autoAdjustedThreshold` unless you passed `auto_adjust`.
 4. Inspect the preview, pick `loop.recommended.order` or `motion.order`, and `xsxb_reorganize_frames`.
 5. Keep character scale the same across clips: choose one animation as the template, `xsxb_estimate_visual` with `reference_animation_id` and `apply`, then `xsxb_cutout apply_visual` on a shared canvas.
@@ -96,10 +96,10 @@ After a write, export another sheet and check the ticks. `xsxb_get_animation` re
 
 `xsxb_overlay_grid`, `xsxb_plan_place`, and `xsxb_place_image` work on still PNGs. MCP does not call a VLM; the agent is the eye.
 
-1. Overlay each PNG with `xsxb_overlay_grid` (default 8×8). Report only speakable cell ids such as `A1`. Do not OCR pixel x,y. Source PNG is unchanged.
-2. Refine with `crop_from: { parent_view, cells, padding_cells }`. The crop is integer (floor origin, ceil far edge) and `view` stays in original-image pixels so remapped `A1` starts at the crop origin.
-3. **图度：** after the user confirms a composite, call `xsxb_plan_place` (`intent`, `read`, `physics`, `accept`, 3–5 step `plan`). Execute `receipt.brief`. Default is to place next; `await_confirm` or a user “先方案” request pauses. Prefer contact-cell `snap: "alpha_centroid"` — never freehand `x,y`.
-4. Place with `xsxb_place_image` per that brief. `scale` `relative`|`physical` from a named span. `layer` `front`|`under_target`|`behind`. `rotation` from the pose you see. The tool does not redraw either sprite. Inspect `verify_overlay_path` against `accept`.
+1. Overlay each PNG with `xsxb_overlay_grid` (default 8×8). Report only speakable cell ids such as `A1`. Do not OCR pixel boxes or x,y. Pass receipt `overlay_id` on later `crop_from` / place (agent-led MUST). If `next` is `crop_from`, overlay the contact cells before placing. Do not mix still `view` with animation `grid.cells`. Source PNG is unchanged.
+2. Refine with `crop_from: { parent_view, cells, padding_cells, overlay_id }`. The crop is integer (floor origin, ceil far edge) and `view` stays in original-image pixels so remapped `A1` starts at the crop origin. The new `overlay_id` is for that cropped view.
+3. **图度：** after the user confirms a composite, call `xsxb_plan_place` (`intent`, `read`, `physics`, `accept`, 3–5 step `plan`). Execute `receipt.brief`. Default is to place next; `await_confirm` or a user “先方案” request pauses. Named contact cells default to `snap: "alpha_centroid"` — never freehand `x,y`.
+4. Place with `xsxb_place_image` per that brief. Pass `overlay_id` and optional `plan_id`. Named cells without `derive` default to `alpha_centroid`, then `nudge` `{dx,dy}` only if accept fails. `scale` `relative`|`physical` from a named span. `layer` `front`|`under_target`|`behind`. `rotation` from the pose you see. The tool does not redraw either sprite. Inspect `verify.status` and `verify_overlay_path` against `accept`. Never freehand `x,y`.
 5. Example only: standing a figure on a marked region is cell ids plus a physical width — there are no domain-specific place fields.
 6. `xsxb_measure_image` `anchor=alpha_bottom` returns the same opaque-foot geometry.
 7. `xsxb_cutout` `file_path` runs the same smart-cutout on one workspace PNG (sibling `_cut.png` by default). Animation-frame cutout is unchanged.

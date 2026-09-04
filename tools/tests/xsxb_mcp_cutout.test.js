@@ -147,6 +147,89 @@ test("subject anchor ignores connected bright slash below the boots", () => {
   assert.equal(measureFrame(whiteSlash.data, 48, 48).feetY, body.bootY);
 });
 
+/**
+ * Body plus a wide ice splash attached below the boots (one island).
+ * Splash is mostly bright ice with darker crystal shadows so luma-only glow skip fails.
+ * @returns {{data:Uint8ClampedArray,width:number,height:number,bootY:number,splashBottom:number}} Frame.
+ */
+function iceSplashFrame() {
+  const width = 96;
+  const height = 96;
+  const bootY = 58;
+  const ice = [84, 190, 251, 255];
+  const iceShadow = [40, 90, 140, 255];
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 16; y <= bootY; y += 1) {
+    for (let x = 40; x <= 55; x += 1) setPixel(rgba, width, x, y, BODY);
+  }
+  for (let y = bootY + 1; y <= 82; y += 1) {
+    for (let x = 8; x <= 88; x += 1) {
+      setPixel(rgba, width, x, y, (x + y) % 3 === 0 ? iceShadow : ice);
+    }
+  }
+  return { data: rgba, width, height, bootY, splashBottom: 82 };
+}
+
+test("subject anchor ignores a wide ice splash below the boots", () => {
+  const frame = iceSplashFrame();
+  const anchor = subjectAnchor(frame.data, frame.width, frame.height);
+  assert.equal(anchor.feetY, frame.bootY, "ice splash must not become the sole");
+  assert.ok(anchor.feetY < frame.splashBottom - 8);
+  assert.equal(measureFrame(frame.data, frame.width, frame.height).feetY, frame.bootY);
+});
+
+/**
+ * Impact ice that is NOT a clean wide bright flare: same-width mixed
+ * dark/bright crystals plus narrow dark shard tips under the boots.
+ * Matches ice_slash_strike impact rows (wideVfx / glow skip do not fire).
+ * @returns {{data:Uint8ClampedArray,width:number,height:number,bootY:number,splashBottom:number}} Frame.
+ */
+function mixedIceFloorFrame() {
+  const width = 96;
+  const height = 96;
+  const bootY = 58;
+  const ice = [84, 190, 251, 255];
+  const iceShadow = [40, 90, 140, 255];
+  const navyTip = [22, 34, 58, 255];
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 16; y <= bootY; y += 1) {
+    for (let x = 40; x <= 55; x += 1) setPixel(rgba, width, x, y, BODY);
+  }
+  for (let y = bootY + 1; y <= 74; y += 1) {
+    for (let x = 38; x <= 57; x += 1) {
+      setPixel(rgba, width, x, y, (x + y) % 3 === 0 ? iceShadow : ice);
+    }
+  }
+  for (let y = 75; y <= 82; y += 1) {
+    for (let x = 46; x <= 53; x += 1) setPixel(rgba, width, x, y, navyTip);
+  }
+  return { data: rgba, width, height, bootY, splashBottom: 82 };
+}
+
+test("subject anchor ignores mixed dark/bright ice under the boots, not only a wide flare", () => {
+  const frame = mixedIceFloorFrame();
+  const anchor = subjectAnchor(frame.data, frame.width, frame.height);
+  assert.equal(anchor.feetY, frame.bootY, "mixed ice floor must not become the sole");
+  assert.ok(anchor.feetY < frame.splashBottom - 8);
+  assert.equal(measureFrame(frame.data, frame.width, frame.height).feetY, frame.bootY);
+});
+
+test("subject anchor keeps boots on a real unplanted ice_slash impact when the file exists", () => {
+  const filePath = path.resolve(
+    __dirname,
+    "../../workspace/projects/test/.xsxb/retest-slash/cut/frame_0007.png",
+  );
+  if (!fs.existsSync(filePath)) return;
+  const image = decodePngRgba(filePath);
+  const anchor = subjectAnchor(image.data, image.width, image.height);
+  assert.ok(anchor, "impact frame must have a subject");
+  assert.ok(
+    anchor.feetY >= 220 && anchor.feetY <= 234,
+    `real impact feetY ${anchor.feetY} should stay on the boots (~225), not the ice floor`,
+  );
+  assert.ok(anchor.feetY < 260, `feetY ${anchor.feetY} must not sit on the ice floor`);
+});
+
 test("subject anchor keeps a dark cape hanging below the boots", () => {
   const cape = connectedFxFrame({ tail: true });
   const anchor = subjectAnchor(cape.data, cape.width, cape.height);
@@ -241,6 +324,12 @@ test("cutoutFrameFiles uses the tuner smart-cutout path and keeps source layout 
     const skipped = cutoutFrameFiles([idlePath, hitPath]);
     assert.equal(skipped.skippedFrameCount, 2);
     assert.equal(skipped.processedFrameCount, 0);
+    assert.equal(result.verify.status, "confirmed");
+    assert.equal(
+      skipped.verify.status,
+      "suspected_noop",
+      "all-skip still succeeds but must label suspected_noop",
+    );
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }
@@ -495,11 +584,39 @@ test("explicit canvas rematch shares one scale and pins body feet to the bottom"
     assert.equal(result.rematched, true);
     assert.equal(result.outputWidth, 20);
     assert.equal(result.outputHeight, 20);
+    assert.equal(
+      result.verify.status,
+      "confirmed",
+      "rematch is not a noop even if some frames were already cut",
+    );
 
     const cutIdle = decodePngRgba(idlePath);
     const cutHit = decodePngRgba(hitPath);
     assert.equal(subjectAnchor(cutIdle.data, 20, 20).feetY, 19);
     assert.equal(subjectAnchor(cutHit.data, 20, 20).feetY, 19);
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("rematch after an all-skip key is confirmed, not suspected_noop", () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-rematch-skip-"));
+  const framePath = path.join(folder, "frame.png");
+  try {
+    const idle = greenScreenFrame({ transparent: true });
+    fs.writeFileSync(framePath, encodePngRgba(idle.data, idle.width, idle.height));
+    const skipped = cutoutFrameFiles([framePath]);
+    assert.equal(skipped.processedFrameCount, 0);
+    assert.equal(skipped.rematched, false);
+    assert.equal(skipped.verify.status, "suspected_noop");
+    const rematched = cutoutFrameFiles([framePath], { outputWidth: 20, outputHeight: 20 });
+    assert.equal(rematched.rematched, true);
+    assert.equal(rematched.processedFrameCount, 0);
+    assert.equal(
+      rematched.verify.status,
+      "confirmed",
+      "rematched true is not a noop even when processed is 0",
+    );
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }
@@ -667,6 +784,7 @@ test("force without a key does not re-key an already-cut chroma frame", () => {
     const second = cutoutFrameFiles([framePath], { force: true });
     assert.equal(second.keyed, false, "already-cut frames must not pick a new auto key");
     assert.equal(second.processedFrameCount, 0);
+    assert.equal(second.verify.status, "suspected_noop");
     const afterForce = decodePngRgba(framePath);
     let whiteAfter = 0;
     for (let offset = 0; offset < afterForce.data.length; offset += 4) {
@@ -755,6 +873,16 @@ test("xsxb_cutout file_path cuts a standalone workspace PNG", async () => {
     const out = decodePngRgba(receipt.output_path);
     assert.ok(clearedPixels(out.data) > 50, "white studio plate must become transparent");
     assert.equal(out.data[(6 * 16 + 6) * 4 + 3], 255, "the opaque body must remain");
+    assert.equal(typeof receipt.transparentRatio, "number");
+    assert.ok(receipt.transparentRatio > 0.35 && receipt.transparentRatio < 0.97);
+    assert.equal(receipt.keyed, true);
+    assert.ok(Array.isArray(receipt.corners) && receipt.corners.length === 4);
+    assert.equal(receipt.corners[0].a, 0);
+    assert.ok(receipt.inspectFeet == null, "default short receipt must not add inspectFeet");
+    const full = await service.call("xsxb_cutout", { file_path: filePath, receipt: "full" });
+    assert.ok(full.inspectFeet && typeof full.inspectFeet === "object");
+    assert.ok(full.inspectFeet.overlayPath || full.inspectFeet.sheetPath);
+    assert.match(String(full.inspectFeet.note || ""), /y=-1/);
     await assert.rejects(() => service.call("xsxb_cutout", { file_path: escapePath }), /inside/i);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -796,6 +924,53 @@ test("file_path cutout does not key an already-cut subject to empty", async () =
   }
 });
 
+test("border_flood black plate keeps navy trousers that touch the silhouette", () => {
+  const width = 32;
+  const height = 32;
+  const black = [0, 0, 0, 255];
+  const skin = [180, 120, 90, 255];
+  // Real ice-warrior trousers: dark navy that still has a blue channel.
+  const navy = [7, 9, 25, 255];
+  const boot = [80, 160, 200, 255];
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < rgba.length; offset += 4) rgba.set(black, offset);
+  for (let y = 6; y <= 14; y += 1) {
+    for (let x = 12; x <= 19; x += 1) setPixel(rgba, width, x, y, skin);
+  }
+  for (let y = 15; y <= 22; y += 1) {
+    for (let x = 12; x <= 19; x += 1) setPixel(rgba, width, x, y, navy);
+  }
+  for (let y = 23; y <= 25; y += 1) {
+    for (let x = 12; x <= 19; x += 1) setPixel(rgba, width, x, y, boot);
+  }
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-navy-"));
+  const filePath = path.join(folder, "frame.png");
+  try {
+    fs.writeFileSync(filePath, encodePngRgba(rgba, width, height));
+    const receipt = cutoutFrameFiles([filePath], { keyMode: "border_flood", keyColor: "#000000" });
+    assert.equal(receipt.keyed, true, "flood that keys the plate is work, not a smart-skip noop");
+    assert.equal(receipt.processedFrameCount, 1);
+    assert.equal(receipt.verify.status, "confirmed");
+    assert.ok(receipt.darkClothes.after > 0, "receipt must count remaining dark clothes");
+    assert.equal(receipt.darkClothes.after, receipt.darkClothes.before);
+    const out = decodePngRgba(filePath);
+    assert.equal(out.data[3], 0, "black plate must key");
+    assert.equal(out.data[(10 * width + 15) * 4 + 3], 255, "torso must remain");
+    assert.equal(
+      out.data[(18 * width + 15) * 4 + 3],
+      255,
+      "navy trousers must not be keyed as the black plate",
+    );
+    assert.deepEqual(
+      [...out.data.subarray((18 * width + 15) * 4, (18 * width + 15) * 4 + 3)],
+      navy.slice(0, 3),
+    );
+    assert.equal(out.data[(24 * width + 15) * 4 + 3], 255, "boots must remain");
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
 test("in-place file_path cutout does not report processedFrameCount 1 when it skipped", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-cutout-inplace-skip-"));
   const service = createXsxbMcpService({ root });
@@ -807,6 +982,7 @@ test("in-place file_path cutout does not report processedFrameCount 1 when it sk
     const receipt = await service.call("xsxb_cutout", { file_path: filePath, output_path: filePath });
     assert.equal(receipt.skippedFrameCount, 1);
     assert.equal(receipt.processedFrameCount, 0);
+    assert.equal(receipt.verify.status, "suspected_noop");
     assert.deepEqual(fs.readFileSync(filePath), before, "skipped in-place cutout must not rewrite bytes");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

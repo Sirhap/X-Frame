@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 const { encodePngRgba } = require("./xsxb_mcp_cutout");
+const { trailUsesHermiteMesh } = require("./xsxb_mcp_plant");
 const { createSoftwareDom, SoftwareImage } = require("./lib/xsxb_software_canvas");
 const {
   attachmentOwnerPlacement,
@@ -29,6 +30,7 @@ function usableTrailSegments(trails, bindingKey) {
       segment &&
       segment.enabled !== false &&
       segment.generated !== false &&
+      trailUsesHermiteMesh(segment) &&
       Array.isArray(segment.sticks) &&
       segment.sticks.length >= 2,
   );

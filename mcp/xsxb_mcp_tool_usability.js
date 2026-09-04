@@ -14,10 +14,7 @@ const {
 } = require("./xsxb_mcp_service");
 const { decodePngRgba, encodePngRgba, subjectAnchor } = require("./xsxb_mcp_cutout");
 
-const ONE_PIXEL_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XkM0WQAAAABJRU5ErkJggg==",
-  "base64",
-);
+const ONE_PIXEL_PNG = encodePngRgba(new Uint8ClampedArray([255, 255, 255, 255]), 1, 1);
 
 /**
  * Creates an isolated tuner root and MCP service for one tool probe.
@@ -64,6 +61,7 @@ async function importSequence(fixture, animationId) {
     directory,
     animation_id: animationId,
     fps: 12,
+    in_place: false,
   });
 }
 
@@ -169,6 +167,26 @@ const PROBES = {
     return verdict("xsxb_get_project", "ready", `godotValid=${project.godotProjectValid}`);
   },
 
+  async xsxb_create_project(fixture) {
+    const created = await fixture.service.call("xsxb_create_project", {
+      project_id: "warrior",
+      label: "Warrior",
+    });
+    const listed = await fixture.service.call("xsxb_list_projects");
+    const again = await fixture.service.call("xsxb_create_project", { project_id: "warrior" });
+    if (
+      created.projectId !== "warrior" ||
+      created.created !== true ||
+      listed.activeProjectId !== "warrior" ||
+      !listed.projects.some((entry) => entry.id === "warrior") ||
+      again.created !== false ||
+      again.projectId !== "warrior"
+    ) {
+      return verdict("xsxb_create_project", "fail", JSON.stringify({ created, listed, again }));
+    }
+    return verdict("xsxb_create_project", "ready", `created ${created.projectId}`);
+  },
+
   async xsxb_set_active_project(fixture) {
     const store = createProjectStore(fixture.root);
     store.addProject({ id: "other", label: "Other", projectRoot: "" });
@@ -216,13 +234,24 @@ animations = [{
       source: "spriteframes",
       file_path: tresPath,
     });
-    if (png.importedFrameCount !== 2 || sprite.importedFrameCount < 1) {
-      return verdict("xsxb_import_animation", "fail", JSON.stringify({ png, sprite }));
+    const inplaceDir = path.join(fixture.root, "inplace-seq");
+    fs.mkdirSync(inplaceDir, { recursive: true });
+    fs.writeFileSync(path.join(inplaceDir, "01.png"), ONE_PIXEL_PNG);
+    fs.writeFileSync(path.join(inplaceDir, "02.png"), ONE_PIXEL_PNG);
+    const inplace = await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory: inplaceDir,
+      animation_id: "inplace_walk",
+      fps: 12,
+      in_place: true,
+    });
+    if (png.importedFrameCount !== 2 || sprite.importedFrameCount < 1 || inplace.importedFrameCount !== 2) {
+      return verdict("xsxb_import_animation", "fail", JSON.stringify({ png, sprite, inplace }));
     }
     return verdict(
       "xsxb_import_animation",
       "ready",
-      `png=${png.importedFrameCount} spriteframes=${sprite.importedFrameCount}`,
+      `png=${png.importedFrameCount} spriteframes=${sprite.importedFrameCount} inplace=${inplace.inPlace}`,
     );
   },
 
@@ -252,6 +281,40 @@ animations = [{
       "ready",
       `imported=${imported.importedFrameCount} extracted=${imported.extractedFrameCount}`,
     );
+  },
+
+  async xsxb_slice_sheet(fixture) {
+    const sheetPath = path.join(fixture.root, "sheet.png");
+    const cell = 4;
+    const width = 8;
+    const height = 8;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    const colors = [
+      [255, 0, 0, 255],
+      [0, 255, 0, 255],
+      [0, 0, 255, 255],
+      [255, 255, 0, 255],
+    ];
+    for (let row = 0; row < 2; row += 1) {
+      for (let col = 0; col < 2; col += 1) {
+        const color = colors[row * 2 + col];
+        for (let y = 0; y < cell; y += 1) {
+          for (let x = 0; x < cell; x += 1) {
+            rgba.set(color, ((row * cell + y) * width + col * cell + x) * 4);
+          }
+        }
+      }
+    }
+    fs.writeFileSync(sheetPath, encodePngRgba(rgba, width, height));
+    const sliced = await fixture.service.call("xsxb_slice_sheet", {
+      file_path: sheetPath,
+      columns: 2,
+      rows: 2,
+    });
+    if (sliced.frameCount !== 4 || sliced.paths.length !== 4 || !fs.existsSync(sliced.paths[0])) {
+      return verdict("xsxb_slice_sheet", "fail", JSON.stringify(sliced));
+    }
+    return verdict("xsxb_slice_sheet", "ready", `frameCount=${sliced.frameCount} dest=${sliced.outputDir}`);
   },
 
   async xsxb_get_animation(fixture) {
@@ -581,6 +644,56 @@ animations = [{
     );
   },
 
+  async xsxb_measure_frames(fixture) {
+    await importSequence(fixture, "walk");
+    const measured = await fixture.service.call("xsxb_measure_frames", { animation_id: "walk" });
+    if (!measured.frames?.length || typeof measured.frames[0].bboxH !== "number") {
+      return verdict("xsxb_measure_frames", "fail", JSON.stringify(measured));
+    }
+    return verdict(
+      "xsxb_measure_frames",
+      "ready",
+      `frames=${measured.frames.length} bboxH=${measured.frames[0].bboxH}`,
+    );
+  },
+
+  async xsxb_register_clip(fixture) {
+    await importSequence(fixture, "walk");
+    const planned = await fixture.service.call("xsxb_register_clip", {
+      animation_id: "walk",
+      target_bbox: 8,
+      dry_run: true,
+    });
+    if (planned.applied !== false || !planned.frames?.length || planned.targetBbox !== 8) {
+      return verdict("xsxb_register_clip", "fail", JSON.stringify(planned));
+    }
+    return verdict("xsxb_register_clip", "ready", `dryRun scale=${planned.frames[0].scale}`);
+  },
+
+  async xsxb_export_overlay(fixture) {
+    await importSequence(fixture, "walk");
+    const overlay = await fixture.service.call("xsxb_export_overlay", { animation_id: "walk" });
+    if (!fs.existsSync(overlay.outputPath) || overlay.mse < 0) {
+      return verdict("xsxb_export_overlay", "fail", JSON.stringify(overlay));
+    }
+    return verdict("xsxb_export_overlay", "ready", `mse=${overlay.mse}`);
+  },
+
+  async xsxb_export_pack_slot(fixture) {
+    await importSequence(fixture, "walk");
+    const dest = path.join(fixture.root, "pack", "run", "front");
+    const exported = await fixture.service.call("xsxb_export_pack_slot", {
+      animation_id: "walk",
+      dest,
+      slot: "run",
+      view: "front",
+    });
+    if (exported.copied !== 2 || !fs.existsSync(path.join(dest, "0.png"))) {
+      return verdict("xsxb_export_pack_slot", "fail", JSON.stringify(exported));
+    }
+    return verdict("xsxb_export_pack_slot", "ready", `copied=${exported.copied}`);
+  },
+
   async xsxb_reorganize_frames(fixture) {
     await importSequence(fixture, "walk");
     const reversed = await fixture.service.call("xsxb_reorganize_frames", {
@@ -643,6 +756,50 @@ animations = [{
       return verdict("xsxb_shift_frames", "fail", JSON.stringify(shifted));
     }
     return verdict("xsxb_shift_frames", "ready", "translates one workspace PNG by integer pixels");
+  },
+
+  async xsxb_plant_feet(fixture) {
+    const directory = path.join(fixture.root, "plant-seq");
+    fs.mkdirSync(directory, { recursive: true });
+    const width = 16;
+    const height = 16;
+    const bodyH = 8;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    const left = 4;
+    const top = height - bodyH - 2;
+    for (let y = top; y < top + bodyH; y += 1) {
+      for (let x = left; x < left + 4; x += 1) {
+        rgba.set([210, 36, 42, 255], (y * width + x) * 4);
+      }
+    }
+    fs.writeFileSync(path.join(directory, "01.png"), encodePngRgba(rgba, width, height));
+    fs.writeFileSync(path.join(directory, "02.png"), encodePngRgba(rgba, width, height));
+    await fixture.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "walk",
+    });
+    const preview = await fixture.service.call("xsxb_plant_feet", {
+      animation_id: "walk",
+      dry_run: true,
+    });
+    const planted = await fixture.service.call("xsxb_plant_feet", {
+      animation_id: "walk",
+      apply: true,
+    });
+    if (
+      preview.applied !== false ||
+      planted.applied !== true ||
+      planted.frames[0]?.targetY !== -1 ||
+      planted.frames[0]?.dy < 1
+    ) {
+      return verdict("xsxb_plant_feet", "fail", JSON.stringify({ preview, planted }));
+    }
+    return verdict(
+      "xsxb_plant_feet",
+      "ready",
+      `dy=${planted.frames[0].dy} targetY=${planted.frames[0].targetY}`,
+    );
   },
 
   async xsxb_compress_frames(fixture) {
@@ -967,6 +1124,29 @@ animations = [{
     );
   },
 
+  async xsxb_detect_regions(fixture) {
+    const width = 32;
+    const height = 32;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    for (let y = 6; y < 27; y += 1) {
+      for (let x = 12; x < 20; x += 1) rgba.set([70, 90, 180, 255], (y * width + x) * 4);
+    }
+    const filePath = path.join(fixture.root, "detect-regions.png");
+    fs.writeFileSync(filePath, encodePngRgba(rgba, width, height));
+    const receipt = await fixture.service.call("xsxb_detect_regions", {
+      file_path: filePath,
+      provider: "code",
+      targets: ["subject"],
+    });
+    if (
+      !receipt.candidates.some((candidate) => candidate.hypothesis === "subject") ||
+      !fs.existsSync(receipt.overlayPath)
+    ) {
+      return verdict("xsxb_detect_regions", "fail", JSON.stringify(receipt));
+    }
+    return verdict("xsxb_detect_regions", "ready", `code candidates=${receipt.candidates.length}`);
+  },
+
   async xsxb_overlay_grid(fixture) {
     const width = 32;
     const height = 32;
@@ -991,13 +1171,9 @@ animations = [{
         break;
       }
     }
-    if (
-      receipt.view.width !== 32 ||
-      receipt.cells.A1.x1 !== 0 ||
-      receipt.cells.A1.y1 !== 0 ||
-      !fs.existsSync(receipt.overlay_path) ||
-      !labeled
-    ) {
+    const cellA1 = receipt.cells && receipt.cells.A1;
+    const cellOk = cellA1 && cellA1.id === "A1" && cellA1.x1 === undefined;
+    if (receipt.view.width !== 32 || !cellOk || !fs.existsSync(receipt.overlay_path) || !labeled) {
       return verdict("xsxb_overlay_grid", "fail", JSON.stringify(receipt));
     }
     return verdict("xsxb_overlay_grid", "ready", `overlay ${path.basename(receipt.overlay_path)}`);

@@ -229,6 +229,31 @@ test("place_image target_anchor rejects unknown keys", () => {
   );
 });
 
+test("create_project and import_video window fields stay optional and lenient", () => {
+  const list = toolDefinitions().find((entry) => entry.name === "xsxb_list_projects");
+  const get = toolDefinitions().find((entry) => entry.name === "xsxb_get_project");
+  const setActive = toolDefinitions().find((entry) => entry.name === "xsxb_set_active_project");
+  const create = toolDefinitions().find((entry) => entry.name === "xsxb_create_project");
+  const video = toolDefinitions().find((entry) => entry.name === "xsxb_import_video");
+  const animation = toolDefinitions().find((entry) => entry.name === "xsxb_import_animation");
+  assert.ok(!list.inputSchema.required || list.inputSchema.required.length === 0);
+  assert.ok(!get.inputSchema.required || !get.inputSchema.required.includes("project_id"));
+  assert.deepEqual(setActive.inputSchema.required, ["project_id"]);
+  assert.ok(create, "xsxb_create_project is catalogued");
+  assert.ok(!create.inputSchema.required || create.inputSchema.required.length === 0);
+  assert.ok(video.inputSchema.properties.start_time);
+  assert.ok(video.inputSchema.properties.duration);
+  assert.ok(animation.inputSchema.properties.start_time);
+  validateToolArguments("xsxb_import_video", video.inputSchema, {
+    file_path: "/tmp/a.mp4",
+    fps: "12",
+    start_time: "1.6",
+    duration: "0.8",
+    sync: "true",
+  });
+  validateToolArguments("xsxb_import_video", video.inputSchema, { file_path: "/tmp/a.mp4" });
+});
+
 test("every declared tool schema is one this validator understands", () => {
   const supported = new Set([
     "type",

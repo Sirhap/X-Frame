@@ -20,12 +20,10 @@ const {
   toolDefinitions,
 } = require("../xsxb_mcp_service");
 const { decodePngRgba, encodePngRgba, subjectAnchor } = require("../xsxb_mcp_cutout");
+const { videoExtractFfmpegArgs } = require("../xsxb_mcp_processes");
 const openTunerStub = require("../xsxb_open_tuner");
 
-const ONE_PIXEL_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XkM0WQAAAABJRU5ErkJggg==",
-  "base64",
-);
+const ONE_PIXEL_PNG = encodePngRgba(new Uint8ClampedArray([255, 255, 255, 255]), 1, 1);
 
 function fixture(options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-mcp-test-"));
@@ -53,6 +51,7 @@ function fixture(options = {}) {
     });
   };
   const serviceOptions = { root, extractVideoFramesImpl };
+  if (options.encodeGifImpl) serviceOptions.encodeGifImpl = options.encodeGifImpl;
   if (!options.realCutout) {
     serviceOptions.cutoutPngFileImpl = async (inputPath, outputPath) => {
       fs.copyFileSync(inputPath, outputPath);
@@ -94,7 +93,8 @@ test("MCP transport initializes, lists tools, and returns structured tool result
     { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "xsxb_list_projects" } },
     service,
   );
-  assert.deepEqual(called.result.structuredContent, { ok: true, value: 42 });
+  assert.equal(called.result.structuredContent.schemaVersion, 2);
+  assert.deepEqual(called.result.structuredContent.data, { ok: true, value: 42 });
   assert.equal(called.result.isError, false);
 });
 
@@ -132,6 +132,25 @@ test("stdio entrypoints stay alive and answer initialize", async () => {
   }
 });
 
+test("stdio transport disposes its service when input closes", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let closeCalls = 0;
+  const service = {
+    tools: [],
+    call: async () => ({}),
+    close() {
+      closeCalls += 1;
+    },
+  };
+  const lines = startServer({ input, output, service });
+  const closed = new Promise((resolve) => lines.once("close", resolve));
+  input.end();
+  await closed;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closeCalls, 1);
+});
+
 test("INSTRUCTIONS and shift_frames name last-pixel planting and a stale catalog", () => {
   const shift = toolDefinitions().find((entry) => entry.name === "xsxb_shift_frames");
   assert.ok(shift, "xsxb_shift_frames is a catalog tool");
@@ -166,6 +185,39 @@ test("INSTRUCTIONS and shift_frames name last-pixel planting and a stale catalog
   assert.match(sheet.description, /do not OCR/i);
 });
 
+test("INSTRUCTIONS and skill name session process: goal, todo, check after each step", () => {
+  assert.match(INSTRUCTIONS, /one sentence|user goal/i, "INSTRUCTIONS must start from the stated user goal");
+  assert.match(INSTRUCTIONS, /\btodo\b/i, "INSTRUCTIONS must require an ordered todo for multi-step work");
+  assert.match(INSTRUCTIONS, /after each/i, "INSTRUCTIONS must check after each mutating step");
+  assert.match(
+    INSTRUCTIONS,
+    /stop and fix|do not continue the playbook/i,
+    "INSTRUCTIONS must stop the playbook when the eye fails",
+  );
+  const skill = fs.readFileSync(path.join(__dirname, "../../skills/xsxb-frame-tuner/SKILL.md"), "utf8");
+  assert.match(skill, /MCP 工程流程/);
+  assert.match(skill, /\btodo\b/i);
+  assert.match(skill, /preview\.path/);
+});
+
+test("INSTRUCTIONS and cutout/sheet name black plates and magenta look previews", () => {
+  const cutout = toolDefinitions().find((entry) => entry.name === "xsxb_cutout");
+  const sheet = toolDefinitions().find((entry) => entry.name === "xsxb_export_sheet");
+  assert.match(
+    INSTRUCTIONS,
+    /white or black|black or white|white\/black|black\/white|black plates/i,
+    "INSTRUCTIONS must name generated black plates, not only white",
+  );
+  assert.match(cutout.description, /preview\.path/, "xsxb_cutout must send the eye to preview.path");
+  assert.match(cutout.description, /magenta/i, "xsxb_cutout preview is a magenta flatten");
+  assert.match(cutout.description, /black/i, "xsxb_cutout must name generated black plates");
+  assert.match(
+    sheet.description,
+    /canvas origin|below feet|feetY below|full canvas/i,
+    "human sheets must not plant-crop pixels below feetY",
+  );
+});
+
 test("INSTRUCTIONS and trail/place/cutout name the crescent pixel-layer playbook", () => {
   const trail = toolDefinitions().find((entry) => entry.name === "xsxb_add_attack_trail");
   const place = toolDefinitions().find((entry) => entry.name === "xsxb_place_image");
@@ -173,10 +225,7 @@ test("INSTRUCTIONS and trail/place/cutout name the crescent pixel-layer playbook
   const gif = toolDefinitions().find((entry) => entry.name === "xsxb_export_gif");
   const sheet = toolDefinitions().find((entry) => entry.name === "xsxb_export_sheet");
   assert.ok(trail && place && cutout && gif && sheet);
-  for (const [label, text] of [
-    ["INSTRUCTIONS", INSTRUCTIONS],
-    ["xsxb_add_attack_trail", trail.description],
-  ]) {
+  for (const [label, text] of [["xsxb_add_attack_trail", trail.description]]) {
     assert.match(text, /月牙/, `${label} must name 月牙`);
     assert.match(text, /像素层/, `${label} must name 像素层`);
     assert.match(text, /7字/, `${label} must name the 7字 failure`);
@@ -312,9 +361,9 @@ test("a failing tool answers with an MCP error result instead of a transport err
   assert.equal(called.error, undefined, "a tool failure is not a JSON-RPC error");
   assert.equal(called.result.isError, true);
   assert.equal(called.result.structuredContent.ok, false);
-  assert.equal(called.result.structuredContent.error, "Animation not found: ghost");
-  assert.equal(called.result.structuredContent.code, "xsxb_missing_animation");
-  assert.match(called.result.content[0].text, /ghost/u);
+  assert.equal(called.result.structuredContent.error.message, "Animation not found: ghost");
+  assert.equal(called.result.structuredContent.error.code, "xsxb_missing_animation");
+  assert.match(called.result.content[0].text, /xsxb_missing_animation/u);
 });
 
 test("unknown methods and malformed requests answer with JSON-RPC errors", async () => {
@@ -333,7 +382,7 @@ test("unknown methods and malformed requests answer with JSON-RPC errors", async
     { tools: [], call: createXsxbMcpService().call },
   );
   assert.equal(unknownTool.result.isError, true);
-  assert.match(unknownTool.result.structuredContent.error, /Unknown XSXB MCP tool/u);
+  assert.match(unknownTool.result.structuredContent.error.message, /Unknown XSXB MCP tool/u);
 });
 
 test("notifications are executed without a response", async () => {
@@ -416,9 +465,14 @@ test("the dispatcher rejects arguments the declared schema does not allow", asyn
   }
 });
 
-test("GIF export refuses to write outside the project workspace", async () => {
-  const current = fixture();
+test("GIF export allows an absolute path outside the root and still rejects relative escapes", async () => {
   const outside = path.join(os.tmpdir(), `xsxb-escape-${process.pid}.gif`);
+  const current = fixture({
+    encodeGifImpl: async (job) => {
+      fs.mkdirSync(path.dirname(job.outputPath), { recursive: true });
+      fs.writeFileSync(job.outputPath, Buffer.from("GIF89a"));
+    },
+  });
   try {
     const sequenceDir = path.join(current.root, "seq");
     fs.mkdirSync(sequenceDir, { recursive: true });
@@ -429,11 +483,12 @@ test("GIF export refuses to write outside the project workspace", async () => {
       animation_id: "walk",
     });
 
-    await assert.rejects(
-      () => current.service.call("xsxb_export_gif", { animation_id: "walk", output_path: outside }),
-      /must stay inside the XSXB workspace root/u,
-    );
-    assert.equal(fs.existsSync(outside), false, "the escaping path is never created");
+    const exported = await current.service.call("xsxb_export_gif", {
+      animation_id: "walk",
+      output_path: outside,
+    });
+    assert.equal(exported.outputPath, outside);
+    assert.equal(fs.existsSync(outside), true);
     await assert.rejects(
       () =>
         current.service.call("xsxb_export_gif", {
@@ -554,11 +609,13 @@ test("MCP catalog includes the production editing tools", () => {
     "xsxb_update_timing",
     "xsxb_sync_godot",
     "xsxb_get_project",
+    "xsxb_create_project",
     "xsxb_delete_animation",
   ]) {
     assert.ok(MCP_TOOL_NAMES.includes(name), name);
   }
   assert.ok(MCP_TOOL_NAMES.includes("xsxb_import_video"));
+  assert.equal(MCP_TOOL_NAMES[MCP_TOOL_NAMES.indexOf("xsxb_get_project") + 1], "xsxb_create_project");
 });
 
 test("XSXB MCP service completes the production editing loop", async () => {
@@ -710,6 +767,101 @@ test("bind_godot retargets a project to an existing Godot root", async () => {
   }
 });
 
+test("xsxb_create_project adds a registry project without changing list/get/set_active shapes", async () => {
+  const current = fixture();
+  try {
+    const created = await current.service.call("xsxb_create_project", {
+      project_id: "warrior",
+      label: "Warrior",
+    });
+    assert.equal(created.created, true);
+    assert.equal(created.projectId, "warrior");
+    assert.equal(created.project.id, "warrior");
+    assert.equal(created.project.label, "Warrior");
+    const listed = await current.service.call("xsxb_list_projects");
+    assert.equal(listed.activeProjectId, "warrior");
+    assert.ok(listed.projects.some((entry) => entry.id === "warrior"));
+    const snapshot = await current.service.call("xsxb_get_project", { project_id: "warrior" });
+    assert.equal(snapshot.projectId, "warrior");
+    const again = await current.service.call("xsxb_create_project", { project_id: "warrior" });
+    assert.equal(again.created, false);
+    assert.equal(again.projectId, "warrior");
+    const createSchema = toolDefinitions().find((entry) => entry.name === "xsxb_create_project");
+    const listSchema = toolDefinitions().find((entry) => entry.name === "xsxb_list_projects");
+    const getSchema = toolDefinitions().find((entry) => entry.name === "xsxb_get_project");
+    const setSchema = toolDefinitions().find((entry) => entry.name === "xsxb_set_active_project");
+    assert.ok(!createSchema.inputSchema.required || createSchema.inputSchema.required.length === 0);
+    assert.ok(!listSchema.inputSchema.required || listSchema.inputSchema.required.length === 0);
+    assert.ok(!getSchema.inputSchema.required || !getSchema.inputSchema.required.includes("project_id"));
+    assert.deepEqual(setSchema.inputSchema.required, ["project_id"]);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("import_video forwards optional start_time/duration and omits them for full-file extract", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-mcp-window-"));
+  const godotRoot = path.join(root, "godot");
+  fs.mkdirSync(godotRoot, { recursive: true });
+  fs.writeFileSync(path.join(godotRoot, "project.godot"), '[application]\nconfig/name="Window"\n');
+  createProjectStore(root).addProject({ id: "window", label: "Window", projectRoot: godotRoot });
+  const video = path.join(root, "clip.mp4");
+  fs.writeFileSync(video, "placeholder");
+  const seen = [];
+  const service = createXsxbMcpService({
+    root,
+    extractVideoFramesImpl: async (_videoPath, outputDirectory, options) => {
+      seen.push(options);
+      const framePath = path.join(outputDirectory, "frame_000001.png");
+      fs.writeFileSync(framePath, ONE_PIXEL_PNG);
+      return [framePath];
+    },
+  });
+  try {
+    await service.call("xsxb_import_video", {
+      file_path: video,
+      animation_id: "full",
+      fps: "12",
+    });
+    await service.call("xsxb_import_video", {
+      file_path: video,
+      animation_id: "windowed",
+      fps: "10",
+      start_time: "1.6",
+      duration: "0.8",
+    });
+    assert.equal(seen.length, 2);
+    assert.equal(seen[0].start_time, undefined);
+    assert.equal(seen[0].duration, undefined);
+    assert.equal(seen[1].start_time, "1.6");
+    assert.equal(seen[1].duration, "0.8");
+    const fullArgs = videoExtractFfmpegArgs("/tmp/a.mp4", "/tmp/out/frame_%06d.png", {});
+    assert.deepEqual(fullArgs, [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-i",
+      "/tmp/a.mp4",
+      "-map",
+      "0:v:0",
+      "-vsync",
+      "0",
+      "/tmp/out/frame_%06d.png",
+    ]);
+    const windowArgs = videoExtractFfmpegArgs("/tmp/a.mp4", "/tmp/out/frame_%06d.png", {
+      start_time: "1.6",
+      duration: "0.8",
+    });
+    assert.ok(windowArgs.includes("-ss"));
+    assert.ok(windowArgs.includes("1.6"));
+    assert.ok(windowArgs.includes("-t"));
+    assert.ok(windowArgs.includes("0.8"));
+    assert.ok(windowArgs.indexOf("-i") < windowArgs.indexOf("-ss"));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("set_active_project and get_animation summary keep MCP context explicit", async () => {
   const current = fixture();
   try {
@@ -824,9 +976,11 @@ test("reorganize duplicated frames receive unique ids", async () => {
       animation_id: "walk",
       fps: 12,
     });
+    const observation = await current.service.callMcp("xsxb_get_animation", { animation_id: "walk" });
     const reorganized = await current.service.call("xsxb_reorganize_frames", {
       animation_id: "walk",
       order: [0, 0, 1],
+      basis_snapshot_id: observation.observation.snapshotId,
       sync: false,
     });
     assert.equal(reorganized.outputFrameCount, 3);

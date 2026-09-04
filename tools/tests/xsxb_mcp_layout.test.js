@@ -13,6 +13,8 @@ const FRONTEND_SESSION = path.join(TOOLS_DIR, "animation_tuner/public/batch_cuto
 const MCP_MODULES = [
   "xsxb_mcp_arguments",
   "xsxb_mcp_cutout",
+  "xsxb_mcp_lock",
+  "xsxb_mcp_plant",
   "xsxb_mcp_loop",
   "xsxb_mcp_place",
   "xsxb_mcp_place_brief",
@@ -20,6 +22,7 @@ const MCP_MODULES = [
   "xsxb_mcp_schema",
   "xsxb_mcp_server",
   "xsxb_mcp_service",
+  "xsxb_mcp_slice",
   "xsxb_mcp_smear_brief",
   "xsxb_mcp_tool_catalog",
   "xsxb_mcp_tool_usability",

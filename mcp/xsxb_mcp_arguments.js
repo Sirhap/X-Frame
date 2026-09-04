@@ -202,12 +202,14 @@ function boxFromGroupCorners(patch) {
 /**
  * Converts a local PNG file into the organizer import item shape.
  * @param {string} filePath Absolute PNG path.
- * @returns {{name:string,data:string}} Import item.
+ * @returns {{name:string,data:string,sourcePath:string}} Import item.
  */
 function pngFileToItem(filePath) {
+  const resolved = path.resolve(filePath);
   return {
-    name: path.basename(filePath),
-    data: `data:image/png;base64,${fs.readFileSync(filePath).toString("base64")}`,
+    name: path.basename(resolved),
+    data: `data:image/png;base64,${fs.readFileSync(resolved).toString("base64")}`,
+    sourcePath: resolved,
   };
 }
 
@@ -388,10 +390,10 @@ function mcpArtifactDir(workspaceDir, root) {
 /**
  * Resolves an MCP output path into the project `.xsxb` folder.
  * Relative paths hang off `.xsxb/` so `exports/foo.gif` cannot dump into the
- * MCP repo. Absolute paths must stay inside the XSXB root and must not land in
- * the repo-root `exports/` dump.
+ * MCP repo. Absolute paths stay inside the XSXB root unless allowOutsideRoot
+ * is set (GIF/sheet/overlay/pack copies into /tmp or a game checkout).
  * @param {unknown} requested Agent `output_path`, or omitted.
- * @param {{root:string,artifactDir:string,defaultName:string,extensionPattern:RegExp,extensionLabel:string}} options Path options.
+ * @param {{root:string,artifactDir:string,defaultName:string,extensionPattern:RegExp,extensionLabel:string,allowOutsideRoot?:boolean}} options Path options.
  * @returns {string} Absolute destination.
  */
 function resolveMcpArtifactPath(requested, options) {
@@ -408,13 +410,14 @@ function resolveMcpArtifactPath(requested, options) {
   if (options.extensionPattern && !options.extensionPattern.test(outputPath)) {
     throw new Error(`output_path must end with ${options.extensionLabel}.`);
   }
-  if (!isInsideDirectory(outputPath, root)) {
+  const outside = !isInsideDirectory(outputPath, root);
+  if (outside && !(options.allowOutsideRoot && requested && path.isAbsolute(String(requested)))) {
     throw new Error(
       `output_path must stay inside the XSXB workspace root (${root}). Received: ${requested || defaultName}`,
     );
   }
   const repoDump = path.join(root, "exports");
-  if (isInsideDirectory(outputPath, repoDump)) {
+  if (!outside && isInsideDirectory(outputPath, repoDump)) {
     throw new Error(
       `MCP artifacts belong in the current project's .xsxb/ folder, not the MCP exports/ dump. Received: ${requested}`,
     );

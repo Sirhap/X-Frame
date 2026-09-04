@@ -26,6 +26,8 @@ const EMPTY_ATTACK_TRAILS = Object.freeze({
   bindings: {},
 });
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const MAX_PNG_PIXELS = 16_777_216;
+const MAX_INFLATED_BYTES = MAX_PNG_PIXELS * 4 + 16_384;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -338,11 +340,19 @@ function pngInfo(buffer) {
     offset = dataEnd + 4;
   }
   if (!width || !height) throw new Error("PNG 缺少有效 IHDR。");
+  if (width * height > MAX_PNG_PIXELS) {
+    const error = new Error(`PNG exceeds the ${MAX_PNG_PIXELS} decoded-pixel limit: ${width}x${height}.`);
+    error.code = "PNG_PIXEL_LIMIT";
+    throw error;
+  }
   let hasEffectiveAlpha = false;
   if ((colorType === 4 || colorType === 6) && bitDepth === 8 && interlace === 0 && idat.length) {
     const channels = colorType === 6 ? 4 : 2;
     const rowBytes = width * channels;
-    const inflated = zlib.inflateSync(Buffer.concat(idat));
+    const expected = height * (rowBytes + 1);
+    const inflated = zlib.inflateSync(Buffer.concat(idat), {
+      maxOutputLength: Math.min(expected, MAX_INFLATED_BYTES),
+    });
     let cursor = 0;
     let previous = Buffer.alloc(rowBytes);
     for (let y = 0; y < height && !hasEffectiveAlpha; y += 1) {

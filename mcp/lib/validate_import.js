@@ -166,8 +166,12 @@ function validateImport(args, options = {}) {
         absolute = projectRoot ? path.resolve(projectRoot, sourcePath.slice("res://".length)) : "";
         if (!absolute || !isInside(absolute, projectRoot)) absolute = "";
       } else if (sourcePath) {
-        absolute = path.resolve(validationRoot, sourcePath);
-        if (!isInside(absolute, validationRoot)) absolute = "";
+        absolute = path.isAbsolute(sourcePath)
+          ? path.resolve(sourcePath)
+          : path.resolve(validationRoot, sourcePath);
+        const inPlace = Boolean(animation.inPlace);
+        if (!isInside(absolute, validationRoot) && !inPlace) absolute = "";
+        if (inPlace && (!absolute || !fs.existsSync(absolute))) absolute = "";
       }
       if (!sourcePath || !absolute || !fs.existsSync(absolute)) {
         errors.push(`${key}:${index}: standalone frame path is missing: ${sourcePath || "(empty)"}`);

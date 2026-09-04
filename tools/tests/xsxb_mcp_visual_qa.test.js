@@ -111,6 +111,44 @@ test("renderContactSheet places every source frame into a shared cell grid", () 
   assert.ok(sheet.data.some((value, index) => index % 4 === 3 && value > 16));
 });
 
+test("grid=false contact sheet keeps pixels below feetY", () => {
+  const width = 32;
+  const height = 32;
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 8; y <= 20; y += 1) {
+    for (let x = 12; x <= 19; x += 1) setPixel(rgba, width, x, y, [210, 36, 42, 255]);
+  }
+  for (let x = 12; x <= 19; x += 1) setPixel(rgba, width, x, 28, [0, 220, 255, 255]);
+  const frame = { data: rgba, width, height };
+  const planted = renderContactSheet([frame], {
+    cell: 32,
+    pad: 2,
+    columns: 1,
+    grid: true,
+    normalize: "none",
+    labels: false,
+  });
+  const look = renderContactSheet([frame], {
+    cell: 32,
+    pad: 2,
+    columns: 1,
+    grid: false,
+    normalize: "none",
+    labels: false,
+  });
+  const countCyan = (sheet) => {
+    let count = 0;
+    for (let offset = 0; offset < sheet.data.length; offset += 4) {
+      if (sheet.data[offset] === 0 && sheet.data[offset + 1] === 220 && sheet.data[offset + 2] === 255) {
+        count += 1;
+      }
+    }
+    return count;
+  };
+  assert.equal(countCyan(planted), 0, "planting sheets clip pixels below feetY");
+  assert.equal(countCyan(look), 8, "look sheets must blit the full canvas including ice below the boots");
+});
+
 /**
  * Reads one RGBA pixel from a sheet.
  * @param {{data:Uint8ClampedArray,width:number}} sheet Sheet buffer.
@@ -286,6 +324,18 @@ function paintedLabelBoxes(described) {
     })),
   ];
 }
+
+test("explicit 8x8 overlay cells cover cols 0–7 on a 320 canvas", () => {
+  const described = describeGroupGrid(160, 320, 320, "canvas_bottom_center", { grid_divs: "8x8" });
+  assert.deepEqual(described.divs, { x: 8, y: 8 });
+  assert.equal(described.cells.length, 8, "8 rows");
+  assert.equal(described.cells[0].length, 8, "col 7 / group x=120 must exist for write-back");
+  assert.equal(described.cells[0][7].col, 7);
+  assert.ok(
+    described.cells[0][7].x0 >= 100,
+    `last column should start near x=120, got ${described.cells[0][7].x0}`,
+  );
+});
 
 test("overlay paints row/col indices; group coords live in code-generated cells", () => {
   const described = describeGroupGrid(160, 384, 384, "canvas_bottom_center", { density: "dense" });
@@ -598,6 +648,62 @@ test("measureLongAxis names the handle end of a wide-blade sword as the pommel",
   assert.ok(measured.pommel.x < measured.tip.x, "thin grip is the pommel, wide blade is the tip");
 });
 
+/**
+ * Whether a (possibly fractional) sample sits on an opaque pixel.
+ * @param {Uint8ClampedArray} rgba Pixels.
+ * @param {number} width Width.
+ * @param {number} x Column.
+ * @param {number} y Row.
+ * @returns {boolean} Opaque.
+ */
+function opaqueAt(rgba, width, x, y) {
+  const px = Math.floor(x);
+  const py = Math.floor(y);
+  if (px < 0 || py < 0 || px >= width) return false;
+  const height = rgba.length / (width * 4);
+  if (py >= height) return false;
+  return rgba[(py * width + px) * 4 + 3] > 16;
+}
+
+/**
+ * Taller-than-wide diagonal blade (AABB would skip PCA and lock vertical).
+ * @param {number} [width=80] Canvas width.
+ * @param {number} [height=120] Canvas height.
+ * @returns {{data:Uint8ClampedArray,width:number,height:number}} RGBA blade.
+ */
+function diagonalIceSword(width = 80, height = 120) {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i <= 90; i += 1) {
+    const t = i / 90;
+    const x = Math.round(12 + t * 52);
+    const y = Math.round(108 - t * 96);
+    const half = Math.round(2 + (1 - t) * 3);
+    for (let dy = -half; dy <= half; dy += 1) {
+      for (let dx = -half; dx <= half; dx += 1) {
+        const px = x + dx;
+        const py = y + dy;
+        if (px >= 0 && py >= 0 && px < width && py < height) {
+          setPixel(rgba, width, px, py, [180, 190, 210, 255]);
+        }
+      }
+    }
+  }
+  return { data: rgba, width, height };
+}
+
+test("measureLongAxis follows a diagonal blade instead of locking to a vertical AABB", () => {
+  const { data, width, height } = diagonalIceSword();
+  const measured = measureLongAxis(data, width, height, { t: 2 / 3 });
+  assert.ok(
+    Math.abs(measured.direction.x) > 0.2,
+    `long axis must follow the opaque blade, not a vertical AABB (direction=${JSON.stringify(measured.direction)})`,
+  );
+  assert.ok(opaqueAt(data, width, measured.pommel.x, measured.pommel.y), "pommel must sit on opaque pixels");
+  assert.ok(opaqueAt(data, width, measured.tip.x, measured.tip.y), "tip must sit on opaque pixels");
+  assert.ok(opaqueAt(data, width, measured.at.x, measured.at.y), "t=2/3 must sit on opaque pixels");
+  assert.ok(measured.length > 20);
+});
+
 test("renderContactSheet keeps the foot origin on the marked cell", () => {
   const sheet = renderContactSheet([bodyFrame(16, 4, 8)], {
     cell: 32,
@@ -730,7 +836,7 @@ test("find_motion trims leading and trailing rest holds", async () => {
   }
 });
 
-test("export_sheet writes a PNG inside the workspace and rejects escapes", async () => {
+test("export_sheet writes a PNG inside the workspace, allows absolute outside paths, and rejects relative escapes", async () => {
   const current = serviceFixture();
   try {
     const directory = path.join(current.root, "walk");
@@ -832,10 +938,22 @@ test("export_sheet writes a PNG inside the workspace and rejects escapes", async
       ],
       GROUP_GRID.originInk,
     );
+    const outside = path.join(os.tmpdir(), `xsxb-sheet-outside-${process.pid}.png`);
+    try {
+      const written = await current.service.call("xsxb_export_sheet", {
+        animation_id: "walk",
+        output_path: outside,
+        grid: false,
+      });
+      assert.equal(written.outputPath, outside);
+      assert.ok(fs.existsSync(outside));
+    } finally {
+      fs.rmSync(outside, { force: true });
+    }
     await assert.rejects(
       current.service.call("xsxb_export_sheet", {
         animation_id: "walk",
-        output_path: "/tmp/outside.png",
+        output_path: "../../../../../../escape.png",
       }),
       /must stay inside the XSXB workspace root/,
     );
@@ -846,6 +964,50 @@ test("export_sheet writes a PNG inside the workspace and rejects escapes", async
       }),
       /must end with \.png/,
     );
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("export_sheet 8x8 on a 320 canvas includes column 7", async () => {
+  const current = serviceFixture();
+  try {
+    const directory = path.join(current.root, "slash320");
+    fs.mkdirSync(directory);
+    writeBodyPng(path.join(directory, "01.png"), 320, 40, 80);
+    await current.service.call("xsxb_import_animation", {
+      source: "png_sequence",
+      directory,
+      animation_id: "ice_slash",
+    });
+    const exported = await current.service.call("xsxb_export_sheet", {
+      animation_id: "ice_slash",
+      grid_divs: "8x8",
+      cell: 160,
+    });
+    assert.deepEqual(exported.grid.divs, { x: 8, y: 8 });
+    assert.equal(exported.grid.cells.length, 8);
+    assert.equal(exported.grid.cells[0].length, 8, "8×8 JSON must include col 7");
+    assert.equal(exported.grid.cells[0][7].col, 7);
+  } finally {
+    current.cleanup();
+  }
+});
+
+test("xsxb_measure_image on a diagonal sword keeps pommel/tip/t on the blade", async () => {
+  const current = serviceFixture();
+  try {
+    const sword = diagonalIceSword();
+    const filePath = path.join(current.root, "diagonal-sword.png");
+    fs.writeFileSync(filePath, encodePngRgba(sword.data, sword.width, sword.height));
+    const measured = await current.service.call("xsxb_measure_image", {
+      file_path: filePath,
+      t: "2/3",
+    });
+    assert.ok(Math.abs(measured.direction.x) > 0.2, "must not lock a diagonal blade to x=0");
+    assert.ok(opaqueAt(sword.data, sword.width, measured.pommel.x, measured.pommel.y));
+    assert.ok(opaqueAt(sword.data, sword.width, measured.tip.x, measured.tip.y));
+    assert.ok(opaqueAt(sword.data, sword.width, measured.at.x, measured.at.y));
   } finally {
     current.cleanup();
   }

@@ -38,6 +38,38 @@ const GLOW_DARK_RATIO = 0.25;
 const CUT_BORDER_CLEAR_RATIO = 0.5;
 
 /**
+ * Labels a successful cutout receipt. All-skip still succeeds; rematch is work.
+ * @param {{rematched?:boolean,processedFrameCount?:number,skippedFrameCount?:number,frameCount?:number}} receipt
+ * @returns {"confirmed"|"suspected_noop"}
+ */
+function cutoutVerifyStatus(receipt = {}) {
+  if (receipt.rematched === true) return "confirmed";
+  if (receipt.keyed === true) return "confirmed";
+  const processed = Number(receipt.processedFrameCount || 0);
+  const skipped = Number(receipt.skippedFrameCount || 0);
+  const frameCount = Number(receipt.frameCount);
+  if (processed === 0) return "suspected_noop";
+  if (Number.isFinite(frameCount) && frameCount > 0 && skipped === frameCount) return "suspected_noop";
+  return "confirmed";
+}
+
+/**
+ * Counts opaque dark, non-neutral pixels (navy trousers, not a black plate).
+ * @param {Uint8ClampedArray|Uint8Array} rgba Pixels.
+ * @returns {number} Count.
+ */
+function countDarkClothes(rgba) {
+  let count = 0;
+  for (let offset = 0; offset < rgba.length; offset += 4) {
+    if (rgba[offset + 3] <= ALPHA_VISIBLE) continue;
+    const maxc = Math.max(rgba[offset], rgba[offset + 1], rgba[offset + 2]);
+    const minc = Math.min(rgba[offset], rgba[offset + 1], rgba[offset + 2]);
+    if (maxc <= 80 && maxc - minc > 12) count += 1;
+  }
+  return count;
+}
+
+/**
  * Computes a PNG CRC32 checksum.
  * @param {Buffer} buffer Input bytes.
  * @returns {number} Unsigned checksum.
@@ -589,15 +621,36 @@ function soleYFromRows(component) {
   core.sort((left, right) => left - right);
   const coreLuma = core.length ? core[Math.floor(core.length / 2)] : 0;
   const glowFloor = Math.max(coreLuma + GLOW_LUMA_DELTA, GLOW_LUMA_MIN);
+  const midY = component.minY + Math.max(1, Math.floor(component.height * 0.5));
+  const bodyWidths = [];
+  for (let y = component.minY; y < midY; y += 1) {
+    if (!component.rowCount[y]) continue;
+    bodyWidths.push(component.rowMaxX[y] - component.rowMinX[y] + 1);
+  }
+  bodyWidths.sort((left, right) => left - right);
+  const bodyWidth = bodyWidths.length ? bodyWidths[Math.floor(bodyWidths.length / 2)] : component.width;
+  let fallback = component.maxY;
+  let haveFallback = false;
   for (let y = component.maxY; y >= component.minY; y -= 1) {
     const count = component.rowCount[y];
     if (!count) continue;
     const mean = component.rowLuma[y] / count;
     const darkRatio = component.rowDark[y] / count;
-    if (mean >= glowFloor && darkRatio < GLOW_DARK_RATIO) continue;
+    const rowWidth = component.rowMaxX[y] - component.rowMinX[y] + 1;
+    const brightGlow = mean >= glowFloor && darkRatio < GLOW_DARK_RATIO;
+    const wideVfx = bodyWidth > 0 && rowWidth >= Math.max(bodyWidth * 1.5, bodyWidth + 6) && darkRatio < 0.4;
+    if (brightGlow || wideVfx) continue;
+    if (!haveFallback) {
+      fallback = y;
+      haveFallback = true;
+    }
+    const belowMid = y > midY;
+    const narrowDebris = belowMid && bodyWidth > 0 && rowWidth < bodyWidth * 0.55;
+    const mixedIce = belowMid && darkRatio < 0.65 && mean >= coreLuma + 18;
+    if (narrowDebris || mixedIce) continue;
     return y;
   }
-  return component.maxY;
+  return fallback;
 }
 
 /**
@@ -674,7 +727,8 @@ function placeFramesOnCanvas(frames, canvasWidth, canvasHeight, options = {}) {
   const usable = anchors.filter(Boolean);
   const maxWidth = Math.max(1, ...usable.map((anchor) => anchor.width));
   const maxHeight = Math.max(1, ...usable.map((anchor) => anchor.height));
-  const sharedScale = Math.min(canvasWidth / maxWidth, canvasHeight / maxHeight);
+  const fill = options.fit === "fill_canvas" || options.fillCanvas === true;
+  const sharedScale = fill ? Math.min(canvasWidth / maxWidth, canvasHeight / maxHeight) : 1;
   const destFeetX = (canvasWidth - 1) / 2;
   const destFeetY = canvasHeight - 1;
   const frameScales = Array.isArray(options.frameScales) ? options.frameScales : null;
@@ -749,24 +803,47 @@ function cutoutFrameFiles(filePaths, options = {}) {
   if (missing) throw new Error(`Cutout refused missing on-disk frame: ${missing}`);
   const paths = requested;
   if (!paths.length) throw new Error("Cutout found no on-disk frames to process.");
-  const frames = paths.map((filePath) => decodePngRgba(filePath));
+  const { borderFloodKey } = require("./xsxb_mcp_lock");
+  const keyMode = String(options.keyMode || options.key_mode || "smart");
+  let frames = paths.map((filePath) => decodePngRgba(filePath));
+  const darkClothesBefore = frames.reduce((sum, frame) => sum + countDarkClothes(frame.data), 0);
+  const alreadyBefore = frames.map((frame) => alreadyCutOut(frame.data, frame.width, frame.height));
+  let floodKeyedTotal = 0;
+  if (keyMode === "border_flood") {
+    frames = frames.map((frame, index) => {
+      if (alreadyBefore[index] && !options.force) return frame;
+      const flooded = borderFloodKey(frame.data, frame.width, frame.height, options);
+      floodKeyedTotal += flooded.keyed;
+      return { data: flooded.data, width: frame.width, height: frame.height };
+    });
+  }
   const requestedBackground = parseHexColor(options.keyColor);
   const uncut = frames.filter((frame) => !alreadyCutOut(frame.data, frame.width, frame.height));
   const shouldKey = uncut.length > 0 || (Boolean(options.force) && Boolean(requestedBackground));
   const sample = uncut[0] || frames[0];
   const backgroundColor = shouldKey
     ? requestedBackground || detectBackgroundColor(sample.data, sample.width, sample.height)
-    : null;
+    : floodKeyedTotal > 0
+      ? requestedBackground
+      : null;
   const cutoutOptions = backgroundColor ? buildCutoutOptions(backgroundColor, options) : {};
   let skippedFrameCount = 0;
-  const cutFrames = frames.map((frame) => {
-    const already = alreadyCutOut(frame.data, frame.width, frame.height);
-    if (!shouldKey || (!options.force && already)) {
+  const cutFrames = frames.map((frame, index) => {
+    if (alreadyBefore[index] && !options.force) {
       skippedFrameCount += 1;
       return frame;
     }
+    const already = alreadyCutOut(frame.data, frame.width, frame.height);
+    if (!shouldKey || (!options.force && already)) {
+      if (alreadyBefore[index] || floodKeyedTotal === 0) skippedFrameCount += 1;
+      return frame;
+    }
+    const smartExtras =
+      keyMode === "border_flood" && options.connected === undefined
+        ? { ...options, connected: true }
+        : options;
     return {
-      data: applyProtectedSmartCutout(frame.data, frame.width, frame.height, backgroundColor, options),
+      data: applyProtectedSmartCutout(frame.data, frame.width, frame.height, backgroundColor, smartExtras),
       width: frame.width,
       height: frame.height,
     };
@@ -779,22 +856,32 @@ function cutoutFrameFiles(filePaths, options = {}) {
     : canvasWidth;
   const frameScales = Array.isArray(options.frameScales) ? options.frameScales : [];
   const applyVisual = frameScales.some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+  const fit = String(options.fit || (applyVisual ? "visual" : canvasWidth ? "fill_canvas" : "none"));
   const rematched = (canvasWidth > 0 && canvasHeight > 0) || applyVisual;
   const destWidth = canvasWidth || cutFrames[0].width;
   const destHeight = canvasHeight || cutFrames[0].height;
   const outputFrames = rematched
-    ? placeFramesOnCanvas(cutFrames, destWidth, destHeight, applyVisual ? { frameScales } : {})
+    ? placeFramesOnCanvas(cutFrames, destWidth, destHeight, {
+        frameScales: applyVisual ? frameScales : undefined,
+        fit: applyVisual ? "none" : fit,
+        fillCanvas: fit === "fill_canvas" && !applyVisual,
+      })
     : cutFrames;
   outputFrames.forEach((frame, index) => {
     fs.writeFileSync(paths[index], encodePngRgba(frame.data, frame.width, frame.height));
   });
   const processedFrameCount = outputFrames.length - skippedFrameCount;
+  const darkClothesAfter = outputFrames.reduce((sum, frame) => sum + countDarkClothes(frame.data), 0);
+  const keyed = floodKeyedTotal > 0 || (shouldKey && processedFrameCount > 0);
   return {
     pipeline: "smart_product",
     rematched,
-    rematchMode: applyVisual ? "visual" : rematched ? "shared" : "none",
+    rematchMode: applyVisual ? "visual" : rematched ? fit : "none",
+    fit: applyVisual ? "visual" : rematched ? fit : "none",
     frameScales: applyVisual ? frameScales : undefined,
-    keyed: shouldKey && processedFrameCount > 0,
+    keyed,
+    floodKeyed: floodKeyedTotal,
+    darkClothes: { before: darkClothesBefore, after: darkClothesAfter },
     backgroundColor: backgroundColor ? formatHexColor(backgroundColor) : null,
     outputWidth: outputFrames[0].width,
     outputHeight: outputFrames[0].height,
@@ -802,6 +889,15 @@ function cutoutFrameFiles(filePaths, options = {}) {
     processedFrameCount,
     skippedFrameCount,
     options: cutoutOptions,
+    verify: {
+      status: cutoutVerifyStatus({
+        rematched,
+        keyed,
+        processedFrameCount,
+        skippedFrameCount,
+        frameCount: outputFrames.length,
+      }),
+    },
   };
 }
 
@@ -828,6 +924,7 @@ module.exports = {
   compressPngFile,
   cutoutFrameFiles,
   cutoutPngFile,
+  cutoutVerifyStatus,
   decodePngRgba,
   encodePngRgba,
   parseHexColor,

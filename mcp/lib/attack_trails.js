@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
 const { reslash } = require("./project_store");
+const { MAX_INFLATED_BYTES, MAX_PNG_PIXELS } = require("./attachment_sequence_analysis");
 
 const DEFAULT_ATTACK_TRAIL_PRESET_TEXTURE = Object.freeze({
   path: "tools/animation_tuner/public/presets/attack_trails/dynamic_trail_luma.png",
@@ -269,7 +270,13 @@ function normalizeSegment(value, index, bindingKey, sourceSchema = 6) {
     profileId: String(segment.profileId || profileId),
     animationId: String(segment.animationId || animationId),
     enabled: segment.enabled !== false,
-    generated: segment.generated !== false,
+    generated:
+      segment.generated !== false &&
+      String(segment.pathKind || segment.path_kind || "smooth_arc") !== "polyline",
+    pathKind:
+      String(segment.pathKind || segment.path_kind || "smooth_arc") === "polyline"
+        ? "polyline"
+        : "smooth_arc",
     presetOnly: segment.presetOnly === true && sticks.length === 0,
     coordinateSpace: "group",
     layer: segmentLayer,
@@ -338,11 +345,19 @@ function pngInfo(buffer) {
     offset = dataEnd + 4;
   }
   if (!width || !height) throw new Error("PNG 缺少有效 IHDR。");
+  if (width * height > MAX_PNG_PIXELS) {
+    const error = new Error(`PNG exceeds the ${MAX_PNG_PIXELS} decoded-pixel limit: ${width}x${height}.`);
+    error.code = "PNG_PIXEL_LIMIT";
+    throw error;
+  }
   let hasEffectiveAlpha = false;
   if ((colorType === 4 || colorType === 6) && bitDepth === 8 && interlace === 0 && idat.length) {
     const channels = colorType === 6 ? 4 : 2;
     const rowBytes = width * channels;
-    const inflated = zlib.inflateSync(Buffer.concat(idat));
+    const expected = height * (rowBytes + 1);
+    const inflated = zlib.inflateSync(Buffer.concat(idat), {
+      maxOutputLength: Math.min(expected, MAX_INFLATED_BYTES),
+    });
     let cursor = 0;
     let previous = Buffer.alloc(rowBytes);
     for (let y = 0; y < height && !hasEffectiveAlpha; y += 1) {

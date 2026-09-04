@@ -59,6 +59,7 @@ Playwright 用例通过 `tools/tests/e2e/fixtures.js` 在每个测试前把 `XSX
 - **写盘路径要留在 XSXB 根目录内**。帧路径本来就有沙箱。MCP 预览产物（GIF、sheet、overlay、默认 place / 散图抠图）写到**当前 Tuner 项目工作区的 `.xsxb/`**，不要堆到 MCP 仓库根目录的 `exports/`。相对 `output_path` 挂在 `.xsxb/` 下；绝对路径必须落在根目录内，且不能写进仓库根 `exports/`。动画帧本身仍写回项目 assets。agent 传入的 `file_path` 有 64 MB 上限，靠 `requireExistingFile` 的 stat 拦下，不会先读进内存。
 - **模块分工**：实现在 `mcp/`。`xsxb_mcp_tool_catalog.js` 只放 schema 声明，`xsxb_mcp_arguments.js` 放参数规整，`xsxb_mcp_processes.js` 放 ffmpeg 与 Tuner 子进程，`xsxb_mcp_service.js` 只剩共享状态的 handler 闭包。新工具按这个分工放进 `mcp/`，别再堆回 `tools/`。`tools/xsxb_mcp_*.js` 只是兼容转发。
 - **别丢目标**：过几轮对话或修完一刀代码之后，仍以用户最初要的那件东西为终点。中间修的缺陷、回执、具象结果（拖影/GIF/网格）都不是新任务。详见 `.cursor/rules/keep-user-goal.mdc`。
+- **MCP 会话流程**写在 `initialize.instructions` 开头和 skill「MCP 工程流程」：开工先分析、多步 todo、每步看图。那是给连上 xsxb 的 Agent 的，不是替代本文件的测试门禁。
 
 ## Agent skills
 
