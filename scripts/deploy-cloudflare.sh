@@ -15,6 +15,8 @@ WRANGLER_ARGUMENTS=()
 
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly -a HEALTH_CHECK_URLS=(
+  "https://xframe.dpdns.org/"
+  "https://xframe.dpdns.org/workspace"
   "https://xsxb.devops9527.dpdns.org/"
   "https://xsxb.devops9527.dpdns.org/workspace"
   "https://xsxb.devops9527.dpdns.org/workspace/resources/import"

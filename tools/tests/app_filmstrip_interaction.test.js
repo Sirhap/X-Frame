@@ -182,3 +182,96 @@ test("filmstrip cards leave Enter and Space to nested buttons", () => {
   assert.equal(clickCalls, 1);
   assert.equal(preventDefaultCalls, 1);
 });
+
+/**
+ * Builds a classList that mutates a className string in place.
+ * @param {{className:string}} target Element-like object.
+ * @returns {DOMTokenList} Minimal classList.
+ */
+function createClassList(target) {
+  const tokens = () =>
+    String(target.className || "")
+      .split(/\s+/)
+      .filter(Boolean);
+  return {
+    contains(name) {
+      return tokens().includes(name);
+    },
+    add(name) {
+      if (!this.contains(name)) target.className = `${target.className} ${name}`.trim();
+    },
+    remove(name) {
+      target.className = tokens()
+        .filter((token) => token !== name)
+        .join(" ");
+    },
+    toggle(name, force) {
+      const shouldAdd = force == null ? !this.contains(name) : Boolean(force);
+      if (shouldAdd) this.add(name);
+      else this.remove(name);
+      return shouldAdd;
+    },
+  };
+}
+
+test("filmstrip playhead sync moves highlight classes without rebuilding thumbs", () => {
+  const attributes = [{ "aria-selected": "true", "aria-current": "true" }, { "aria-selected": "false" }];
+  const thumbs = [0, 1].map((index) => {
+    const thumb = {
+      dataset: { frameIndex: String(index) },
+      className: index === 0 ? "thumb selected primary playhead" : "thumb",
+      setAttribute(name, value) {
+        attributes[index][name] = String(value);
+      },
+      removeAttribute(name) {
+        delete attributes[index][name];
+      },
+    };
+    thumb.classList = createClassList(thumb);
+    return thumb;
+  });
+  let innerHTMLWrites = 0;
+  let trayCalls = 0;
+  const filmstrip = {
+    querySelectorAll: (selector) => {
+      assert.equal(selector, ".thumb[data-frame-index]");
+      return thumbs;
+    },
+  };
+  Object.defineProperty(filmstrip, "innerHTML", {
+    get() {
+      return "thumbs";
+    },
+    set() {
+      innerHTMLWrites += 1;
+    },
+  });
+  const controller = createController({
+    elements: { filmstrip },
+    state: {
+      getCurrentGroup: () => ({ uiId: "main", frames: [{}, {}] }),
+      getSelectedFrame: () => 1,
+      getPlaying: () => true,
+      getSelectedFrames: () => new Set([1]),
+      getSelectedAttachmentId: () => "",
+    },
+    handlers: {
+      renderAttachmentAssetTray: () => {
+        trayCalls += 1;
+      },
+    },
+  });
+
+  controller.syncFilmstripPlayhead();
+
+  assert.equal(innerHTMLWrites, 0);
+  assert.equal(trayCalls, 0);
+  assert.match(thumbs[0].className, /\bthumb\b/);
+  assert.doesNotMatch(thumbs[0].className, /\bplayhead\b/);
+  assert.doesNotMatch(thumbs[0].className, /\bprimary\b/);
+  assert.match(thumbs[1].className, /\bplayhead\b/);
+  assert.match(thumbs[1].className, /\bprimary\b/);
+  assert.match(thumbs[1].className, /\bselected\b/);
+  assert.equal(attributes[0]["aria-current"], undefined);
+  assert.equal(attributes[1]["aria-current"], "true");
+});

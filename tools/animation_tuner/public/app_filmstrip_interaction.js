@@ -24,6 +24,7 @@
    * }} dependencies Controller dependencies.
    * @returns {{
    *   renderFilmstrip:()=>void,
+   *   syncFilmstripPlayhead:()=>void,
    *   renderFilmstripGroup:(group:object,label:string)=>void,
    *   moveFrameLayerCardToIndex:(dragInfo:object,insertionIndex:number)=>boolean,
    *   moveFrameLayerCardByOffset:(layerInfo:object,offset:number)=>boolean,
@@ -63,8 +64,7 @@
     const assetUrl = utils.assetUrl || ((frame) => String(frame?.path || ""));
     const cachedImageForFrame = utils.cachedImageForFrame || (() => null);
     const framePreviewSrc =
-      utils.framePreviewSrc ||
-      ((frame, options) => options?.cachedImage?.src || assetUrl(frame));
+      utils.framePreviewSrc || ((frame, options) => options?.cachedImage?.src || assetUrl(frame));
     const cssEscape =
       utils.cssEscape || root.CSS?.escape || ((value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&"));
 
@@ -651,6 +651,30 @@
       restoreTarget?.focus?.({ preventScroll: true });
     }
 
+    /**
+     * Moves selected/playhead classes on existing thumbs without rebuilding the tray.
+     * @returns {void}
+     */
+    function syncFilmstripPlayhead() {
+      if (!filmstrip?.querySelectorAll) return;
+      const selectedFrame = getSelectedFrame();
+      const selectedFrames = getSelectedFrames();
+      const selectedAttachmentId = getSelectedAttachmentId();
+      const playing = getPlaying();
+      filmstrip.querySelectorAll(".thumb[data-frame-index]").forEach((item) => {
+        if (item.classList?.contains?.("chained") || item.classList?.contains?.("attachmentThumb")) return;
+        const index = Number(item.dataset?.frameIndex);
+        const inSelection = selectedFrames.has(index) && !selectedAttachmentId;
+        const isPlayhead = playing && index === selectedFrame;
+        item.classList.toggle("selected", inSelection);
+        item.classList.toggle("primary", index === selectedFrame);
+        item.classList.toggle("playhead", isPlayhead);
+        item.setAttribute?.("aria-selected", String(inSelection));
+        if (isPlayhead) item.setAttribute?.("aria-current", "true");
+        else item.removeAttribute?.("aria-current");
+      });
+    }
+
     return {
       activateLayerCardFromKeyboard,
       animateLayerCardRects,
@@ -664,6 +688,7 @@
       moveFrameLayerCardToIndex,
       previewLayerCardMove,
       renderFilmstrip,
+      syncFilmstripPlayhead,
       renderFilmstripGroup,
       setupLayerCardDrag,
       setupLayerOrderActions,

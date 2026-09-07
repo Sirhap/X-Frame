@@ -56,6 +56,7 @@ function createPlaybackFixture(overrides = {}) {
     },
     syncFrameInputs: () => events.push("sync-inputs"),
     renderFilmstrip: () => events.push("filmstrip"),
+    syncFilmstripPlayhead: () => events.push("filmstrip-playhead"),
     draw: () => events.push("draw"),
     playFrameAudio: (index) => events.push(`audio:${index}`),
     documentRef: { visibilityState: "visible" },
@@ -96,12 +97,29 @@ test("playback animation advances on interval and schedules the next tick", () =
     "request-frame",
     "request-frame",
     "select:2",
-    "sync-inputs",
-    "filmstrip",
+    "filmstrip-playhead",
     "draw",
     "audio:2",
     "request-frame",
   ]);
+});
+
+test("playback advance updates the playhead without rebuilding the filmstrip", () => {
+  let filmstripRebuilds = 0;
+  let playheadSyncs = 0;
+  const { controller } = createPlaybackFixture({
+    renderFilmstrip: () => {
+      filmstripRebuilds += 1;
+    },
+    syncFilmstripPlayhead: () => {
+      playheadSyncs += 1;
+    },
+  });
+
+  controller.advancePlayback();
+
+  assert.equal(filmstripRebuilds, 0);
+  assert.equal(playheadSyncs, 1);
 });
 
 test("playback group switching clears its busy flag after a recoverable failure", async () => {

@@ -42,8 +42,7 @@
    *   getPlaybackChainGroup?:()=>object|null,
    *   chainGroupSelect?:{value:string}|null,
    *   setSingleFrameSelection?:(index:number,group:object)=>void,
-   *   syncFrameInputs?:()=>void,
-   *   renderFilmstrip?:()=>void,
+   *   syncFilmstripPlayhead?:()=>void,
    *   draw?:()=>void,
    *   selectGroup?:(group:object,options:object)=>Promise<void>,
    *   playFrameAudio?:(index:number,group:object)=>void,
@@ -82,8 +81,7 @@
       getPlaybackChainGroup = () => null,
       chainGroupSelect = null,
       setSingleFrameSelection = () => {},
-      syncFrameInputs = () => {},
-      renderFilmstrip = () => {},
+      syncFilmstripPlayhead = () => {},
       draw = () => {},
       selectGroup = async () => {},
       playFrameAudio = () => {},
@@ -167,8 +165,7 @@
       const next = nextPlayableFrameInGroup(currentGroup, selectedFrame);
       if (!secondary || secondary.uiId === primary.uiId || !next.wrapped) {
         setSingleFrameSelection(next.index, currentGroup);
-        syncFrameInputs();
-        renderFilmstrip();
+        syncFilmstripPlayhead();
         draw();
         playFrameAudio(next.index, currentGroup);
         return;

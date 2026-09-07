@@ -17,6 +17,10 @@
   },
   "routes": [
     {
+      "pattern": "xframe.dpdns.org",
+      "custom_domain": true,
+    },
+    {
       "pattern": "xsxb.devops9527.dpdns.org",
       "custom_domain": true,
     },

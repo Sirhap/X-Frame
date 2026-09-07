@@ -728,13 +728,14 @@
         return;
       }
       const chain = playbackChainGroup();
-      if (state().ghost && chain && chain.uiId !== state().currentGroup.uiId && state().chainImages.length) {
+      const showGhost = state().ghost && !state().playing;
+      if (showGhost && chain && chain.uiId !== state().currentGroup.uiId && state().chainImages.length) {
         drawAlignedFloorLabel(`Then group aligned to Floor top: ${chain.name}`);
         for (let i = 0; i < state().chainImages.length; i += 1) {
           if (!framePlayback(i, chain).disabled) drawFrame(i, 0.18, false, chain, state().chainImages);
         }
       }
-      if (state().ghost) {
+      if (showGhost) {
         for (let i = 0; i < state().images.length; i += 1) {
           if (
             i !== state().selectedFrame &&

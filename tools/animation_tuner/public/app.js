@@ -992,8 +992,7 @@ const playback = globalThis.XSXBAppPlayback.createController({
   },
   chainGroupSelect: els.chainGroupSelect,
   setSingleFrameSelection,
-  syncFrameInputs,
-  renderFilmstrip,
+  syncFilmstripPlayhead,
   draw,
   selectGroup,
   playFrameAudio,
@@ -2517,6 +2516,10 @@ let filmstripInteraction = null;
 
 function renderFilmstrip() {
   filmstripInteraction?.renderFilmstrip();
+}
+
+function syncFilmstripPlayhead() {
+  filmstripInteraction?.syncFilmstripPlayhead();
 }
 
 const attachmentModule = globalThis.XSXBAppAttachments;

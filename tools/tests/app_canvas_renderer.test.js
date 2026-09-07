@@ -217,3 +217,90 @@ test("preview overlay captions stay compact so the sprite stays readable", () =>
     `hint card width ${hintBox.w} should stay within ${CANVAS_OVERLAY.hintMaxWidthPx}px`,
   );
 });
+
+/**
+ * Builds a stage renderer that counts sprite drawImage calls.
+ * @param {{frameCount:number,ghost:boolean,playing:boolean,selectedFrame?:number}} options Draw state.
+ * @returns {{controller:object,drawImages:()=>number}} Renderer and draw counter.
+ */
+function createGhostDrawController(options) {
+  const { context } = createOverlayRecorder();
+  let drawImages = 0;
+  context.drawImage = () => {
+    drawImages += 1;
+  };
+  const images = Array.from({ length: options.frameCount }, () => ({ width: 10, height: 20 }));
+  const group = { uiId: "main", type: "animation", frames: images };
+  const origin = { x: 50, y: 50 };
+  const selectedFrame = options.selectedFrame || 0;
+  const controller = createController({
+    context,
+    elements: { stage: { width: 100, height: 100 } },
+    getState: () => ({
+      view: { x: origin.x, y: origin.y, zoom: 1 },
+      currentGroup: group,
+      images,
+      selectedFrame,
+      selectedFrames: new Set([selectedFrame]),
+      chainImages: [],
+      showBoxes: false,
+      ghost: options.ghost,
+      playing: options.playing,
+    }),
+    frameTransform: () => ({ scale: 1, scaleX: 1, scaleY: 1, offset: { x: 0, y: 0 }, rotation: 0 }),
+    renderTransformForGroup: (transform) => transform,
+    runtimeBaseScaleForGroup: () => 1,
+    groupOriginScreen: () => origin,
+    coordinateOrigin: () => origin,
+    coordinateScreenScale: () => 1,
+    coordinateGridStep: () => 100,
+    coordinateToScreen: () => origin,
+    floorTopReferenceOffset: () => 0,
+    floorReferenceLabel: () => "Floor top",
+    nearlyEqual: (left, right) => Math.abs(Number(left) - Number(right)) < 0.001,
+    round: (value) => Math.round(value),
+    usesRuntimeFootAnchor: () => false,
+    usesSceneTopLeftAnchor: () => false,
+    selectedFrameIndexes: () => [selectedFrame],
+    framePlayback: () => ({ disabled: false }),
+    isReferenceFrame: () => false,
+    playbackChainGroup: () => null,
+    canEditBoxes: () => false,
+    selectedFrameAttachment: () => null,
+    getDevicePixelRatio: () => 1,
+  });
+  return {
+    controller,
+    drawImages: () => drawImages,
+  };
+}
+
+test("ghost onion-skin draws every other frame while paused", () => {
+  const frameCount = 8;
+  const { controller, drawImages } = createGhostDrawController({
+    frameCount,
+    ghost: true,
+    playing: false,
+  });
+
+  controller.draw();
+
+  assert.equal(drawImages(), frameCount);
+});
+
+test("ghost onion-skin does not draw every frame while playback is running", () => {
+  const frameCount = 8;
+  const { controller, drawImages } = createGhostDrawController({
+    frameCount,
+    ghost: true,
+    playing: true,
+  });
+
+  controller.draw();
+
+  assert.equal(
+    drawImages(),
+    1,
+    "playing with ghost on must composite only the current frame, not N ghost copies",
+  );
+});
