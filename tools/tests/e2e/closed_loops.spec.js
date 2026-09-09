@@ -285,8 +285,17 @@ test("file delivery embeds the complete export workbench without a second dialog
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/workspace/delivery/export");
 
+  await expect(page.locator("#deliverySurface .modeHubHeader")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "返回动画编辑" })).toHaveCount(0);
+  await expect(page.locator("#deliveryTitle")).toHaveClass(/visuallyHidden/);
+
   const exportWorkbench = page.locator("#mediaExportDialog");
   await expect(exportWorkbench).toBeVisible();
+  const workbenchBox = await exportWorkbench.boundingBox();
+  expect(
+    workbenchBox?.y,
+    "export workbench must start under the stage chrome, not a second page title",
+  ).toBeLessThan(96);
   await expect(exportWorkbench).toHaveAttribute("data-presentation", "embedded");
   await expect(exportWorkbench).toHaveAttribute("role", "region");
   await expect(exportWorkbench).not.toHaveAttribute("aria-modal", "true");

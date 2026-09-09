@@ -661,3 +661,15 @@ test("dirty scatter leave confirms before discard regardless of destination", as
   assert.equal(await elsewhereLeave("animation"), true);
   assert.deepEqual(elsewhereEvents, []);
 });
+
+test("delivery surface has no hub hero because the stage chrome already names the page", () => {
+  const html = fs.readFileSync(path.join(__dirname, "../animation_tuner/public/index.html"), "utf8");
+  const delivery = html.match(/id="deliverySurface"[\s\S]*?id="scatterSliceSurface"/u);
+  assert.ok(delivery, "delivery surface markup is present");
+  assert.doesNotMatch(delivery[0], /class="modeHubHeader"/u);
+  assert.doesNotMatch(delivery[0], /DELIVERY DESK/u);
+  assert.doesNotMatch(delivery[0], /data-i18n="deliveryIntro"/u);
+  assert.doesNotMatch(delivery[0], /data-i18n="returnAnimationEdit"/u);
+  assert.match(delivery[0], /id="deliveryTitle"[^>]*class="visuallyHidden"/u);
+  assert.match(delivery[0], /id="deliveryExportMount"/u);
+});

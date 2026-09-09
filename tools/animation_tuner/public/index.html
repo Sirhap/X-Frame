@@ -542,8 +542,8 @@
             >
           </div>
           <div class="adjustGrid adjustGridPrimary">
-            <div class="number stepNumber"
-              ><span data-i18n="visualScale">整体大小</span
+            <div class="number stepNumber">
+              <span data-i18n="visualScale">整体大小</span
               ><span class="numberStepper"
                 ><button
                   type="button"
@@ -570,10 +570,10 @@
                 >
                   &rsaquo;
                 </button></span
-              ></div
-            >
-            <div class="number stepNumber"
-              ><span data-i18n="visualRotation">旋转角度</span
+              >
+            </div>
+            <div class="number stepNumber">
+              <span data-i18n="visualRotation">旋转角度</span
               ><span class="numberStepper"
                 ><button
                   type="button"
@@ -600,10 +600,10 @@
                 >
                   &rsaquo;
                 </button></span
-              ></div
-            >
-            <div class="number stepNumber"
-              ><span data-i18n="visualOffsetX">水平位置</span
+              >
+            </div>
+            <div class="number stepNumber">
+              <span data-i18n="visualOffsetX">水平位置</span
               ><span class="numberStepper"
                 ><button
                   type="button"
@@ -630,10 +630,10 @@
                 >
                   &rsaquo;
                 </button></span
-              ></div
-            >
-            <div class="number stepNumber"
-              ><span data-i18n="visualOffsetY">垂直位置</span
+              >
+            </div>
+            <div class="number stepNumber">
+              <span data-i18n="visualOffsetY">垂直位置</span
               ><span class="numberStepper"
                 ><button
                   type="button"
@@ -660,8 +660,8 @@
                 >
                   &rsaquo;
                 </button></span
-              ></div
-            >
+              >
+            </div>
           </div>
           <details class="advancedAdjustments">
             <summary>
@@ -671,8 +671,8 @@
               >
             </summary>
             <div class="adjustGrid">
-              <div class="number stepNumber"
-                ><span data-i18n="horizontalStretch">横向拉伸</span
+              <div class="number stepNumber">
+                <span data-i18n="horizontalStretch">横向拉伸</span
                 ><span class="numberStepper"
                   ><button
                     type="button"
@@ -699,10 +699,10 @@
                   >
                     &rsaquo;
                   </button></span
-                ></div
-              >
-              <div class="number stepNumber"
-                ><span data-i18n="verticalStretch">纵向拉伸</span
+                >
+              </div>
+              <div class="number stepNumber">
+                <span data-i18n="verticalStretch">纵向拉伸</span
                 ><span class="numberStepper"
                   ><button
                     type="button"
@@ -729,8 +729,8 @@
                   >
                     &rsaquo;
                   </button></span
-                ></div
-              >
+                >
+              </div>
             </div>
           </details>
           <div class="adjustmentRecoveryActions" aria-live="polite">
@@ -1411,22 +1411,7 @@
         </div>
       </section>
       <section id="deliverySurface" class="modeHub deliverySurface" aria-labelledby="deliveryTitle" hidden>
-        <header class="modeHubHeader">
-          <div>
-            <span>DELIVERY DESK / PROJECT</span>
-            <h1 id="deliveryTitle" data-i18n="deliveryTitle">交付与导出</h1>
-            <p data-i18n="deliveryIntro">
-              先确认交付目标，再进入对应设置；通用调整和格式参数仍复用现有导出引擎。
-            </p>
-          </div>
-          <a
-            class="modeHubSecondary"
-            href="/workspace/animation/transform"
-            data-workbench-route="animation"
-            data-i18n="returnAnimationEdit"
-            >返回动画编辑</a
-          >
-        </header>
+        <h1 id="deliveryTitle" class="visuallyHidden" data-i18n="deliveryTitle">交付与导出</h1>
         <div id="deliveryExportMount" class="deliveryExportMount" data-delivery-panel="export">
           <div class="deliveryExportLoading">
             <span>01 / FILES</span>
@@ -3983,7 +3968,8 @@
                   </button>
                 </div>
                 <label
-                  ><span id="mediaExportScaleXLabel" data-i18n="mediaExportHorizontal">水平</span><small>1%</small
+                  ><span id="mediaExportScaleXLabel" data-i18n="mediaExportHorizontal">水平</span
+                  ><small>1%</small
                   ><input id="mediaExportScaleXRange" type="range" min="1" max="300" value="100" /><small
                     >300%</small
                   ><input
@@ -4405,10 +4391,15 @@
                 <p class="mediaExportFormatHint">💡 MP4 为纯视频无音频，使用 H.264 编码，兼容性广泛。</p>
               </fieldset>
               <label class="mediaExportSettingRow mediaExportFormatRange"
-                ><b id="mediaExportSpeedLabel" data-i18n="mediaExportSpeed">播放速度</b
-                ><small>0.5×</small
-                ><input id="mediaExportSpeedRange" type="range" min="0.5" max="2" step="0.1" value="1" /><small
-                  >2×</small
+                ><b id="mediaExportSpeedLabel" data-i18n="mediaExportSpeed">播放速度</b><small>0.5×</small
+                ><input
+                  id="mediaExportSpeedRange"
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value="1"
+                /><small>2×</small
                 ><input
                   id="mediaExportSpeed"
                   type="number"

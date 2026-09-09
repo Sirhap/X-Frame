@@ -505,8 +505,6 @@
       handoffConflict: "目标存在冲突，请检查名称和写入方式。",
       handoffFailed: "加入动画项目失败。",
       deliveryTitle: "交付与导出",
-      deliveryIntro: "先确认交付目标，再进入对应设置；通用调整和格式参数仍复用现有导出引擎。",
-      returnAnimationEdit: "返回动画编辑",
       deliveryExportLoading: "正在载入当前动画的导出工作区…",
       deliveryChecking: "检查中",
       deliveryGodotTitle: "Godot 交付",
@@ -1171,9 +1169,6 @@
       handoffConflict: "The target has a conflict. Check the name and write mode.",
       handoffFailed: "Could not add to the project.",
       deliveryTitle: "Delivery & Export",
-      deliveryIntro:
-        "Confirm the delivery target first, then open its settings. Shared adjustments still use the existing export engine.",
-      returnAnimationEdit: "Back to animation editing",
       deliveryExportLoading: "Loading the current animation export workspace…",
       deliveryChecking: "Checking",
       deliveryGodotTitle: "Godot delivery",
