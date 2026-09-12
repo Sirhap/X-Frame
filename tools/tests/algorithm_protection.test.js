@@ -492,6 +492,17 @@ test("production adapter disables fallbacks and routes cancellation by operation
   assert.equal(calls[3].context.protocolVersion, RUNTIME_PROTOCOL_VERSION);
 });
 
+test("protected wasm perf check gates on p50 so one slow sample cannot fail the machine", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../protected_wasm_perf_baseline.js"), "utf8");
+  assert.match(source, /const MAXIMUM_P50_RATIO = 1\.15;/);
+  assert.match(source, /const GATED_MINIMUM_SIZE = 1024;/);
+  assert.match(
+    source,
+    /result\.size >= report\.gatedMinimumSize && result\.p50Ratio > report\.maximumP50Ratio/,
+  );
+  assert.doesNotMatch(source, /result\.p95Ratio > report\.maximumP95Ratio/);
+});
+
 test("runtime preserves safe Worker protocol errors", async () => {
   const runtime = createRuntime({
     adapter: {

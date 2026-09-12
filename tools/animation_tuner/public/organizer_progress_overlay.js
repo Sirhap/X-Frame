@@ -1,10 +1,10 @@
-(function attachXsxbOrganizerProgressOverlay(root, factory) {
+(function attachXFrameOrganizerProgressOverlay(root, factory) {
   "use strict";
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) {
-    root.XSXBOrganizerProgressOverlay = api;
+    root.XFrameOrganizerProgressOverlay = api;
     // Production bundles this file into ui.js after the inline boot script.
     api.scheduleAttach(api, root.document, root);
   }
@@ -66,7 +66,8 @@
    * @returns {number} Frame count the batch will process.
    */
   function processFrameCount(documentApi) {
-    const selectedIncluded = documentApi?.querySelectorAll?.(".organizerFrame.included.selected")?.length || 0;
+    const selectedIncluded =
+      documentApi?.querySelectorAll?.(".organizerFrame.included.selected")?.length || 0;
     if (selectedIncluded > 0) return selectedIncluded;
     return documentApi?.querySelectorAll?.(".organizerFrame.included")?.length || 0;
   }

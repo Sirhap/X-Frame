@@ -1,9 +1,9 @@
-(function attachXsxbHistory(root, factory) {
+(function attachXFrameHistory(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBHistory = api;
+  if (root) root.XFrameHistory = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

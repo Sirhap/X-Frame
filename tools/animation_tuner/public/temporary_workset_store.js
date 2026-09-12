@@ -1,9 +1,9 @@
-(function attachXsxbTemporaryWorksetStore(root, factory) {
+(function attachXFrameTemporaryWorksetStore(root, factory) {
   "use strict";
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBTemporaryWorksetStore = api;
+  if (root) root.XFrameTemporaryWorksetStore = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 

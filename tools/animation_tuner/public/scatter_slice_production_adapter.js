@@ -3,7 +3,7 @@
 
   const api = factory(root?.BatchCutoutBackgroundEstimator);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBScatterSliceSmartCutout = api;
+  if (root) root.XFrameScatterSliceSmartCutout = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (backgroundEstimator) => {
   "use strict";
 

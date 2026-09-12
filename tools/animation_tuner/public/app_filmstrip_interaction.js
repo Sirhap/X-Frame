@@ -1,9 +1,9 @@
-(function attachXsxbFilmstripInteraction(root, factory) {
+(function attachXFrameFilmstripInteraction(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppFilmstripInteraction = api;
+  if (root) root.XFrameAppFilmstripInteraction = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

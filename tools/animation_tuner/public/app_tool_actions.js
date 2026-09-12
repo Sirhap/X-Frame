@@ -1,9 +1,9 @@
-(function attachXsxbAppToolActions(root, factory) {
+(function attachXFrameAppToolActions(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppToolActions = api;
+  if (root) root.XFrameAppToolActions = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -48,7 +48,7 @@
       clearImageCache = () => {},
       clearImageElements = () => {},
       setOpaqueRectCache = () => {},
-      premiumFeatures = root?.XSXBPremiumFeatures,
+      premiumFeatures = root?.XFramePremiumFeatures,
       onFramesChanged = () => {},
     } = dependencies;
 

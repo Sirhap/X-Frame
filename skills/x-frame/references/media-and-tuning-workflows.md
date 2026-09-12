@@ -6,7 +6,6 @@ Use this reference for existing tuner operations beyond deterministic animation 
 
 - Local execution and project selection
 - Batch cutout
-- MCP (moved to x-frame-mcp)
 - Video extraction and frame organization
 - Transform and playback tuning
 - Boxes, SFX, and image attachments
@@ -49,10 +48,6 @@ Workflow:
 8. After replacement, inspect the animation, save, sync Godot, and verify manifest frame paths and counts.
 
 Do not claim a clean cutout solely because the batch completed. Check edge halos, missing foreground colors, accidental holes, alpha noise, and consistency across frames.
-
-## MCP
-
-XSXB MCP 已迁到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。本文件只讲 Tuner 网页操作。
 
 ## Video Extraction and Frame Organization
 

@@ -1,9 +1,9 @@
-(function attachXsxbCanvasRendererLayers(root, factory) {
+(function attachXFrameCanvasRendererLayers(root, factory) {
   "use strict";
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppCanvasRendererLayers = api;
+  if (root) root.XFrameAppCanvasRendererLayers = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 

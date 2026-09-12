@@ -4,7 +4,7 @@
   const smartCutoutDefaults =
     typeof module === "object" && module.exports
       ? require("./smart_cutout_defaults")
-      : root?.XSXBSmartCutoutDefaults;
+      : root?.XFrameSmartCutoutDefaults;
   const organizerUi =
     typeof module === "object" && module.exports ? require("./frame_organizer_ui") : root?.FrameOrganizerUi;
   const api = factory(root, smartCutoutDefaults, organizerUi);
@@ -111,7 +111,7 @@
       closeOrganizer,
       getUiController,
       setStatus,
-      premiumFeatures = root?.XSXBPremiumFeatures,
+      premiumFeatures = root?.XFramePremiumFeatures,
       onEditedFrames = () => {},
     } = dependencies;
     if (

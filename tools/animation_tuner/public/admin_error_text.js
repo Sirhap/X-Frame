@@ -1,9 +1,9 @@
-(function attachXsxbAdminErrorText(root, factory) {
+(function attachXFrameAdminErrorText(root, factory) {
   "use strict";
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAdminErrorText = api;
+  if (root) root.XFrameAdminErrorText = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 

@@ -1,9 +1,9 @@
-(function attachXsxbAppUtils(root, factory) {
+(function attachXFrameAppUtils(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppUtils = api;
+  if (root) root.XFrameAppUtils = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

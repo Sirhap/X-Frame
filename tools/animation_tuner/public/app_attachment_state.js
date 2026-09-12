@@ -1,9 +1,9 @@
-(function attachXsxbAttachmentState(root, factory) {
+(function attachXFrameAttachmentState(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAttachmentState = api;
+  if (root) root.XFrameAttachmentState = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

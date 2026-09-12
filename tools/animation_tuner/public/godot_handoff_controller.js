@@ -3,7 +3,7 @@
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBGodotHandoffController = api;
+  if (root) root.XFrameGodotHandoffController = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -35,7 +35,7 @@
       binding: "正在验证并同步…",
       syncing: "正在同步…",
       unbinding: "正在解除绑定…",
-      confirmRebind: "确认改绑到新工程？旧工程内 xsxb_frame_tuner 将保留。",
+      confirmRebind: "确认改绑到新工程？旧工程内 x_frame 将保留。",
       confirmUnbind: "确认解除 Godot 绑定？外部文件不会删除。",
       serverText: {
         "Project is not bound to a Godot project.": "尚未绑定 Godot 工程。",
@@ -70,7 +70,7 @@
       binding: "Validating and synchronizing…",
       syncing: "Synchronizing…",
       unbinding: "Unbinding…",
-      confirmRebind: "Rebind to the new project? xsxb_frame_tuner remains in the old project.",
+      confirmRebind: "Rebind to the new project? x_frame remains in the old project.",
       confirmUnbind: "Unbind this Godot project? External files will not be deleted.",
       serverText: {},
     },

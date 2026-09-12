@@ -467,7 +467,7 @@ test("app.js never resolves frameBox through the frame-edit 1x1 stub", () => {
   assert.equal(source.includes("frameEditStateCall('frameBox')"), false);
   assert.match(
     source,
-    /const boxModel = globalThis\.XSXBBoxModel\.createController\(\{[\s\S]*?getImages:\s*\(\)\s*=>\s*images/,
+    /const boxModel = globalThis\.XFrameBoxModel\.createController\(\{[\s\S]*?getImages:\s*\(\)\s*=>\s*images/,
   );
   assert.match(source, /if \(name === "frameBox"\)/);
 });

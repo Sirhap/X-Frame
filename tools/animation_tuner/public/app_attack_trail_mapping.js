@@ -1,9 +1,9 @@
-(function attachXsxbAttackTrailMapping(root, factory) {
+(function attachXFrameAttackTrailMapping(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppAttackTrailMapping = api;
+  if (root) root.XFrameAppAttackTrailMapping = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

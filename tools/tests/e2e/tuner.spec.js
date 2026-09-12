@@ -1173,7 +1173,7 @@ test("organizer preview reports the currently playing frame", async ({ page }) =
     { name: "frame_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
     { name: "frame_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
   ]);
-  await expect(page.locator("#organizerPreviewFrame")).toContainText("共选中 3 帧");
+  await expect(page.locator("#organizerPreviewFrame")).toContainText("已选 3 帧");
   await expect(page.locator(".organizerSpeed")).toBeVisible();
   const [previewBox, speedControlBox] = await Promise.all([
     page.locator("#organizerPreview").boundingBox(),

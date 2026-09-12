@@ -223,7 +223,7 @@ function createIntegrationTests(options) {
           originals[index],
         );
       }
-      const godotSyncBlocker = pathApi.join(godotRoot, "xsxb_frame_tuner");
+      const godotSyncBlocker = pathApi.join(godotRoot, "x_frame");
       fsApi.writeFileSync(godotSyncBlocker, "block Godot sync directory creation", "utf8");
       const syncFailureResponse = await fetchImpl(`${baseUrl}/api/replace-animation`, {
         method: "POST",

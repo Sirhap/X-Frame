@@ -105,9 +105,9 @@ test("workbench lists watermark as a first-class quick tool and reveals hubs bef
   assert.match(html, /src="\/app_surface\.js"/u);
   assert.match(html, /src="\/app_workspace_leave\.js"/u);
   assert.match(html, /src="\/app_attack_trail_mapping\.js"[\s\S]*src="\/app\.js"/u);
-  assert.match(html, /XSXBAppSurface\?\.applyAppSurface/u);
+  assert.match(html, /XFrameAppSurface\?\.applyAppSurface/u);
   assert.match(html, /src="\/organizer_progress_overlay\.js"/u);
-  assert.match(html, /XSXBOrganizerProgressOverlay\?\.scheduleAttach/u);
+  assert.match(html, /XFrameOrganizerProgressOverlay\?\.scheduleAttach/u);
   assert.match(html, /DOMContentLoaded/u);
   assert.match(html, /data-theme="dark"[\s\S]*aria-pressed="true"/u);
   assert.match(html, /data-theme="light"[\s\S]*aria-pressed="false"/u);

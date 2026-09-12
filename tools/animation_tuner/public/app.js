@@ -1,5 +1,5 @@
-const els = globalThis.XSXBAppDom.createElements();
-const browserRuntime = globalThis.XSXBBrowserRuntime;
+const els = globalThis.XFrameAppDom.createElements();
+const browserRuntime = globalThis.XFrameBrowserRuntime;
 const browserOnlyMode = browserRuntime?.isEnabled() === true;
 if (browserOnlyMode) {
   document.body.classList.add("browserOnlyMode");
@@ -28,7 +28,7 @@ async function exportBrowserAnimation(metadata, items, options = {}) {
   });
   let authorization = null;
   if (browserOnlyMode) {
-    const exportModule = globalThis.XSXBWorkbenchExport;
+    const exportModule = globalThis.XFrameWorkbenchExport;
     if (typeof exportModule?.authorizeExport !== "function") {
       throw new Error("Export authorization is unavailable.");
     }
@@ -191,7 +191,7 @@ function syncWorkspaceProjectContext(nextConfig) {
 }
 
 const ctx = els.stage.getContext("2d");
-const appStateModule = globalThis.XSXBAppState;
+const appStateModule = globalThis.XFrameAppState;
 const { constants: appConstants } = appStateModule;
 const browserStorage = appStateModule.resolveStorage();
 const {
@@ -206,6 +206,7 @@ const {
   BOX_DRAW_ORDER,
   COLLISION_BOX_HANDLES,
   FRAME_AUDIO_DB_NAME,
+  FRAME_AUDIO_LEGACY_DB_NAME,
   FRAME_AUDIO_DB_VERSION,
   FRAME_AUDIO_STORE,
   LAYER_CARD_DRAG_TYPE,
@@ -229,7 +230,7 @@ const {
   projectLabel,
   round,
   scaleVectorFromTransform,
-} = globalThis.XSXBAppUtils;
+} = globalThis.XFrameAppUtils;
 /** Renders a group label with localized fallback for legacy UUID-named animations. */
 const groupLabel = (group) => groupLabelBase(group, t);
 const {
@@ -247,7 +248,7 @@ const {
   transformHasDelta,
   transformScaleX,
   transformScaleY,
-} = globalThis.XSXBBoxGeometry;
+} = globalThis.XFrameBoxGeometry;
 const {
   attachmentLayerOrder,
   frameImageAttachmentClipboardItem,
@@ -255,8 +256,8 @@ const {
   normalizeAttachmentLayerOrder,
   normalizeAttachmentTransform,
   normalizeFrameImageAttachment,
-} = globalThis.XSXBAttachmentUtils;
-const I18N = globalThis.XSXBAppI18n.messages;
+} = globalThis.XFrameAttachmentUtils;
+const I18N = globalThis.XFrameAppI18n.messages;
 let {
   config,
   language,
@@ -347,7 +348,7 @@ let {
   batchCutout,
   frameOrganizer,
   cutoutReturnTool,
-} = globalThis.XSXBAppState.createInitialState();
+} = globalThis.XFrameAppState.createInitialState();
 let attackTrailEditor = null;
 let modeHubs = null;
 let navigationContext = null;
@@ -388,7 +389,7 @@ function openTemporaryCutout(workset) {
 
 /** Copies one project frame image into an independently mutable Canvas. */
 function copyProjectFrameImage(image, frame) {
-  const source = globalThis.XSXBAppUtils?.extractFrameCrop?.(image, frame?.crop, document) || image;
+  const source = globalThis.XFrameAppUtils?.extractFrameCrop?.(image, frame?.crop, document) || image;
   const width = Math.max(0, Number(source?.naturalWidth || source?.width) || 0);
   const height = Math.max(0, Number(source?.naturalHeight || source?.height) || 0);
   if (!width || !height) throw new Error("项目动画包含尚未完成解码的帧。");
@@ -417,12 +418,12 @@ async function copyCurrentAnimationToTool(tool) {
       );
       if (!accepted) return;
     }
-    const source = globalThis.XSXBModeHubs?.resolveCurrentAnimationSource?.({
+    const source = globalThis.XFrameModeHubs?.resolveCurrentAnimationSource?.({
       currentGroup,
       images,
       groupLabel,
     });
-    const workset = globalThis.XSXBModeHubs?.createIndependentToolWorkset?.(source, {
+    const workset = globalThis.XFrameModeHubs?.createIndependentToolWorkset?.(source, {
       copyNamespace: `project-copy:${globalThis.crypto?.randomUUID?.() || Date.now()}`,
       copyImage: copyProjectFrameImage,
     });
@@ -450,8 +451,8 @@ const dirtyPetProfileIds = new Set();
 let removedCodexPetRecovery = null;
 let lastKnownNavigationUrl = globalThis.location.href;
 
-const appConfirmModule = globalThis.XSXBAppConfirm;
-if (!appConfirmModule) throw new Error("XSXBAppConfirm is required.");
+const appConfirmModule = globalThis.XFrameAppConfirm;
+if (!appConfirmModule) throw new Error("XFrameAppConfirm is required.");
 const appConfirmation = appConfirmModule.createController({
   elements: {
     panel: els.appConfirmPanel,
@@ -472,7 +473,7 @@ async function requestScatterSliceLeave(destinationRoute) {
   void destinationRoute;
   const pathname = String(globalThis.location.pathname || "");
   if (pathname !== "/tools/scatter-slice" && pathname !== "/workspace/resources/scatter") return true;
-  const session = globalThis.XSXBScatterSliceSession;
+  const session = globalThis.XFrameScatterSliceSession;
   if (!session?.hasUnsavedChanges?.()) return true;
   const accepted = await requestAppConfirmation(
     "当前零散切片结果只保留在本次会话。离开将丢弃源图、检测框和分组结果。",
@@ -494,10 +495,10 @@ globalThis.addEventListener("popstate", guardScatterSliceHistory);
 globalThis.addEventListener("xsxb:routechange", () => {
   lastKnownNavigationUrl = globalThis.location.href;
 });
-const premiumFeatures = globalThis.XSXBPremiumFeatures;
-if (!premiumFeatures) throw new Error("XSXBPremiumFeatures is required.");
-const activationModule = globalThis.XSXBActivation;
-if (!activationModule) throw new Error("XSXBActivation is required.");
+const premiumFeatures = globalThis.XFramePremiumFeatures;
+if (!premiumFeatures) throw new Error("XFramePremiumFeatures is required.");
+const activationModule = globalThis.XFrameActivation;
+if (!activationModule) throw new Error("XFrameActivation is required.");
 const activationController = activationModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
@@ -532,14 +533,14 @@ function requestAppConfirmation(message, options = {}) {
 let projectStateController = null;
 
 function projectStateCall(name, ...args) {
-  if (!projectStateController) throw new Error("XSXBAppProjectState is not initialized.");
+  if (!projectStateController) throw new Error("XFrameAppProjectState is not initialized.");
   return projectStateController[name](...args);
 }
 
 let appToolActionsController = null;
 
 function appToolActionsCall(name, ...args) {
-  if (!appToolActionsController) throw new Error("XSXBAppToolActions is not initialized.");
+  if (!appToolActionsController) throw new Error("XFrameAppToolActions is not initialized.");
   return appToolActionsController[name](...args);
 }
 
@@ -570,7 +571,7 @@ function createAnimationFromOrganizer(...args) {
 let adjustmentInputsController = null;
 
 function adjustmentInputsCall(name, ...args) {
-  if (!adjustmentInputsController) throw new Error("XSXBAppAdjustmentInputs is not initialized.");
+  if (!adjustmentInputsController) throw new Error("XFrameAppAdjustmentInputs is not initialized.");
   return adjustmentInputsController[name](...args);
 }
 
@@ -578,7 +579,7 @@ let attachmentManipulationController = null;
 
 function attachmentManipulationCall(name, ...args) {
   if (!attachmentManipulationController) {
-    throw new Error("XSXBAppAttachmentManipulation is not initialized.");
+    throw new Error("XFrameAppAttachmentManipulation is not initialized.");
   }
   return attachmentManipulationController[name](...args);
 }
@@ -602,7 +603,7 @@ function applySelectedAttachmentWheel(...args) {
 let playbackInputsController = null;
 
 function playbackInputsCall(name, ...args) {
-  if (!playbackInputsController) throw new Error("XSXBAppPlaybackInputs is not initialized.");
+  if (!playbackInputsController) throw new Error("XFrameAppPlaybackInputs is not initialized.");
   return playbackInputsController[name](...args);
 }
 
@@ -622,7 +623,7 @@ let projectSelectsController = null;
 let godotHandoffController = null;
 
 function projectSelectsCall(name, ...args) {
-  if (!projectSelectsController) throw new Error("XSXBAppProjectSelects is not initialized.");
+  if (!projectSelectsController) throw new Error("XFrameAppProjectSelects is not initialized.");
   return projectSelectsController[name](...args);
 }
 
@@ -653,15 +654,15 @@ function renderChainGroupSelect(...args) {
 let frameEditStateController = null;
 
 function frameEditStateCall(name, ...args) {
-  if (!frameEditStateController) throw new Error("XSXBAppFrameEditState is not initialized.");
+  if (!frameEditStateController) throw new Error("XFrameAppFrameEditState is not initialized.");
   if (name === "frameBox") {
     throw new Error(
-      "frameBox is owned by XSXBBoxModel; call frameBox(boxName, index, group, images), not frameEditStateCall",
+      "frameBox is owned by XFrameBoxModel; call frameBox(boxName, index, group, images), not frameEditStateCall",
     );
   }
   const method = frameEditStateController[name];
   if (typeof method !== "function") {
-    throw new Error(`XSXBAppFrameEditState.${name} is not a function`);
+    throw new Error(`XFrameAppFrameEditState.${name} is not a function`);
   }
   return method(...args);
 }
@@ -696,7 +697,7 @@ function updateCoordHud(...args) {
   return canvasRenderer?.updateCoordHud(...args);
 }
 
-const frameSelection = globalThis.XSXBFrameSelection.createController({
+const frameSelection = globalThis.XFrameFrameSelection.createController({
   getCurrentGroup: () => currentGroup,
   getSelectedFrame: () => selectedFrame,
   setSelectedFrame: (value) => {
@@ -719,7 +720,7 @@ const {
   setFrameSelection,
   setSingleFrameSelection,
 } = frameSelection;
-const referenceFrameController = globalThis.XSXBReferenceFrame.createController({
+const referenceFrameController = globalThis.XFrameReferenceFrame.createController({
   getCurrentGroup: () => currentGroup,
   getSelectedFrame: () => selectedFrame,
   getImages: () => images,
@@ -740,8 +741,9 @@ const {
   serializeReferenceFrame,
   setReferenceFrameEnabled,
 } = referenceFrameController;
-const frameAudio = globalThis.XSXBFrameAudio.createController({
+const frameAudio = globalThis.XFrameFrameAudio.createController({
   dbName: FRAME_AUDIO_DB_NAME,
+  legacyDbName: FRAME_AUDIO_LEGACY_DB_NAME,
   dbVersion: FRAME_AUDIO_DB_VERSION,
   storeName: FRAME_AUDIO_STORE,
   getBindings: () => frameAudioBindings,
@@ -769,8 +771,8 @@ const collectFrameAudioBindingsForSave = async () => {
   return payload;
 };
 const syncFrameAudioBindingsToGame = frameAudio.syncToGame;
-const workspaceLeaveModule = globalThis.XSXBAppWorkspaceLeave;
-if (!workspaceLeaveModule) throw new Error("XSXBAppWorkspaceLeave is required.");
+const workspaceLeaveModule = globalThis.XFrameAppWorkspaceLeave;
+if (!workspaceLeaveModule) throw new Error("XFrameAppWorkspaceLeave is required.");
 const workspaceLeave = workspaceLeaveModule.createController({
   cloneState,
   restoreState: (snapshot) => restoreHistoryState(snapshot),
@@ -781,7 +783,7 @@ const workspaceLeave = workspaceLeaveModule.createController({
   },
   loadConfigFallback: () => loadConfig(),
 });
-const routing = globalThis.XSXBAppRouting.createController({
+const routing = globalThis.XFrameAppRouting.createController({
   getCurrentGroup: () => currentGroup,
   getSelectedFrame: () => selectedFrame,
   getActiveProjectId: activeProjectId,
@@ -842,7 +844,7 @@ function syncUrlState(options) {
 }
 cutoutNavigationContext = currentNavigationContext();
 organizerNavigationContext = currentNavigationContext();
-const playbackTiming = globalThis.XSXBPlaybackTiming.createController({
+const playbackTiming = globalThis.XFramePlaybackTiming.createController({
   minFrameDurationMs: MIN_FRAME_DURATION_MS,
   getCurrentGroup: () => currentGroup,
   getConfig: () => config,
@@ -896,8 +898,8 @@ const {
   syncGroupTimeInputs,
   usesAttachedPlaybackTiming,
 } = playbackTiming;
-const transformRuntimeModule = globalThis.XSXBTransformRuntime;
-if (!transformRuntimeModule) throw new Error("XSXBTransformRuntime is required.");
+const transformRuntimeModule = globalThis.XFrameTransformRuntime;
+if (!transformRuntimeModule) throw new Error("XFrameTransformRuntime is required.");
 const transformRuntime = transformRuntimeModule.createController({
   getConfig: () => config,
   getCurrentGroup: () => currentGroup,
@@ -932,7 +934,7 @@ const {
   targetHeightAnimationAnchorY,
   baseTransform,
 } = transformRuntime;
-const boxDefaults = globalThis.XSXBBoxDefaults.createController({
+const boxDefaults = globalThis.XFrameBoxDefaults.createController({
   getCurrentGroup: () => currentGroup,
   getSelectedFrame: () => selectedFrame,
   getValues: () => values,
@@ -964,7 +966,7 @@ const {
   soulParryGuardFrameRange,
   soulRawParryGuardFrameRange,
 } = boxDefaults;
-const playback = globalThis.XSXBAppPlayback.createController({
+const playback = globalThis.XFrameAppPlayback.createController({
   getPlaying: () => playing,
   getPlaybackAnimationFrame: () => playbackAnimationFrame,
   setPlaybackAnimationFrame: (value) => {
@@ -1008,7 +1010,7 @@ const {
   schedulePlaybackAnimation,
   switchPlaybackGroup,
 } = playback;
-const boxSelection = globalThis.XSXBAppBoxSelection.createController({
+const boxSelection = globalThis.XFrameAppBoxSelection.createController({
   boxNames: BOX_NAMES,
   boxPrefKeys: BOX_PREF_KEYS,
   getSelectedBoxes: () => selectedBoxes,
@@ -1022,7 +1024,7 @@ const boxSelection = globalThis.XSXBAppBoxSelection.createController({
 });
 const { firstEditableSelectedBox, normalizeBoxSelectionForGroup, saveBoxViewPrefs, selectedBoxNames } =
   boxSelection;
-const boxModel = globalThis.XSXBBoxModel.createController({
+const boxModel = globalThis.XFrameBoxModel.createController({
   boxNames: BOX_NAMES,
   getCurrentGroup: () => currentGroup,
   getConfig: () => config,
@@ -1065,7 +1067,7 @@ const {
   snapshotBoxEntriesForGroups,
   syncBoxSelectionForGroup,
 } = boxModel;
-const boxTransform = globalThis.XSXBBoxTransform.createController({
+const boxTransform = globalThis.XFrameBoxTransform.createController({
   getCurrentGroup: () => currentGroup,
   getSelectedFrame: () => selectedFrame,
   getConfig: () => config,
@@ -1093,7 +1095,7 @@ const {
   boxSpaceTransformForAdjustment,
   transformForAdjustmentMode,
 } = boxTransform;
-const canvasCoordinates = globalThis.XSXBCanvasCoordinates.createController({
+const canvasCoordinates = globalThis.XFrameCanvasCoordinates.createController({
   getCurrentGroup: () => currentGroup,
   getSelectedFrame: () => selectedFrame,
   getImages: () => images,
@@ -1113,8 +1115,8 @@ const {
   groupOriginScreen,
   screenToCoordinate,
 } = canvasCoordinates;
-const boxAdjustmentModule = globalThis.XSXBAppBoxAdjustment;
-if (!boxAdjustmentModule) throw new Error("XSXBAppBoxAdjustment is required.");
+const boxAdjustmentModule = globalThis.XFrameAppBoxAdjustment;
+if (!boxAdjustmentModule) throw new Error("XFrameAppBoxAdjustment is required.");
 const boxAdjustment = boxAdjustmentModule.createController({
   elements: els,
   getCurrentGroup: () => currentGroup,
@@ -1159,7 +1161,7 @@ const {
   syncBoxInputs,
   updateSelectedBoxFromInputs,
 } = boxAdjustment;
-const sceneSettingsController = globalThis.XSXBAppSceneSettings.createController({
+const sceneSettingsController = globalThis.XFrameAppSceneSettings.createController({
   elements: els,
   getConfig: () => config,
   getSelectedSceneId: () => selectedSceneId,
@@ -1184,7 +1186,7 @@ const {
   syncSceneInputs,
   updateSceneScaleFromInput,
 } = sceneSettingsController;
-const projectMutations = globalThis.XSXBProjectMutations.createController({
+const projectMutations = globalThis.XFrameProjectMutations.createController({
   elements: els,
   getConfig: () => config,
   getActiveProjectId: activeProjectId,
@@ -1216,7 +1218,7 @@ const {
   readMutationResponse,
   setProjectMutationBusy,
 } = projectMutations;
-const attachmentState = globalThis.XSXBAttachmentState.createController({
+const attachmentState = globalThis.XFrameAttachmentState.createController({
   getConfig: () => config,
   getAttachments: () => frameImageAttachments,
   setAttachments: (value) => {
@@ -1251,7 +1253,7 @@ const {
   nextAboveLayerOrder: nextAboveAttachmentLayerOrder,
   selectedAttachment: selectedFrameAttachment,
 } = attachmentState;
-const layerStack = globalThis.XSXBLayerStack.createController({
+const layerStack = globalThis.XFrameLayerStack.createController({
   getCurrentGroup: () => currentGroup,
   getFrameLayerStackItems: frameLayerStackItems,
   getFrameImageAttachments: () => frameImageAttachments,
@@ -1268,7 +1270,7 @@ const {
   layerCardKey,
   movedLayerCardOrder,
 } = layerStack;
-const imageCacheController = globalThis.XSXBImageCache.createController({
+const imageCacheController = globalThis.XFrameImageCache.createController({
   getImageCache: () => imageCache,
   getImageElements: () => imageElements,
   getOpaqueRectCache: () => opaqueRectCache,
@@ -1290,7 +1292,7 @@ const {
   opaqueRectForImage,
   startPreloadImages,
 } = imageCacheController;
-const compositeContext = globalThis.XSXBCompositeContext.createController({
+const compositeContext = globalThis.XFrameCompositeContext.createController({
   getConfig: () => config,
   getCurrentGroup: () => currentGroup,
   getChainImages: () => chainImages,
@@ -1330,7 +1332,7 @@ const {
   loadCompositeContext: loadCompositeContextFromContext,
   loadFrameImageAttachmentsForGroup: loadFrameImageAttachmentsForGroupFromContext,
 } = compositeContext;
-const history = globalThis.XSXBHistory.createController({
+const history = globalThis.XFrameHistory.createController({
   elements: els,
   getUndoStack: () => undoStack,
   setUndoStack: (value) => {
@@ -1349,8 +1351,8 @@ const history = globalThis.XSXBHistory.createController({
 });
 const { pushUndo, redo, undo, updateHistoryControls } = history;
 
-const projectLifecycleModule = globalThis.XSXBAppProjectLifecycle;
-if (!projectLifecycleModule) throw new Error("XSXBAppProjectLifecycle is required.");
+const projectLifecycleModule = globalThis.XFrameAppProjectLifecycle;
+if (!projectLifecycleModule) throw new Error("XFrameAppProjectLifecycle is required.");
 
 /**
  * Binds a mutable app.js variable to the lifecycle controller state facade.
@@ -1477,8 +1479,8 @@ const eventState = lifecycleState;
   ["uiTheme", () => uiTheme, (value) => (uiTheme = value)],
   ["view", () => view, (value) => (view = value)],
 ].forEach(([key, getter, setter]) => bindLifecycleState(eventState, key, getter, setter));
-const projectStateModule = globalThis.XSXBAppProjectState;
-if (!projectStateModule) throw new Error("XSXBAppProjectState is required.");
+const projectStateModule = globalThis.XFrameAppProjectState;
+if (!projectStateModule) throw new Error("XFrameAppProjectState is required.");
 projectStateController = projectStateModule.createController({
   state: eventState,
   elements: els,
@@ -1568,8 +1570,8 @@ const projectLifecycle = projectLifecycleModule.createController({
     navigationContext?.render();
   },
 });
-const tuningValuesModule = globalThis.XSXBAppTuningValues;
-if (!tuningValuesModule) throw new Error("XSXBAppTuningValues is required.");
+const tuningValuesModule = globalThis.XFrameAppTuningValues;
+if (!tuningValuesModule) throw new Error("XFrameAppTuningValues is required.");
 const tuningValues = tuningValuesModule.createController({
   getConfig: () => config,
   getValues: () => values,
@@ -1579,8 +1581,8 @@ const tuningValues = tuningValuesModule.createController({
   getSoulValues: () => soulValues,
   getYechengPropValues: () => yechengPropValues,
 });
-const saveControllerModule = globalThis.XSXBAppSave;
-if (!saveControllerModule) throw new Error("XSXBAppSave is required.");
+const saveControllerModule = globalThis.XFrameAppSave;
+if (!saveControllerModule) throw new Error("XFrameAppSave is required.");
 const saveController = saveControllerModule.createController({
   getConfig: () => config,
   getCurrentGroup: () => currentGroup,
@@ -1650,10 +1652,10 @@ const saveController = saveControllerModule.createController({
   translate: t,
   cloneValue: (value) => structuredClone(value),
 });
-const workspaceStoreModule = globalThis.XSXBWorkspaceStore;
-if (!workspaceStoreModule) throw new Error("XSXBWorkspaceStore is required.");
-const temporaryWorksetModule = globalThis.XSXBTemporaryWorksetStore;
-if (!temporaryWorksetModule) throw new Error("XSXBTemporaryWorksetStore is required.");
+const workspaceStoreModule = globalThis.XFrameWorkspaceStore;
+if (!workspaceStoreModule) throw new Error("XFrameWorkspaceStore is required.");
+const temporaryWorksetModule = globalThis.XFrameTemporaryWorksetStore;
+if (!temporaryWorksetModule) throw new Error("XFrameTemporaryWorksetStore is required.");
 workspaceStore = workspaceStoreModule.createStore({
   autosave: false,
   debounceMs: 600,
@@ -1664,7 +1666,7 @@ workspaceStore = workspaceStoreModule.createStore({
   },
 });
 temporaryWorksetStore = temporaryWorksetModule.createStore();
-globalThis.XSXBTemporaryWorkset = temporaryWorksetStore;
+globalThis.XFrameTemporaryWorkset = temporaryWorksetStore;
 temporaryWorksetStore.subscribe((snapshot) => {
   const resumePanel = document.querySelector("#temporaryWorksetResume");
   const resumeSummary = document.querySelector("#temporaryWorksetSummary");
@@ -1675,7 +1677,7 @@ temporaryWorksetStore.subscribe((snapshot) => {
     resumeSummary.textContent = `${snapshot.name} · ${enabledCount}/${snapshot.frames.length} 帧参与处理`;
   }
 });
-globalThis.XSXBWorkspace = workspaceStore;
+globalThis.XFrameWorkspace = workspaceStore;
 {
   const initialRoute = currentWorkbenchRoute();
   const initialTool = ["import", "organizer", "cutout", "scatter"].includes(initialRoute)
@@ -1705,8 +1707,8 @@ function applySaveIndicator(snapshot) {
 }
 workspaceStore.subscribe((snapshot) => applySaveIndicator(snapshot));
 
-const adjustmentInputsModule = globalThis.XSXBAppAdjustmentInputs;
-if (!adjustmentInputsModule) throw new Error("XSXBAppAdjustmentInputs is required.");
+const adjustmentInputsModule = globalThis.XFrameAppAdjustmentInputs;
+if (!adjustmentInputsModule) throw new Error("XFrameAppAdjustmentInputs is required.");
 adjustmentInputsController = adjustmentInputsModule.createController({
   elements: els,
   adjustmentModes: ADJUSTMENT_MODES,
@@ -1756,8 +1758,8 @@ adjustmentInputsController = adjustmentInputsModule.createController({
   localStorageRef: browserStorage,
 });
 
-const frameEditStateModule = globalThis.XSXBAppFrameEditState;
-if (!frameEditStateModule) throw new Error("XSXBAppFrameEditState is required.");
+const frameEditStateModule = globalThis.XFrameAppFrameEditState;
+if (!frameEditStateModule) throw new Error("XFrameAppFrameEditState is required.");
 frameEditStateController = frameEditStateModule.createController({
   boxNames: BOX_NAMES,
   getConfig: () => config,
@@ -2336,7 +2338,7 @@ function syncFrameInputs(...args) {
 
 /** Keeps playback behavior, labels, and disabled state aligned with playable frames. */
 function syncPlaybackAvailability() {
-  const count = globalThis.XSXBAppPlayback.playableFrameCount(currentGroup, framePlayback);
+  const count = globalThis.XFrameAppPlayback.playableFrameCount(currentGroup, framePlayback);
   const canPlay = count > 1;
   if (els.playPause) {
     els.playPause.disabled = !canPlay;
@@ -2522,10 +2524,10 @@ function syncFilmstripPlayhead() {
   filmstripInteraction?.syncFilmstripPlayhead();
 }
 
-const attachmentModule = globalThis.XSXBAppAttachments;
-if (!attachmentModule) throw new Error("XSXBAppAttachments is required.");
-const attachmentSequenceModule = globalThis.XSXBAttachmentSequence;
-if (!attachmentSequenceModule) throw new Error("XSXBAttachmentSequence is required.");
+const attachmentModule = globalThis.XFrameAppAttachments;
+if (!attachmentModule) throw new Error("XFrameAppAttachments is required.");
+const attachmentSequenceModule = globalThis.XFrameAttachmentSequence;
+if (!attachmentSequenceModule) throw new Error("XFrameAttachmentSequence is required.");
 const attachmentController = attachmentModule.createController({
   fetchImpl: globalThis.fetch,
   fileReaderConstructor: globalThis.FileReader,
@@ -2823,8 +2825,8 @@ const attachmentAssetGroupKey = attachmentGroupKey;
 const uploadFrameAttachmentData = uploadFrameAttachmentDataController;
 const uploadFrameAttachmentImage = uploadFrameAttachmentImageController;
 
-const appToolActionsModule = globalThis.XSXBAppToolActions;
-if (!appToolActionsModule) throw new Error("XSXBAppToolActions is required.");
+const appToolActionsModule = globalThis.XFrameAppToolActions;
+if (!appToolActionsModule) throw new Error("XFrameAppToolActions is required.");
 appToolActionsController = appToolActionsModule.createController({
   getCurrentGroup: () => currentGroup,
   getSelectedFrame: () => selectedFrame,
@@ -2867,8 +2869,8 @@ appToolActionsController = appToolActionsModule.createController({
   onFramesChanged: publishWorkspaceFrameChanges,
 });
 
-const attachmentManipulationModule = globalThis.XSXBAppAttachmentManipulation;
-if (!attachmentManipulationModule) throw new Error("XSXBAppAttachmentManipulation is required.");
+const attachmentManipulationModule = globalThis.XFrameAppAttachmentManipulation;
+if (!attachmentManipulationModule) throw new Error("XFrameAppAttachmentManipulation is required.");
 attachmentManipulationController = attachmentManipulationModule.createController({
   getCurrentGroup: () => currentGroup,
   getImages: () => images,
@@ -2908,8 +2910,8 @@ attachmentManipulationController = attachmentManipulationModule.createController
   windowRef: globalThis.window || globalThis,
 });
 
-const playbackInputsModule = globalThis.XSXBAppPlaybackInputs;
-if (!playbackInputsModule) throw new Error("XSXBAppPlaybackInputs is required.");
+const playbackInputsModule = globalThis.XFrameAppPlaybackInputs;
+if (!playbackInputsModule) throw new Error("XFrameAppPlaybackInputs is required.");
 playbackInputsController = playbackInputsModule.createController({
   elements: {
     frameDuration: els.frameDuration,
@@ -2950,8 +2952,8 @@ playbackInputsController = playbackInputsModule.createController({
   minFrameDurationMs: MIN_FRAME_DURATION_MS,
 });
 
-const projectSelectsModule = globalThis.XSXBAppProjectSelects;
-if (!projectSelectsModule) throw new Error("XSXBAppProjectSelects is required.");
+const projectSelectsModule = globalThis.XFrameAppProjectSelects;
+if (!projectSelectsModule) throw new Error("XFrameAppProjectSelects is required.");
 projectSelectsController = projectSelectsModule.createController({
   elements: {
     projectContext: els.projectContext,
@@ -2985,8 +2987,8 @@ projectSelectsController = projectSelectsModule.createController({
   renderGodotHandoff: () => godotHandoffController?.render(),
 });
 
-const godotHandoffModule = globalThis.XSXBGodotHandoffController;
-if (!godotHandoffModule) throw new Error("XSXBGodotHandoffController is required.");
+const godotHandoffModule = globalThis.XFrameGodotHandoffController;
+if (!godotHandoffModule) throw new Error("XFrameGodotHandoffController is required.");
 godotHandoffController = godotHandoffModule.createController({
   elements: {
     card: document.querySelector("#godotHandoffCard"),
@@ -3008,8 +3010,8 @@ godotHandoffController = godotHandoffModule.createController({
   status,
 });
 
-const filmstripModule = globalThis.XSXBAppFilmstrip;
-if (!filmstripModule) throw new Error("XSXBAppFilmstrip is required.");
+const filmstripModule = globalThis.XFrameAppFilmstrip;
+if (!filmstripModule) throw new Error("XFrameAppFilmstrip is required.");
 const filmstripRendering = filmstripModule.createController({
   filmstrip: els.filmstrip,
   attachmentAssetTrayHost: els.attachmentAssetTrayHost,
@@ -3037,8 +3039,8 @@ const filmstripRendering = filmstripModule.createController({
 });
 const { renderAttachmentAssetTray, syncFrameActions } = filmstripRendering;
 
-const filmstripInteractionModule = globalThis.XSXBAppFilmstripInteraction;
-if (!filmstripInteractionModule) throw new Error("XSXBAppFilmstripInteraction is required.");
+const filmstripInteractionModule = globalThis.XFrameAppFilmstripInteraction;
+if (!filmstripInteractionModule) throw new Error("XFrameAppFilmstripInteraction is required.");
 filmstripInteraction = filmstripInteractionModule.createController({
   elements: {
     filmstrip: els.filmstrip,
@@ -3117,8 +3119,8 @@ filmstripInteraction = filmstripInteractionModule.createController({
   requestAnimationFrameRef: globalThis.requestAnimationFrame?.bind(globalThis),
 });
 
-const canvasRendererModule = globalThis.XSXBAppCanvasRenderer;
-if (!canvasRendererModule) throw new Error("XSXBAppCanvasRenderer is required.");
+const canvasRendererModule = globalThis.XFrameAppCanvasRenderer;
+if (!canvasRendererModule) throw new Error("XFrameAppCanvasRenderer is required.");
 const canvasRenderState = {};
 Object.defineProperties(canvasRenderState, {
   config: { get: () => config },
@@ -3199,8 +3201,8 @@ canvasRenderer = canvasRendererModule.createController({
   },
 });
 
-const stageViewModule = globalThis.XSXBStageView;
-if (!stageViewModule) throw new Error("XSXBStageView is required.");
+const stageViewModule = globalThis.XFrameStageView;
+if (!stageViewModule) throw new Error("XFrameStageView is required.");
 const stageViewController = stageViewModule.createController({
   stage: els.stage,
   stageZoom: els.stageZoom,
@@ -3304,8 +3306,8 @@ function trackAttachmentTransformKey(event, pressed) {
   return true;
 }
 
-const keyboardModule = globalThis.XSXBAppKeyboard;
-if (!keyboardModule) throw new Error("XSXBAppKeyboard is required.");
+const keyboardModule = globalThis.XFrameAppKeyboard;
+if (!keyboardModule) throw new Error("XFrameAppKeyboard is required.");
 const keyboardController = keyboardModule.createController({
   windowRef: globalThis,
   documentRef: document,
@@ -3531,8 +3533,8 @@ function moveDirectManipulationFrameByClientDelta(startTransform, clientDeltaX, 
   syncAdjustmentInputs();
 }
 
-const attackTrailMappingModule = globalThis.XSXBAppAttackTrailMapping;
-if (!attackTrailMappingModule) throw new Error("XSXBAppAttackTrailMapping is required.");
+const attackTrailMappingModule = globalThis.XFrameAppAttackTrailMapping;
+if (!attackTrailMappingModule) throw new Error("XFrameAppAttackTrailMapping is required.");
 const attackTrailMappingController = attackTrailMappingModule.createController({
   getCurrentGroup: () => currentGroup,
   getImages: () => images,
@@ -3685,8 +3687,8 @@ function collectTuningValues() {
   return saveController.collectTuningValues();
 }
 
-const appEventsModule = globalThis.XSXBAppEvents;
-if (!appEventsModule) throw new Error("XSXBAppEvents is required.");
+const appEventsModule = globalThis.XFrameAppEvents;
+if (!appEventsModule) throw new Error("XFrameAppEvents is required.");
 const appEvents = appEventsModule.createController({
   elements: els,
   state: eventState,
@@ -3714,7 +3716,7 @@ const appEvents = appEventsModule.createController({
     canEditBox,
     canEditFramePlayback,
     canEditFrameTransform,
-    canPlayCurrentGroup: () => globalThis.XSXBAppPlayback.canPlayGroup(currentGroup, framePlayback),
+    canPlayCurrentGroup: () => globalThis.XFrameAppPlayback.canPlayGroup(currentGroup, framePlayback),
     clampFrameIndex,
     centerStageContent,
     clearActiveProject,
@@ -3819,8 +3821,8 @@ const appEvents = appEventsModule.createController({
 appEvents.bind();
 
 window.addEventListener("resize", resizeCanvas);
-const navigationGuardModule = globalThis.XSXBAppNavigationGuard;
-if (!navigationGuardModule) throw new Error("XSXBAppNavigationGuard is required.");
+const navigationGuardModule = globalThis.XFrameAppNavigationGuard;
+if (!navigationGuardModule) throw new Error("XFrameAppNavigationGuard is required.");
 navigationGuardModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
@@ -3828,10 +3830,10 @@ navigationGuardModule.createController({
     dirty ||
     frameOrganizer?.hasUnsavedChanges?.() ||
     batchCutout?.hasUnsavedChanges?.() ||
-    Boolean(globalThis.XSXBScatterSliceSession?.hasUnsavedChanges?.()),
+    Boolean(globalThis.XFrameScatterSliceSession?.hasUnsavedChanges?.()),
   requestNavigation: async () => {
     const hasToolChanges = frameOrganizer?.hasUnsavedChanges?.() || batchCutout?.hasUnsavedChanges?.();
-    const scatterSession = globalThis.XSXBScatterSliceSession;
+    const scatterSession = globalThis.XFrameScatterSliceSession;
     const hasScatterChanges = Boolean(scatterSession?.hasUnsavedChanges?.());
     const hasTuningChanges = Boolean(dirty);
     if (hasToolChanges) {
@@ -3934,7 +3936,7 @@ batchCutout =
     getLanguage: () => language,
     getCurrentAnimation: () =>
       currentNavigationContext() === "project"
-        ? globalThis.XSXBModeHubs?.resolveCurrentAnimationSource?.({
+        ? globalThis.XFrameModeHubs?.resolveCurrentAnimationSource?.({
             currentGroup,
             images,
             groupLabel,
@@ -3961,8 +3963,8 @@ batchCutout =
     },
     onStatus: (message) => status(message),
   }) || null;
-const singleFrameCutoutModule = globalThis.XSXBSingleFrameCutout;
-if (!singleFrameCutoutModule) throw new Error("XSXBSingleFrameCutout is required.");
+const singleFrameCutoutModule = globalThis.XFrameSingleFrameCutout;
+if (!singleFrameCutoutModule) throw new Error("XFrameSingleFrameCutout is required.");
 const singleFrameCutout = singleFrameCutoutModule.createController({
   button: document.querySelector("#cutoutCurrentFrame"),
   getCurrentGroup: () => currentGroup,
@@ -3985,7 +3987,7 @@ frameOrganizer =
       godotHandoff: config?.godotHandoff || null,
     }),
     getCurrentAnimation: () =>
-      globalThis.XSXBModeHubs?.resolveCurrentAnimationSource?.({
+      globalThis.XFrameModeHubs?.resolveCurrentAnimationSource?.({
         currentGroup,
         images,
         groupLabel,
@@ -4057,8 +4059,8 @@ function openRequestedFactoryGuide() {
   const requestedGuide = new URLSearchParams(globalThis.location.search).get("guide");
   if (requestedGuide === "character") characterStarterGuide?.open();
 }
-const workbenchExportModule = globalThis.XSXBWorkbenchExport;
-if (browserOnlyMode && !workbenchExportModule) throw new Error("XSXBWorkbenchExport is required.");
+const workbenchExportModule = globalThis.XFrameWorkbenchExport;
+if (browserOnlyMode && !workbenchExportModule) throw new Error("XFrameWorkbenchExport is required.");
 const workbenchExportController = browserOnlyMode
   ? workbenchExportModule.createController({
       browserRuntime,
@@ -4259,10 +4261,10 @@ document.querySelector("#addCodexPet")?.addEventListener("click", () => {
 applyUiTheme();
 applyCanvasColor();
 applyLanguage();
-const appShellModule = globalThis.XSXBAppShell;
-if (!appShellModule) throw new Error("XSXBAppShell is required.");
-const modeHubsModule = globalThis.XSXBModeHubs;
-if (!modeHubsModule) throw new Error("XSXBModeHubs is required.");
+const appShellModule = globalThis.XFrameAppShell;
+if (!appShellModule) throw new Error("XFrameAppShell is required.");
+const modeHubsModule = globalThis.XFrameModeHubs;
+if (!modeHubsModule) throw new Error("XFrameModeHubs is required.");
 modeHubs = modeHubsModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
@@ -4291,8 +4293,8 @@ modeHubs = modeHubsModule.createController({
   },
 });
 modeHubs.bind();
-const navigationContextModule = globalThis.XSXBNavigationContext;
-if (!navigationContextModule) throw new Error("XSXBNavigationContext is required.");
+const navigationContextModule = globalThis.XFrameNavigationContext;
+if (!navigationContextModule) throw new Error("XFrameNavigationContext is required.");
 navigationContext = navigationContextModule.createController({
   documentRef: globalThis.document,
   windowRef: globalThis,
@@ -4319,8 +4321,8 @@ navigationContext = navigationContextModule.createController({
   },
 });
 navigationContext.bind();
-const handoffRuntimeModule = globalThis.XSXBWorksetHandoffRuntime;
-const handoffDialogModule = globalThis.XSXBWorksetHandoffDialog;
+const handoffRuntimeModule = globalThis.XFrameWorksetHandoffRuntime;
+const handoffDialogModule = globalThis.XFrameWorksetHandoffDialog;
 if (!handoffRuntimeModule || !handoffDialogModule) {
   throw new Error("Workset handoff modules are required.");
 }
@@ -4403,9 +4405,9 @@ worksetHandoff = handoffDialogModule.createController({
   },
 });
 worksetHandoff.bind();
-globalThis.XSXBOpenWorksetHandoff = (request) => worksetHandoff.open(request);
+globalThis.XFrameOpenWorksetHandoff = (request) => worksetHandoff.open(request);
 /** Navigates an embedded tool without reloading retained browser resources. */
-globalThis.XSXBNavigateWorkbench = async (route, context = currentNavigationContext()) => {
+globalThis.XFrameNavigateWorkbench = async (route, context = currentNavigationContext()) => {
   if (!(await confirmWorkspaceLeave(route))) return false;
   syncWorkbenchRoute(route, { push: true, context });
   return applyWorkbenchRoute({ skipDirtyPrompt: true });
@@ -4432,7 +4434,7 @@ const appShell = appShellModule.createController({
 appShell.bind();
 /** Refreshes delivery cards from the same in-memory project state used by editing and export. */
 function updateDeliverySummary() {
-  const hubs = globalThis.XSXBModeHubs;
+  const hubs = globalThis.XFrameModeHubs;
   if (!hubs?.summarizeDeliveryScope || !hubs?.summarizeDeliveryReadiness) return;
   const summary = hubs.summarizeDeliveryScope(config, currentGroup);
   const readiness = hubs.summarizeDeliveryReadiness(config, { browserOnly: browserOnlyMode });

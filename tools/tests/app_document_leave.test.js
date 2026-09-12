@@ -63,7 +63,7 @@ function createLeaveEnv(spec = {}) {
         return spec.decision || "cancel";
       },
     },
-    XSXBScatterSliceSession: {
+    XFrameScatterSliceSession: {
       hasUnsavedChanges: () => Boolean(spec.dirtyScatter) && !env.scatterDiscarded,
       allowDiscard() {
         env.scatterDiscarded = true;
@@ -325,10 +325,8 @@ test("dirty popstate project switch confirms like activateProject and restores t
 
 test("dirty popstate cancel restores the full pre-hop href including group and frame", async () => {
   const source = fs.readFileSync(APP_JS, "utf8");
-  const landing =
-    "http://127.0.0.1:5179/workspace/animation/transform?project=repro-leave-a";
-  const hop =
-    "http://127.0.0.1:5179/workspace/animation/transform?project=repro-leave-b";
+  const landing = "http://127.0.0.1:5179/workspace/animation/transform?project=repro-leave-a";
+  const hop = "http://127.0.0.1:5179/workspace/animation/transform?project=repro-leave-b";
   const cancelled = createPopstateEnv({
     href: landing,
     dirty: true,
@@ -437,7 +435,7 @@ test("popstate resolves groups through requestedGroup so animation= wins over ex
   });
   liveHero.config = { groups };
   liveHero.projectLifecycleModule = { requestedGroup };
-  liveHero.XSXBAppProjectLifecycle = { requestedGroup };
+  liveHero.XFrameAppProjectLifecycle = { requestedGroup };
   vm.createContext(liveHero);
   vm.runInContext(extract, liveHero);
   liveHero.window.dispatch("popstate", { state: { xsxbSelection: true } });
@@ -453,7 +451,7 @@ test("popstate resolves groups through requestedGroup so animation= wins over ex
   });
   staleSidekick.config = { groups };
   staleSidekick.projectLifecycleModule = { requestedGroup };
-  staleSidekick.XSXBAppProjectLifecycle = { requestedGroup };
+  staleSidekick.XFrameAppProjectLifecycle = { requestedGroup };
   vm.createContext(staleSidekick);
   vm.runInContext(extract, staleSidekick);
   staleSidekick.window.dispatch("popstate", { state: { xsxbSelection: true } });

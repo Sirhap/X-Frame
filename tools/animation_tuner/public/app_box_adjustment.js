@@ -1,9 +1,9 @@
-(function attachXsxbAppBoxAdjustment(root, factory) {
+(function attachXFrameAppBoxAdjustment(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppBoxAdjustment = api;
+  if (root) root.XFrameAppBoxAdjustment = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

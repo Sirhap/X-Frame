@@ -2,11 +2,11 @@
   "use strict";
 
   const projectStorageModule =
-    root?.XSXBBrowserProjectStorage ||
+    root?.XFrameBrowserProjectStorage ||
     (typeof module === "object" && module.exports ? require("./browser_project_storage") : null);
   const api = factory(root, projectStorageModule);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBBrowserRuntime = api;
+  if (root) root.XFrameBrowserRuntime = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root, projectStorageModule) => {
   "use strict";
 

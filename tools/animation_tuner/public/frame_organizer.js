@@ -30,9 +30,10 @@
     const imagePixelBudget = root.ImagePixelBudget;
     if (!imagePixelBudget) throw new Error("ImagePixelBudget is required.");
     const appUtils =
-      root.XSXBAppUtils || (typeof module === "object" && module.exports ? require("./app_utils") : null);
+      root.XFrameAppUtils || (typeof module === "object" && module.exports ? require("./app_utils") : null);
     const extractFrameCrop = appUtils?.extractFrameCrop;
-    if (typeof extractFrameCrop !== "function") throw new Error("XSXBAppUtils.extractFrameCrop is required.");
+    if (typeof extractFrameCrop !== "function")
+      throw new Error("XFrameAppUtils.extractFrameCrop is required.");
     if (!textModule) throw new Error("FrameOrganizerText is required.");
     if (!sequenceOrder) throw new Error("FrameSequenceOrder is required.");
     const protectedRuntimeModule = root.ProtectedAlgorithmRuntime;
@@ -987,7 +988,12 @@
       } else {
         await loadCurrentAnimation();
       }
-      elements.organizerFileInput.focus();
+      const applyButton = elements.organizerApply;
+      if (applyButton && !applyButton.disabled && typeof applyButton.focus === "function") {
+        applyButton.focus();
+      } else {
+        elements.organizerFileInput.focus();
+      }
     }
 
     /** Opens the current animation and then presents the shared multi-format export dialog. */

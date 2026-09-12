@@ -52,7 +52,7 @@
       imageDataConstructor = root?.ImageData,
       domExceptionConstructor = root?.DOMException,
       maxImageFileBytes = 48 * 1024 * 1024,
-      premiumFeatures = root?.XSXBPremiumFeatures,
+      premiumFeatures = root?.XFramePremiumFeatures,
       ensurePremiumActivated = async () => true,
     } = dependencies;
     /**
@@ -260,7 +260,9 @@
         const firstAddedIndex = state.items.length;
         const sessionApi =
           root?.BatchCutoutSessionController ||
-          (typeof module === "object" && module.exports ? require("./batch_cutout_session_controller") : null);
+          (typeof module === "object" && module.exports
+            ? require("./batch_cutout_session_controller")
+            : null);
         additions.forEach((item) => {
           if (typeof sessionApi?.activateAutomaticBackgroundDetection === "function") {
             sessionApi.activateAutomaticBackgroundDetection(item, {
@@ -284,7 +286,9 @@
         state.previewPanY = 0;
         state.previewMode = "result";
         state.qualityOnly = false;
-        applyProcessingParametersToControls?.(selectedItem()?.processingParameters || additions[0]?.processingParameters);
+        applyProcessingParametersToControls?.(
+          selectedItem()?.processingParameters || additions[0]?.processingParameters,
+        );
         renderQueue();
         renderPreview();
         scheduleBatchThumbnails();

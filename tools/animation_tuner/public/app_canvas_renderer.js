@@ -1,12 +1,12 @@
 (function initializeCanvasRenderer(globalScope, factory) {
   const api = factory(globalScope);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
-  globalScope.XSXBAppCanvasRenderer = api;
+  globalScope.XFrameAppCanvasRenderer = api;
 })(typeof globalThis !== "undefined" ? globalThis : window, function createCanvasRendererModule(globalScope) {
   "use strict";
 
   const canvasLayerRendererModule =
-    globalScope?.XSXBAppCanvasRendererLayers ||
+    globalScope?.XFrameAppCanvasRendererLayers ||
     (typeof require === "function" ? require("./app_canvas_renderer_layers") : null);
 
   const CANVAS_OVERLAY = Object.freeze({
@@ -562,7 +562,7 @@
     }
 
     if (!canvasLayerRendererModule?.createController) {
-      throw new Error("XSXBAppCanvasRendererLayers is required.");
+      throw new Error("XFrameAppCanvasRendererLayers is required.");
     }
     const layerRenderer = canvasLayerRendererModule.createController({
       context: ctx,

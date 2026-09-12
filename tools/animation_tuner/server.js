@@ -532,7 +532,7 @@ function managedProjectPaths(project) {
   const result = [paths.dataDir, paths.workspaceDir];
   const projectRoot = project?.projectRoot ? path.resolve(String(project.projectRoot)) : "";
   if (!projectRoot) return result;
-  const syncRoot = path.join(projectRoot, "xsxb_frame_tuner");
+  const syncRoot = path.join(projectRoot, "x_frame");
   result.push(
     path.join(syncRoot, "data", "projects", project.id),
     path.join(syncRoot, "workspace", "projects", project.id),
@@ -554,7 +554,7 @@ function godotMirrorPath(project, localPath) {
   if (!projectRoot || !localPath) return "";
   const relative = path.relative(ROOT, path.resolve(localPath));
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return "";
-  return path.join(projectRoot, "xsxb_frame_tuner", relative);
+  return path.join(projectRoot, "x_frame", relative);
 }
 
 /**

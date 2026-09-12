@@ -1,9 +1,9 @@
-(function attachXsxbFrameSelection(root, factory) {
+(function attachXFrameFrameSelection(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBFrameSelection = api;
+  if (root) root.XFrameFrameSelection = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

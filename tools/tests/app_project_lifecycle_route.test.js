@@ -23,9 +23,30 @@ test("index-suffixed group uiIds still resolve the same animation after an inser
   // groups-array index, so an import that lands earlier in the list rewrites
   // every later id. The URL from the previous session must still select run.
   const afterInsert = [
-    { uiId: "player:animation:intro:0", profileId: "hero", animationId: "intro", name: "intro", type: "animation", tuningTarget: "player" },
-    { uiId: "player:animation:idle:1", profileId: "hero", animationId: "idle", name: "idle", type: "animation", tuningTarget: "player" },
-    { uiId: "player:animation:run:2", profileId: "hero", animationId: "run", name: "run", type: "animation", tuningTarget: "player" },
+    {
+      uiId: "player:animation:intro:0",
+      profileId: "hero",
+      animationId: "intro",
+      name: "intro",
+      type: "animation",
+      tuningTarget: "player",
+    },
+    {
+      uiId: "player:animation:idle:1",
+      profileId: "hero",
+      animationId: "idle",
+      name: "idle",
+      type: "animation",
+      tuningTarget: "player",
+    },
+    {
+      uiId: "player:animation:run:2",
+      profileId: "hero",
+      animationId: "run",
+      name: "run",
+      type: "animation",
+      tuningTarget: "player",
+    },
   ];
   const staleUrl = new URLSearchParams("group=player%3Aanimation%3Arun%3A1");
   assert.equal(requestedGroup(afterInsert, staleUrl)?.animationId, "run");
@@ -64,9 +85,7 @@ test("stale idle group after an insert resolves to sidekick not the first idle",
   assert.equal(resolved?.animationId, "idle");
   assert.notEqual(resolved?.profileId, "hero");
 
-  const withAnimation = new URLSearchParams(
-    "group=player%3Aanimation%3Aidle%3A0&animation=sidekick%2Fidle",
-  );
+  const withAnimation = new URLSearchParams("group=player%3Aanimation%3Aidle%3A0&animation=sidekick%2Fidle");
   assert.equal(requestedGroup(afterInsert, withAnimation)?.profileId, "sidekick");
 
   const exactHero = new URLSearchParams("group=player%3Aanimation%3Aidle%3A0");
@@ -118,21 +137,21 @@ test("stale actor idle:3 after insert resolves to sidekick not the hero who now 
   ];
   const staleSidekick = new URLSearchParams("group=player%3Aactor%3Aidle%3A3");
   const resolved = requestedGroup(afterInsert, staleSidekick);
-  assert.equal(resolved?.profileId, "sidekick", "stale idle:3 was sidekick; hero now occupies that exact uiId");
+  assert.equal(
+    resolved?.profileId,
+    "sidekick",
+    "stale idle:3 was sidekick; hero now occupies that exact uiId",
+  );
   assert.equal(resolved?.uiId, "player:actor:idle:4");
   assert.notEqual(resolved?.profileId, "hero");
 
-  const withAnimation = new URLSearchParams(
-    "group=player%3Aactor%3Aidle%3A3&animation=sidekick%2Fidle",
-  );
+  const withAnimation = new URLSearchParams("group=player%3Aactor%3Aidle%3A3&animation=sidekick%2Fidle");
   assert.equal(requestedGroup(afterInsert, withAnimation)?.profileId, "sidekick");
 
   const uniqueExact = new URLSearchParams("group=player%3Aactor%3A00%3A2");
   assert.equal(requestedGroup(afterInsert, uniqueExact)?.animationId, "00");
 
-  const liveHeroBookmark = new URLSearchParams(
-    "group=player%3Aactor%3Aidle%3A3&animation=hero%2Fidle",
-  );
+  const liveHeroBookmark = new URLSearchParams("group=player%3Aactor%3Aidle%3A3&animation=hero%2Fidle");
   const liveHero = requestedGroup(afterInsert, liveHeroBookmark);
   assert.equal(liveHero?.profileId, "hero", "live hero bookmark with animation= must not remap to sidekick");
   assert.equal(liveHero?.uiId, "player:actor:idle:3");

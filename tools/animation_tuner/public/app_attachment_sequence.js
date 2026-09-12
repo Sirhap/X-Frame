@@ -1,4 +1,4 @@
-(function attachXsxbAttachmentSequence(root, factory) {
+(function attachXFrameAttachmentSequence(root, factory) {
   "use strict";
 
   const sequenceOrder =
@@ -6,7 +6,7 @@
     (typeof module === "object" && module.exports ? require("./frame_sequence_order") : null);
   const api = factory(sequenceOrder);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAttachmentSequence = api;
+  if (root) root.XFrameAttachmentSequence = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (sequenceOrder) => {
   "use strict";
 

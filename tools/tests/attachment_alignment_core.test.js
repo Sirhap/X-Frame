@@ -230,7 +230,7 @@ test("apply synchronizes stable attachment keys and res paths to a bound Godot p
     assert.equal(result.godotSync.imageAttachmentCount, 2);
     const syncedPath = path.join(
       godotRoot,
-      "xsxb_frame_tuner",
+      "x_frame",
       "data",
       "projects",
       "demo",
@@ -241,7 +241,7 @@ test("apply synchronizes stable attachment keys and res paths to a bound Godot p
       synced.map((attachment) => attachment.key),
       ["hero/attack:0", "hero/attack:1"],
     );
-    assert.ok(synced.every((attachment) => attachment.path.startsWith("res://xsxb_frame_tuner/")));
+    assert.ok(synced.every((attachment) => attachment.path.startsWith("res://x_frame/")));
   } finally {
     fixture.dispose();
   }

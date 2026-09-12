@@ -1,9 +1,9 @@
-(function attachXsxbPremiumFeatures(root, factory) {
+(function attachXFramePremiumFeatures(root, factory) {
   "use strict";
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBPremiumFeatures = api;
+  if (root) root.XFramePremiumFeatures = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 

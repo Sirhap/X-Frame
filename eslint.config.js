@@ -1,6 +1,7 @@
 "use strict";
 
 const browserGlobals = {
+  AbortController: "readonly",
   ArrayBuffer: "readonly",
   Blob: "readonly",
   CSS: "readonly",
@@ -66,7 +67,7 @@ module.exports = [
       "no-dupe-keys": "error",
       "no-undef": "error",
       "no-unreachable": "error",
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_", caughtErrors: "none" }],
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],
     },
   },
   {
@@ -81,7 +82,7 @@ module.exports = [
       "no-dupe-keys": "error",
       "no-undef": "error",
       "no-unreachable": "error",
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_", caughtErrors: "none" }],
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],
     },
   },
   {
@@ -150,7 +151,7 @@ module.exports = [
       "no-dupe-keys": "error",
       "no-undef": "error",
       "no-unreachable": "error",
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_", caughtErrors: "none" }],
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],
     },
   },
   {
@@ -195,7 +196,7 @@ module.exports = [
       "no-dupe-keys": "error",
       "no-undef": "error",
       "no-unreachable": "error",
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_", caughtErrors: "none" }],
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],
     },
   },
 ];

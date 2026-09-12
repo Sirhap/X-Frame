@@ -644,6 +644,27 @@ body.mediaExportOpen {
   }
 }
 
+@media (max-width: 1040px) and (max-height: 500px) {
+  .mediaExportPreview {
+    min-height: 0;
+  }
+
+  .mediaExportDialog[data-presentation="embedded"] .mediaExportPreviewStage {
+    max-height: min(28dvh, 160px);
+  }
+
+  .mediaExportDialog[data-presentation="embedded"] .mediaExportPreviewStage canvas {
+    max-height: min(24dvh, 140px);
+  }
+
+  .mediaExportDialog[data-presentation="embedded"] .mediaExportFooter {
+    position: sticky;
+    bottom: 0;
+    z-index: 40;
+    background: var(--panel);
+  }
+}
+
 /* Reference-aligned export workspace. */
 .mediaExportCard {
   width: min(1580px, 100%);

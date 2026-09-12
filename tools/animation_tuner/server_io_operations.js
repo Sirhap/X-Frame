@@ -262,9 +262,7 @@ function createServerIoOperations(dependencies = {}) {
    */
   function saveTransactionPaths(project) {
     const paths = projectStore.projectPaths(project);
-    const godotOutput = project?.projectRoot
-      ? path.join(path.resolve(project.projectRoot), "xsxb_frame_tuner")
-      : "";
+    const godotOutput = project?.projectRoot ? path.join(path.resolve(project.projectRoot), "x_frame") : "";
     return [
       paths.tuning,
       paths.frameAudio,

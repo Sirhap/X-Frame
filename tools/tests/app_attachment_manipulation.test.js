@@ -6,9 +6,13 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { createController } = require("../animation_tuner/public/app_attachment_manipulation");
-const { createController: createTransformRuntime } = require("../animation_tuner/public/app_transform_runtime");
+const {
+  createController: createTransformRuntime,
+} = require("../animation_tuner/public/app_transform_runtime");
 const { createController: createFrameEditState } = require("../animation_tuner/public/app_frame_edit_state");
-const { createController: createLayerRenderer } = require("../animation_tuner/public/app_canvas_renderer_layers");
+const {
+  createController: createLayerRenderer,
+} = require("../animation_tuner/public/app_canvas_renderer_layers");
 const { rotatePoint, rotateVector } = require("../animation_tuner/public/app_box_geometry");
 const { normalizeAttachmentTransform } = require("../animation_tuner/public/app_attachment_utils");
 
@@ -118,10 +122,7 @@ test("attachment wheel without a hit leaves the event for the main sprite", () =
 });
 
 function assertApproxEqual(actual, expected, message) {
-  assert.ok(
-    Math.abs(actual - expected) < 1e-6,
-    `${message}: expected ${expected}, got ${actual}`,
-  );
+  assert.ok(Math.abs(actual - expected) < 1e-6, `${message}: expected ${expected}, got ${actual}`);
 }
 
 test("attachment screen origin rotates local offset with owner rotation", () => {

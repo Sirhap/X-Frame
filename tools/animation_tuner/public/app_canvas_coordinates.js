@@ -1,9 +1,9 @@
-(function attachXsxbCanvasCoordinates(root, factory) {
+(function attachXFrameCanvasCoordinates(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBCanvasCoordinates = api;
+  if (root) root.XFrameCanvasCoordinates = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

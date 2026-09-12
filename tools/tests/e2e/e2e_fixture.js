@@ -10,7 +10,7 @@ const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3n0AAAAASUVORK5CYII=",
   "base64",
 );
-const DEFAULT_E2E_ROOT = path.join(os.tmpdir(), "xsxb-frame-tuner-e2e");
+const DEFAULT_E2E_ROOT = path.join(os.tmpdir(), "x-frame-e2e");
 const TRASH_DIRECTORY = ".reset-trash";
 let retiredCount = 0;
 

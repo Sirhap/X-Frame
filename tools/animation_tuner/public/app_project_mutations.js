@@ -1,9 +1,9 @@
-(function attachXsxbProjectMutations(root, factory) {
+(function attachXFrameProjectMutations(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBProjectMutations = api;
+  if (root) root.XFrameProjectMutations = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

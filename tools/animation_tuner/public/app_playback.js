@@ -1,9 +1,9 @@
-(function attachXsxbAppPlayback(root, factory) {
+(function attachXFrameAppPlayback(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppPlayback = api;
+  if (root) root.XFrameAppPlayback = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

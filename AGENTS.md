@@ -14,7 +14,7 @@
 
 ## 新增前端模块
 
-- `tools/animation_tuner/public/` 下的新模块要写成同时支持 `module.exports` 与 `window.XSXB*` 的 UMD 风格，方便 Node 里做单元测试。
+- `tools/animation_tuner/public/` 下的新模块要写成同时支持 `module.exports` 与 `window.XFrame*` 的 UMD 风格，方便 Node 里做单元测试。
 - 不要把逻辑内联写在 `index.html` 的 `<script>` 里，那样无法测试。抽成模块后由 `index.html` 引入。
 - 新模块要同时登记到 `package.json` 的 `format:check` 与一个 `check:*` 脚本里。
 - 如果 `index.html` 依赖某个新脚本，在 `tools/tests/cloudflare_site_html.test.js` 加断言，避免 Cloudflare 构建把它漏掉。
@@ -45,15 +45,11 @@ Playwright 用例通过 `tools/tests/e2e/fixtures.js` 在每个测试前把 `XSX
 
 容差滑块的下限是 `-1`，那是它的**关闭档**：参考替换按 `距离 <= 容差` 判定，`-1` 匹配不到任何像素。`smart_cutout_defaults.js` 里曾把 `tolerance` 写成 `-1`，导致「智能抠图」跑完、进度条走完、状态显示「已回写 N 帧」，但白底图一个像素都没抠掉（绿幕图只剩 alpha≈13 的灰雾，勉强看着像抠了）。滑块自身的默认值是 `1`，`PROCESSING_PARAMETER_RANGES.tolerance.fallback` 也是 `1`。改这套参数时先用 `tools/tests/smart_cutout_defaults.test.js` 验结果，别只看数值合不合法。
 
-**这份参数是前端抠图用的。** 改这套参数时先用 `tools/tests/smart_cutout_defaults.test.js` 验结果，别只看数值合不合法。MCP 侧已迁到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)，那边若仍共用同一套默认值，两边都要验。
+**这份参数是前端抠图用的。** 改这套参数时先用 `tools/tests/smart_cutout_defaults.test.js` 验结果，别只看数值合不合法。
 
 **「已抠过」的判定别只看四角。** `alreadyCutOut` 原来只采样四个角像素，一张背景还在、但角上恰好透明的帧会被判为「抠过了」直接 skip，回执照样报成功——又是一次「报告干了活、其实没动」。现在改成采样整圈边框、过半透明才算抠过：背景还在的帧边框几乎全不透明，已抠帧只在主体或刀光出画的地方贴边，两者余量都很大。别把阈值调到 0.9 那么紧，刀光扫过底边就能占掉 12%。
 
 **抠图必须可逆。** 智能抠图写回的是 `editedCanvas`；单帧再进抠图台时要用 `cutoutSourceCanvas`（没有就退回 `editedCanvas`）当源，不能拿抠完的结果当源再抠一遍，否则调参只能越抠越空，参数还原也不可能回到原图。第一次写回时钉住源图，翻转时源图一起翻转。
-
-## MCP
-
-本仓库不再包含 MCP 实现。要看或改 XSXB MCP，请到 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。
 
 ## Agent skills
 

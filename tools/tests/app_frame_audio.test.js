@@ -153,6 +153,68 @@ function createMemoryIndexedDb() {
   };
 }
 
+/** Builds an IndexedDB factory that keeps a separate record map per database name. */
+function createNamedMemoryIndexedDb(seed = {}) {
+  const databases = new Map();
+  for (const [name, records] of Object.entries(seed)) {
+    databases.set(name, new Map(Object.entries(records)));
+  }
+
+  function recordsFor(name) {
+    if (!databases.has(name)) databases.set(name, new Map());
+    return databases.get(name);
+  }
+
+  function succeed(target, result) {
+    target.result = result;
+    queueMicrotask(() => target.onsuccess?.({ target }));
+  }
+
+  return {
+    databases,
+    open(name) {
+      const records = recordsFor(name);
+      const request = {
+        result: {
+          objectStoreNames: { contains: () => true },
+          transaction() {
+            const tx = { oncomplete: null, onerror: null };
+            queueMicrotask(() => tx.oncomplete?.());
+            tx.objectStore = () => ({
+              put(value) {
+                records.set(value.key, value);
+                const putRequest = { result: value, onsuccess: null, onerror: null };
+                succeed(putRequest, value);
+                return putRequest;
+              },
+              delete(key) {
+                records.delete(key);
+                const deleteRequest = { result: undefined, onsuccess: null, onerror: null };
+                succeed(deleteRequest, undefined);
+                return deleteRequest;
+              },
+              getAll() {
+                const values = [...records.values()];
+                const getRequest = { result: values, onsuccess: null, onerror: null };
+                succeed(getRequest, values);
+                return getRequest;
+              },
+            });
+            return tx;
+          },
+        },
+        error: null,
+        onupgradeneeded: null,
+        onsuccess: null,
+        onerror: null,
+        onblocked: null,
+      };
+      queueMicrotask(() => request.onsuccess?.());
+      return request;
+    },
+  };
+}
+
 test("undo of a bind does not let loadFromDb resurrect an unsaved IDB write", async () => {
   const indexedDb = createMemoryIndexedDb();
   const blob = { name: "slash.wav", type: "audio/wav", size: 32 };
@@ -232,4 +294,91 @@ test("SAV-011 loadFromDb restores imported WAV after reload with empty bindings"
   assert.equal(restored.name, "beep.wav");
   assert.equal(restored.blob, blob);
   assert.equal(restored.url, "blob:restored/beep.wav");
+});
+
+test("loadFromDb copies frame audio from the pre-rename IndexedDB name", async () => {
+  const blob = { name: "slash.wav", type: "audio/wav", size: 32 };
+  const key = "project:idle:0";
+  const indexedDb = createNamedMemoryIndexedDb({
+    "xsxb-frame-tuner-frame-audio": {
+      [key]: {
+        key,
+        name: "slash.wav",
+        type: "audio/wav",
+        size: 32,
+        metadata: { projectId: "project", animation: "idle", frame: 0 },
+        blob,
+      },
+    },
+  });
+  const bindings = {};
+  const { controller } = createAudioController({
+    dbName: "x-frame-frame-audio",
+    legacyDbName: "xsxb-frame-tuner-frame-audio",
+    getBindings: () => bindings,
+    getActiveProjectId: () => "project",
+    getFrameAudioMetadataFromKey: (bindingKey) => ({
+      projectId: "project",
+      animation: "idle",
+      frame: 0,
+      key: bindingKey,
+    }),
+    indexedDBRef: indexedDb,
+    urlApi: {
+      createObjectURL: (value) => `blob:migrated/${value.name || "audio"}`,
+      revokeObjectURL() {},
+    },
+  });
+
+  await controller.loadFromDb();
+
+  assert.equal(bindings[key]?.name, "slash.wav");
+  assert.equal(bindings[key]?.blob, blob);
+  assert.equal(indexedDb.databases.get("x-frame-frame-audio")?.get(key)?.name, "slash.wav");
+});
+
+test("loadFromDb keeps records already stored under the renamed audio database", async () => {
+  const newBlob = { name: "new.wav", type: "audio/wav", size: 8 };
+  const legacyBlob = { name: "old.wav", type: "audio/wav", size: 16 };
+  const indexedDb = createNamedMemoryIndexedDb({
+    "x-frame-frame-audio": {
+      "project:idle:0": {
+        key: "project:idle:0",
+        name: "new.wav",
+        metadata: { projectId: "project", animation: "idle", frame: 0 },
+        blob: newBlob,
+      },
+    },
+    "xsxb-frame-tuner-frame-audio": {
+      "project:idle:1": {
+        key: "project:idle:1",
+        name: "old.wav",
+        metadata: { projectId: "project", animation: "idle", frame: 1 },
+        blob: legacyBlob,
+      },
+    },
+  });
+  const bindings = {};
+  const { controller } = createAudioController({
+    dbName: "x-frame-frame-audio",
+    legacyDbName: "xsxb-frame-tuner-frame-audio",
+    getBindings: () => bindings,
+    getActiveProjectId: () => "project",
+    getFrameAudioMetadataFromKey: (bindingKey) => ({
+      projectId: "project",
+      animation: "idle",
+      frame: Number(String(bindingKey).slice(-1)),
+      key: bindingKey,
+    }),
+    indexedDBRef: indexedDb,
+    urlApi: {
+      createObjectURL: (value) => `blob:kept/${value.name || "audio"}`,
+      revokeObjectURL() {},
+    },
+  });
+
+  await controller.loadFromDb();
+
+  assert.equal(bindings["project:idle:0"]?.name, "new.wav");
+  assert.equal(bindings["project:idle:1"], undefined);
 });

@@ -1,9 +1,9 @@
-(function attachXsxbBoxDefaults(root, factory) {
+(function attachXFrameBoxDefaults(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBBoxDefaults = api;
+  if (root) root.XFrameBoxDefaults = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

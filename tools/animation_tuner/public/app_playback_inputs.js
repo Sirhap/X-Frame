@@ -1,9 +1,9 @@
-(function attachXsxbPlaybackInputs(root, factory) {
+(function attachXFramePlaybackInputs(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppPlaybackInputs = api;
+  if (root) root.XFrameAppPlaybackInputs = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

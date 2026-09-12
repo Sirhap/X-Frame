@@ -1,9 +1,9 @@
-(function attachXsxbBoxModel(root, factory) {
+(function attachXFrameBoxModel(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBBoxModel = api;
+  if (root) root.XFrameBoxModel = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

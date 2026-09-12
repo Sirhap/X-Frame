@@ -414,7 +414,7 @@
         throw new Error("当前浏览器不支持文件夹选择；请使用最新版 Edge 或 Chrome 打开本地 Lite 页面。");
       status.textContent = "请选择导出目录";
       const chosenDirectory = await window.showDirectoryPicker({
-        id: `xsxb-frame-tuner-lite-${kind}`,
+        id: `x-frame-lite-${kind}`,
         mode: "readwrite",
         startIn: "downloads",
       });
@@ -534,7 +534,7 @@
     }
   }
 
-  window.addEventListener("xsxb-frame-tuner-config", () => {
+  window.addEventListener("x-frame-config", () => {
     initialize();
     applyLiteLabels();
     syncSettings();

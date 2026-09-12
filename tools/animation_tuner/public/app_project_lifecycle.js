@@ -1,9 +1,9 @@
-(function attachXsxbAppProjectLifecycle(root, factory) {
+(function attachXFrameAppProjectLifecycle(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppProjectLifecycle = api;
+  if (root) root.XFrameAppProjectLifecycle = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

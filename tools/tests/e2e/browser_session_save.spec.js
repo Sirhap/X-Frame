@@ -89,7 +89,8 @@ test("TUN-021 deleted browser-session frame stays gone after hard reload", async
   await page.locator('.thumb[data-frame-index="0"]').click();
   await page.locator("label:has(#adjustFrame)").click();
   await expect(page.locator("#adjustFrame")).toBeChecked();
-  await page.locator("#frameReference").check({ force: true });
+  await page.locator("label:has(#frameReference)").scrollIntoViewIfNeeded();
+  await page.locator("label:has(#frameReference)").click();
   await expect(page.locator("#frameReference")).toBeChecked();
   await expect(page.locator('.thumb[data-frame-index="0"]')).toHaveClass(/reference/);
 });
@@ -131,6 +132,9 @@ test("SAV-011 imported frame WAV survives hard reload on the audio page", async 
   await expect(page.locator("#frameAudioName")).toContainText("beep.wav");
   await expect(page.locator("#clearFrameAudio")).toBeEnabled();
   await expect(page.locator(".thumb.primary")).toHaveClass(/hasSfx/);
+
+  await page.locator("#save").click();
+  await expect(page.locator("#workspaceSaveIndicator")).toHaveText(/已保存/, { timeout: 8000 });
 
   await page.reload();
   await expect(page.locator("body")).toHaveClass(/browserOnlyMode/);

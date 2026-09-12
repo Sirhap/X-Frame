@@ -739,9 +739,9 @@
         const item = selectedItem();
         const sampled = colorUtils.hexToRgb(elements.cutoutColor.value);
         const adjusted =
-          root.XSXBSmartCutoutDefaults &&
-          typeof root.XSXBSmartCutoutDefaults.adjustParametersForBackgroundColor === "function"
-            ? root.XSXBSmartCutoutDefaults.adjustParametersForBackgroundColor(
+          root.XFrameSmartCutoutDefaults &&
+          typeof root.XFrameSmartCutoutDefaults.adjustParametersForBackgroundColor === "function"
+            ? root.XFrameSmartCutoutDefaults.adjustParametersForBackgroundColor(
                 item?.processingParameters || sessionCore.captureProcessingParameters(elements),
                 sampled,
               )

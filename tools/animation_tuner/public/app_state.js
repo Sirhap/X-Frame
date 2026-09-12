@@ -1,9 +1,9 @@
-(function attachXsxbAppState(root, factory) {
+(function attachXFrameAppState(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppState = api;
+  if (root) root.XFrameAppState = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -23,7 +23,8 @@
     BOX_NAMES: Object.freeze(["hurtbox", "hitbox", "collisionbox"]),
     BOX_DRAW_ORDER: Object.freeze(["collisionbox", "hurtbox", "hitbox"]),
     COLLISION_BOX_HANDLES: new Set(["nw", "n", "ne", "w", "e"]),
-    FRAME_AUDIO_DB_NAME: "xsxb-frame-tuner-frame-audio",
+    FRAME_AUDIO_DB_NAME: "x-frame-frame-audio",
+    FRAME_AUDIO_LEGACY_DB_NAME: "xsxb-frame-tuner-frame-audio",
     FRAME_AUDIO_DB_VERSION: 1,
     FRAME_AUDIO_STORE: "frameAudio",
     LAYER_CARD_DRAG_TYPE: "application/x-xsxb-layer-card",

@@ -14,14 +14,15 @@ const {
 } = require("../godot_sync");
 const { createProjectStore } = require("../project_store");
 
-test("localFrameRelPath keeps Godot copies inside xsxb_frame_tuner/", () => {
-  assert.equal(localFrameRelPath("xsxb_frame_tuner/../art/hero.png"), `${GODOT_SYNC_ROOT}/hero.png`);
+test("localFrameRelPath keeps Godot copies inside x_frame/", () => {
+  assert.equal(GODOT_SYNC_ROOT, "x_frame");
+  assert.equal(localFrameRelPath("x_frame/../art/hero.png"), `${GODOT_SYNC_ROOT}/hero.png`);
   assert.equal(
     localFrameRelPath("workspace/projects/demo/a.png"),
     `${GODOT_SYNC_ROOT}/workspace/projects/demo/a.png`,
   );
-  assert.ok(localFrameRelPath("xsxb_frame_tuner/assets/a.png").startsWith(`${GODOT_SYNC_ROOT}/`));
-  assert.ok(!localFrameRelPath("xsxb_frame_tuner/../art/hero.png").includes(".."));
+  assert.ok(localFrameRelPath("x_frame/assets/a.png").startsWith(`${GODOT_SYNC_ROOT}/`));
+  assert.ok(!localFrameRelPath("x_frame/../art/hero.png").includes(".."));
 });
 
 test("syncManifest does not write escaped frame paths outside the sandbox", () => {
@@ -46,7 +47,7 @@ test("syncManifest does not write escaped frame paths outside the sandbox", () =
         animations: [
           {
             id: "idle",
-            frames: [{ path: "xsxb_frame_tuner/../art/hero.png", name: "hero.png" }],
+            frames: [{ path: "x_frame/../art/hero.png", name: "hero.png" }],
           },
         ],
       },
@@ -86,7 +87,7 @@ test("frame audio sync keeps two same-frame bindings as distinct files", () => {
       },
     ]);
     assert.equal(result.copiedAudio, 2);
-    const audioDir = path.join(godotRoot, "xsxb_frame_tuner", "audio", "projects", "audio");
+    const audioDir = path.join(godotRoot, "x_frame", "audio", "projects", "audio");
     const files = fs.readdirSync(audioDir);
     assert.equal(files.length, 2);
     assert.notEqual(files[0], files[1]);
@@ -114,7 +115,7 @@ test("frame audio sync removes Godot copies that are no longer referenced", () =
         data: `data:audio/wav;base64,${first.toString("base64")}`,
       },
     ]);
-    const audioDir = path.join(godotRoot, "xsxb_frame_tuner", "audio", "projects", "audio");
+    const audioDir = path.join(godotRoot, "x_frame", "audio", "projects", "audio");
     const firstFiles = fs.readdirSync(audioDir);
     assert.equal(firstFiles.length, 1);
     syncFrameAudio(store, project, [
@@ -138,7 +139,7 @@ test("invalidateGodotImport drops a stale imported ctex after the PNG changes", 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-sync-import-"));
   try {
     const crypto = require("node:crypto");
-    const pngPath = path.join(root, "xsxb_frame_tuner/assets/frame.png");
+    const pngPath = path.join(root, "x_frame/assets/frame.png");
     fs.mkdirSync(path.dirname(pngPath), { recursive: true });
     fs.writeFileSync(pngPath, "new-png-bytes");
     const destRel = ".godot/imported/frame.png-abc.ctex";

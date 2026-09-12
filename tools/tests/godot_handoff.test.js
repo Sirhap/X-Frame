@@ -41,7 +41,7 @@ function createFixture() {
   });
   let syncFailure = null;
   const syncGodotProjectAsync = async (boundProject) => {
-    const outputRoot = path.join(boundProject.projectRoot, "xsxb_frame_tuner");
+    const outputRoot = path.join(boundProject.projectRoot, "x_frame");
     fs.mkdirSync(outputRoot, { recursive: true });
     fs.writeFileSync(path.join(outputRoot, "partial.txt"), "partial", "utf8");
     if (syncFailure) throw syncFailure;
@@ -169,7 +169,7 @@ test("handoff keeps old external output on rebind and unbind", async () => {
   try {
     const firstRoot = fixture.createGodotRoot("first-game");
     await fixture.service.execute(fixture.project(), { action: "bind", projectRoot: firstRoot });
-    const oldOutput = path.join(firstRoot, "xsxb_frame_tuner", "partial.txt");
+    const oldOutput = path.join(firstRoot, "x_frame", "partial.txt");
     assert.equal(fs.existsSync(oldOutput), true);
 
     const secondRoot = fixture.createGodotRoot("second-game");
@@ -183,7 +183,7 @@ test("handoff keeps old external output on rebind and unbind", async () => {
     const result = await fixture.service.execute(fixture.project(), { action: "unbind" });
     assert.equal(result.godotHandoff.state, "local_only");
     assert.equal(fixture.project().projectRoot, "");
-    assert.equal(fs.existsSync(path.join(secondRoot, "xsxb_frame_tuner")), true);
+    assert.equal(fs.existsSync(path.join(secondRoot, "x_frame")), true);
   } finally {
     fixture.dispose();
   }
@@ -202,7 +202,7 @@ test("handoff rolls back partial external sync and preserves retryable binding",
         error.details.dataRevision === fixture.projectDataRevision(fixture.project()),
     );
     assert.equal(fixture.project().projectRoot, godotRoot);
-    assert.equal(fs.existsSync(path.join(godotRoot, "xsxb_frame_tuner", "partial.txt")), false);
+    assert.equal(fs.existsSync(path.join(godotRoot, "x_frame", "partial.txt")), false);
     assert.equal(fixture.service.status(fixture.project()).state, "sync_failed");
   } finally {
     fixture.dispose();

@@ -73,11 +73,7 @@
     const alreadyCutOut = options.alreadyCutOut || estimatorApi.alreadyCutOut || null;
     if (
       typeof alreadyCutOut === "function" &&
-      alreadyCutOut(
-        item.sourceImageData.data,
-        item.sourceImageData.width,
-        item.sourceImageData.height,
-      )
+      alreadyCutOut(item.sourceImageData.data, item.sourceImageData.width, item.sourceImageData.height)
     ) {
       return;
     }
@@ -93,7 +89,7 @@
       (typeof module === "object" && module.exports
         ? require("./smart_cutout_defaults")
         : typeof globalThis !== "undefined"
-          ? globalThis.XSXBSmartCutoutDefaults
+          ? globalThis.XFrameSmartCutoutDefaults
           : null) || {};
     if (typeof smartDefaults.overlaySmartCutoutParameters === "function") {
       item.processingParameters = smartDefaults.overlaySmartCutoutParameters(

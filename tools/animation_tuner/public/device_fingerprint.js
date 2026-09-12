@@ -1,9 +1,9 @@
-(function attachXsxbDeviceFingerprint(root, factory) {
+(function attachXFrameDeviceFingerprint(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBDeviceFingerprint = api;
+  if (root) root.XFrameDeviceFingerprint = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

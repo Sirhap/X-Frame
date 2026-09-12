@@ -1,17 +1,17 @@
-(function attachXsxbAppEvents(root, factory) {
+(function attachXFrameAppEvents(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppEvents = api;
+  if (root) root.XFrameAppEvents = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
   const inputHelpersModule =
-    root.XSXBAppEventsInputHelpers ||
+    root.XFrameAppEventsInputHelpers ||
     (typeof require === "function" ? require("./app_events_input_helpers") : null);
   const stagePointerModule =
-    root.XSXBAppEventsStagePointer ||
+    root.XFrameAppEventsStagePointer ||
     (typeof require === "function" ? require("./app_events_stage_pointer") : null);
 
   /**
@@ -141,8 +141,6 @@
         event?.preventDefault?.();
         return false;
       },
-      beginWorkbenchClickGuard = () => {},
-      endWorkbenchClickGuard = () => {},
       handleAdjustmentStepClick = (button) => {
         const input = document.querySelector(`#${button?.dataset?.stepTarget || ""}`);
         if (!input) return false;
@@ -174,7 +172,7 @@
     } = handlers;
 
     if (!inputHelpersModule?.createController) {
-      throw new Error("XSXBAppEventsInputHelpers is required.");
+      throw new Error("XFrameAppEventsInputHelpers is required.");
     }
     const {
       armInputUndo,
@@ -204,7 +202,7 @@
     });
 
     if (!stagePointerModule?.createController) {
-      throw new Error("XSXBAppEventsStagePointer is required.");
+      throw new Error("XFrameAppEventsStagePointer is required.");
     }
     const stagePointerController = stagePointerModule.createController({
       stage: els.stage,

@@ -1,15 +1,14 @@
-(function attachXsxbImageCache(root, factory) {
+(function attachXFrameImageCache(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBImageCache = api;
+  if (root) root.XFrameImageCache = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
   const appUtils =
-    root?.XSXBAppUtils ||
-    (typeof module === "object" && module.exports ? require("./app_utils") : null);
+    root?.XFrameAppUtils || (typeof module === "object" && module.exports ? require("./app_utils") : null);
 
   /**
    * Creates image loading, caching, bounded preloading, and opaque-boundary operations.

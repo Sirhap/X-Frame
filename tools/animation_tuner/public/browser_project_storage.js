@@ -1,13 +1,14 @@
-(function attachXsxbBrowserProjectStorage(root, factory) {
+(function attachXFrameBrowserProjectStorage(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBBrowserProjectStorage = api;
+  if (root) root.XFrameBrowserProjectStorage = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
-  const DATABASE_NAME = "xsxb-frame-tuner-projects";
+  const DATABASE_NAME = "x-frame-projects";
+  const LEGACY_DATABASE_NAME = "xsxb-frame-tuner-projects";
   const DATABASE_VERSION = 1;
   const OBJECT_STORE_NAME = "state";
   const STATE_KEY = "browser-projects";
@@ -88,8 +89,21 @@
   }
 
   /**
+   * Returns whether a stored snapshot can be used as a browser project registry.
+   * @param {unknown} snapshot Candidate IndexedDB value.
+   * @returns {boolean} Whether the snapshot has the expected shape.
+   */
+  function isProjectSnapshot(snapshot) {
+    return (
+      snapshot?.version === 1 &&
+      Array.isArray(snapshot?.registry?.projects) &&
+      Array.isArray(snapshot?.projects)
+    );
+  }
+
+  /**
    * Creates a serialized project snapshot store.
-   * @param {{indexedDBRef?:IDBFactory|null,adapter?:{read:()=>Promise<object|null>,write:(snapshot:object)=>Promise<void>},clone?:(value:any)=>any,databaseName?:string}} dependencies Storage dependencies.
+   * @param {{indexedDBRef?:IDBFactory|null,adapter?:{read:()=>Promise<object|null>,write:(snapshot:object)=>Promise<void>}|null,legacyAdapter?:{read:()=>Promise<object|null>,write:(snapshot:object)=>Promise<void>}|null,clone?:(value:any)=>any,databaseName?:string,legacyDatabaseName?:string}} dependencies Storage dependencies.
    * @returns {{load:()=>Promise<object|null>,save:(registry:object,projects:Map<string,object>)=>Promise<boolean>}}
    */
   function createStore(dependencies = {}) {
@@ -101,22 +115,35 @@
       });
     const indexedDBRef =
       dependencies.indexedDBRef === undefined ? root?.indexedDB : dependencies.indexedDBRef;
-    const adapter =
-      dependencies.adapter ||
-      createIndexedDbAdapter(indexedDBRef, dependencies.databaseName || DATABASE_NAME);
+    const databaseName = dependencies.databaseName || DATABASE_NAME;
+    const legacyDatabaseName = dependencies.legacyDatabaseName || LEGACY_DATABASE_NAME;
+    const adapter = dependencies.adapter || createIndexedDbAdapter(indexedDBRef, databaseName);
+    let legacyAdapter = null;
+    if (Object.prototype.hasOwnProperty.call(dependencies, "legacyAdapter")) {
+      legacyAdapter = dependencies.legacyAdapter;
+    } else if (!dependencies.adapter && databaseName !== legacyDatabaseName) {
+      legacyAdapter = createIndexedDbAdapter(indexedDBRef, legacyDatabaseName);
+    }
     let writeQueue = Promise.resolve();
 
     async function load() {
       if (!adapter) return null;
       const snapshot = await adapter.read();
-      if (
-        snapshot?.version !== 1 ||
-        !Array.isArray(snapshot?.registry?.projects) ||
-        !Array.isArray(snapshot?.projects)
-      ) {
+      if (isProjectSnapshot(snapshot)) return clone(snapshot);
+      if (!legacyAdapter) return null;
+      try {
+        const legacy = await legacyAdapter.read();
+        if (!isProjectSnapshot(legacy)) return null;
+        const migrated = clone(legacy);
+        try {
+          await adapter.write(migrated);
+        } catch (_error) {
+          // Keep the restored session even if the renamed database cannot be written yet.
+        }
+        return clone(migrated);
+      } catch (_error) {
         return null;
       }
-      return clone(snapshot);
     }
 
     async function save(registry, projects) {
@@ -134,5 +161,10 @@
     return Object.freeze({ load, save });
   }
 
-  return Object.freeze({ createIndexedDbAdapter, createStore });
+  return Object.freeze({
+    DATABASE_NAME,
+    LEGACY_DATABASE_NAME,
+    createIndexedDbAdapter,
+    createStore,
+  });
 });

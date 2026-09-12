@@ -1,9 +1,9 @@
-(function attachXsxbProjectSelects(root, factory) {
+(function attachXFrameProjectSelects(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppProjectSelects = api;
+  if (root) root.XFrameAppProjectSelects = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (globalScope) => {
   "use strict";
 

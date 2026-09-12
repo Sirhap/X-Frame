@@ -1,9 +1,9 @@
-(function attachXsxbWorksetHandoffDialog(root, factory) {
+(function attachXFrameWorksetHandoffDialog(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBWorksetHandoffDialog = api;
+  if (root) root.XFrameWorksetHandoffDialog = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

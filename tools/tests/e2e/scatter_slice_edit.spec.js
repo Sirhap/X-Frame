@@ -255,7 +255,7 @@ test("standalone scatter slices enter the shared temporary organizer workset", a
   await expect(page).toHaveURL(/\/tools\/organizer/);
   await expect(page.locator("#organizerModal")).toBeVisible();
   await expect(page.locator(".organizerFrame")).toHaveCount(detectedCount);
-  const retainedFrames = await page.evaluate(() => globalThis.XSXBTemporaryWorkset.getSnapshot().frames);
+  const retainedFrames = await page.evaluate(() => globalThis.XFrameTemporaryWorkset.getSnapshot().frames);
   expect(retainedFrames).toHaveLength(detectedCount);
   expect(retainedFrames.every((frame) => frame.id.startsWith("scatter:"))).toBe(true);
   expect(retainedFrames.every((frame) => /^动画组 .+-\d{3}\.png$/u.test(frame.name))).toBe(true);
@@ -287,7 +287,7 @@ test("standalone scatter slices enter the shared temporary organizer workset", a
     expect(animationOptions.some((label) => label.includes(animationName))).toBe(true);
   }
   const beforeReload = await page.evaluate(() =>
-    globalThis.XSXBWorkspace.getSnapshot().frames.map((frame) => ({
+    globalThis.XFrameWorkspace.getSnapshot().frames.map((frame) => ({
       id: frame.id,
       persistedId: frame.persistedId,
       revision: frame.assetRevision,
@@ -302,7 +302,7 @@ test("standalone scatter slices enter the shared temporary organizer workset", a
   await expect(page.locator("#playPause")).toBeEnabled();
   await expect(page.locator("#playbackAvailability")).toContainText("帧可播放");
   const afterReload = await page.evaluate(() =>
-    globalThis.XSXBWorkspace.getSnapshot()
+    globalThis.XFrameWorkspace.getSnapshot()
       .frames.filter((frame) => frame.persistedId?.startsWith("scatter:") || frame.id.includes(":scatter:"))
       .map((frame) => ({ id: frame.id, persistedId: frame.persistedId, revision: frame.assetRevision })),
   );
@@ -329,7 +329,7 @@ test("standalone scatter slices enter the shared temporary organizer workset", a
   await expect(page).toHaveURL(/\/workspace\/delivery\/export/);
   await expect(page.locator("#deliverySurface")).toBeVisible();
   await expect(page.locator("#deliveryGodotAnimationCount")).toHaveText(`${animationOptions.length} 个`);
-  const projectFrameCount = await page.evaluate(() => globalThis.XSXBWorkspace.getSnapshot().frames.length);
+  const projectFrameCount = await page.evaluate(() => globalThis.XFrameWorkspace.getSnapshot().frames.length);
   await expect(page.locator("#deliveryGodotFrameCount")).toHaveText(`${projectFrameCount} 帧`);
   await expect(page.locator("#deliveryPetCurrentAnimation")).not.toHaveText("—");
   await expect(page.locator("#deliveryGodotStatus")).toHaveText("尚未绑定");
@@ -416,7 +416,8 @@ test("smart cutout keys a black plate including enclosed plate pixels without er
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await expect(tool.locator("#scatterSourceMeta")).toContainText("alpha-black.png");
-  await tool.locator("#scatterDetect").click();
+  await revealControl(tool, "#scatterMode");
+  await tool.locator("#scatterMode").selectOption("alpha");
   await expect(tool.locator("#scatterStatus p")).toContainText("alpha");
 
   const thumbnail = tool.locator(".sliceThumbnail").first();
@@ -567,7 +568,7 @@ test("uniform output produces equal frame canvases for each separate project wor
   await page.mouse.up();
 
   await page.evaluate(() => {
-    window.XSXBOpenWorksetHandoff = async (payload) => {
+    window.XFrameOpenWorksetHandoff = async (payload) => {
       window.__scatterHandoff = payload;
     };
   });

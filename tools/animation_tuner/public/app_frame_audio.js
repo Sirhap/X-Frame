@@ -1,9 +1,9 @@
-(function attachXsxbFrameAudio(root, factory) {
+(function attachXFrameFrameAudio(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBFrameAudio = api;
+  if (root) root.XFrameFrameAudio = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -11,6 +11,7 @@
    * Creates the browser-side frame-audio persistence controller.
    * @param {{
    *   dbName:string,
+   *   legacyDbName?:string,
    *   dbVersion:number,
    *   storeName:string,
    *   getBindings:()=>Record<string,object>,
@@ -33,6 +34,7 @@
   function createController(dependencies) {
     const {
       dbName,
+      legacyDbName,
       dbVersion,
       storeName,
       getBindings,
@@ -52,6 +54,8 @@
     } = dependencies;
     let dbPromise = null;
     let syncPromise = null;
+    const namedDbPromises = new Map();
+    let copiedLegacyRecords = false;
 
     /**
      * Reports a recoverable persistence failure to the existing UI layer.
@@ -65,14 +69,18 @@
     }
 
     /**
-     * Opens the IndexedDB store once and reuses the connection promise.
-     * @returns {Promise<IDBDatabase|null>} Database or null when unavailable.
+     * Opens one named IndexedDB database used by frame-audio persistence.
+     * @param {string} name Database name.
+     * @returns {Promise<IDBDatabase|null>} Opened database or null when unavailable.
      */
-    function open() {
+    function openNamed(name) {
       if (typeof indexedDBRef === "undefined" || indexedDBRef === null) return Promise.resolve(null);
-      if (dbPromise) return dbPromise;
-      dbPromise = new Promise((resolve, reject) => {
-        const request = indexedDBRef.open(dbName, dbVersion);
+      const databaseName = String(name || "").trim();
+      if (!databaseName) return Promise.resolve(null);
+      const existing = namedDbPromises.get(databaseName);
+      if (existing) return existing;
+      const pending = new Promise((resolve, reject) => {
+        const request = indexedDBRef.open(databaseName, dbVersion);
         request.onupgradeneeded = () => {
           const db = request.result;
           if (!db.objectStoreNames.contains(storeName)) {
@@ -82,6 +90,91 @@
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
         request.onblocked = () => reject(new Error("IndexedDB upgrade blocked"));
+      });
+      namedDbPromises.set(databaseName, pending);
+      return pending;
+    }
+
+    /**
+     * Reads every record from the frame-audio object store.
+     * @param {IDBDatabase} db Opened database.
+     * @returns {Promise<object[]>} Stored records.
+     */
+    function readAllRecords(db) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readonly");
+        const request = tx.objectStore(storeName).getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error || new Error("Audio load failed"));
+      });
+    }
+
+    /**
+     * Writes one Blob-backed record into the opened database.
+     * @param {IDBDatabase} db Opened database.
+     * @param {object} record Stored binding.
+     * @returns {Promise<void>}
+     */
+    function writeRecord(db, record) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readwrite");
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error("Audio save failed"));
+        tx.objectStore(storeName).put(record);
+      });
+    }
+
+    /**
+     * Copies pre-rename frame-audio records into the current database once.
+     * @param {IDBDatabase} db Current database.
+     * @returns {Promise<void>}
+     */
+    async function copyLegacyRecordsIfNeeded(db) {
+      if (copiedLegacyRecords || !db) return;
+      const previousName = String(legacyDbName || "").trim();
+      if (!previousName || previousName === dbName) {
+        copiedLegacyRecords = true;
+        return;
+      }
+      try {
+        const currentRecords = await readAllRecords(db);
+        if (currentRecords.length) {
+          copiedLegacyRecords = true;
+          return;
+        }
+        const legacyDb = await openNamed(previousName);
+        if (!legacyDb) {
+          copiedLegacyRecords = true;
+          return;
+        }
+        const legacyRecords = await readAllRecords(legacyDb);
+        for (const record of legacyRecords) {
+          if (!record?.key || !record.blob) continue;
+          await writeRecord(db, {
+            key: record.key,
+            name: record.name || "audio",
+            type: record.type || "",
+            size: Number(record.size || 0),
+            metadata: record.metadata || getFrameAudioMetadataFromKey(record.key),
+            blob: record.blob,
+          });
+        }
+        copiedLegacyRecords = true;
+      } catch (error) {
+        copiedLegacyRecords = true;
+        reportFailure("frameSfxRestoreFailed", error);
+      }
+    }
+
+    /**
+     * Opens the IndexedDB store once and reuses the connection promise.
+     * @returns {Promise<IDBDatabase|null>} Database or null when unavailable.
+     */
+    function open() {
+      if (dbPromise) return dbPromise;
+      dbPromise = openNamed(dbName).then(async (db) => {
+        if (db) await copyLegacyRecordsIfNeeded(db);
+        return db;
       });
       return dbPromise;
     }

@@ -84,5 +84,7 @@ test("createInitialState falls back safely when storage access throws", () => {
   assert.equal(state.filmstripLayout, "single");
   assert.equal(state.canvasColor, "#000000");
   assert.equal(state.adjustmentMode, "group");
+  assert.equal(constants.FRAME_AUDIO_DB_NAME, "x-frame-frame-audio");
+  assert.equal(constants.FRAME_AUDIO_LEGACY_DB_NAME, "xsxb-frame-tuner-frame-audio");
   assert.equal(constants.FRAME_AUDIO_DB_VERSION, 1);
 });

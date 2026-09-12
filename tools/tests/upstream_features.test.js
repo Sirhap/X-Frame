@@ -59,13 +59,7 @@ test("attack-trail sync prunes stale project textures before rebuilding current 
     );
     fs.mkdirSync(path.dirname(sourceTexture), { recursive: true });
     fs.writeFileSync(sourceTexture, "current-texture");
-    const projectTextureRoot = path.join(
-      godotRoot,
-      "xsxb_frame_tuner",
-      "attack_trails",
-      "projects",
-      project.id,
-    );
+    const projectTextureRoot = path.join(godotRoot, "x_frame", "attack_trails", "projects", project.id);
     const staleTexture = path.join(projectTextureRoot, "hero", "run", "stale.png");
     fs.mkdirSync(path.dirname(staleTexture), { recursive: true });
     fs.writeFileSync(staleTexture, "stale-texture");

@@ -1,9 +1,9 @@
-(function attachXsxbReferenceFrame(root, factory) {
+(function attachXFrameReferenceFrame(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBReferenceFrame = api;
+  if (root) root.XFrameReferenceFrame = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

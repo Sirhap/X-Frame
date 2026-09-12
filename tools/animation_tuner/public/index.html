@@ -9,7 +9,7 @@
     <script>
       // A missing surface module must never abort document parsing; the shell
       // falls back to its default workspace layout instead.
-      var xsxbSurface = window.XSXBAppSurface?.resolveAppSurface?.(location.pathname);
+      var xsxbSurface = window.XFrameAppSurface?.resolveAppSurface?.(location.pathname);
       if (xsxbSurface) document.documentElement.setAttribute("data-app-surface", xsxbSurface);
     </script>
     <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -4973,8 +4973,8 @@
         });
 
         const attachOrganizerProgress = () =>
-          window.XSXBOrganizerProgressOverlay?.scheduleAttach(
-            window.XSXBOrganizerProgressOverlay,
+          window.XFrameOrganizerProgressOverlay?.scheduleAttach(
+            window.XFrameOrganizerProgressOverlay,
             document,
             window,
           );
@@ -4988,7 +4988,7 @@
     <script>
       (function revealXsxbSurface() {
         var surface =
-          window.XSXBAppSurface?.applyAppSurface?.(document, location.pathname) ||
+          window.XFrameAppSurface?.applyAppSurface?.(document, location.pathname) ||
           document.documentElement.getAttribute("data-app-surface");
         var hubs = {
           projects: "projectHub",

@@ -3,7 +3,7 @@
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBScatterSliceWorkspaceCore = api;
+  if (root) root.XFrameScatterSliceWorkspaceCore = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 

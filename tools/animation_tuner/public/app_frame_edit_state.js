@@ -1,9 +1,9 @@
-(function attachXsxbAppFrameEditState(root, factory) {
+(function attachXFrameAppFrameEditState(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppFrameEditState = api;
+  if (root) root.XFrameAppFrameEditState = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -36,7 +36,7 @@
       boxOverrideStore = () => ({}),
       frameBox = () => {
         throw new Error(
-          "XSXBAppFrameEditState.frameBox is not a resolver; inject the box-model frameBox(boxName, index, group, images).",
+          "XFrameAppFrameEditState.frameBox is not a resolver; inject the box-model frameBox(boxName, index, group, images).",
         );
       },
       tuningFrameKey = (index) => String(index),

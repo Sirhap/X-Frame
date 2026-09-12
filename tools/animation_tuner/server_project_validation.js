@@ -37,7 +37,7 @@ function createProjectValidation(dependencies = {}) {
 
   function isGeneratedTunerScene(scenePath) {
     const normalized = reslash(String(scenePath || ""));
-    return normalized.startsWith("xsxb_frame_tuner/runtime/");
+    return normalized.startsWith("x_frame/runtime/");
   }
 
   function listSceneFiles(projectRoot, profiles = []) {
@@ -188,7 +188,7 @@ function createProjectValidation(dependencies = {}) {
 
   function collectRuntimeActorScripts(projectRoot, inspection = null) {
     const scriptTexts = new Map();
-    const runtimeScripts = new Set(["xsxb_frame_tuner/runtime/xsxb_frame_actor.gd"]);
+    const runtimeScripts = new Set(["x_frame/runtime/xsxb_frame_actor.gd"]);
     for (const script of (inspection || createProjectInspection(projectRoot)).gdScripts) {
       scriptTexts.set(script.relativePath, script.text);
     }
@@ -219,7 +219,7 @@ function createProjectValidation(dependencies = {}) {
     let sceneUsesRuntime = false;
     for (const scene of details.scenes) {
       if (isGeneratedTunerScene(scene.relativePath)) continue;
-      if (/res:\/\/xsxb_frame_tuner\/runtime\/xsxb_frame_actor\.tscn/.test(scene.text)) {
+      if (/res:\/\/x_frame\/runtime\/xsxb_frame_actor\.tscn/.test(scene.text)) {
         sceneUsesRuntime = true;
         break;
       }
@@ -489,7 +489,7 @@ function createProjectValidation(dependencies = {}) {
       ["frame_image_attachments.json", "frame image attachment"],
     ];
     for (const [fileName, label] of files) {
-      const filePath = path.join(projectRoot, "xsxb_frame_tuner", "data", "projects", projectId, fileName);
+      const filePath = path.join(projectRoot, "x_frame", "data", "projects", projectId, fileName);
       if (!fs.existsSync(filePath)) continue;
       const entries = projectStore.readJson(filePath, []);
       if (!Array.isArray(entries)) continue;

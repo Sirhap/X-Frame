@@ -1,9 +1,9 @@
-(function attachXsxbAppNavigationGuard(root, factory) {
+(function attachXFrameAppNavigationGuard(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppNavigationGuard = api;
+  if (root) root.XFrameAppNavigationGuard = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

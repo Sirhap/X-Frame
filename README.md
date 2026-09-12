@@ -23,7 +23,7 @@ X-Frame 是一个给 Godot 帧动画角色用的本地调参工作台，配套�
 - 攻击拖尾：可在画布中编辑拖尾棍子、前后图层、纹理、渐变和持续时间，并把数据、纹理、Shader 与渲染器同步到 Godot。
 - Lite 工作流：提供独立的帧序列/精灵表导入、预设保存，以及按持续时间驱动的拖尾与音频导出。
 - Codex Pets：可读取内置和自定义宠物图集，在工作台调参，并将可写的自定义宠物安全回写且保留备份。
-- Godot 同步：导入 PNG 序列或 SpriteFrames 后，会生成/刷新 `res://xsxb_frame_tuner/` 下的运行时数据和基础 runtime。
+- Godot 同步：导入 PNG 序列或 SpriteFrames 后，会生成/刷新 `res://x_frame/` 下的运行时数据和基础 runtime。
 - 完整验证：可检查每帧框体、游戏本地数据、SFX、附加帧、场景系数、框体缩放和实际 gameplay 接线。
 
 这个仓库不包含任何角色 PNG、音频、Godot 私有项目路径或调参数据。运行时产生的项目数据会留在本机，并被 `.gitignore` 排除。
@@ -40,8 +40,7 @@ X-Frame 是一个给 Godot 帧动画角色用的本地调参工作台，配套�
 - `tools/validate_import.js`：验证独立 tuner 与 Godot 项目的完整接线结果。
 - `tools/godot_sync.js` 和 `tools/godot_runtime.js`：把调参数据、素材和 runtime 同步到 Godot 项目。
 - `skills/xsxb-animation-production/`：从动画需求、生成/已有素材到导入、同步、验证和启动工作台的上层 Codex/Agent skill。
-- `skills/xsxb-frame-tuner/`：具体 XSXB 导入、整理、调参、Godot runtime 同步和验证执行层 skill。
-- MCP 已迁到独立仓库 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。本仓 `mcp/README.md` 只留指向。
+- `skills/x-frame/`：具体导入、整理、调参、Godot runtime 同步和验证执行层 skill。
 - `data/`、`workspace/`、`audio/`：本地运行时目录。真实项目数据不提交。
 
 ## 安装方式
@@ -49,12 +48,10 @@ X-Frame 是一个给 Godot 帧动画角色用的本地调参工作台，配套�
 只提供 Agent 安装方式。把下面这段话交给 Codex 或其他支持 skills 的 Agent：
 
 ```text
-请从本地项目目录安装并启用 `skills/xsxb-animation-production`，并确保它可以调用 `skills/xsxb-frame-tuner`。
+请从本地项目目录安装并启用 `skills/xsxb-animation-production`，并确保它可以调用 `skills/x-frame`。
 安装后把仓库克隆到本机作为 X-Frame 工具根目录。
-以后处理 Godot 帧动画制作、角色导入、动画追加、碰撞框调参、音效/挂件同步时，默认使用 `$xsxb-animation-production`；具体 XSXB 数据操作继续使用 `$xsxb-frame-tuner`。
+以后处理 Godot 帧动画制作、角色导入、动画追加、碰撞框调参、音效/挂件同步时，默认使用 `$xsxb-animation-production`；具体数据操作继续使用 `$x-frame`。
 ```
-
-Cursor 或其他 MCP 客户端接入本地 STDIO 服务时，见独立仓库 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)，说明在该仓 `mcp/README.md`。本仓库不再带 MCP 实现。
 
 ## 使用方式
 
@@ -78,19 +75,19 @@ macOS 可双击 `start_x_frame.command` 启动本地服务和页面。使用期�
 安装后，建议继续用自然语言让 Agent 操作，不需要手动跑导入脚本。常用说法：
 
 ```text
-用 $xsxb-frame-tuner 把 <Godot项目路径> 里的角色 SpriteFrames 接入 tuner。
+用 $x-frame 把 <Godot项目路径> 里的角色 SpriteFrames 接入 tuner。
 ```
 
 ```text
-用 $xsxb-frame-tuner 给 <Godot项目路径> 的 hero 添加 idle 动画，PNG 序列在 <PNG序列路径>，12fps，导入后打开 tuner。
+用 $x-frame 给 <Godot项目路径> 的 hero 添加 idle 动画，PNG 序列在 <PNG序列路径>，12fps，导入后打开 tuner。
 ```
 
 ```text
-用 $xsxb-frame-tuner 给 <Godot项目路径> 的 hero 一次加入 idle、run、jump、stand_attack，路径分别是 <四个PNG目录>，导入后检查每组框体并完整接入游戏。
+用 $x-frame 给 <Godot项目路径> 的 hero 一次加入 idle、run、jump、stand_attack，路径分别是 <四个PNG目录>，导入后检查每组框体并完整接入游戏。
 ```
 
 ```text
-用 $xsxb-frame-tuner 检查当前 Godot 项目的 XSXB runtime 是否和 tuner 保存的数据一致。
+用 $x-frame 检查当前 Godot 项目的 XSXB runtime 是否和 tuner 保存的数据一致。
 ```
 
 如果希望直接使用项目内的机器可读工作流，也可以在本地运行：
@@ -103,7 +100,7 @@ npm run animation:workflow -- validate --contract <animation-constraints.json> -
 npm run animation:workflow -- start --port 5179 --json
 ```
 
-没有现成帧素材时，让 `$xsxb-animation-production` 先根据描述建立约束、canonical 角色参考和关键姿势，再使用可用的本地/已授权生成工具产出 PNG 序列；生成工具不可用时，Agent 会保留契约并报告阻塞，不会伪造已完成动画。视频和 SpriteFrames 等浏览器/专用导入流程仍由现有工作台和 `$xsxb-frame-tuner` 接管。
+没有现成帧素材时，让 `$xsxb-animation-production` 先根据描述建立约束、canonical 角色参考和关键姿势，再使用可用的本地/已授权生成工具产出 PNG 序列；生成工具不可用时，Agent 会保留契约并报告阻塞，不会伪造已完成动画。视频和 SpriteFrames 等浏览器/专用导入流程仍由现有工作台和 `$x-frame` 接管。
 
 Agent 会负责选择/创建 XSXB 项目、批量复制帧素材、生成 manifest、逐组检查初始框体、同步完整 runtime 到 Godot、连接实际 gameplay，并在验证通过后启动 Webapp。打开页面后，人可以继续做艺术性微调并点击保存。
 

@@ -1,9 +1,9 @@
-(function attachXsxbWorksetHandoffCore(root, factory) {
+(function attachXFrameWorksetHandoffCore(root, factory) {
   "use strict";
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBWorksetHandoffCore = api;
+  if (root) root.XFrameWorksetHandoffCore = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 

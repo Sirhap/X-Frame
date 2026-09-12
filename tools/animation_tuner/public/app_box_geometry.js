@@ -1,9 +1,9 @@
-(function attachXsxbBoxGeometry(root, factory) {
+(function attachXFrameBoxGeometry(root, factory) {
   "use strict";
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBBoxGeometry = api;
+  if (root) root.XFrameBoxGeometry = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 

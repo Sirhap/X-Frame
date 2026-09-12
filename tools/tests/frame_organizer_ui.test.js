@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 const { ORGANIZER_SIMILARITY_THRESHOLD } = require("../animation_tuner/public/frame_organizer_core");
 const {
@@ -115,8 +117,24 @@ test("adding a workset to a project accepts the current organizer session as sav
 
 test("restored include flags are clean once the loaded workset is accepted", () => {
   const frames = [
-    { uid: "idle-1", included: true, flipped: false, imported: false, tag: "", originalCanvas: {}, editedCanvas: {} },
-    { uid: "idle-2", included: false, flipped: false, imported: false, tag: "", originalCanvas: {}, editedCanvas: {} },
+    {
+      uid: "idle-1",
+      included: true,
+      flipped: false,
+      imported: false,
+      tag: "",
+      originalCanvas: {},
+      editedCanvas: {},
+    },
+    {
+      uid: "idle-2",
+      included: false,
+      flipped: false,
+      imported: false,
+      tag: "",
+      originalCanvas: {},
+      editedCanvas: {},
+    },
   ];
   frames[0].editedCanvas = frames[0].originalCanvas;
   frames[1].editedCanvas = frames[1].originalCanvas;
@@ -286,6 +304,19 @@ test("ENV-008 Tab cycles inside a confirm dialog even when offsetParent is null"
   );
   assert.equal(prevented, true);
   assert.equal(documentRef.activeElement, accept);
+});
+
+test("opening the current animation focuses the apply control", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "../animation_tuner/public/frame_organizer.js"),
+    "utf8",
+  );
+  const openAt = source.indexOf("async function open(options = {})");
+  const nextFunctionAt = source.indexOf("async function openCurrentExport()");
+  assert.ok(openAt >= 0 && nextFunctionAt > openAt);
+  const openSrc = source.slice(openAt, nextFunctionAt);
+  assert.match(openSrc, /organizerApply/);
+  assert.match(openSrc, /applyButton\.focus\(\)/);
 });
 
 test("ORG-035 accepting reduce confirmation applies keep-1-of-N flags", async () => {

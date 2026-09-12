@@ -82,15 +82,18 @@
         const db = request.result;
         resolve({
           async put(topic, uid, blob, revision) {
-            await idbRequest(db.transaction("canvases", "readwrite").objectStore("canvases").put(
-              { blob, revision },
-              `${topic}:${uid}`,
-            ));
+            await idbRequest(
+              db
+                .transaction("canvases", "readwrite")
+                .objectStore("canvases")
+                .put({ blob, revision }, `${topic}:${uid}`),
+            );
           },
           async get(topic, uid) {
-            return (await idbRequest(
-              db.transaction("canvases").objectStore("canvases").get(`${topic}:${uid}`),
-            )) || null;
+            return (
+              (await idbRequest(db.transaction("canvases").objectStore("canvases").get(`${topic}:${uid}`))) ||
+              null
+            );
           },
         });
       };
@@ -119,10 +122,7 @@
 
   function defaultBlobToCanvas(blob, documentRef) {
     if (!documentRef?.createElement) return Promise.resolve(blob);
-    const url =
-      typeof blob === "string" && blob.startsWith("data:")
-        ? blob
-        : root.URL.createObjectURL(blob);
+    const url = typeof blob === "string" && blob.startsWith("data:") ? blob : root.URL.createObjectURL(blob);
     return new Promise((resolve, reject) => {
       const image = new root.Image();
       image.onload = () => {
@@ -151,7 +151,9 @@
     const storage = dependencies.storage || createMemoryStorage();
     const channel = dependencies.channel;
     const canvasToBlob = dependencies.canvasToBlob || defaultCanvasToBlob;
-    const blobToCanvas = dependencies.blobToCanvas || ((blob) => defaultBlobToCanvas(blob, dependencies.documentRef || root.document));
+    const blobToCanvas =
+      dependencies.blobToCanvas ||
+      ((blob) => defaultBlobToCanvas(blob, dependencies.documentRef || root.document));
     const getState = dependencies.getState || (() => null);
     const onRemoteApply = dependencies.onRemoteApply || (() => {});
     let bound = false;
@@ -188,7 +190,10 @@
       if (!shouldAcceptRemoteCanvas(state, message, tabId)) return;
       const frame = Array.from(state.frames || []).find((entry) => String(entry.uid) === String(message.uid));
       if (!frame) return;
-      const record = await storage.get(worksetSyncTopic(message.projectId, message.animationName), message.uid);
+      const record = await storage.get(
+        worksetSyncTopic(message.projectId, message.animationName),
+        message.uid,
+      );
       if (!record?.blob) return;
       const canvas = await blobToCanvas(record.blob);
       applyEditedCanvas(frame, canvas, record.revision);

@@ -328,7 +328,7 @@ test("project animation copies explicitly into an independent quick-tool workset
     const canvas = document.createElement("canvas");
     canvas.width = 1;
     canvas.height = 1;
-    globalThis.XSXBTemporaryWorkset.setWorkset({
+    globalThis.XFrameTemporaryWorkset.setWorkset({
       name: "existing-tool-workset",
       frames: [{ id: "existing-frame", name: "existing.png", image: canvas }],
     });
@@ -340,7 +340,7 @@ test("project animation copies explicitly into an independent quick-tool workset
   await page.locator("#appConfirmCancel").click();
   await expect(page).toHaveURL(/\/workspace\/animation\/overview/);
   await expect
-    .poll(() => page.evaluate(() => globalThis.XSXBTemporaryWorkset.getSnapshot().frames[0]?.id))
+    .poll(() => page.evaluate(() => globalThis.XFrameTemporaryWorkset.getSnapshot().frames[0]?.id))
     .toBe("existing-frame");
 
   await page.locator('[data-copy-animation-to-tool="organizer"]').click();
@@ -349,19 +349,19 @@ test("project animation copies explicitly into an independent quick-tool workset
   await expect(page).toHaveURL(/\/tools\/organizer/);
   await expect(page.locator("#organizerModal")).toBeVisible();
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
-  const copied = await page.evaluate(() => globalThis.XSXBTemporaryWorkset.getSnapshot());
+  const copied = await page.evaluate(() => globalThis.XFrameTemporaryWorkset.getSnapshot());
   expect(copied.frames).toHaveLength(2);
   expect(copied.frames.every((frame) => frame.id.startsWith("project-copy:"))).toBe(true);
 
   await page.goto("/workspace/animation/overview?project=seed-project");
-  await page.evaluate(() => globalThis.XSXBTemporaryWorkset.clear());
+  await page.evaluate(() => globalThis.XFrameTemporaryWorkset.clear());
   await page.locator('[data-copy-animation-to-tool="cutout"]').click();
   await expect(page).toHaveURL(/\/tools\/cutout/);
   await expect(page.locator("#cutoutModal")).toBeVisible();
   await expect(page.locator(".cutoutQueueItem")).toHaveCount(2);
 
   await page.goto("/workspace/animation/overview?project=seed-project");
-  await page.evaluate(() => globalThis.XSXBTemporaryWorkset.clear());
+  await page.evaluate(() => globalThis.XFrameTemporaryWorkset.clear());
   await page.locator('[data-copy-animation-to-tool="export"]').click();
   await expect(page).toHaveURL(/\/tools\/export/);
   await expect(page.locator("#mediaExportDialog")).toBeVisible();
@@ -435,7 +435,7 @@ test("quick tools retain one temporary workset across organizer, cutout, and exp
   ]);
   await expect(page.locator(".organizerFrame")).toHaveCount(2);
   await expect
-    .poll(() => page.evaluate(() => globalThis.XSXBTemporaryWorkset.getSnapshot().frames.length))
+    .poll(() => page.evaluate(() => globalThis.XFrameTemporaryWorkset.getSnapshot().frames.length))
     .toBe(2);
 
   await page.locator('[data-workbench-route="cutout"]').first().click();
@@ -451,7 +451,7 @@ test("quick tools retain one temporary workset across organizer, cutout, and exp
     const updatedCanvas = document.createElement("canvas");
     updatedCanvas.width = 2;
     updatedCanvas.height = 2;
-    globalThis.XSXBTemporaryWorkset.setWorkset({
+    globalThis.XFrameTemporaryWorkset.setWorkset({
       name: "updated-cutout",
       sourceTool: "cutout",
       frames: [{ id: "updated-frame", name: "updated.png", image: updatedCanvas, enabled: true }],
@@ -487,7 +487,7 @@ test("applying standalone cutout returns the copied workset to organizer", async
   await expect
     .poll(() =>
       page.evaluate(() =>
-        globalThis.XSXBTemporaryWorkset.getSnapshot().frames.map((frame) => frame.assetRevision),
+        globalThis.XFrameTemporaryWorkset.getSnapshot().frames.map((frame) => frame.assetRevision),
       ),
     )
     .toEqual([1, 1]);
@@ -858,9 +858,16 @@ test("@touch touch controls can reorder an attached image layer", async ({ page,
   await expect(page.locator(".attachmentThumb")).toHaveClass(/layerBelow/);
 });
 
-test("standalone export reads frames already added to the current project", async ({ page, request }) => {
-  await importProject(request, "export-standalone", 3);
-  await page.goto("/tools/export");
+test("standalone export reads frames already added to the temporary workset", async ({ page }) => {
+  await page.goto("/tools/import");
+  await page.locator("#organizerFileInput").setInputFiles([
+    { name: "export_0001.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "export_0002.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+    { name: "export_0003.png", mimeType: "image/png", buffer: ONE_PIXEL_PNG },
+  ]);
+  await expect(page.locator(".organizerFrame")).toHaveCount(3);
+  await page.locator('[data-workbench-route="export"]').first().click();
+  await expect(page).toHaveURL(/\/tools\/export/);
   await expect(page.locator("#deliveryExportMount")).not.toContainText("请先导入需要导出的图片序列");
   await expect(
     page.locator("#mediaExportDialog, #deliveryExportMount .mediaExportDialog").first(),

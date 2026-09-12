@@ -133,9 +133,7 @@ test("image cache crops shared atlas frames once per cell without aliasing the s
   assert.equal(rightImage.height, 4);
   assert.equal(draws.length, 2);
   assert.deepEqual(
-    draws
-      .map((draw) => draw.args.slice(1, 5))
-      .sort((left, right) => left[0] - right[0]),
+    draws.map((draw) => draw.args.slice(1, 5)).sort((left, right) => left[0] - right[0]),
     [
       [0, 0, 4, 4],
       [4, 0, 4, 4],

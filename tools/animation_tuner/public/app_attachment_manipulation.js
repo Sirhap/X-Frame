@@ -1,9 +1,9 @@
-(function attachXsxbAttachmentManipulation(root, factory) {
+(function attachXFrameAttachmentManipulation(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppAttachmentManipulation = api;
+  if (root) root.XFrameAppAttachmentManipulation = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (globalScope) => {
   "use strict";
 
@@ -102,7 +102,7 @@
       const utils =
         (typeof module === "object" && module.exports
           ? require("./app_attachment_utils")
-          : globalScope.XSXBAttachmentUtils) || {};
+          : globalScope.XFrameAttachmentUtils) || {};
       const placed = utils.attachmentOwnerPlacement(local, {
         scaleX: ownerRenderTransform.scaleX,
         scaleY: ownerRenderTransform.scaleY,

@@ -1,9 +1,9 @@
-(function attachXsxbActivation(root, factory) {
+(function attachXFrameActivation(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBActivation = api;
+  if (root) root.XFrameActivation = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -16,7 +16,7 @@
     const documentRef = dependencies.documentRef || root?.document;
     const windowRef = dependencies.windowRef || root?.window || root;
     const fetchImpl = dependencies.fetchImpl || root?.fetch;
-    const premiumFeatures = dependencies.premiumFeatures || root?.XSXBPremiumFeatures;
+    const premiumFeatures = dependencies.premiumFeatures || root?.XFramePremiumFeatures;
     const getLanguage = dependencies.getLanguage || (() => "zh");
     const elements = {
       panel: documentRef?.querySelector?.("#activationPanel"),

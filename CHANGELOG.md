@@ -5,7 +5,8 @@
 ### Changed
 
 - Rename the project from XSXB Frame Tuner to X-Frame.
-- Move XSXB MCP out of this repo into [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp). This tree keeps the Tuner webapp; `mcp/README.md` points at the new project.
+- Rename the browser IndexedDB/event IDs, `$x-frame` skill, `window.XFrame*` APIs, and Godot sync root to `res://x_frame/`.
+- Drop MCP from this repo. MCP lives in [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp).
 
 ### Features
 

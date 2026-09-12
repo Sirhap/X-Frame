@@ -1,9 +1,9 @@
-(function attachXsxbCompositeContext(root, factory) {
+(function attachXFrameCompositeContext(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBCompositeContext = api;
+  if (root) root.XFrameCompositeContext = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

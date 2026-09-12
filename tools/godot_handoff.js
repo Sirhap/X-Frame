@@ -4,7 +4,7 @@ const defaultFs = require("node:fs");
 const defaultPath = require("node:path");
 
 const RECEIPT_SCHEMA_VERSION = 1;
-const SYNC_ROOT = "xsxb_frame_tuner";
+const SYNC_ROOT = "x_frame";
 const REQUIRED_RUNTIME_FILES = [
   "runtime/xsxb_frame_actor.gd",
   "runtime/xsxb_frame_actor.tscn",
@@ -107,7 +107,9 @@ function createGodotHandoffService(dependencies = {}) {
    * @returns {string} Canonical absolute root.
    */
   function validateRoot(rawRoot) {
-    const requested = String(rawRoot || "").trim().replace(/^(["'])|(["'])$/g, "");
+    const requested = String(rawRoot || "")
+      .trim()
+      .replace(/^(["'])|(["'])$/g, "");
     if (!requested || !path.isAbsolute(requested)) {
       throw new GodotHandoffError(
         400,
@@ -162,7 +164,9 @@ function createGodotHandoffService(dependencies = {}) {
       ...REQUIRED_RUNTIME_FILES.map((entry) => path.join(base, entry)),
       ...REQUIRED_DATA_FILES.map((entry) => path.join(base, "data", "projects", project.id, entry)),
     ];
-    return required.filter((entry) => !fs.existsSync(entry)).map((entry) => path.relative(projectRoot, entry));
+    return required
+      .filter((entry) => !fs.existsSync(entry))
+      .map((entry) => path.relative(projectRoot, entry));
   }
 
   /**
@@ -228,7 +232,9 @@ function createGodotHandoffService(dependencies = {}) {
     const hasAnimations = (Array.isArray(manifest?.profiles) ? manifest.profiles : []).some(
       (profile) => Array.isArray(profile?.animations) && profile.animations.length > 0,
     );
-    const gameplayBlockers = hasAnimations ? validateProject(project, manifest) : ["No animation is available for gameplay validation."];
+    const gameplayBlockers = hasAnimations
+      ? validateProject(project, manifest)
+      : ["No animation is available for gameplay validation."];
     return {
       ...base,
       state: gameplayBlockers.length ? "synced" : "gameplay_ready",
@@ -309,10 +315,7 @@ function createGodotHandoffService(dependencies = {}) {
   /** @param {object} project Project record. @returns {Promise<{godotSync:object,godotHandoff:object}>} */
   async function synchronize(project) {
     const outputRoot = path.join(path.resolve(project.projectRoot), SYNC_ROOT);
-    const transaction = await createFilesystemSnapshot([
-      outputRoot,
-      ...runtimeProjectIdFiles(project),
-    ]);
+    const transaction = await createFilesystemSnapshot([outputRoot, ...runtimeProjectIdFiles(project)]);
     try {
       const godotSync = await syncGodotProjectAsync(project);
       if (!godotSync?.ok) throw new Error(godotSync?.reason || "Godot synchronization failed.");
@@ -345,7 +348,9 @@ function createGodotHandoffService(dependencies = {}) {
    * @returns {Promise<object>} Handoff result.
    */
   async function execute(project, payload = {}) {
-    const action = String(payload.action || "").trim().toLowerCase();
+    const action = String(payload.action || "")
+      .trim()
+      .toLowerCase();
     if (!["bind", "sync", "unbind"].includes(action)) {
       throw new GodotHandoffError(400, "invalid_handoff_action", "Expected action bind, sync, or unbind.");
     }
@@ -382,16 +387,11 @@ function createGodotHandoffService(dependencies = {}) {
       const result = await synchronize(boundProject);
       return { ...result, dataRevision: projectDataRevision(boundProject) };
     } catch (error) {
-      throw new GodotHandoffError(
-        500,
-        "godot_sync_failed",
-        String(error.message || error),
-        {
-          godotSync: { ok: false, reason: String(error.message || error) },
-          godotHandoff: status(boundProject),
-          dataRevision: projectDataRevision(boundProject),
-        },
-      );
+      throw new GodotHandoffError(500, "godot_sync_failed", String(error.message || error), {
+        godotSync: { ok: false, reason: String(error.message || error) },
+        godotHandoff: status(boundProject),
+        dataRevision: projectDataRevision(boundProject),
+      });
     }
   }
 

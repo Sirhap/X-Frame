@@ -1,12 +1,12 @@
-(function attachXsxbWorksetHandoffRuntime(root, factory) {
+(function attachXFrameWorksetHandoffRuntime(root, factory) {
   "use strict";
 
   const core =
-    root?.XSXBWorksetHandoffCore ||
+    root?.XFrameWorksetHandoffCore ||
     (typeof module === "object" && module.exports ? require("./workset_handoff_core") : null);
   const api = factory(root, core);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBWorksetHandoffRuntime = api;
+  if (root) root.XFrameWorksetHandoffRuntime = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root, core) => {
   "use strict";
 

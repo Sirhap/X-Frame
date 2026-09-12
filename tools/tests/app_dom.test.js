@@ -72,7 +72,7 @@ test("delivery summary does not touch the later modeHubsModule binding", () => {
   const source = fs.readFileSync(path.resolve(__dirname, "../animation_tuner/public/app.js"), "utf8");
   const match = source.match(/function updateDeliverySummary\(\) \{[\s\S]*?\nfunction /);
   assert.ok(match);
-  assert.match(match[0], /globalThis\.XSXBModeHubs/);
+  assert.match(match[0], /globalThis\.XFrameModeHubs/);
   assert.doesNotMatch(match[0], /\bmodeHubsModule\b/);
 });
 

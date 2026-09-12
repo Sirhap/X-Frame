@@ -1,14 +1,14 @@
 (function initializeScatterSliceTool(root) {
   "use strict";
 
-  const core = root.XSXBScatterSliceCore;
-  const groupCore = root.XSXBScatterSliceGroups;
-  const smartCutout = root.XSXBScatterSliceSmartCutout;
-  const editorCore = root.XSXBScatterSliceEditorCore;
-  const workspaceCore = root.XSXBScatterSliceWorkspaceCore;
-  const groupControllerCore = root.XSXBScatterSliceGroupController;
-  const temporaryWorksetCore = root.XSXBScatterTemporaryWorkset;
-  const historyCore = root.XSXBHistory;
+  const core = root.XFrameScatterSliceCore;
+  const groupCore = root.XFrameScatterSliceGroups;
+  const smartCutout = root.XFrameScatterSliceSmartCutout;
+  const editorCore = root.XFrameScatterSliceEditorCore;
+  const workspaceCore = root.XFrameScatterSliceWorkspaceCore;
+  const groupControllerCore = root.XFrameScatterSliceGroupController;
+  const temporaryWorksetCore = root.XFrameScatterTemporaryWorkset;
+  const historyCore = root.XFrameHistory;
   const clipboardMedia = root.ClipboardMedia;
   if (!core) throw new Error("零散切图核心模块未加载");
   if (!groupCore) throw new Error("零散切图分组模块未加载");
@@ -230,7 +230,7 @@
 
   /** @returns {string} Visible explanation for a missing cloud cutout kernel. */
   function transparentSlicingUnavailableMessage() {
-    const language = String(root.document?.documentElement?.lang || root.XSXBLanguage || "");
+    const language = String(root.document?.documentElement?.lang || root.XFrameLanguage || "");
     return /en/i.test(language)
       ? "This web build cannot do cloud transparent slicing. Crops keep the original pixels."
       : "网页版没有云端透明切片。已按原图裁切，可继续导出。";
@@ -1121,15 +1121,15 @@
     setStatus("正在生成临时工作集…", "working");
     try {
       const parentWindow = root.parent && root.parent !== root ? root.parent : root;
-      const temporaryStore = parentWindow.XSXBTemporaryWorkset;
-      const navigate = parentWindow.XSXBNavigateWorkbench;
+      const temporaryStore = parentWindow.XFrameTemporaryWorkset;
+      const navigate = parentWindow.XFrameNavigateWorkbench;
       if (!temporaryStore?.setWorkset || typeof navigate !== "function") {
         throw new Error("临时工作集尚未就绪，请从快速工具首页重新进入零散切片");
       }
       const workset = temporaryWorkset();
       temporaryStore.setWorkset(workset);
       state.suppressBeforeUnload = true;
-      root.XSXBScatterSliceSession?.allowDiscard?.();
+      root.XFrameScatterSliceSession?.allowDiscard?.();
       setStatus(`已生成 ${workset.frames.length} 帧，正在进入导入与整理…`, "success");
       await navigate("organizer", "standalone");
     } catch (error) {
@@ -1143,7 +1143,7 @@
     setStatus("正在准备动画项目目标…", "working");
     try {
       const parentWindow = root.parent && root.parent !== root ? root.parent : root;
-      const openHandoff = parentWindow.XSXBOpenWorksetHandoff;
+      const openHandoff = parentWindow.XFrameOpenWorksetHandoff;
       if (typeof openHandoff !== "function") {
         throw new Error("请从 /tools/scatter-slice 打开统一工具界面后再加入项目");
       }
@@ -1615,7 +1615,7 @@
   elements.downloadSliceButton.addEventListener("click", () => void downloadSelectedSlice());
   elements.downloadSheetButton.addEventListener("click", () => void downloadStitchedSheet());
   elements.addProjectButton.addEventListener("click", () => void addSelectedGroupsToProject());
-  root.XSXBScatterSliceSession = Object.freeze({
+  root.XFrameScatterSliceSession = Object.freeze({
     allowDiscard() {
       state.suppressBeforeUnload = true;
     },

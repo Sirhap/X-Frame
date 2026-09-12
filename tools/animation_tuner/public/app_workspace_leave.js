@@ -1,9 +1,9 @@
-(function attachXsxbAppWorkspaceLeave(root, factory) {
+(function attachXFrameAppWorkspaceLeave(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppWorkspaceLeave = api;
+  if (root) root.XFrameAppWorkspaceLeave = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

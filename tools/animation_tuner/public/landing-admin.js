@@ -70,7 +70,7 @@
     bulkStatus: document.querySelector("#adminBulkStatus"),
   };
   if (!elements.console || !elements.loginForm) return;
-  const adminErrorText = globalThis.XSXBAdminErrorText;
+  const adminErrorText = globalThis.XFrameAdminErrorText;
   if (typeof adminErrorText?.localize !== "function") {
     throw new Error("Administrator error localization is required.");
   }

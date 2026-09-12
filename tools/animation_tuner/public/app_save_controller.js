@@ -1,9 +1,9 @@
-(function attachXsxbAppSave(root, factory) {
+(function attachXFrameAppSave(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppSave = api;
+  if (root) root.XFrameAppSave = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -123,7 +123,7 @@
       getSoulPlaybackOverrides = () => ({}),
       getSoulFrameBoxOverrides = () => ({}),
       getAttackTrails = () => undefined,
-      premiumFeatures = root?.XSXBPremiumFeatures,
+      premiumFeatures = root?.XFramePremiumFeatures,
       fetchImpl = root?.fetch,
       markClean = () => {},
       status = () => {},

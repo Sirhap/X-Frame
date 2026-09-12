@@ -2,7 +2,7 @@
   "use strict";
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  globalScope.XSXBAppAttachments = api;
+  globalScope.XFrameAppAttachments = api;
 })(globalThis, function createAttachmentModule() {
   "use strict";
 

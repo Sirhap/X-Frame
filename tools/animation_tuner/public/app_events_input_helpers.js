@@ -1,9 +1,9 @@
-(function attachXsxbAppEventsInputHelpers(root, factory) {
+(function attachXFrameAppEventsInputHelpers(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppEventsInputHelpers = api;
+  if (root) root.XFrameAppEventsInputHelpers = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

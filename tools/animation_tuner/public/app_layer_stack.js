@@ -1,9 +1,9 @@
-(function attachXsxbLayerStack(root, factory) {
+(function attachXFrameLayerStack(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBLayerStack = api;
+  if (root) root.XFrameLayerStack = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

@@ -11,9 +11,9 @@ test("project validation lists real scenes and skips generated tuner scenes", ()
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-project-validation-"));
   try {
     fs.mkdirSync(path.join(projectRoot, "game"), { recursive: true });
-    fs.mkdirSync(path.join(projectRoot, "xsxb_frame_tuner", "runtime"), { recursive: true });
+    fs.mkdirSync(path.join(projectRoot, "x_frame", "runtime"), { recursive: true });
     fs.writeFileSync(path.join(projectRoot, "game", "arena.tscn"), "[gd_scene]");
-    fs.writeFileSync(path.join(projectRoot, "xsxb_frame_tuner", "runtime", "preview.tscn"), "[gd_scene]");
+    fs.writeFileSync(path.join(projectRoot, "x_frame", "runtime", "preview.tscn"), "[gd_scene]");
 
     const controller = createProjectValidation();
     assert.deepEqual(controller.listSceneFiles(projectRoot), [
@@ -28,7 +28,7 @@ test("project validation reports source-heavy local binding keys", () => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-project-validation-"));
   try {
     const project = { id: "demo", projectRoot };
-    const dataRoot = path.join(projectRoot, "xsxb_frame_tuner", "data", "projects", "demo");
+    const dataRoot = path.join(projectRoot, "x_frame", "data", "projects", "demo");
     fs.mkdirSync(dataRoot, { recursive: true });
     fs.writeFileSync(path.join(dataRoot, "frame_audio_bindings.json"), "[]");
     fs.writeFileSync(path.join(dataRoot, "frame_image_attachments.json"), "[]");

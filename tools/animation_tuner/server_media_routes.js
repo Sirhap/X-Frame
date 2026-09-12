@@ -255,7 +255,7 @@ function createMediaRoutes(dependencies = {}) {
         const paths = projectStore.projectPaths(project);
         const transaction = await createFilesystemSnapshot([
           paths.frameAudio,
-          project?.projectRoot ? path.join(path.resolve(project.projectRoot), "xsxb_frame_tuner") : "",
+          project?.projectRoot ? path.join(path.resolve(project.projectRoot), "x_frame") : "",
         ]);
         try {
           saveFrameAudioBindings(bindings, project);
@@ -336,7 +336,7 @@ function createMediaRoutes(dependencies = {}) {
       const files = Array.isArray(payload.files) ? payload.files : [];
       await withProjectWrite(project.id, async () => {
         const godotOutput = project?.projectRoot
-          ? path.join(path.resolve(project.projectRoot), "xsxb_frame_tuner")
+          ? path.join(path.resolve(project.projectRoot), "x_frame")
           : "";
         const transaction = await createFilesystemSnapshot([godotOutput]);
         let replacement = null;

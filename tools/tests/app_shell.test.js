@@ -551,7 +551,7 @@ test("scatter flow-back from a project navigates without discarding first", asyn
       return true;
     },
   });
-  fixture.windowRef.XSXBScatterSliceSession = {
+  fixture.windowRef.XFrameScatterSliceSession = {
     allowDiscard() {
       events.push("allowDiscard");
     },
@@ -578,7 +578,7 @@ test("standalone scatter flow-back navigates to tools without discarding first",
       return true;
     },
   });
-  fixture.windowRef.XSXBScatterSliceSession = {
+  fixture.windowRef.XFrameScatterSliceSession = {
     allowDiscard() {
       events.push("allowDiscard");
     },
@@ -610,7 +610,7 @@ function loadRequestScatterSliceLeave(options = {}) {
   const events = options.events || [];
   const globalRef = {
     location: { pathname: options.pathname || "/workspace/resources/scatter" },
-    XSXBScatterSliceSession: {
+    XFrameScatterSliceSession: {
       hasUnsavedChanges() {
         return options.dirty !== false;
       },

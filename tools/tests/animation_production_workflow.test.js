@@ -246,13 +246,13 @@ test("sync refreshes the Godot runtime for a registered XSXB project", async () 
       project: "hero-game",
       syncProject(root, projectStore, project) {
         syncCall = { root, projectStore, project };
-        return { ok: true, dataDir: "xsxb_frame_tuner/data/projects/hero-game" };
+        return { ok: true, dataDir: "x_frame/data/projects/hero-game" };
       },
     });
 
     assert.equal(result.ok, true);
     assert.equal(result.stage, "sync");
-    assert.equal(result.sync.dataDir, "xsxb_frame_tuner/data/projects/hero-game");
+    assert.equal(result.sync.dataDir, "x_frame/data/projects/hero-game");
     assert.equal(syncCall.project.id, "hero-game");
   } finally {
     fs.rmSync(workspace.root, { recursive: true, force: true });

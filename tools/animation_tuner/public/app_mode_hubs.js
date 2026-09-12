@@ -1,9 +1,9 @@
-(function attachXsxbModeHubs(root, factory) {
+(function attachXFrameModeHubs(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBModeHubs = api;
+  if (root) root.XFrameModeHubs = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

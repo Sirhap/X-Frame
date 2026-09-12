@@ -1,9 +1,9 @@
-(function attachXsxbDeviceIdentity(root, factory) {
+(function attachXFrameDeviceIdentity(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBDeviceIdentity = api;
+  if (root) root.XFrameDeviceIdentity = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -128,7 +128,7 @@
     const fingerprintCollector =
       dependencies.fingerprintCollector ||
       (() =>
-        root?.XSXBDeviceFingerprint?.collect?.({
+        root?.XFrameDeviceFingerprint?.collect?.({
           navigatorRef,
           screenRef: root?.screen,
           documentRef: root?.document,

@@ -259,7 +259,12 @@ async function createLiveBindHarness() {
     fetchImpl: async (_url, request) => {
       const body = JSON.parse(request.body);
       apiPosted.splice(0, apiPosted.length, ...(body.frameAudioBindings || []));
-      return { ok: true, async json() { return { dataRevision: "r-d2", frameAudioCount: apiPosted.length }; } };
+      return {
+        ok: true,
+        async json() {
+          return { dataRevision: "r-d2", frameAudioCount: apiPosted.length };
+        },
+      };
     },
   });
   const ctx = {
@@ -346,5 +351,9 @@ test("Save after bindFrameAudioFile still restores the WAV on reload (SAV-011)",
 
   delete harness.bindings["click-qa:jump:0"];
   await simulateFrameAudioReload(harness);
-  assert.equal(harness.bindings["click-qa:jump:0"]?.name, "beep.wav", "explicit Save must restore after reload");
+  assert.equal(
+    harness.bindings["click-qa:jump:0"]?.name,
+    "beep.wav",
+    "explicit Save must restore after reload",
+  );
 });

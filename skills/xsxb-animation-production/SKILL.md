@@ -58,7 +58,7 @@ For generated frame sequences, apply `constrained-animation-generation` when ava
      --json
    ```
 
-7. Delegate operations owned by the existing `xsxb-frame-tuner` skill—cutout, organizer, attachments, boxes, SFX, Godot runtime wiring, and gameplay checks—to that skill. Read its required references before editing or syncing.
+7. Delegate operations owned by the existing `x-frame` skill—cutout, organizer, attachments, boxes, SFX, Godot runtime wiring, and gameplay checks—to that skill. Read its required references before editing or syncing.
 8. For browser-only work, keep the local server bound to loopback, use the user's Microsoft Edge/Chrome session when available, inspect rendered frames rather than only API responses, save the workbench state, and return to deterministic validation.
 9. Validate the synchronized result:
 

@@ -14,7 +14,7 @@ test("production skill documents both media routes and the deterministic CLI bou
   assert.match(skill, /generate|no (?:usable )?frames|without (?:source|media)/i);
   assert.match(skill, /animation-constraints\.json/);
   assert.match(skill, /tools\/animation_production_workflow\.js/);
-  assert.match(skill, /xsxb-frame-tuner/);
+  assert.match(skill, /`x-frame` skill/);
   assert.match(skill, /strict|require-gameplay/);
   assert.doesNotMatch(skill, /TODO|TBD/);
 });

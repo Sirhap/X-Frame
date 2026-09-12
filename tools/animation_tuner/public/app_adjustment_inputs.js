@@ -1,9 +1,9 @@
-(function attachXsxbAdjustmentInputs(root, factory) {
+(function attachXFrameAdjustmentInputs(root, factory) {
   "use strict";
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppAdjustmentInputs = api;
+  if (root) root.XFrameAppAdjustmentInputs = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 

@@ -1,9 +1,9 @@
-(function attachXsxbAppSceneSettings(root, factory) {
+(function attachXFrameAppSceneSettings(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppSceneSettings = api;
+  if (root) root.XFrameAppSceneSettings = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

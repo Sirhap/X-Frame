@@ -1,9 +1,9 @@
-(function attachXsxbStageView(root, factory) {
+(function attachXFrameStageView(root, factory) {
   "use strict";
 
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBStageView = api;
+  if (root) root.XFrameStageView = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
   "use strict";
 

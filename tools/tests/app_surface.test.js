@@ -153,5 +153,5 @@ test("workbench HTML resolves resource tools before app.js boots", () => {
   const head = html.slice(0, html.indexOf("</head>"));
   assert.match(head, /src="\/app_surface\.js"/u);
   assert.match(html, /function revealXsxbSurface\(\)/u);
-  assert.match(html, /XSXBAppSurface\?\.applyAppSurface/u);
+  assert.match(html, /XFrameAppSurface\?\.applyAppSurface/u);
 });

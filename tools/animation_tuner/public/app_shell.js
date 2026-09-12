@@ -1,9 +1,9 @@
-(function attachXsxbAppShell(root, factory) {
+(function attachXFrameAppShell(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppShell = api;
+  if (root) root.XFrameAppShell = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -360,7 +360,7 @@
         else item.removeAttribute("aria-current");
       }
       const surface =
-        root.XSXBAppSurface?.resolveAppSurface?.(path) ||
+        root.XFrameAppSurface?.resolveAppSurface?.(path) ||
         (path === "/projects"
           ? "projects"
           : path === "/tools"

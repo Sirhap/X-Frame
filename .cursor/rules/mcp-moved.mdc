@@ -1,12 +1,10 @@
 ---
-description: XSXB MCP 已迁到 x-frame-mcp，不要在本仓找实现
+description: 本仓库不支持 MCP，不要在这里找或加实现
 alwaysApply: true
 ---
 
-# MCP 在别的仓库
+# 本仓库不支持 MCP
 
-本仓库是 X-Frame 网页。MCP 服务、工具和测试在 **x-frame-mcp**：
+X-Frame 只做网页工作台和本地 CLI。MCP 由独立仓库 **x-frame-mcp** 管理，不要在本仓添加、恢复或改 MCP 服务。
 
 https://github.com/Sirhap/x-frame-mcp
-
-本地路径：`/Volumes/other/IdeaProjects/sirhao/x-frame-mcp`。Cursor 指那个仓的 `mcp/xsxb_mcp_server.js`。

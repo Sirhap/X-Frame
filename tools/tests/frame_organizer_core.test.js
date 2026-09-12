@@ -110,7 +110,11 @@ test("translated non-overlapping poses are not 100% similar", () => {
     "translated walk poses must not score 100% against a persistent anchor",
   );
   assert.equal(walkMatches.length, 0, "a uniform walk step is not duplicates at slider 88");
-  assert.equal(walkAnalysis.autoAdjustedThreshold, null, "auto-adjust must not write the slider down to the walk-step floor");
+  assert.equal(
+    walkAnalysis.autoAdjustedThreshold,
+    null,
+    "auto-adjust must not write the slider down to the walk-step floor",
+  );
   assert.notDeepEqual(walkIndexes, [1, 3, 5, 7], "auto-adjust must not thin every other walk frame");
 });
 

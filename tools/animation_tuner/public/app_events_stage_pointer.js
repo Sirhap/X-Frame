@@ -1,9 +1,9 @@
-(function attachXsxbAppEventsStagePointer(root, factory) {
+(function attachXFrameAppEventsStagePointer(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppEventsStagePointer = api;
+  if (root) root.XFrameAppEventsStagePointer = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -22,10 +22,6 @@
     const state = dependencies.state || {};
     const devicePixelRatio = Number(dependencies.devicePixelRatio || 1);
     const handlers = dependencies.handlers || {};
-    const getViewportWidth =
-      typeof dependencies.getViewportWidth === "function"
-        ? dependencies.getViewportWidth
-        : () => Number(root?.innerWidth || 0);
     const structuredCloneImpl = dependencies.structuredCloneImpl || root?.structuredClone;
     const structuredClone =
       typeof structuredCloneImpl === "function"
@@ -66,10 +62,10 @@
     } = handlers;
 
     if (!stage?.addEventListener) {
-      throw new TypeError("XSXBAppEventsStagePointer requires a stage element.");
+      throw new TypeError("XFrameAppEventsStagePointer requires a stage element.");
     }
     if (!state || typeof state !== "object") {
-      throw new TypeError("XSXBAppEventsStagePointer requires a state object.");
+      throw new TypeError("XFrameAppEventsStagePointer requires a state object.");
     }
 
     /**

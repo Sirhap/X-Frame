@@ -1,9 +1,9 @@
-(function attachXsxbSingleFrameCutout(root, factory) {
+(function attachXFrameSingleFrameCutout(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBSingleFrameCutout = api;
+  if (root) root.XFrameSingleFrameCutout = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

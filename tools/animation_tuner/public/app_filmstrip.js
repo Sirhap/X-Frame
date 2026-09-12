@@ -3,7 +3,7 @@
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppFilmstrip = api;
+  if (root) root.XFrameAppFilmstrip = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

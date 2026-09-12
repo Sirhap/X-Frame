@@ -1,9 +1,9 @@
-(function attachXsxbAppConfirm(root, factory) {
+(function attachXFrameAppConfirm(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppConfirm = api;
+  if (root) root.XFrameAppConfirm = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 

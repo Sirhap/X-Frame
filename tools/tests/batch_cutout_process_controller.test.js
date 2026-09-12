@@ -752,7 +752,8 @@ test("/tools/cutout file import keys the white plate not the red body", async ()
   let opaqueWhite = 0;
   for (let offset = 0; offset < keyed.data.length; offset += 4) {
     if (keyed.data[offset + 3] < 16) continue;
-    if (keyed.data[offset] > 240 && keyed.data[offset + 1] > 240 && keyed.data[offset + 2] > 240) opaqueWhite += 1;
+    if (keyed.data[offset] > 240 && keyed.data[offset + 1] > 240 && keyed.data[offset + 2] > 240)
+      opaqueWhite += 1;
   }
   assert.equal(opaqueWhite, 0);
 });

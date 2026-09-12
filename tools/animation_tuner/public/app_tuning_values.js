@@ -1,9 +1,9 @@
-(function attachXsxbAppTuningValues(root, factory) {
+(function attachXFrameAppTuningValues(root, factory) {
   "use strict";
 
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBAppTuningValues = api;
+  if (root) root.XFrameAppTuningValues = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (_root) => {
   "use strict";
 

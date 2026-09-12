@@ -82,7 +82,7 @@ test("validate_import rejects escaped game-local res:// frame paths", () => {
       schemaVersion: 1,
       profiles: [{ id: "hero", animations: [animation] }],
     });
-    const gameData = path.join(fixture.godot, "xsxb_frame_tuner", "data", "projects", fixture.project.id);
+    const gameData = path.join(fixture.godot, "x_frame", "data", "projects", fixture.project.id);
     fs.mkdirSync(gameData, { recursive: true });
     const gameManifest = {
       schemaVersion: 1,

@@ -1,5 +1,5 @@
 ---
-name: xsxb-frame-tuner
+name: x-frame
 description: >-
   Operate the complete local X-Frame workflow for Godot frame animation:
   import or replace PNG/SpriteFrames animations, extract frames from local video,
@@ -113,11 +113,7 @@ For a main character attack animation plus an ordered attachment sequence such a
 7. Run validate mode for the target animation. Require valid frame ownership, paths, finite transforms, positive scales, non-zero layer order, asset identity, and no duplicate plan instances.
 8. Start or reuse the workbench, then use the signed-in Microsoft Edge Codex plugin for final rendered inspection. Correct only exceptional frames in the workbench, save, and validate again.
 
-Do not use MCP for this local attachment workflow. The Core/CLI owns deterministic data operations; Codex owns orchestration and visual judgment; the browser plugin is reserved for rendered QA and exceptional-frame tuning.
-
-## MCP
-
-MCP 不在本仓库。实现、工具 playbook 和测试在 [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp)。本 skill 只管 Tuner 网页与 CLI。
+The Core/CLI owns deterministic data operations; Codex owns orchestration and visual judgment; the browser plugin is reserved for rendered QA and exceptional-frame tuning.
 
 ## Agent-Facing Commands
 

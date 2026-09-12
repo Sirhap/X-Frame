@@ -303,7 +303,8 @@ test("session autoDetectBackground keys chroma behind 4px white chrome", async (
   let remainingGreen = 0;
   for (let offset = 0; offset < keyed.data.length; offset += 4) {
     if (keyed.data[offset + 3] < 16) continue;
-    if (keyed.data[offset] < 40 && keyed.data[offset + 1] > 150 && keyed.data[offset + 2] < 90) remainingGreen += 1;
+    if (keyed.data[offset] < 40 && keyed.data[offset + 1] > 150 && keyed.data[offset + 2] < 90)
+      remainingGreen += 1;
   }
   assert.equal(remainingGreen, 0);
   controller.close();
@@ -425,7 +426,8 @@ test("/tools/cutout session import keys the white plate not the red body", async
   for (let offset = 0; offset < keyed.data.length; offset += 4) {
     if (keyed.data[offset + 3] < 16) continue;
     if (keyed.data[offset] > 180 && keyed.data[offset + 1] < 60) opaqueRed += 1;
-    if (keyed.data[offset] > 240 && keyed.data[offset + 1] > 240 && keyed.data[offset + 2] > 240) opaqueWhite += 1;
+    if (keyed.data[offset] > 240 && keyed.data[offset + 1] > 240 && keyed.data[offset + 2] > 240)
+      opaqueWhite += 1;
   }
   assert.ok(opaqueRed > 1000, `red body must stay, got ${opaqueRed} opaque red px`);
   assert.equal(opaqueWhite, 0, "white plate must be keyed to alpha 0");
@@ -454,7 +456,8 @@ test("/tools/cutout session import does not recut already-cut pale hair", async 
   let hair = 0;
   for (let offset = 0; offset < source.data.length; offset += 4) {
     if (source.data[offset + 3] < 16) continue;
-    if (source.data[offset] > 240 && source.data[offset + 1] > 240 && source.data[offset + 2] > 240) hair += 1;
+    if (source.data[offset] > 240 && source.data[offset + 1] > 240 && source.data[offset + 2] > 240)
+      hair += 1;
   }
   assert.equal(hair, 16, "pale edge hair must stay opaque");
   controller.close();

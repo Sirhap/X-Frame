@@ -1,9 +1,9 @@
 "use strict";
 
-(function attachXsxbFactoryAccount(root, factory) {
+(function attachXFrameFactoryAccount(root, factory) {
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.XSXBFactoryAccount = api;
+  if (root) root.XFrameFactoryAccount = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
@@ -313,5 +313,5 @@
   return Object.freeze({ createController });
 });
 
-const factoryAccountController = globalThis.XSXBFactoryAccount?.createController();
+const factoryAccountController = globalThis.XFrameFactoryAccount?.createController();
 factoryAccountController?.bind();

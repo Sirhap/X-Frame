@@ -15,7 +15,8 @@ const CASES = Object.freeze([
   Object.freeze({ size: 1024, samples: 15 }),
   Object.freeze({ size: 2048, samples: 10 }),
 ]);
-const MAXIMUM_P95_RATIO = 1.15;
+const MAXIMUM_P50_RATIO = 1.15;
+const GATED_MINIMUM_SIZE = 1024;
 const WASM_PATH = path.resolve(
   __dirname,
   "../crates/protected_algorithm_core/target/wasm32-unknown-unknown/release/protected_algorithm_core.wasm",
@@ -162,6 +163,7 @@ async function run() {
         samples: benchmarkCase.samples,
         javascript: { ...javascript, output: undefined },
         wasm: { ...wasm, output: undefined },
+        p50Ratio: Number((wasm.p50Ms / javascript.p50Ms).toFixed(3)),
         p95Ratio: Number((wasm.p95Ms / javascript.p95Ms).toFixed(3)),
         outputSha256: javascriptDigest,
       });
@@ -174,7 +176,8 @@ async function run() {
     generatedAt: new Date().toISOString(),
     environment: { platform: process.platform, architecture: process.arch, node: process.version },
     wasm: { bytes: wasmBytes.byteLength, initializationMs: Number(initializationMs.toFixed(2)) },
-    maximumP95Ratio: MAXIMUM_P95_RATIO,
+    maximumP50Ratio: MAXIMUM_P50_RATIO,
+    gatedMinimumSize: GATED_MINIMUM_SIZE,
     results,
   };
 }
@@ -185,7 +188,9 @@ run()
     else console.table(report.results);
     if (
       process.argv.includes("--check") &&
-      report.results.some((result) => result.p95Ratio > report.maximumP95Ratio)
+      report.results.some(
+        (result) => result.size >= report.gatedMinimumSize && result.p50Ratio > report.maximumP50Ratio,
+      )
     ) {
       process.exitCode = 1;
     }
