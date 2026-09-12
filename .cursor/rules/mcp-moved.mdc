@@ -5,7 +5,7 @@ alwaysApply: true
 
 # MCP 在别的仓库
 
-本仓库是 Frame Tuner 网页。MCP 服务、工具和测试在 **x-frame-mcp**：
+本仓库是 X-Frame 网页。MCP 服务、工具和测试在 **x-frame-mcp**：
 
 https://github.com/Sirhap/x-frame-mcp
 

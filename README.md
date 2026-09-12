@@ -1,8 +1,8 @@
-# XSXB Frame Tuner
+# X-Frame
 
-XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台，配套一个 Codex/Agent skill。它的目标很简单：让 Agent 负责导入、同步和验证素材，让人在网页里直观看帧、拖动角色、调碰撞框，然后把结果保存回 Godot 项目。
+X-Frame 是一个给 Godot 帧动画角色用的本地调参工作台，配套一个 Codex/Agent skill。它的目标很简单：让 Agent 负责导入、同步和验证素材，让人在网页里直观看帧、拖动角色、调碰撞框，然后把结果保存回 Godot 项目。
 
-![XSXB Frame Tuner 截图](docs/screenshot.png)
+![X-Frame 截图](docs/screenshot.png)
 
 ## 功能
 
@@ -50,7 +50,7 @@ XSXB Frame Tuner 是一个给 Godot 帧动画角色用的本地调参工作台�
 
 ```text
 请从本地项目目录安装并启用 `skills/xsxb-animation-production`，并确保它可以调用 `skills/xsxb-frame-tuner`。
-安装后把仓库克隆到本机作为 XSXB Frame Tuner 工具根目录。
+安装后把仓库克隆到本机作为 X-Frame 工具根目录。
 以后处理 Godot 帧动画制作、角色导入、动画追加、碰撞框调参、音效/挂件同步时，默认使用 `$xsxb-animation-production`；具体 XSXB 数据操作继续使用 `$xsxb-frame-tuner`。
 ```
 
@@ -58,7 +58,7 @@ Cursor 或其他 MCP 客户端接入本地 STDIO 服务时，见独立仓库 [x-
 
 ## 使用方式
 
-macOS 可双击 `start_xsxb_frame_tuner.command` 启动本地服务和页面。使用期间需要保持启动器打开的终端窗口；关闭终端会同时停止本地服务。
+macOS 可双击 `start_x_frame.command` 启动本地服务和页面。使用期间需要保持启动器打开的终端窗口；关闭终端会同时停止本地服务。
 
 需要隔离的 Lite 工作流时运行 `npm run start:lite`；可用 `npm run validate:lite` 检查 Lite 数据。
 

@@ -6,7 +6,7 @@ interface __BaseEnv_Env {
 	ASSETS: Fetcher;
 	XSXB_ADMIN_SESSION_MINUTES: 240;
 	XSXB_ADMIN_USERNAME: "sirhao";
-	XSXB_EMAIL_FROM: "XSXB Frame Tuner <login@devops9527.dpdns.org>";
+	XSXB_EMAIL_FROM: "X-Frame <login@devops9527.dpdns.org>";
 	PORT: string;
 	XSXB_ACTIVATION_CODE_HASHES: string;
 	XSXB_ACTIVATION_SECRET: string;

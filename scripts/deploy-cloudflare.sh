@@ -50,7 +50,7 @@ print_usage() {
   cat <<EOF
 Usage: ${SCRIPT_NAME} [options]
 
-Build, validate, and deploy XSXB Frame Tuner to Cloudflare Workers.
+Build, validate, and deploy X-Frame to Cloudflare Workers.
 
 Options:
   --dry-run             Validate the Worker bundle without uploading it.

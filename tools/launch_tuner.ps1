@@ -13,13 +13,13 @@ if (-not $node) {
 
 $target = if ($Mode -eq "lite") {
   @{
-    Name = "XSXB Frame Tuner Lite"
+    Name = "X-Frame Lite"
     Port = 5180
     Script = "tools\frame_tuner_lite\server.js"
   }
 } else {
   @{
-    Name = "XSXB Frame Tuner"
+    Name = "X-Frame"
     Port = 5179
     Script = "tools\animation_tuner\server.js"
   }

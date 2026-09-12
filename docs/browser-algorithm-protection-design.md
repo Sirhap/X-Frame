@@ -2,7 +2,7 @@
 
 状态：静态 Worker + Rust/WASM 方案已实现；受控分发与持续逆向演练为可选后续阶段
 
-适用项目：XSXB Frame Tuner
+适用项目：X-Frame
 
 目标环境：Cloudflare Pages/Workers、Vercel 或其他静态托管平台
 

@@ -184,7 +184,7 @@
         button.setAttribute("aria-pressed", String(active));
       });
       if (single && !elements.cutoutModal.hidden) {
-        documentApi.title = `${text("singleTitle")} · XSXB Frame Tuner`;
+        documentApi.title = `${text("singleTitle")} · X-Frame`;
       }
     }
 

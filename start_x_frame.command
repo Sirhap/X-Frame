@@ -16,12 +16,12 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 if nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
-  echo "XSXB Frame Tuner is already running at ${URL}"
+  echo "X-Frame is already running at ${URL}"
   open "$URL"
   exit 0
 fi
 
-echo "Starting XSXB Frame Tuner..."
+echo "Starting X-Frame..."
 echo "Project: ${ROOT_DIR}"
 echo "URL: ${URL}"
 echo "Keep this terminal window open while using the tuner."

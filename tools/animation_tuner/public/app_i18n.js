@@ -172,7 +172,7 @@
       deleteBoxSelected: "删除选中帧的碰撞框",
       deleteProject: "删除项目",
       deleteProjectConfirm:
-        "删除项目“{project}”？将删除 Frame Tuner 中的项目记录、动画和本地素材；不会删除外部 Godot 工程。此操作无法撤销。",
+        "删除项目“{project}”？将删除 X-Frame 中的项目记录、动画和本地素材；不会删除外部 Godot 工程。此操作无法撤销。",
       deleteSelectedFrames: "删除所选",
       decreaseValue: "减少{value}",
       defaultsAlreadyActive: "当前已经是默认值",
@@ -824,7 +824,7 @@
       deleteBoxSelected: "Delete box on selected frames",
       deleteProject: "Delete Project",
       deleteProjectConfirm:
-        "Delete project “{project}” from Frame Tuner, including its animations and local assets? The external Godot project will not be deleted. This cannot be undone.",
+        "Delete project “{project}” from X-Frame, including its animations and local assets? The external Godot project will not be deleted. This cannot be undone.",
       deleteSelectedFrames: "Delete Selected",
       decreaseValue: "Decrease {value}",
       defaultsAlreadyActive: "The current values already match the defaults",

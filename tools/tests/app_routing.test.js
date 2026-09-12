@@ -144,7 +144,7 @@ test("routing updates the document title from the active animation", () => {
 
   controller.updateDocumentTitle();
 
-  assert.equal(documentRef.title, "Idle · XSXB Frame Tuner");
+  assert.equal(documentRef.title, "Idle · X-Frame");
 });
 
 test("route and selection synchronization preserve URL state", () => {

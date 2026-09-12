@@ -30,7 +30,7 @@ function startServer(root, port) {
       stderr += String(chunk);
     });
     child.stdout.on("data", (chunk) => {
-      if (!String(chunk).includes("XSXB Frame Tuner running")) return;
+      if (!String(chunk).includes("X-Frame running")) return;
       clearTimeout(timer);
       resolve(child);
     });

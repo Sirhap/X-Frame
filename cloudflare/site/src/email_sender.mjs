@@ -20,9 +20,9 @@ export function createEmailSender(env, options = {}) {
         body: JSON.stringify({
           from,
           to: [email],
-          subject: "XSXB Frame Tuner 登录验证码",
+          subject: "X-Frame 登录验证码",
           text: `你的验证码是 ${code}，10 分钟内有效。请勿将验证码告诉他人。`,
-          html: `<p>你的 XSXB Frame Tuner 验证码是：</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>验证码 10 分钟内有效，请勿将其告诉他人。</p>`,
+          html: `<p>你的 X-Frame 验证码是：</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>验证码 10 分钟内有效，请勿将其告诉他人。</p>`,
         }),
       });
       if (!response.ok) {

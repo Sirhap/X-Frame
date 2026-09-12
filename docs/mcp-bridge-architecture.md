@@ -4,7 +4,7 @@
 
 ## 目标
 
-将 XSXB Frame Tuner 的操作界面部署为网站，同时让 Codex 等 AI 客户端通过 MCP 操作本地图片、视频和 Godot 项目。
+将 X-Frame 的操作界面部署为网站，同时让 Codex 等 AI 客户端通过 MCP 操作本地图片、视频和 Godot 项目。
 
 默认采用本地优先设计：
 
@@ -106,7 +106,7 @@ Bridge 执行本地操作，Bridge 不负责启动或控制 Codex。
 
 当前 `xsxb-frame-tuner` Skill 采用本地执行模式：
 
-1. 定位或克隆本地 XSXB Frame Tuner 仓库。
+1. 定位或克隆本地 X-Frame 仓库。
 2. 直接调用仓库中的 Node.js 导入、同步和验证脚本。
 3. 直接读写本地素材目录和 Godot 项目。
 4. 在任务完成后启动本地 Tuner Web 服务。

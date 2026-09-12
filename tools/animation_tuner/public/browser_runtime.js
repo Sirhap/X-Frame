@@ -1013,7 +1013,7 @@
     });
     const manifest = {
       schemaVersion: 1,
-      generator: "XSXB Frame Tuner",
+      generator: "X-Frame",
       exportedAt: (dependencies.now?.() || new Date()).toISOString(),
       animation: {
         name: metadata.animationName,
@@ -1222,7 +1222,7 @@
     );
     const manifest = {
       schemaVersion: 2,
-      generator: "XSXB Frame Tuner",
+      generator: "X-Frame",
       exportedAt: (dependencies.now?.() || new Date()).toISOString(),
       animation: {
         id: metadata.animationId || "animation",

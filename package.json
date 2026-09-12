@@ -1,5 +1,5 @@
 {
-  "name": "xsxb-frame-tuner",
+  "name": "x-frame",
   "version": "0.2.0",
   "description": "Standalone webapp and Codex skill for tuning frame-based Godot character animations.",
   "private": true,

@@ -1,4 +1,4 @@
-# XSXB Frame Tuner Design System
+# X-Frame Design System
 
 ## Direction
 

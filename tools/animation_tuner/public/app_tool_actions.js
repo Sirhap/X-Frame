@@ -269,8 +269,8 @@
       } catch (error) {
         throw new Error(
           getLanguage() === "zh"
-            ? "本地服务连接已断开。请重新启动 XSXB Frame Tuner 服务并刷新页面后重试。"
-            : "The local XSXB Frame Tuner service is disconnected. Restart it, refresh the page, and try again.",
+            ? "本地服务连接已断开。请重新启动 X-Frame 服务并刷新页面后重试。"
+            : "The local X-Frame service is disconnected. Restart it, refresh the page, and try again.",
           { cause: error },
         );
       }

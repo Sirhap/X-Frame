@@ -33,7 +33,7 @@ a non-secret Worker variable:
 ```jsonc
 {
   "vars": {
-    "XSXB_EMAIL_FROM": "XSXB Frame Tuner <login@example.com>",
+    "XSXB_EMAIL_FROM": "X-Frame <login@example.com>",
   },
 }
 ```

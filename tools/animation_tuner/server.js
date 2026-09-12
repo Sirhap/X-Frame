@@ -1070,12 +1070,12 @@ server.on("close", () => watermarkStudioService.dispose());
  */
 function handleServerStartupError(error) {
   if (error.code === "EADDRINUSE") {
-    console.error(`XSXB Frame Tuner is already running, or port ${PORT} is occupied.`);
+    console.error(`X-Frame is already running, or port ${PORT} is occupied.`);
     console.error(`Open http://127.0.0.1:${PORT}, or start another instance with PORT=5180 npm start.`);
     process.exitCode = 1;
     return;
   }
-  console.error(`Unable to start XSXB Frame Tuner on ${HOST}:${PORT}:`, error.message);
+  console.error(`Unable to start X-Frame on ${HOST}:${PORT}:`, error.message);
   process.exitCode = 1;
 }
 
@@ -1084,6 +1084,6 @@ server.on("error", handleServerStartupError);
 server.on("close", () => mediaExportService.dispose());
 
 server.listen(PORT, HOST, () => {
-  console.log(`XSXB Frame Tuner running at http://${HOST}:${PORT}`);
+  console.log(`X-Frame running at http://${HOST}:${PORT}`);
   console.log(`Workspace root: ${ROOT}`);
 });

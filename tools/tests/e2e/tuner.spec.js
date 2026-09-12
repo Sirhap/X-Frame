@@ -579,7 +579,7 @@ test("desktop selection is linkable and browser history restores it", async ({ p
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/workspace");
-  await expect(page).toHaveTitle(/XSXB Frame Tuner$/);
+  await expect(page).toHaveTitle(/X-Frame$/);
   const options = await page
     .locator("#groupSelect option")
     .evaluateAll((nodes) => nodes.map((node) => node.value));

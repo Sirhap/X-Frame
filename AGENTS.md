@@ -1,4 +1,4 @@
-# XSXB-Frame-Tuner 开发约定
+# X-Frame 开发约定
 
 ## 改动必须有真实测试
 

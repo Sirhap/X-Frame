@@ -1,7 +1,7 @@
 ---
 name: xsxb-frame-tuner
 description: >-
-  Operate the complete local XSXB Frame Tuner workflow for Godot frame animation:
+  Operate the complete local X-Frame workflow for Godot frame animation:
   import or replace PNG/SpriteFrames animations, extract frames from local video,
   batch-remove image backgrounds, organize/reduce/flip/diagnose frame sets, tune
   Character/Group/Frame transforms, timing and hit/hurt/collision boxes, bind frame
@@ -13,7 +13,7 @@ description: >-
   去背景, 视频抽帧, 帧整理, 减帧, 重复帧, 跳变帧, 循环段, 水平翻转, 碰撞框, 音效, 附加帧.
 ---
 
-# XSXB Frame Tuner
+# X-Frame
 
 Deliver the complete user-visible result from a natural-language request. Do not require the user to run importer commands or enumerate internal data files.
 
@@ -53,7 +53,7 @@ For media-processing or tuner-editing requests, complete the requested local wor
 
 ## Locate the Tool
 
-Resolve the XSXB Frame Tuner root in this order:
+Resolve the X-Frame root in this order:
 
 1. Use the current workspace when it contains `tools/animation_tuner/server.js`.
 2. Use a tuner root explicitly supplied by the user.

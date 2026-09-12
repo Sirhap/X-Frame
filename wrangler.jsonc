@@ -7,7 +7,7 @@
   "vars": {
     "XSXB_ADMIN_SESSION_MINUTES": 240,
     "XSXB_ADMIN_USERNAME": "sirhao",
-    "XSXB_EMAIL_FROM": "XSXB Frame Tuner <login@devops9527.dpdns.org>",
+    "XSXB_EMAIL_FROM": "X-Frame <login@devops9527.dpdns.org>",
   },
   "assets": {
     "directory": "./cloudflare/site/dist",

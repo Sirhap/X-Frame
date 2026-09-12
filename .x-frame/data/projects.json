@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "activeProjectId": "emberline_visual_fix",
+  "projects": [
+    {
+      "id": "emberline_visual_fix",
+      "label": "Emberline visual-fix staging",
+      "kind": "godot",
+      "projectRoot": "/Volumes/other/IdeaProjects/sirhao/emberline-frontier-07",
+      "authoringRoot": "/Volumes/other/IdeaProjects/sirhao/emberline-frontier-07",
+      "petRoot": "",
+      "dataDir": "data/projects/emberline_visual_fix",
+      "workspaceDir": "workspace/projects/emberline_visual_fix"
+    }
+  ]
+}

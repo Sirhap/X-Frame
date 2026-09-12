@@ -54,7 +54,7 @@ function createIntegrationTests(options) {
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("Test server startup timed out.")), 5000);
         const onData = (chunk) => {
-          if (!String(chunk).includes("XSXB Frame Tuner running")) return;
+          if (!String(chunk).includes("X-Frame running")) return;
           clearTimeout(timer);
           resolve();
         };
@@ -184,7 +184,7 @@ function createIntegrationTests(options) {
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("Replacement test server startup timed out.")), 5000);
         child.stdout.on("data", (chunk) => {
-          if (!String(chunk).includes("XSXB Frame Tuner running")) return;
+          if (!String(chunk).includes("X-Frame running")) return;
           clearTimeout(timer);
           resolve();
         });

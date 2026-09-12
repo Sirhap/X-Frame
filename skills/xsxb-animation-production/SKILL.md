@@ -1,6 +1,6 @@
 ---
 name: xsxb-animation-production
-description: Use when an AI agent needs to create, import, organize, validate, or integrate Godot frame animations in the local XSXB Frame Tuner, whether frames already exist or must be generated; trigger for PNG sequences, SpriteFrames, videos, animation-constraints.json, or requests to open and use the local tuner.
+description: Use when an AI agent needs to create, import, organize, validate, or integrate Godot frame animations in the local X-Frame, whether frames already exist or must be generated; trigger for PNG sequences, SpriteFrames, videos, animation-constraints.json, or requests to open and use the local tuner.
 ---
 
 # XSXB Animation Production

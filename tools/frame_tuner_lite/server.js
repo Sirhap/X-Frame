@@ -547,8 +547,8 @@ function savePayload(project, payload) {
 function serveIndex(res) {
   let html = fs.readFileSync(path.join(FULL_PUBLIC, "index.html"), "utf8");
   html = html
-    .replace("<title>XSXB Frame Tuner</title>", "<title>XSXB Frame Tuner Lite</title>")
-    .replace("<h1>XSXB Frame Tuner</h1>", "<h1>XSXB Frame Tuner Lite</h1>")
+    .replace("<title>X-Frame</title>", "<title>X-Frame Lite</title>")
+    .replace("<h1>X-Frame</h1>", "<h1>X-Frame Lite</h1>")
     .replace("</head>", '  <link rel="stylesheet" href="/lite.css" />\n  </head>')
     .replace("</body>", '    <script src="/lite.js"></script>\n  </body>');
   return send(res, 200, html, "text/html; charset=utf-8");
@@ -711,7 +711,7 @@ const server = http.createServer(async (req, res) => {
 
 if (require.main === module) {
   server.listen(PORT, "127.0.0.1", () => {
-    console.log(`XSXB Frame Tuner Lite running at http://127.0.0.1:${PORT}`);
+    console.log(`X-Frame Lite running at http://127.0.0.1:${PORT}`);
     console.log(`Lite registry: ${store.path}`);
   });
 }

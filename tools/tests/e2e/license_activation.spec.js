@@ -105,7 +105,7 @@ test("dedicated email authorization administration page renders from its direct 
   await page.goto("/admin/licenses");
 
   await expect(page).toHaveURL(/\/admin\/licenses$/u);
-  await expect(page).toHaveTitle("账户与授权管理 — XSXB Frame Tuner");
+  await expect(page).toHaveTitle("账户与授权管理 — X-Frame");
   await expect(page.getByRole("heading", { name: "验证管理员身份" })).toBeVisible();
   await expect(page.locator("#adminLoginView")).toBeVisible();
   await expect(page.locator("#adminDashboardView")).toBeHidden();

@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Rename the project from XSXB Frame Tuner to X-Frame.
 - Move XSXB MCP out of this repo into [x-frame-mcp](https://github.com/Sirhap/x-frame-mcp). This tree keeps the Tuner webapp; `mcp/README.md` points at the new project.
 
 ### Features

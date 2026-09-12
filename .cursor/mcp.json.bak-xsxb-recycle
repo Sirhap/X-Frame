@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "xsxb": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/Volumes/other/IdeaProjects/sirhao/3D-images-tools/XSXB-Frame-Tuner/mcp/xsxb_mcp_server.js"
+      ],
+      "env": {
+        "XSXB_MCP_REV": "20260903-recycle-3"
+      }
+    }
+  }
+}

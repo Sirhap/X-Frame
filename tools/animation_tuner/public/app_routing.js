@@ -205,7 +205,7 @@
       };
       const currentGroup = getCurrentGroup();
       const context = routeLabels[route] || (currentGroup ? groupLabel(currentGroup) : "");
-      if (documentRef) documentRef.title = context ? `${context} · XSXB Frame Tuner` : "XSXB Frame Tuner";
+      if (documentRef) documentRef.title = context ? `${context} · X-Frame` : "X-Frame";
     }
 
     /**

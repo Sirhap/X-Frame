@@ -152,7 +152,7 @@ catalog/用例允许刀侧 `measure_t`，但校验把「读到的格子」当成
 
 3. **`overlay_grid` 默认写到 Tuner `workspace/.xsxb/`，不是当前项目 `.xsxb/`（W1-4-1）**  
    - 工具：`xsxb_overlay_grid`  
-   - 实际路径：`…/XSXB-Frame-Tuner/workspace/.xsxb/warrior_cut_grid.png`  
+   - 实际路径：`…/X-Frame/workspace/.xsxb/warrior_cut_grid.png`  
    - 期望：与 cutout/place 一样 `workspace/projects/test/.xsxb/`  
    - 实际：`overlayGridImage` 未把 `options.artifactDir` 传给 `resolveOutputPath`。
 

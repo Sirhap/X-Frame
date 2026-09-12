@@ -129,7 +129,7 @@ function createLocalAccountAuthService(options = {}) {
         body: JSON.stringify({
           from: emailFrom,
           to: [email],
-          subject: "XSXB Frame Tuner 登录验证码",
+          subject: "X-Frame 登录验证码",
           text: `你的验证码是 ${code}，10 分钟内有效。`,
         }),
       });

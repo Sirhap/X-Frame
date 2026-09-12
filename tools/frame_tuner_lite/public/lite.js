@@ -295,7 +295,7 @@
         ]),
       ),
       meta: {
-        app: "XSXB Frame Tuner Lite",
+        app: "X-Frame Lite",
         version: 1,
         image: "spritesheet.png",
         format: "RGBA8888",

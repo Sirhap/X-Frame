@@ -1,6 +1,6 @@
-# XSXB Frame Tuner Webapp
+# X-Frame Webapp
 
-这里是 XSXB Frame Tuner 的本地网页工作台。根目录 README 面向用户说明安装和使用；这个文件只记录 Webapp 的边界。
+这里是 X-Frame 的本地网页工作台。根目录 README 面向用户说明安装和使用；这个文件只记录 Webapp 的边界。
 
 Webapp 本身不内置角色素材。项目选择器会读取当前本机生成的项目 registry，并把每个项目的 manifest、tuning、帧音效、图片挂件和 workspace assets 隔离存放。
 
